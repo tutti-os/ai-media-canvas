@@ -4,10 +4,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { ImageModelInfo } from "../lib/server-api";
-import type { VideoModelInfo } from "../lib/server-api";
-import { fetchImageModels, fetchVideoModels } from "../lib/server-api";
+import { fetchImageModels } from "../lib/server-api";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
-import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 
 export function ImageModelPreferencePopover({
   open,
@@ -20,9 +18,6 @@ export function ImageModelPreferencePopover({
 }) {
   const { preference, setMode, toggleModel } = useImageModelPreference();
   const [models, setModels] = useState<ImageModelInfo[]>([]);
-  const [activeTab, setActiveTab] = useState<"image" | "video">("image");
-  const videoPreference = useVideoModelPreference();
-  const [videoModels, setVideoModels] = useState<VideoModelInfo[]>([]);
   const popoverRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
 
@@ -30,9 +25,6 @@ export function ImageModelPreferencePopover({
     if (!open) return;
     fetchImageModels()
       .then((data) => setModels(data.models))
-      .catch(() => {});
-    fetchVideoModels()
-      .then((data) => setVideoModels(data.models))
       .catch(() => {});
   }, [open]);
 
@@ -78,11 +70,6 @@ export function ImageModelPreferencePopover({
     return () => document.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  const currentPreference = activeTab === "image" ? preference : videoPreference.preference;
-  const currentModels = activeTab === "image" ? models : videoModels;
-  const currentSetMode = activeTab === "image" ? setMode : videoPreference.setMode;
-  const currentToggleModel = activeTab === "image" ? toggleModel : videoPreference.toggleModel;
-
   if (!open || !pos) return null;
 
   return createPortal(
@@ -96,67 +83,43 @@ export function ImageModelPreferencePopover({
       className="fixed z-[9999] w-[380px] rounded-xl border-[0.5px] border-border bg-card p-1 shadow-card"
     >
       <div className="flex flex-col gap-3 py-2">
-        {/* Tab switcher */}
-        <div className="px-3">
-          <div className="flex rounded-lg bg-muted p-0.5">
-            {(["image", "video"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab)}
-                className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                  activeTab === tab
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {tab === "image" ? "Image" : "Video"}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Header */}
         <div className="flex flex-col gap-2 px-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-foreground">
-              {activeTab === "image" ? "Image Model" : "Video Model"}
-            </span>
+            <span className="text-sm font-semibold text-foreground">Image Renderer</span>
             <button
               type="button"
-              onClick={() =>
-                currentSetMode(currentPreference.mode === "auto" ? "manual" : "auto")
-              }
+              onClick={() => setMode(preference.mode === "auto" ? "manual" : "auto")}
               className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                currentPreference.mode === "auto"
+                preference.mode === "auto"
                   ? "bg-accent/15 text-accent-foreground"
                   : "bg-muted text-muted-foreground hover:bg-muted/80"
               }`}
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  currentPreference.mode === "auto" ? "bg-accent" : "bg-muted-foreground"
+                  preference.mode === "auto" ? "bg-accent" : "bg-muted-foreground"
                 }`}
               />
-              {currentPreference.mode === "auto" ? "Auto" : "Manual"}
+              {preference.mode === "auto" ? "Auto" : "Manual"}
             </button>
           </div>
           <span className="text-[11px] text-muted-foreground">
-            {currentPreference.mode === "auto"
-              ? `AI Media Canvas automatically selects the best model for each ${activeTab} task`
-              : `AI Media Canvas chooses from your selected models for each ${activeTab} task`}
+            {preference.mode === "auto"
+              ? "AI Media Canvas uses the built-in local renderer for image tasks."
+              : "AI Media Canvas keeps using the local renderer while prioritizing your pinned presets."}
           </span>
         </div>
 
         {/* Model list */}
         <div className="scrollbar-hidden max-h-[300px] space-y-0.5 overflow-y-auto px-1">
-          {currentModels.map((m) => {
-            const selected = currentPreference.models.includes(m.id);
+          {models.map((m) => {
+            const selected = preference.models.includes(m.id);
             return (
               <button
                 key={m.id}
                 type="button"
-                onClick={() => currentToggleModel(m.id)}
+                onClick={() => toggleModel(m.id)}
                 className={`group flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors ${
                   selected ? "bg-accent/10 hover:bg-accent/15" : "hover:bg-muted"
                 }`}

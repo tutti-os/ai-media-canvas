@@ -1,12 +1,19 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
 import { ChatSidebar } from "../src/components/chat-sidebar";
+import { ToastProvider } from "../src/components/toast";
 
 const {
   createSessionMock,
@@ -15,10 +22,14 @@ const {
   fetchSessionsMock,
   saveMessageMock,
   updateSessionTitleMock,
+  fetchImageModelsMock,
+  fetchModelsMock,
 } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
   deleteSessionMock: vi.fn(),
   fetchMessagesMock: vi.fn(),
+  fetchImageModelsMock: vi.fn(),
+  fetchModelsMock: vi.fn(),
   fetchSessionsMock: vi.fn(),
   saveMessageMock: vi.fn(),
   updateSessionTitleMock: vi.fn(),
@@ -27,6 +38,8 @@ const {
 vi.mock("../src/lib/server-api", () => ({
   createSession: createSessionMock,
   deleteSession: deleteSessionMock,
+  fetchImageModels: fetchImageModelsMock,
+  fetchModels: fetchModelsMock,
   fetchMessages: fetchMessagesMock,
   fetchSessions: fetchSessionsMock,
   saveMessage: saveMessageMock,
@@ -47,6 +60,18 @@ function createMockWs(): WebSocketHandle {
     cancelRun: vi.fn(),
     onEvent: vi.fn(() => () => {}),
     registerRPC: vi.fn(() => () => {}),
+    resumeCanvas: vi.fn((_canvasId, onAck) => {
+      onAck?.({
+        type: "command.ack",
+        action: "canvas.resume",
+        payload: {
+          canvasId: "canvas-1",
+          latestSeq: 0,
+          activeRunId: null,
+          replayed: 0,
+        },
+      });
+    }),
   };
 }
 
@@ -54,6 +79,14 @@ describe("ChatSidebar", () => {
   let mockWs: WebSocketHandle;
 
   beforeEach(() => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
     Object.defineProperty(Element.prototype, "scrollIntoView", {
       configurable: true,
       value: vi.fn(),
@@ -69,6 +102,14 @@ describe("ChatSidebar", () => {
       },
     });
     deleteSessionMock.mockReset();
+    fetchImageModelsMock.mockReset();
+    fetchImageModelsMock.mockResolvedValue({
+      models: [{ id: "local:placeholder-image", displayName: "Local Placeholder Image" }],
+    });
+    fetchModelsMock.mockReset();
+    fetchModelsMock.mockResolvedValue({
+      models: [{ id: "local:assistant", name: "Local Assistant", provider: "local" }],
+    });
     fetchMessagesMock.mockReset();
     fetchMessagesMock.mockResolvedValue({ messages: [] });
     fetchSessionsMock.mockReset();
@@ -95,13 +136,15 @@ describe("ChatSidebar", () => {
 
   it("starts runs via WebSocket with the active real session id", async () => {
     render(
-      <ChatSidebar
-        accessToken="token_abc"
-        canvasId="canvas-1"
-        open
-        onToggle={() => {}}
-        ws={mockWs}
-      />,
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
     );
 
     const input = await screen.findByPlaceholderText(
@@ -126,5 +169,36 @@ describe("ChatSidebar", () => {
       }),
       expect.anything(),
     );
+  });
+
+  it("ignores a rapid duplicate Enter press while a send is already starting", async () => {
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(/start with an idea/i);
+    await userEvent.type(input, "double send");
+
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      code: "Enter",
+      charCode: 13,
+    });
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      code: "Enter",
+      charCode: 13,
+    });
+
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+    expect(saveMessageMock).toHaveBeenCalledTimes(1);
   });
 });

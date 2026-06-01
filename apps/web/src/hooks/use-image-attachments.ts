@@ -35,10 +35,8 @@ export type ReadyAttachment = {
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
-export function useImageAttachments(accessToken: string, projectId?: string) {
+export function useImageAttachments(projectId?: string) {
   const [attachments, setAttachments] = useState<ImageAttachmentState[]>([]);
-  const accessTokenRef = useRef(accessToken);
-  accessTokenRef.current = accessToken;
 
   // Use a ref mirror of attachments for retryUpload to avoid stale closures.
   // Without this, retryUpload would capture a snapshot of `attachments` at
@@ -93,7 +91,7 @@ export function useImageAttachments(accessToken: string, projectId?: string) {
         });
 
         // Start upload
-        uploadFile(accessTokenRef.current, file, projectId)
+        uploadFile(file, projectId)
           .then((res) => {
             setAttachments((prev) =>
               prev.map((a) =>
@@ -156,7 +154,7 @@ export function useImageAttachments(accessToken: string, projectId?: string) {
         ),
       );
 
-      uploadFile(accessTokenRef.current, att.file, projectId)
+      uploadFile(att.file, projectId)
         .then((res) => {
           setAttachments((prev) =>
             prev.map((a) =>

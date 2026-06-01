@@ -5,7 +5,7 @@ license: Apache-2.0
 metadata:
   author: anthropic
   version: "1.0"
-  adapted-for: loomic
+  adapted-for: ai-media-canvas
 ---
 
 # Canvas Design Skill

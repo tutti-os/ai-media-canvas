@@ -9,26 +9,10 @@ import type {
 } from "@aimc/shared";
 
 import { getServerBaseUrl } from "./env";
-import { ApiAuthError, ApiApplicationError } from "./server-api";
+import { ApiApplicationError } from "./server-api";
 import { dedupeRequest } from "./dedupe-request";
 
-// --- Internal helpers (mirrored from server-api.ts, not exported there) ---
-
-function authHeaders(accessToken: string): Record<string, string> {
-  return { Authorization: `Bearer ${accessToken}` };
-}
-
-function authJsonHeaders(accessToken: string): Record<string, string> {
-  return {
-    Authorization: `Bearer ${accessToken}`,
-    "content-type": "application/json",
-  };
-}
-
 async function handleErrorResponse(response: Response): Promise<never> {
-  if (response.status === 401) {
-    throw new ApiAuthError();
-  }
   const body = await response.json().catch(() => null);
   const code = body?.error?.code ?? "application_error";
   const message = body?.error?.message ?? "Request failed";
@@ -37,37 +21,28 @@ async function handleErrorResponse(response: Response): Promise<never> {
 
 // --- Brand Kit CRUD ---
 
-export function fetchBrandKits(
-  accessToken: string,
-): Promise<BrandKitListResponse> {
+export function fetchBrandKits(): Promise<BrandKitListResponse> {
   return dedupeRequest("brand-kits:list", async () => {
-    const response = await fetch(`${getServerBaseUrl()}/api/brand-kits`, {
-      headers: authHeaders(accessToken),
-    });
+    const response = await fetch(`${getServerBaseUrl()}/api/brand-kits`);
     if (!response.ok) return handleErrorResponse(response);
     return (await response.json()) as BrandKitListResponse;
   });
 }
 
-export async function fetchBrandKit(
-  accessToken: string,
-  kitId: string,
-): Promise<BrandKitDetailResponse> {
+export async function fetchBrandKit(kitId: string): Promise<BrandKitDetailResponse> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}`,
-    { headers: authHeaders(accessToken) },
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as BrandKitDetailResponse;
 }
 
 export async function createBrandKit(
-  accessToken: string,
   data?: BrandKitCreateRequest,
 ): Promise<BrandKitDetailResponse> {
   const response = await fetch(`${getServerBaseUrl()}/api/brand-kits`, {
     method: "POST",
-    headers: authJsonHeaders(accessToken),
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(data ?? {}),
   });
   if (!response.ok) return handleErrorResponse(response);
@@ -75,7 +50,6 @@ export async function createBrandKit(
 }
 
 export async function updateBrandKit(
-  accessToken: string,
   kitId: string,
   data: BrandKitUpdateRequest,
 ): Promise<BrandKitDetailResponse> {
@@ -83,7 +57,7 @@ export async function updateBrandKit(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}`,
     {
       method: "PATCH",
-      headers: authJsonHeaders(accessToken),
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(data),
     },
   );
@@ -92,14 +66,12 @@ export async function updateBrandKit(
 }
 
 export async function duplicateBrandKit(
-  accessToken: string,
   kitId: string,
 ): Promise<BrandKitDetailResponse> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}/duplicate`,
     {
       method: "POST",
-      headers: authHeaders(accessToken),
     },
   );
   if (!response.ok) return handleErrorResponse(response);
@@ -107,14 +79,12 @@ export async function duplicateBrandKit(
 }
 
 export async function deleteBrandKit(
-  accessToken: string,
   kitId: string,
 ): Promise<void> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}`,
     {
       method: "DELETE",
-      headers: authHeaders(accessToken),
     },
   );
   if (!response.ok) return handleErrorResponse(response);
@@ -123,7 +93,6 @@ export async function deleteBrandKit(
 // --- Brand Kit Asset CRUD ---
 
 export async function createBrandKitAsset(
-  accessToken: string,
   kitId: string,
   data: BrandKitAssetCreateRequest,
 ): Promise<BrandKitAssetResponse> {
@@ -131,7 +100,7 @@ export async function createBrandKitAsset(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}/assets`,
     {
       method: "POST",
-      headers: authJsonHeaders(accessToken),
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(data),
     },
   );
@@ -140,7 +109,6 @@ export async function createBrandKitAsset(
 }
 
 export async function updateBrandKitAsset(
-  accessToken: string,
   kitId: string,
   assetId: string,
   data: BrandKitAssetUpdateRequest,
@@ -149,7 +117,7 @@ export async function updateBrandKitAsset(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}/assets/${assetId}`,
     {
       method: "PATCH",
-      headers: authJsonHeaders(accessToken),
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(data),
     },
   );
@@ -158,7 +126,6 @@ export async function updateBrandKitAsset(
 }
 
 export async function deleteBrandKitAsset(
-  accessToken: string,
   kitId: string,
   assetId: string,
 ): Promise<void> {
@@ -166,14 +133,12 @@ export async function deleteBrandKitAsset(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}/assets/${assetId}`,
     {
       method: "DELETE",
-      headers: authHeaders(accessToken),
     },
   );
   if (!response.ok) return handleErrorResponse(response);
 }
 
 export async function uploadBrandKitAsset(
-  accessToken: string,
   kitId: string,
   assetType: "logo" | "image",
   file: File,
@@ -186,7 +151,6 @@ export async function uploadBrandKitAsset(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}/assets/upload`,
     {
       method: "POST",
-      headers: authHeaders(accessToken),
       body: formData,
     },
   );

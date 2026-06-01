@@ -9,14 +9,13 @@ import {
   brandKitListResponseSchema,
   brandKitAssetResponseSchema,
   brandKitUpdateRequestSchema,
-  unauthenticatedErrorResponseSchema,
 } from "@aimc/shared";
 
 import {
   BrandKitServiceError,
   type BrandKitService,
 } from "../features/brand-kit/brand-kit-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "image/png",
@@ -38,20 +37,14 @@ type BrandKitErrorFallbackCode =
 export async function registerBrandKitRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localUser: AuthenticatedUser;
     brandKitService: BrandKitService;
   },
 ) {
   // GET /api/brand-kits — list kits
-  app.get("/api/brand-kits", async (request, reply) => {
+  app.get("/api/brand-kits", async (_request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return sendUnauthenticated(reply);
-      }
-
-      const brandKits = await options.brandKitService.listKits(user);
+      const brandKits = await options.brandKitService.listKits(options.localUser);
       return reply
         .code(200)
         .send(brandKitListResponseSchema.parse({ brandKits }));
@@ -63,22 +56,20 @@ export async function registerBrandKitRoutes(
   // POST /api/brand-kits — create kit
   app.post("/api/brand-kits", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return sendUnauthenticated(reply);
-      }
-
       const payload = brandKitCreateRequestSchema.parse(request.body);
-      const kit = await options.brandKitService.createKit(user, payload);
+      const kit = await options.brandKitService.createKit(options.localUser, payload);
 
       return reply.code(201).send(brandKitDetailResponseSchema.parse(kit));
     } catch (error) {
       if (isZodError(error)) {
-        return reply.code(400).send({
-          issues: error.issues,
-          message: "Invalid request body",
-        });
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "application_error",
+              message: "Invalid request body.",
+            },
+          }),
+        );
       }
 
       return sendBrandKitError(error, reply, "brand_kit_create_failed");
@@ -88,14 +79,8 @@ export async function registerBrandKitRoutes(
   // GET /api/brand-kits/:kitId — get detail
   app.get("/api/brand-kits/:kitId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return sendUnauthenticated(reply);
-      }
-
       const { kitId } = request.params as { kitId: string };
-      const kit = await options.brandKitService.getKit(user, kitId);
+      const kit = await options.brandKitService.getKit(options.localUser, kitId);
 
       return reply.code(200).send(brandKitDetailResponseSchema.parse(kit));
     } catch (error) {
@@ -106,23 +91,21 @@ export async function registerBrandKitRoutes(
   // PATCH /api/brand-kits/:kitId — update kit
   app.patch("/api/brand-kits/:kitId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return sendUnauthenticated(reply);
-      }
-
       const { kitId } = request.params as { kitId: string };
       const payload = brandKitUpdateRequestSchema.parse(request.body);
-      const kit = await options.brandKitService.updateKit(user, kitId, payload);
+      const kit = await options.brandKitService.updateKit(options.localUser, kitId, payload);
 
       return reply.code(200).send(brandKitDetailResponseSchema.parse(kit));
     } catch (error) {
       if (isZodError(error)) {
-        return reply.code(400).send({
-          issues: error.issues,
-          message: "Invalid request body",
-        });
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "application_error",
+              message: "Invalid request body.",
+            },
+          }),
+        );
       }
 
       return sendBrandKitError(error, reply, "brand_kit_update_failed");
@@ -132,14 +115,8 @@ export async function registerBrandKitRoutes(
   // POST /api/brand-kits/:kitId/duplicate — duplicate kit
   app.post("/api/brand-kits/:kitId/duplicate", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return sendUnauthenticated(reply);
-      }
-
       const { kitId } = request.params as { kitId: string };
-      const kit = await options.brandKitService.duplicateKit(user, kitId);
+      const kit = await options.brandKitService.duplicateKit(options.localUser, kitId);
 
       return reply.code(201).send(brandKitDetailResponseSchema.parse(kit));
     } catch (error) {
@@ -150,14 +127,8 @@ export async function registerBrandKitRoutes(
   // DELETE /api/brand-kits/:kitId — delete kit
   app.delete("/api/brand-kits/:kitId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return sendUnauthenticated(reply);
-      }
-
       const { kitId } = request.params as { kitId: string };
-      await options.brandKitService.deleteKit(user, kitId);
+      await options.brandKitService.deleteKit(options.localUser, kitId);
 
       return reply.code(204).send();
     } catch (error) {
@@ -168,12 +139,6 @@ export async function registerBrandKitRoutes(
   // POST /api/brand-kits/:kitId/assets/upload — upload file asset (logo/image)
   app.post("/api/brand-kits/:kitId/assets/upload", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return sendUnauthenticated(reply);
-      }
-
       const { kitId } = request.params as { kitId: string };
 
       const file = await request.file();
@@ -222,7 +187,7 @@ export async function registerBrandKitRoutes(
 
       const fileBuffer = await file.toBuffer();
       const asset = await options.brandKitService.uploadAsset(
-        user,
+        options.localUser,
         kitId,
         assetType,
         file.filename,
@@ -239,16 +204,10 @@ export async function registerBrandKitRoutes(
   // POST /api/brand-kits/:kitId/assets — create asset
   app.post("/api/brand-kits/:kitId/assets", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return sendUnauthenticated(reply);
-      }
-
       const { kitId } = request.params as { kitId: string };
       const payload = brandKitAssetCreateRequestSchema.parse(request.body);
       const asset = await options.brandKitService.createAsset(
-        user,
+        options.localUser,
         kitId,
         payload,
       );
@@ -256,10 +215,14 @@ export async function registerBrandKitRoutes(
       return reply.code(201).send(brandKitAssetResponseSchema.parse(asset));
     } catch (error) {
       if (isZodError(error)) {
-        return reply.code(400).send({
-          issues: error.issues,
-          message: "Invalid request body",
-        });
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "application_error",
+              message: "Invalid request body.",
+            },
+          }),
+        );
       }
 
       return sendBrandKitError(error, reply, "brand_kit_asset_create_failed");
@@ -271,19 +234,13 @@ export async function registerBrandKitRoutes(
     "/api/brand-kits/:kitId/assets/:assetId",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-
-        if (!user) {
-          return sendUnauthenticated(reply);
-        }
-
         const { kitId, assetId } = request.params as {
           kitId: string;
           assetId: string;
         };
         const payload = brandKitAssetUpdateRequestSchema.parse(request.body);
         const asset = await options.brandKitService.updateAsset(
-          user,
+          options.localUser,
           kitId,
           assetId,
           payload,
@@ -292,10 +249,14 @@ export async function registerBrandKitRoutes(
         return reply.code(200).send(brandKitAssetResponseSchema.parse(asset));
       } catch (error) {
         if (isZodError(error)) {
-          return reply.code(400).send({
-            issues: error.issues,
-            message: "Invalid request body",
-          });
+          return reply.code(400).send(
+            applicationErrorResponseSchema.parse({
+              error: {
+                code: "application_error",
+                message: "Invalid request body.",
+              },
+            }),
+          );
         }
 
         return sendBrandKitError(error, reply, "brand_kit_update_failed");
@@ -308,34 +269,17 @@ export async function registerBrandKitRoutes(
     "/api/brand-kits/:kitId/assets/:assetId",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-
-        if (!user) {
-          return sendUnauthenticated(reply);
-        }
-
         const { kitId, assetId } = request.params as {
           kitId: string;
           assetId: string;
         };
-        await options.brandKitService.deleteAsset(user, kitId, assetId);
+        await options.brandKitService.deleteAsset(options.localUser, kitId, assetId);
 
         return reply.code(204).send();
       } catch (error) {
         return sendBrandKitError(error, reply, "brand_kit_delete_failed");
       }
     },
-  );
-}
-
-function sendUnauthenticated(reply: FastifyReply) {
-  return reply.code(401).send(
-    unauthenticatedErrorResponseSchema.parse({
-      error: {
-        code: "unauthorized",
-        message: "Missing or invalid bearer token.",
-      },
-    }),
   );
 }
 

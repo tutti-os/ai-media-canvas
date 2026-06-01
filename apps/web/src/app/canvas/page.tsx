@@ -3,24 +3,24 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 
-import type { ImageArtifact, VideoArtifact } from "@aimc/shared";
+import type { ImageArtifact } from "@aimc/shared";
 import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { LoadingScreen } from "../../components/loading-screen";
-import { LOCAL_ACCESS_TOKEN } from "../../lib/auth-context";
 import { useWebSocket } from "../../hooks/use-websocket";
 import { CanvasEditor } from "../../components/canvas-editor";
 import { ChatSidebar } from "../../components/chat-sidebar";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { EditableProjectName } from "../../components/editable-project-name";
-import { insertImageOnCanvas, insertVideoOnCanvas } from "../../lib/canvas-elements";
+import { insertImageOnCanvas } from "../../lib/canvas-elements";
 import { fetchCanvas, fetchProject } from "../../lib/server-api";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { Button } from "../../components/ui/button";
+import { useToast } from "../../components/toast";
 
 function CanvasPageContent() {
   const searchParams = useSearchParams();
@@ -53,6 +53,7 @@ function CanvasPageContent() {
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("Untitled");
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<CanvasSelectedElement[]>([]);
+  const { error: toastError } = useToast();
 
   const excalidrawApiRef = useRef<any>(null);
   const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
@@ -68,11 +69,7 @@ function CanvasPageContent() {
   const handleCloseLayers = useCallback(() => setLayersOpen(false), []);
   const handleCloseFiles = useCallback(() => setFilesOpen(false), []);
 
-  const accessToken = LOCAL_ACCESS_TOKEN;
-  const accessTokenRef = useRef(accessToken);
-
-  const getToken = useCallback(() => accessTokenRef.current ?? null, []);
-  const ws = useWebSocket(getToken);
+  const ws = useWebSocket();
 
   const handleApiReady = useCallback((api: any) => {
     excalidrawApiRef.current = api;
@@ -87,21 +84,12 @@ function CanvasPageContent() {
     });
   }, []);
 
-  const handleVideoGenerated = useCallback((artifact: VideoArtifact) => {
-    const api = excalidrawApiRef.current;
-    if (!api) return;
-    insertVideoOnCanvas(api, artifact).catch((err) => {
-      console.warn("Failed to insert video on canvas:", err);
-    });
-  }, []);
-
   // Must be defined BEFORE useJobFallbackPolling which references it
   const handleCanvasSync = useCallback(async () => {
     const api = excalidrawApiRef.current;
-    const token = accessTokenRef.current;
-    if (!api || !token || !canvasData) return;
+    if (!api || !canvasData) return;
     try {
-      const { canvas } = await fetchCanvas(token, canvasData.id);
+      const { canvas } = await fetchCanvas(canvasData.id);
       const elements = canvas.content.elements ?? [];
       const files = (canvas.content as Record<string, unknown>).files as
         Record<string, { id: string; dataURL: string; mimeType: string; created: number }> | undefined;
@@ -154,11 +142,25 @@ function CanvasPageContent() {
       });
   }, []);
 
+  const loadProjectShell = useCallback(
+    async (projectId: string) => {
+      try {
+        const projectData = await fetchProject(projectId);
+        setBrandKitId(projectData.project.brandKitId);
+        setProjectName(projectData.project.name ?? "Untitled");
+      } catch (err) {
+        console.warn("Failed to fetch project for brand kit:", err);
+        toastError("项目信息加载失败，请重试。");
+      }
+    },
+    [toastError],
+  );
+
   useEffect(() => {
     if (!canvasId) return;
 
     setPageLoading(true);
-    fetchCanvas(accessTokenRef.current, canvasId)
+    fetchCanvas(canvasId)
       .then((data) => {
         const c = data.canvas;
         setCanvasData({
@@ -172,22 +174,13 @@ function CanvasPageContent() {
           },
         });
         setPageLoading(false);
-        // Fetch project to get brand_kit_id and name
-        fetchProject(accessTokenRef.current, c.projectId)
-          .then((projectData) => {
-            setBrandKitId(projectData.project.brand_kit_id);
-            setProjectName(projectData.project.name ?? "Untitled");
-          })
-          .catch((err) => console.warn("Failed to fetch project for brand kit:", err));
+        void loadProjectShell(c.projectId);
       })
       .catch(() => {
         setError("Failed to load the local canvas.");
         setPageLoading(false);
       });
-    // Intentionally omitting accessTokenRef (stable ref) and routerRef (ref wrapper)
-    // from deps — only re-run when the canvas changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvasId]);
+  }, [canvasId, loadProjectShell]);
 
   if (!canvasId) {
     return (
@@ -221,18 +214,15 @@ function CanvasPageContent() {
       {/* Top-left navigation bar */}
       <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5">
         <CanvasLogoMenu
-          accessToken={accessToken}
           projectId={canvasData.projectId}
           canvasId={canvasData.id}
           excalidrawApi={excalidrawApi}
         />
         <EditableProjectName
-          accessToken={accessToken}
           projectId={canvasData.projectId}
           initialName={projectName}
         />
         <BrandKitSelector
-          accessToken={accessToken}
           projectId={canvasData.projectId}
           currentBrandKitId={brandKitId}
           onBrandKitChange={(kitId) => setBrandKitId(kitId)}
@@ -243,7 +233,6 @@ function CanvasPageContent() {
         <CanvasEditor
           canvasId={canvasData.id}
           projectId={canvasData.projectId}
-          accessToken={accessToken}
           initialContent={canvasData.content}
           onApiReady={handleApiReady}
           ws={ws}
@@ -274,12 +263,11 @@ function CanvasPageContent() {
         />
       </div>
       <ChatSidebar
-        accessToken={accessToken}
         canvasId={canvasData.id}
+        projectId={canvasData.projectId}
         open={chatOpen}
         onToggle={handleToggleChat}
         onImageGenerated={handleImageGenerated}
-        onVideoGenerated={handleVideoGenerated}
         onCanvasSync={handleCanvasSync}
         initialPrompt={initialPrompt}
         initialSessionId={initialSessionId}

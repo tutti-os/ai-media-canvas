@@ -7,14 +7,14 @@
 
 /** Regex patterns for detecting image URLs in markdown content */
 const IMAGE_URL_RE = /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i;
-const SUPABASE_STORAGE_RE = /supabase\.\w+\/storage\/v1\//i;
+const REMOTE_STORAGE_RE = /(storage\/v1\/|\/local-assets\/)/i;
 
 /**
  * Check if a URL points to an image resource.
- * Matches common image extensions and Supabase storage URLs.
+ * Matches common image extensions and known asset URLs.
  */
 export function isImageUrl(url: string): boolean {
-  return IMAGE_URL_RE.test(url) || SUPABASE_STORAGE_RE.test(url);
+  return IMAGE_URL_RE.test(url) || REMOTE_STORAGE_RE.test(url);
 }
 
 /** Tool display configuration */
@@ -29,7 +29,6 @@ const TOOL_CONFIG: Record<string, ToolDisplayConfig> = {
   inspect_canvas: { label: "\u8bfb\u53d6\u753b\u5e03", icon: "eye", showCard: true },
   manipulate_canvas: { label: "\u64cd\u4f5c\u753b\u5e03", icon: "brush", showCard: true },
   generate_image: { label: "\u751f\u6210\u56fe\u7247", icon: "image", showCard: true },
-  generate_video: { label: "\u751f\u6210\u89c6\u9891", icon: "video", showCard: true },
   screenshot_canvas: { label: "\u622a\u53d6\u753b\u5e03", icon: "eye", showCard: true },
   get_brand_kit: { label: "\u54c1\u724c\u5de5\u5177\u5305", icon: "palette", showCard: true },
   project_search: { label: "\u641c\u7d22\u9879\u76ee", icon: "search", showCard: true },

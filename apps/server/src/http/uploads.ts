@@ -3,7 +3,6 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   applicationErrorResponseSchema,
   assetSignedUrlResponseSchema,
-  unauthenticatedErrorResponseSchema,
   uploadResponseSchema,
 } from "@aimc/shared";
 
@@ -11,8 +10,7 @@ import {
   UploadServiceError,
   type UploadService,
 } from "../features/uploads/upload-service.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/png",
@@ -25,17 +23,13 @@ const ALLOWED_MIME_TYPES = new Set([
 export async function registerUploadRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localUser: AuthenticatedUser;
     uploadService: UploadService;
-    viewerService: ViewerService;
   },
 ) {
   // Upload a file
   app.post("/api/uploads", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthorized(reply);
-
       const file = await request.file();
       if (!file) {
         return reply.code(400).send(
@@ -62,10 +56,6 @@ export async function registerUploadRoutes(
 
       const fileBuffer = await file.toBuffer();
 
-      // Resolve workspace from viewer
-      const viewer = await options.viewerService.ensureViewer(user);
-      const workspaceId = viewer.workspace.id;
-
       // Extract projectId from fields if provided
       const projectId =
         typeof file.fields.projectId === "object" &&
@@ -74,12 +64,11 @@ export async function registerUploadRoutes(
           ? String(file.fields.projectId.value)
           : undefined;
 
-      const result = await options.uploadService.uploadFile(user, {
+      const result = await options.uploadService.uploadFile(options.localUser, {
         bucket: "project-assets",
         fileName: file.filename,
         fileBuffer,
         mimeType,
-        workspaceId,
         ...(projectId ? { projectId } : {}),
       });
 
@@ -96,11 +85,8 @@ export async function registerUploadRoutes(
     "/api/uploads/:assetId/url",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-        if (!user) return sendUnauthorized(reply);
-
         const url = await options.uploadService.getAssetUrl(
-          user,
+          options.localUser,
           request.params.assetId,
         );
 
@@ -118,11 +104,8 @@ export async function registerUploadRoutes(
     "/api/uploads/:assetId",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-        if (!user) return sendUnauthorized(reply);
-
         await options.uploadService.deleteAsset(
-          user,
+          options.localUser,
           request.params.assetId,
         );
 
@@ -131,17 +114,6 @@ export async function registerUploadRoutes(
         return sendUploadError(error, reply);
       }
     },
-  );
-}
-
-function sendUnauthorized(reply: FastifyReply) {
-  return reply.code(401).send(
-    unauthenticatedErrorResponseSchema.parse({
-      error: {
-        code: "unauthorized",
-        message: "Missing or invalid bearer token.",
-      },
-    }),
   );
 }
 

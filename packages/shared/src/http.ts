@@ -10,9 +10,6 @@ import {
   projectSummarySchema,
   runIdSchema,
   viewerProfileSchema,
-  workspaceMembershipSchema,
-  workspaceSettingsSchema,
-  workspaceSummarySchema,
 } from "./contracts.js";
 
 export const healthResponseSchema = z.object({
@@ -26,23 +23,8 @@ export const runCancelResponseSchema = z.object({
   status: z.enum(["canceling", "canceled"]),
 });
 
-export const viewerCreditsSchema = z.object({
-  balance: z.number().int(),
-  plan: z.string(),
-  dailyClaimed: z.boolean(),
-  limits: z.object({
-    maxConcurrentJobs: z.number().int(),
-    maxResolution: z.string(),
-    monthlyCredits: z.number().int(),
-    dailyCredits: z.number().int(),
-  }),
-});
-
 export const viewerResponseSchema = z.object({
   profile: viewerProfileSchema,
-  workspace: workspaceSummarySchema,
-  membership: workspaceMembershipSchema,
-  credits: viewerCreditsSchema.optional(),
 });
 
 export const projectListResponseSchema = z.object({
@@ -58,11 +40,19 @@ export const projectCreateResponseSchema = z.object({
   project: projectSummarySchema,
 });
 
-export const unauthenticatedErrorResponseSchema = z.object({
-  error: z.object({
-    code: z.literal("unauthorized"),
-    message: z.string().min(1),
-  }),
+export const projectDetailSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  slug: z.string().min(1),
+  description: z.string().nullable(),
+  thumbnailUrl: z.string().nullable().optional(),
+  brandKitId: z.string().uuid().nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+
+export const projectDetailResponseSchema = z.object({
+  project: projectDetailSchema,
 });
 
 export const applicationErrorCodeSchema = z.enum([
@@ -86,38 +76,10 @@ export const applicationErrorCodeSchema = z.enum([
   "project_slug_taken",
   "project_update_failed",
   "session_not_found",
-  "settings_not_found",
-  "settings_update_failed",
   "upload_failed",
+  "asset_in_use",
   "asset_not_found",
-  "job_not_found",
-  "job_create_failed",
-  "job_query_failed",
-  "job_cancel_failed",
-  "skill_not_found",
-  "skill_create_failed",
-  "skill_update_failed",
-  "skill_delete_failed",
-  "skill_query_failed",
-  "skill_install_failed",
-  "skill_uninstall_failed",
-  "skill_toggle_failed",
-  "skill_import_failed",
-  "skill_file_query_failed",
-  "marketplace_search_failed",
-  "marketplace_detail_failed",
-  "marketplace_install_failed",
-  "insufficient_credits",
-  "credit_query_failed",
-  "credit_claim_failed",
-  "credit_deduct_failed",
-  "credit_refund_failed",
-  "credit_plan_update_failed",
-  "model_not_accessible",
-  "resolution_not_allowed",
-  "concurrency_limit",
   "variant_not_found",
-  "checkout_failed",
   "generation_failed",
 ]);
 
@@ -142,14 +104,11 @@ export const canvasSaveResponseSchema = z.object({
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export type RunCancelResponse = z.infer<typeof runCancelResponseSchema>;
-export type ViewerCredits = z.infer<typeof viewerCreditsSchema>;
 export type ViewerResponse = z.infer<typeof viewerResponseSchema>;
 export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
 export type ProjectCreateRequest = z.infer<typeof projectCreateRequestSchema>;
 export type ProjectCreateResponse = z.infer<typeof projectCreateResponseSchema>;
-export type UnauthenticatedErrorResponse = z.infer<
-  typeof unauthenticatedErrorResponseSchema
->;
+export type ProjectDetailResponse = z.infer<typeof projectDetailResponseSchema>;
 export type ApplicationErrorCode = z.infer<typeof applicationErrorCodeSchema>;
 export type ApplicationErrorResponse = z.infer<
   typeof applicationErrorResponseSchema
@@ -157,12 +116,6 @@ export type ApplicationErrorResponse = z.infer<
 export const profileUpdateResponseSchema = z.object({
   profile: viewerProfileSchema,
 });
-
-export const workspaceSettingsResponseSchema = z.object({
-  settings: workspaceSettingsSchema,
-});
-
-export const workspaceSettingsUpdateRequestSchema = workspaceSettingsSchema;
 
 export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),
@@ -192,8 +145,6 @@ export type CanvasGetResponse = z.infer<typeof canvasGetResponseSchema>;
 export type CanvasSaveRequest = z.infer<typeof canvasSaveRequestSchema>;
 export type CanvasSaveResponse = z.infer<typeof canvasSaveResponseSchema>;
 export type ProfileUpdateResponse = z.infer<typeof profileUpdateResponseSchema>;
-export type WorkspaceSettingsResponse = z.infer<typeof workspaceSettingsResponseSchema>;
-export type WorkspaceSettingsUpdateRequest = z.infer<typeof workspaceSettingsUpdateRequestSchema>;
 export type ModelListResponse = z.infer<typeof modelListResponseSchema>;
 
 export const uploadResponseSchema = z.object({
@@ -209,7 +160,7 @@ export type UploadResponse = z.infer<typeof uploadResponseSchema>;
 export type AssetSignedUrlResponse = z.infer<typeof assetSignedUrlResponseSchema>;
 
 export const projectUpdateRequestSchema = z.object({
-  brand_kit_id: z.string().uuid().nullable().optional(),
+  brandKitId: z.string().uuid().nullable().optional(),
   name: z.string().min(1).max(100).optional(),
 });
 export type ProjectUpdateRequest = z.infer<typeof projectUpdateRequestSchema>;

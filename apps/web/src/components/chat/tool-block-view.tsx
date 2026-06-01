@@ -163,22 +163,19 @@ export const ToolBlockView = React.memo(function ToolBlockView({
     isCompleted &&
     (block.outputSummary || hasOutput);
 
-  // Extract artifacts for generate_image / generate_video inline preview
+  // Extract image artifacts for inline preview
   const imageArtifact = block.artifacts?.find(
     (artifact): artifact is ImageArtifact => artifact.type === "image",
   );
   const isImageTool = block.toolName === "generate_image";
-  const isVideoTool = block.toolName === "generate_video";
-  const isMediaTool = isImageTool || isVideoTool;
   const mediaError =
-    isMediaTool && isCompleted && !imageArtifact
+    isImageTool && isCompleted && !imageArtifact
       ? ((block.output as Record<string, unknown> | undefined)
           ?.error as string | undefined)
       : undefined;
   const inputData = block.input as Record<string, unknown> | undefined;
   const modelName = inputData?.model as string | undefined;
-  const aspectRatio =
-    (inputData?.aspectRatio as string) ?? (isVideoTool ? "16:9" : "1:1");
+  const aspectRatio = (inputData?.aspectRatio as string) ?? "1:1";
 
   const handleOpenPanel = useCallback(() => {
     const rect = findSidebarRect(containerRef.current);
@@ -206,25 +203,25 @@ export const ToolBlockView = React.memo(function ToolBlockView({
           </svg>
         )}
         <span className="font-medium text-muted-foreground truncate">
-          {isMediaTool && modelName
+          {isImageTool && modelName
             ? formatModelDisplayName(modelName)
             : config.label}
         </span>
       </div>
 
       {/* Layer 2a: Media generation shimmer placeholder */}
-      {isMediaTool && !isCompleted && (
+      {isImageTool && !isCompleted && (
         <MediaShimmer
-          isVideoTool={isVideoTool}
+          isVideoTool={false}
           aspectRatio={aspectRatio}
           modelName={modelName}
         />
       )}
 
       {/* Layer 2b-err: Media generation failed */}
-      {isMediaTool && isCompleted && !imageArtifact && mediaError && (
+      {isImageTool && isCompleted && !imageArtifact && mediaError && (
         <MediaErrorCard
-          isVideoTool={isVideoTool}
+          isVideoTool={false}
           error={mediaError}
         />
       )}

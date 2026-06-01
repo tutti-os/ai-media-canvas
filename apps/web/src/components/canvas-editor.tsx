@@ -9,8 +9,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { getServerBaseUrl } from "../lib/env";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
-import { VideoCanvasElement } from "./canvas/video-canvas-element";
-import { isVideoUrl } from "../lib/canvas-elements";
 import { CanvasToolMenu } from "./canvas-tool-menu";
 import { normalizeCanvasElements } from "../lib/canvas-normalize";
 import { ErrorBoundary } from "./error-boundary";
@@ -45,14 +43,13 @@ export type CanvasSelectedElement = {
   text?: string;
   fileId?: string;
   dataUrl?: string;
-  /** Supabase storage public URL -- prefer over dataUrl for message attachments */
+  /** Preferred persisted asset URL for message attachments. */
   storageUrl?: string;
 };
 
 type CanvasEditorProps = {
   canvasId: string;
   projectId: string;
-  accessToken: string;
   initialContent: {
     elements: Record<string, unknown>[];
     appState: Record<string, unknown>;
@@ -71,7 +68,6 @@ const THUMBNAIL_MAX_SIZE = 400;
 export function CanvasEditor({
   canvasId,
   projectId,
-  accessToken,
   initialContent,
   onApiReady,
   ws,
@@ -81,8 +77,6 @@ export function CanvasEditor({
   const { resolvedTheme } = useTheme();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbnailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const accessTokenRef = useRef(accessToken);
-  accessTokenRef.current = accessToken;
   const canvasIdRef = useRef(canvasId);
   canvasIdRef.current = canvasId;
   const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
@@ -203,7 +197,7 @@ export function CanvasEditor({
             files[id] = { id: file.id, dataURL: file.dataURL, mimeType: file.mimeType, created: file.created };
           }
           const appState = excalidrawApi.getAppState();
-          saveCanvas(accessTokenRef.current, canvasIdRef.current, {
+          saveCanvas(canvasIdRef.current, {
             elements: mutableElements.filter((el: any) => !el.isDeleted),
             appState: { viewBackgroundColor: appState.viewBackgroundColor, gridModeEnabled: appState.gridModeEnabled },
             files,
@@ -262,7 +256,7 @@ export function CanvasEditor({
         };
         pendingSaveRef.current = content;
 
-        saveCanvas(accessTokenRef.current, canvasId, content)
+        saveCanvas(canvasId, content)
           .then(() => {
             if (pendingSaveRef.current === content) {
               pendingSaveRef.current = null;
@@ -291,7 +285,7 @@ export function CanvasEditor({
           });
 
           console.log("[canvas-editor] uploading thumbnail, blob size:", blob.size);
-          await uploadThumbnail(accessTokenRef.current, projectId, blob);
+          await uploadThumbnail(projectId, blob);
           console.log("[canvas-editor] thumbnail uploaded OK");
         } catch (err) {
           console.warn("[canvas-editor] thumbnail generation/upload failed:", err);
@@ -498,7 +492,6 @@ export function CanvasEditor({
         fetch(url, {
           method: "PUT",
           headers: {
-            Authorization: `Bearer ${accessTokenRef.current}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ content: payload }),
@@ -523,7 +516,7 @@ export function CanvasEditor({
       if (pendingSaveRef.current) {
         const payload = buildSavePayloadRef.current();
         if (payload) {
-          saveCanvas(accessTokenRef.current, canvasIdRef.current, payload).catch(
+          saveCanvas(canvasIdRef.current, payload).catch(
             console.error,
           );
         }
@@ -531,30 +524,6 @@ export function CanvasEditor({
       }
     };
   }, []);
-
-  // Render custom embeddable content for video elements on canvas.
-  // Excalidraw calls this for every embeddable element; we intercept video URLs
-  // and render an inline player, falling back to default for everything else.
-  const renderEmbeddable = useCallback(
-    (element: any, _appState: any) => {
-      const link = element?.link;
-      if (typeof link === "string" && isVideoUrl(link)) {
-        return (
-          <VideoCanvasElement
-            src={link}
-            width={element.width ?? 640}
-            height={element.height ?? 360}
-          />
-        );
-      }
-      // Return null to let Excalidraw handle non-video embeddables with default behavior
-      return null;
-    },
-    [],
-  );
-
-  // Allow any URL as a valid embeddable so our video links are accepted
-  const validateEmbeddable = useCallback(() => true, []);
 
   return (
     <ErrorBoundary
@@ -570,12 +539,9 @@ export function CanvasEditor({
           }}
           onChange={handleChange}
           excalidrawAPI={handleExcalidrawApi}
-          renderEmbeddable={renderEmbeddable}
-          validateEmbeddable={validateEmbeddable}
         />
         {excalidrawApi && (
           <MemoizedCanvasToolMenu
-            accessToken={accessToken}
             excalidrawApi={excalidrawApi}
             leftPanelOpen={leftPanelOpen ?? false}
           />

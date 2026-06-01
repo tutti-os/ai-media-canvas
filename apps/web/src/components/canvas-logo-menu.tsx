@@ -3,7 +3,6 @@
 import {
   Copy,
   FolderOpen,
-  Home,
   ImagePlus,
   Maximize2,
   Plus,
@@ -34,7 +33,6 @@ import { useToast } from "@/components/toast";
 import { useCreateProject } from "@/hooks/use-create-project";
 
 interface CanvasLogoMenuProps {
-  accessToken: string;
   projectId: string;
   canvasId: string;
   // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
@@ -67,7 +65,6 @@ function generateFileId(): string {
 }
 
 export function CanvasLogoMenu({
-  accessToken,
   projectId,
   canvasId,
   excalidrawApi,
@@ -111,15 +108,15 @@ export function CanvasLogoMenu({
       return;
     }
     try {
-      await deleteProject(accessToken, projectId);
+      await deleteProject(projectId);
       router.push("/projects");
     } catch (err) {
       console.warn("Failed to delete project:", err);
-      toastError("项目删除失败");
+      toastError("项目归档失败");
     } finally {
       setConfirmingDelete(false);
     }
-  }, [accessToken, projectId, router, confirmingDelete, toastError]);
+  }, [projectId, router, confirmingDelete, toastError]);
 
   const handleFileImport = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -188,10 +185,6 @@ export function CanvasLogoMenu({
         <DropdownMenuContent align="start" sideOffset={6} className="w-56">
           {/* Group 1 — Navigation */}
           <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => router.push("/home")}>
-              <Home className="size-4" />
-              主页
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/projects")}>
               <FolderOpen className="size-4" />
               项目库
@@ -211,7 +204,7 @@ export function CanvasLogoMenu({
               onClick={handleDeleteProject}
             >
               <Trash2 className="size-4" />
-              {confirmingDelete ? "确认删除?" : "删除当前项目"}
+              {confirmingDelete ? "确认归档?" : "归档当前项目"}
             </DropdownMenuItem>
           </DropdownMenuGroup>
 

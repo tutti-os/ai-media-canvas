@@ -1,16 +1,15 @@
 "use client";
 
+import { useToast } from "@/components/toast";
 import { updateProject } from "@/lib/server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface EditableProjectNameProps {
-  accessToken: string;
   projectId: string;
   initialName: string;
 }
 
 export function EditableProjectName({
-  accessToken,
   projectId,
   initialName,
 }: EditableProjectNameProps) {
@@ -18,6 +17,7 @@ export function EditableProjectName({
   const [editing, setEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const prevName = useRef(initialName);
+  const { error: toastError } = useToast();
 
   // Sync if initialName changes externally
   useEffect(() => {
@@ -28,18 +28,21 @@ export function EditableProjectName({
   const save = useCallback(
     async (newName: string) => {
       const trimmed = newName.trim() || "Untitled";
+      const previousName = prevName.current;
       setName(trimmed);
       setEditing(false);
-      if (trimmed !== prevName.current) {
-        prevName.current = trimmed;
+      if (trimmed !== previousName) {
         try {
-          await updateProject(accessToken, projectId, { name: trimmed });
+          await updateProject(projectId, { name: trimmed });
+          prevName.current = trimmed;
         } catch (err) {
           console.warn("Failed to update project name:", err);
+          setName(previousName);
+          toastError("项目重命名失败");
         }
       }
     },
-    [accessToken, projectId],
+    [projectId, toastError],
   );
 
   const startEditing = useCallback(() => {

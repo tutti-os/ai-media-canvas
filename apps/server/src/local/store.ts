@@ -23,12 +23,10 @@ import type {
   ProjectSummary,
   ProjectUpdateRequest,
   ViewerResponse,
-  WorkspaceSettings,
 } from "@aimc/shared";
 
 const LOCAL_USER_ID = "local-user";
 const LOCAL_WORKSPACE_ID = "local-workspace";
-const LOCAL_ACCESS_TOKEN = "local-dev-token";
 const DEFAULT_PROJECT_NAME = "My First Project";
 const DEFAULT_CANVAS_NAME = "Main Canvas";
 const DEFAULT_EMAIL = "local@aimc.app";
@@ -56,6 +54,25 @@ function slugify(input: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return normalized || "untitled";
+}
+
+function nextAvailableSlug(existingSlugs: string[], baseSlug: string) {
+  if (!existingSlugs.includes(baseSlug)) {
+    return baseSlug;
+  }
+
+  let maxSuffix = 1;
+  const pattern = new RegExp(`^${baseSlug}-(\\d+)$`);
+  for (const slug of existingSlugs) {
+    const match = pattern.exec(slug);
+    if (!match) continue;
+    const suffix = Number.parseInt(match[1] ?? "", 10);
+    if (Number.isFinite(suffix) && suffix > maxSuffix) {
+      maxSuffix = suffix;
+    }
+  }
+
+  return `${baseSlug}-${maxSuffix + 1}`;
 }
 
 function parseJson<T>(value: string | null | undefined, fallback: T): T {
@@ -89,7 +106,6 @@ export type LocalStore = ReturnType<typeof createLocalStore>;
 export function createLocalStore(options: {
   assetBaseUrl: string;
   dataRoot?: string;
-  defaultModel: string;
 }) {
   const dataRoot =
     options.dataRoot ?? resolve(process.cwd(), "../../local-data");
@@ -111,10 +127,6 @@ export function createLocalStore(options: {
       id TEXT PRIMARY KEY,
       display_name TEXT NOT NULL,
       email TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS workspace_settings (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      default_model TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -203,13 +215,6 @@ export function createLocalStore(options: {
         ON CONFLICT(id) DO NOTHING
       `,
     ).run(LOCAL_USER_ID, DEFAULT_DISPLAY_NAME, DEFAULT_EMAIL);
-    db.prepare(
-      `
-        INSERT INTO workspace_settings (id, default_model)
-        VALUES (1, ?)
-        ON CONFLICT(id) DO NOTHING
-      `,
-    ).run(options.defaultModel);
   }
 
   function ensureDefaultProject() {
@@ -287,17 +292,6 @@ export function createLocalStore(options: {
   function getViewer(): ViewerResponse {
     return {
       profile: getProfile(),
-      workspace: {
-        id: LOCAL_WORKSPACE_ID,
-        name: "Local Workspace",
-        ownerUserId: LOCAL_USER_ID,
-        type: "personal",
-      },
-      membership: {
-        workspaceId: LOCAL_WORKSPACE_ID,
-        userId: LOCAL_USER_ID,
-        role: "owner",
-      },
     };
   }
 
@@ -307,26 +301,6 @@ export function createLocalStore(options: {
       LOCAL_USER_ID,
     );
     return getProfile();
-  }
-
-  function getWorkspaceSettings(): WorkspaceSettings {
-    const row = db
-      .prepare(`SELECT default_model FROM workspace_settings WHERE id = 1`)
-      .get() as { default_model: string } | undefined;
-    return {
-      defaultModel: row?.default_model ?? options.defaultModel,
-    };
-  }
-
-  function updateWorkspaceSettings(settings: WorkspaceSettings) {
-    db.prepare(
-      `
-        INSERT INTO workspace_settings (id, default_model)
-        VALUES (1, ?)
-        ON CONFLICT(id) DO UPDATE SET default_model = excluded.default_model
-      `,
-    ).run(settings.defaultModel);
-    return getWorkspaceSettings();
   }
 
   function getAssetRow(assetId: string) {
@@ -350,7 +324,6 @@ export function createLocalStore(options: {
       objectPath: row.object_path,
       mimeType: row.mime_type,
       byteSize: row.byte_size,
-      workspaceId: row.workspace_id,
       projectId: row.project_id,
       createdAt: row.created_at,
     };
@@ -407,15 +380,74 @@ export function createLocalStore(options: {
   }
 
   function deleteAsset(assetId: string) {
+    return deleteAssetRecord(assetId);
+  }
+
+  function findAssetReference(assetId: string) {
+    const thumbnailReference = db
+      .prepare(
+        `SELECT id FROM projects WHERE thumbnail_asset_id = ? LIMIT 1`,
+      )
+      .get(assetId) as { id: string } | undefined;
+    if (thumbnailReference) {
+      return { kind: "project_thumbnail", id: thumbnailReference.id };
+    }
+
+    const brandKitFileReference = db
+      .prepare(
+        `SELECT id FROM brand_kit_assets WHERE file_asset_id = ? LIMIT 1`,
+      )
+      .get(assetId) as { id: string } | undefined;
+    if (brandKitFileReference) {
+      return { kind: "brand_kit_asset", id: brandKitFileReference.id };
+    }
+
+    const brandKitCoverReference = db
+      .prepare(
+        `SELECT id FROM brand_kits WHERE cover_asset_id = ? LIMIT 1`,
+      )
+      .get(assetId) as { id: string } | undefined;
+    if (brandKitCoverReference) {
+      return { kind: "brand_kit_cover", id: brandKitCoverReference.id };
+    }
+
+    const chatReference = db
+      .prepare(
+        `SELECT id FROM chat_messages WHERE content_blocks LIKE ? LIMIT 1`,
+      )
+      .get(`%"assetId":"${assetId}"%`) as { id: string } | undefined;
+    if (chatReference) {
+      return { kind: "chat_message", id: chatReference.id };
+    }
+
+    const canvasReference = db
+      .prepare(
+        `SELECT id FROM canvases WHERE content LIKE ? LIMIT 1`,
+      )
+      .get(`%"id":"${assetId}"%`) as { id: string } | undefined;
+    if (canvasReference) {
+      return { kind: "canvas_content", id: canvasReference.id };
+    }
+
+    return null;
+  }
+
+  function deleteAssetRecord(
+    assetId: string,
+    options?: { force?: boolean },
+  ): { ok: true } | { ok: false; reason: "asset_not_found" | "asset_in_use" } {
     const row = getAssetRow(assetId);
-    if (!row) return false;
+    if (!row) return { ok: false, reason: "asset_not_found" };
+    if (!options?.force && findAssetReference(assetId)) {
+      return { ok: false, reason: "asset_in_use" };
+    }
     try {
       unlinkSync(row.file_path);
     } catch {
       // ignore missing local file
     }
     db.prepare(`DELETE FROM assets WHERE id = ?`).run(assetId);
-    return true;
+    return { ok: true };
   }
 
   function resolveAssetUrl(assetId: string | null | undefined) {
@@ -449,7 +481,6 @@ export function createLocalStore(options: {
       slug: row.slug,
       description: row.description,
       thumbnailUrl: resolveAssetUrl(row.thumbnail_asset_id),
-      workspace: getViewer().workspace,
       primaryCanvas: {
         id: canvas?.id ?? row.primary_canvas_id,
         name: canvas?.name ?? DEFAULT_CANVAS_NAME,
@@ -488,24 +519,40 @@ export function createLocalStore(options: {
     const projectId = randomUUID();
     const canvasId = randomUUID();
     const name = input.name.trim();
-    const slug = slugify(name);
-
-    const existing = db
+    const defaultBrandKit = db
       .prepare(
-        `SELECT id FROM projects WHERE slug = ? AND archived_at IS NULL LIMIT 1`,
+        `
+          SELECT id
+          FROM brand_kits
+          WHERE is_default = 1
+          ORDER BY updated_at DESC
+          LIMIT 1
+        `,
       )
-      .get(slug) as { id: string } | undefined;
-    if (existing) {
-      throw new Error("project_slug_taken");
-    }
+      .get() as { id: string } | undefined;
+    const baseSlug = slugify(name);
+    const existingRows = db
+      .prepare(
+        `
+          SELECT slug
+          FROM projects
+          WHERE archived_at IS NULL
+            AND (slug = ? OR slug LIKE ?)
+        `,
+      )
+      .all(baseSlug, `${baseSlug}-%`) as Array<{ slug: string }>;
+    const slug = nextAvailableSlug(
+      existingRows.map((row) => row.slug),
+      baseSlug,
+    );
 
     db.exec("BEGIN");
     try {
       db.prepare(
         `
           INSERT INTO projects (
-            id, name, slug, description, primary_canvas_id, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            id, name, slug, description, primary_canvas_id, brand_kit_id, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `,
       ).run(
         projectId,
@@ -513,6 +560,7 @@ export function createLocalStore(options: {
         slug,
         input.description?.trim() || null,
         canvasId,
+        defaultBrandKit?.id ?? null,
         timestamp,
         timestamp,
       );
@@ -591,18 +639,24 @@ export function createLocalStore(options: {
     };
   }
 
-  function updateProject(projectId: string, input: ProjectUpdateRequest) {
+  function updateProject(
+    projectId: string,
+    input: ProjectUpdateRequest,
+  ): { ok: true } | { ok: false; reason: "project_not_found" | "brand_kit_not_found" } {
     const existing = getProject(projectId);
-    if (!existing) return false;
+    if (!existing) return { ok: false, reason: "project_not_found" };
     const patch: string[] = [];
     const values: SQLInputValue[] = [];
     if (input.name !== undefined) {
       patch.push("name = ?");
       values.push(input.name.trim());
     }
-    if (input.brand_kit_id !== undefined) {
+    if (input.brandKitId !== undefined) {
+      if (input.brandKitId !== null && !getBrandKit(input.brandKitId)) {
+        return { ok: false, reason: "brand_kit_not_found" };
+      }
       patch.push("brand_kit_id = ?");
-      values.push(input.brand_kit_id);
+      values.push(input.brandKitId);
     }
     patch.push("updated_at = ?");
     values.push(nowIso());
@@ -610,7 +664,7 @@ export function createLocalStore(options: {
     db.prepare(
       `UPDATE projects SET ${patch.join(", ")} WHERE id = ?`,
     ).run(...values);
-    return true;
+    return { ok: true };
   }
 
   function archiveProject(projectId: string) {
@@ -644,7 +698,13 @@ export function createLocalStore(options: {
   function getCanvas(canvasId: string): CanvasDetail | null {
     const row = db
       .prepare(
-        `SELECT id, name, project_id, content FROM canvases WHERE id = ? LIMIT 1`,
+        `
+          SELECT canvases.id, canvases.name, canvases.project_id, canvases.content
+          FROM canvases
+          INNER JOIN projects ON projects.id = canvases.project_id
+          WHERE canvases.id = ? AND projects.archived_at IS NULL
+          LIMIT 1
+        `,
       )
       .get(canvasId) as
       | {
@@ -667,6 +727,10 @@ export function createLocalStore(options: {
     };
   }
 
+  function hasCanvas(canvasId: string) {
+    return !!getCanvas(canvasId);
+  }
+
   function saveCanvas(canvasId: string, content: CanvasContent) {
     const existing = getCanvas(canvasId);
     if (!existing) return false;
@@ -684,7 +748,8 @@ export function createLocalStore(options: {
     return true;
   }
 
-  function listSessions(canvasId: string): ChatSessionSummary[] {
+  function listSessions(canvasId: string): ChatSessionSummary[] | null {
+    if (!hasCanvas(canvasId)) return null;
     const rows = db
       .prepare(
         `
@@ -706,7 +771,24 @@ export function createLocalStore(options: {
     }));
   }
 
-  function createSession(canvasId: string, title?: string): ChatSessionSummary {
+  function hasSession(sessionId: string) {
+    const row = db
+      .prepare(
+        `
+          SELECT chat_sessions.id
+          FROM chat_sessions
+          INNER JOIN canvases ON canvases.id = chat_sessions.canvas_id
+          INNER JOIN projects ON projects.id = canvases.project_id
+          WHERE chat_sessions.id = ? AND projects.archived_at IS NULL
+          LIMIT 1
+        `,
+      )
+      .get(sessionId) as { id: string } | undefined;
+    return !!row;
+  }
+
+  function createSession(canvasId: string, title?: string): ChatSessionSummary | null {
+    if (!hasCanvas(canvasId)) return null;
     const timestamp = nowIso();
     const id = randomUUID();
     db.prepare(
@@ -731,17 +813,21 @@ export function createLocalStore(options: {
   }
 
   function updateSessionTitle(sessionId: string, title: string) {
-    db.prepare(
+    const result = db.prepare(
       `UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?`,
     ).run(title, nowIso(), sessionId);
+    return result.changes > 0;
   }
 
   function deleteSession(sessionId: string) {
+    if (!hasSession(sessionId)) return false;
     db.prepare(`DELETE FROM chat_messages WHERE session_id = ?`).run(sessionId);
     db.prepare(`DELETE FROM chat_sessions WHERE id = ?`).run(sessionId);
+    return true;
   }
 
-  function listMessages(sessionId: string): ChatMessage[] {
+  function listMessages(sessionId: string): ChatMessage[] | null {
+    if (!hasSession(sessionId)) return null;
     const rows = db
       .prepare(
         `
@@ -768,7 +854,8 @@ export function createLocalStore(options: {
     }));
   }
 
-  function createMessage(sessionId: string, input: ChatMessageCreateRequest): ChatMessage {
+  function createMessage(sessionId: string, input: ChatMessageCreateRequest): ChatMessage | null {
+    if (!hasSession(sessionId)) return null;
     const id = randomUUID();
     const timestamp = nowIso();
     db.prepare(
@@ -973,15 +1060,24 @@ export function createLocalStore(options: {
         `SELECT file_asset_id FROM brand_kit_assets WHERE kit_id = ? AND file_asset_id IS NOT NULL`,
       )
       .all(kitId) as Array<{ file_asset_id: string }>;
-    for (const row of fileAssetIds) {
-      deleteAsset(row.file_asset_id);
-    }
+    const coverAssetId = db
+      .prepare(`SELECT cover_asset_id FROM brand_kits WHERE id = ?`)
+      .get(kitId) as { cover_asset_id: string | null } | undefined;
     db.prepare(`UPDATE projects SET brand_kit_id = NULL, updated_at = ? WHERE brand_kit_id = ?`).run(
       nowIso(),
       kitId,
     );
     db.prepare(`DELETE FROM brand_kit_assets WHERE kit_id = ?`).run(kitId);
     db.prepare(`DELETE FROM brand_kits WHERE id = ?`).run(kitId);
+    const ownedAssetIds = new Set(
+      fileAssetIds.map((row) => row.file_asset_id).filter(Boolean),
+    );
+    if (coverAssetId?.cover_asset_id) {
+      ownedAssetIds.add(coverAssetId.cover_asset_id);
+    }
+    for (const assetId of ownedAssetIds) {
+      deleteAssetRecord(assetId, { force: true });
+    }
     return true;
   }
 
@@ -1136,12 +1232,19 @@ export function createLocalStore(options: {
       .get(assetId, kitId) as { file_asset_id: string | null } | undefined;
     if (!row) return false;
     if (row.file_asset_id) {
-      deleteAsset(row.file_asset_id);
+      db.prepare(`UPDATE brand_kits SET cover_asset_id = NULL, updated_at = ? WHERE id = ? AND cover_asset_id = ?`).run(
+        nowIso(),
+        kitId,
+        row.file_asset_id,
+      );
     }
     db.prepare(`DELETE FROM brand_kit_assets WHERE id = ? AND kit_id = ?`).run(
       assetId,
       kitId,
     );
+    if (row.file_asset_id) {
+      deleteAssetRecord(row.file_asset_id, { force: true });
+    }
     return true;
   }
 
@@ -1266,17 +1369,13 @@ export function createLocalStore(options: {
   return {
     assetBaseUrl: options.assetBaseUrl,
     dataRoot,
-    localAccessToken: LOCAL_ACCESS_TOKEN,
     localUser: {
-      accessToken: LOCAL_ACCESS_TOKEN,
       email: DEFAULT_EMAIL,
       id: LOCAL_USER_ID,
       userMetadata: { mode: "local" },
     },
     getViewer,
     updateProfile,
-    getWorkspaceSettings,
-    updateWorkspaceSettings,
     listProjects,
     createProject,
     getProject,

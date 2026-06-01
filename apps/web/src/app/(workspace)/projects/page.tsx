@@ -7,7 +7,6 @@ import { LoadingScreen } from "@/components/loading-screen";
 import { ProjectList } from "@/components/project-list";
 import { ProjectsSkeleton } from "@/components/skeletons/projects-skeleton";
 import { useCreateProject } from "@/hooks/use-create-project";
-import { LOCAL_ACCESS_TOKEN } from "@/lib/auth-context";
 import {
   fetchProjects,
 } from "@/lib/server-api";
@@ -23,21 +22,19 @@ export default function ProjectsPage() {
 
   const hasInitialized = useRef(false);
 
-  const getToken = useCallback(() => LOCAL_ACCESS_TOKEN, []);
-
   const loadData = useCallback(async () => {
     setPageLoading(true);
     setLoadError(null);
 
     try {
-      const data = await fetchProjects(getToken());
+      const data = await fetchProjects();
       setProjects(data.projects);
     } catch {
       setLoadError("Failed to load local projects. Please try again.");
     } finally {
       setPageLoading(false);
     }
-  }, [getToken]);
+  }, []);
 
   useEffect(() => {
     if (hasInitialized.current) return;

@@ -7,19 +7,18 @@ import {
   messageListResponseSchema,
   sessionCreateResponseSchema,
   sessionListResponseSchema,
-  unauthenticatedErrorResponseSchema,
 } from "@aimc/shared";
 
 import {
   ChatServiceError,
   type ChatService,
 } from "../features/chat/chat-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 
 export async function registerChatRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localUser: AuthenticatedUser;
     chatService: ChatService;
   },
 ) {
@@ -28,11 +27,8 @@ export async function registerChatRoutes(
     "/api/canvases/:canvasId/sessions",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-        if (!user) return sendUnauthorized(reply);
-
         const sessions = await options.chatService.listSessions(
-          user,
+          options.localUser,
           request.params.canvasId,
         );
 
@@ -50,12 +46,9 @@ export async function registerChatRoutes(
     "/api/canvases/:canvasId/sessions",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-        if (!user) return sendUnauthorized(reply);
-
         const body = request.body as { title?: string } | undefined;
         const session = await options.chatService.createSession(
-          user,
+          options.localUser,
           request.params.canvasId,
           body?.title,
         );
@@ -74,13 +67,10 @@ export async function registerChatRoutes(
     "/api/sessions/:sessionId",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-        if (!user) return sendUnauthorized(reply);
-
         const body = request.body as { title?: string } | undefined;
         if (body?.title) {
           await options.chatService.updateSessionTitle(
-            user,
+            options.localUser,
             request.params.sessionId,
             body.title,
           );
@@ -98,11 +88,8 @@ export async function registerChatRoutes(
     "/api/sessions/:sessionId",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-        if (!user) return sendUnauthorized(reply);
-
         await options.chatService.deleteSession(
-          user,
+          options.localUser,
           request.params.sessionId,
         );
 
@@ -118,11 +105,8 @@ export async function registerChatRoutes(
     "/api/sessions/:sessionId/messages",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-        if (!user) return sendUnauthorized(reply);
-
         const messages = await options.chatService.listMessages(
-          user,
+          options.localUser,
           request.params.sessionId,
         );
 
@@ -149,12 +133,9 @@ export async function registerChatRoutes(
     { bodyLimit: 10 * 1024 * 1024 }, // 10 MB — messages may include base64 image data from canvas selections
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-        if (!user) return sendUnauthorized(reply);
-
         const input = chatMessageCreateRequestSchema.parse(request.body);
         const message = await options.chatService.createMessage(
-          user,
+          options.localUser,
           request.params.sessionId,
           input,
         );
@@ -177,17 +158,6 @@ export async function registerChatRoutes(
   );
 }
 
-function sendUnauthorized(reply: FastifyReply) {
-  return reply.code(401).send(
-    unauthenticatedErrorResponseSchema.parse({
-      error: {
-        code: "unauthorized",
-        message: "Missing or invalid bearer token.",
-      },
-    }),
-  );
-}
-
 function sendChatError(error: unknown, reply: FastifyReply) {
   if (error instanceof ChatServiceError) {
     return reply.code(error.statusCode).send(
@@ -201,10 +171,14 @@ function sendChatError(error: unknown, reply: FastifyReply) {
   }
 
   if (isZodError(error)) {
-    return reply.code(400).send({
-      issues: error.issues,
-      message: "Invalid request body",
-    });
+    return reply.code(400).send(
+      applicationErrorResponseSchema.parse({
+        error: {
+          code: "application_error",
+          message: "Invalid request body.",
+        },
+      }),
+    );
   }
 
   return reply.code(500).send(

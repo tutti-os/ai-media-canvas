@@ -9,13 +9,11 @@ import { insertImageOnCanvas } from "../lib/canvas-elements";
 import { useGenerationErrorHandler } from "../hooks/use-generation-error-handler";
 
 type CanvasImageGenPanelProps = {
-  accessToken: string;
   excalidrawApi: any;
   onClose: () => void;
 };
 
 export function CanvasImageGenPanel({
-  accessToken,
   excalidrawApi,
   onClose,
 }: CanvasImageGenPanelProps) {
@@ -23,8 +21,6 @@ export function CanvasImageGenPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const accessTokenRef = useRef(accessToken);
-  accessTokenRef.current = accessToken;
   const { handleGenerationError } = useGenerationErrorHandler();
 
   const handleGenerate = useCallback(async () => {
@@ -33,7 +29,7 @@ export function CanvasImageGenPanel({
     setError(null);
 
     try {
-      const result = await generateImageDirect(accessTokenRef.current, prompt.trim());
+      const result = await generateImageDirect(prompt.trim());
 
       if (excalidrawApi) {
         const artifact: ImageArtifact = {

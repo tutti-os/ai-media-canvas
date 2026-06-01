@@ -10,7 +10,6 @@ import {
   profileUpdateRequestSchema,
   profileUpdateResponseSchema,
   runCreateRequestSchema,
-  unauthenticatedErrorResponseSchema,
   viewerResponseSchema,
 } from "@aimc/shared";
 
@@ -19,7 +18,6 @@ import { registerCanvasRoutes } from "./http/canvases.js";
 import { registerChatRoutes } from "./http/chat.js";
 import { registerHealthRoutes } from "./http/health.js";
 import { registerProjectRoutes } from "./http/projects.js";
-import { registerSettingsRoutes } from "./http/settings.js";
 import { registerUploadRoutes } from "./http/uploads.js";
 import {
   BrandKitServiceError,
@@ -41,22 +39,15 @@ import {
   type ProjectService,
 } from "./features/projects/project-service.js";
 import {
-  SettingsServiceError,
-  type SettingsService,
-} from "./features/settings/settings-service.js";
-import {
   UploadServiceError,
   type UploadService,
 } from "./features/uploads/upload-service.js";
-import { loadServerEnv, resolveDefaultAgentModel, type ServerEnv } from "./config/env.js";
+import { loadServerEnv, type ServerEnv } from "./config/env.js";
 import {
   createLocalStore,
   type LocalStore,
 } from "./local/store.js";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "./supabase/user.js";
+import type { AuthenticatedUser } from "./auth/types.js";
 
 export type BuildAppOptions = {
   env?: Partial<ServerEnv>;
@@ -82,6 +73,17 @@ const STATIC_CONTENT_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
+const LOCAL_FONT_LIBRARY = [
+  { family: "Inter", category: "sans-serif", variants: ["regular", "500", "700"] },
+  { family: "Noto Sans SC", category: "sans-serif", variants: ["regular", "500", "700"] },
+  { family: "Source Han Serif SC", category: "serif", variants: ["regular", "600", "700"] },
+  { family: "Merriweather", category: "serif", variants: ["regular", "700"] },
+  { family: "Playfair Display", category: "display", variants: ["regular", "700"] },
+  { family: "Bebas Neue", category: "display", variants: ["regular"] },
+  { family: "Caveat", category: "handwriting", variants: ["regular", "700"] },
+  { family: "JetBrains Mono", category: "monospace", variants: ["regular", "700"] },
+];
+
 function isAllowedLocalOrigin(origin: string, expectedOrigin: string) {
   try {
     const url = new URL(origin);
@@ -94,22 +96,6 @@ function isAllowedLocalOrigin(origin: string, expectedOrigin: string) {
   } catch {
     return false;
   }
-}
-
-function buildLocalAuth(user: AuthenticatedUser): RequestAuthenticator {
-  return {
-    async authenticate(request) {
-      const authorization = request.headers.authorization;
-      if (typeof authorization !== "string") {
-        return null;
-      }
-      const [scheme, token] = authorization.trim().split(/\s+/, 2);
-      if (scheme?.toLowerCase() !== "bearer" || token !== user.accessToken) {
-        return null;
-      }
-      return user;
-    },
-  };
 }
 
 function buildViewerService(store: LocalStore): ViewerService {
@@ -136,11 +122,11 @@ function buildProjectService(store: LocalStore): ProjectService {
         return store.createProject(input);
       } catch (error) {
         if (error instanceof Error && error.message === "project_slug_taken") {
-          throw new ProjectServiceError(
-            "project_slug_taken",
-            "Project slug is already taken in this workspace.",
-            409,
-          );
+        throw new ProjectServiceError(
+          "project_slug_taken",
+          "Project slug is already taken in this app.",
+          409,
+        );
         }
         throw new ProjectServiceError(
           "project_create_failed",
@@ -175,7 +161,15 @@ function buildProjectService(store: LocalStore): ProjectService {
       return result;
     },
     async updateProject(_user, projectId, input) {
-      if (!store.updateProject(projectId, input)) {
+      const result = store.updateProject(projectId, input);
+      if (!result.ok) {
+        if (result.reason === "brand_kit_not_found") {
+          throw new ProjectServiceError(
+            "brand_kit_not_found",
+            "Brand kit not found.",
+            404,
+          );
+        }
         throw new ProjectServiceError(
           "project_not_found",
           "Project not found.",
@@ -206,33 +200,66 @@ function buildCanvasService(store: LocalStore): CanvasService {
 function buildChatService(store: LocalStore): ChatService {
   return {
     async listSessions(_user, canvasId) {
-      return store.listSessions(canvasId);
+      const sessions = store.listSessions(canvasId);
+      if (!sessions) {
+        throw new ChatServiceError(
+          "canvas_not_found",
+          "Canvas not found.",
+          404,
+        );
+      }
+      return sessions;
     },
     async createSession(_user, canvasId, title) {
-      return store.createSession(canvasId, title);
+      const session = store.createSession(canvasId, title);
+      if (!session) {
+        throw new ChatServiceError(
+          "canvas_not_found",
+          "Canvas not found.",
+          404,
+        );
+      }
+      return session;
     },
     async updateSessionTitle(_user, sessionId, title) {
-      store.updateSessionTitle(sessionId, title);
+      if (!store.updateSessionTitle(sessionId, title)) {
+        throw new ChatServiceError(
+          "session_not_found",
+          "Chat session not found.",
+          404,
+        );
+      }
     },
     async deleteSession(_user, sessionId) {
-      store.deleteSession(sessionId);
+      if (!store.deleteSession(sessionId)) {
+        throw new ChatServiceError(
+          "session_not_found",
+          "Chat session not found.",
+          404,
+        );
+      }
     },
     async listMessages(_user, sessionId) {
-      return store.listMessages(sessionId);
+      const messages = store.listMessages(sessionId);
+      if (!messages) {
+        throw new ChatServiceError(
+          "session_not_found",
+          "Chat session not found.",
+          404,
+        );
+      }
+      return messages;
     },
     async createMessage(_user, sessionId, input) {
-      return store.createMessage(sessionId, input);
-    },
-  };
-}
-
-function buildSettingsService(store: LocalStore): SettingsService {
-  return {
-    async getWorkspaceSettings() {
-      return store.getWorkspaceSettings();
-    },
-    async updateWorkspaceSettings(_user, _workspaceId, settings) {
-      return store.updateWorkspaceSettings(settings);
+      const message = store.createMessage(sessionId, input);
+      if (!message) {
+        throw new ChatServiceError(
+          "session_not_found",
+          "Chat session not found.",
+          404,
+        );
+      }
+      return message;
     },
   };
 }
@@ -357,7 +384,15 @@ function buildUploadService(store: LocalStore): UploadService {
       return url;
     },
     async deleteAsset(_user, assetId) {
-      if (!store.deleteAsset(assetId)) {
+      const result = store.deleteAsset(assetId);
+      if (!result.ok) {
+        if (result.reason === "asset_in_use") {
+          throw new UploadServiceError(
+            "asset_in_use",
+            "Asset is still referenced by local app data.",
+            409,
+          );
+        }
         throw new UploadServiceError("asset_not_found", "Asset not found.", 404);
       }
     },
@@ -389,7 +424,7 @@ function buildAssistantReply(input: {
   return [
     `我已经收到你的本地单机版请求：${trimmed}`,
     ...contextNotes,
-    "这是本地模式下的轻量回应链路，没有再经过 Supabase、积分或账号体系。",
+    "这是本地模式下的轻量回应链路，没有再经过云端账号、积分或订阅体系。",
     "如果你想生成图片，直接用画布里的图片生成面板会更稳定。",
   ].join("\n\n");
 }
@@ -471,7 +506,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const webDistDir = env.webDistDir ?? DEFAULT_WEB_DIST_DIR;
   const store = createLocalStore({
     assetBaseUrl,
-    defaultModel: resolveDefaultAgentModel(env),
   });
 
   const app = Fastify({
@@ -486,7 +520,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         : env.webOrigin;
     reply.header("Access-Control-Allow-Origin", allowOrigin);
     reply.header("Vary", "Origin");
-    reply.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    reply.header("Access-Control-Allow-Headers", "Content-Type");
     reply.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
     if (request.method === "OPTIONS") {
       reply.code(204).send();
@@ -497,59 +531,30 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     limits: { fileSize: 10 * 1024 * 1024 },
   });
 
-  const auth = buildLocalAuth(store.localUser);
+  const localUser = store.localUser;
   const viewerService = buildViewerService(store);
   const projectService = buildProjectService(store);
   const canvasService = buildCanvasService(store);
   const chatService = buildChatService(store);
-  const settingsService = buildSettingsService(store);
   const brandKitService = buildBrandKitService(store);
   const uploadService = buildUploadService(store);
 
   void registerHealthRoutes(app, env);
-  void registerProjectRoutes(app, { auth, projectService });
-  void registerCanvasRoutes(app, { auth, canvasService });
-  void registerChatRoutes(app, { auth, chatService });
-  void registerSettingsRoutes(app, {
-    auth,
-    settingsService,
-    viewerService,
-  });
-  void registerBrandKitRoutes(app, { auth, brandKitService });
+  void registerProjectRoutes(app, { localUser, projectService });
+  void registerCanvasRoutes(app, { localUser, canvasService });
+  void registerChatRoutes(app, { localUser, chatService });
+  void registerBrandKitRoutes(app, { localUser, brandKitService });
   void registerUploadRoutes(app, {
-    auth,
+    localUser,
     uploadService,
-    viewerService,
   });
 
-  app.get("/api/viewer", async (request, reply) => {
-    const user = await auth.authenticate(request);
-    if (!user) {
-      return reply.code(401).send(
-        unauthenticatedErrorResponseSchema.parse({
-          error: {
-            code: "unauthorized",
-            message: "Missing local access token.",
-          },
-        }),
-      );
-    }
+  app.get("/api/viewer", async (_request, reply) => {
     return reply.code(200).send(viewerResponseSchema.parse(store.getViewer()));
   });
 
   app.patch("/api/viewer/profile", async (request, reply) => {
     try {
-      const user = await auth.authenticate(request);
-      if (!user) {
-        return reply.code(401).send(
-          unauthenticatedErrorResponseSchema.parse({
-            error: {
-              code: "unauthorized",
-              message: "Missing local access token.",
-            },
-          }),
-        );
-      }
       const payload = profileUpdateRequestSchema.parse(request.body);
       return reply.code(200).send(
         profileUpdateResponseSchema.parse({
@@ -567,9 +572,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.get("/api/models", async (_request, reply) => {
     const models = [
-      { id: "local:assistant", name: "Local Assistant", provider: "local" },
-      { id: "openai:gpt-4.1", name: "OpenAI GPT-4.1", provider: "openai" },
-      { id: "google:gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "google" },
+      {
+        id: "local:assistant",
+        name: "Local Assistant",
+        provider: "local",
+      },
     ];
     return reply.code(200).send({ models });
   });
@@ -589,71 +596,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     });
   });
 
-  app.get("/api/video-models", async (_request, reply) => {
-    return reply.code(200).send({ models: [] });
-  });
-
-  app.post("/api/agent/generate-video", async (_request, reply) => {
-    return sendStandaloneFeatureUnavailable(reply, "Video generation");
-  });
-
-  app.get("/api/jobs/:jobId", async (_request, reply) => {
-    return sendStandaloneFeatureUnavailable(reply, "Background jobs", 404);
-  });
-
-  app.get("/api/skills/marketplace/search", async (_request, reply) => {
-    return reply.code(200).send({ skills: [], total: 0 });
-  });
-
-  app.get("/api/skills/marketplace/detail", async (_request, reply) => {
-    return sendStandaloneFeatureUnavailable(reply, "The skills marketplace");
-  });
-
-  app.post("/api/skills/marketplace/install", async (_request, reply) => {
-    return sendStandaloneFeatureUnavailable(reply, "The skills marketplace");
-  });
-
-  app.get("/api/workspaces/skills", async (_request, reply) => {
-    return reply.code(200).send({ skills: [] });
-  });
-
-  app.get("/api/credits", async (_request, reply) => {
-    return sendStandaloneFeatureUnavailable(reply, "Credits");
-  });
-
-  app.route({
-    method: ["GET", "POST"],
-    url: "/api/credits/*",
-    async handler(_request, reply) {
-      return sendStandaloneFeatureUnavailable(reply, "Credits");
-    },
-  });
-
-  app.route({
-    method: ["GET", "POST"],
-    url: "/api/payments/*",
-    async handler(_request, reply) {
-      return sendStandaloneFeatureUnavailable(reply, "Billing");
-    },
-  });
-
-  app.get("/api/fonts", async (_request, reply) => {
-    return reply.code(200).send({ fonts: [] });
+  app.get("/api/fonts", async (request, reply) => {
+    const query = request.query as { search?: string; category?: string } | undefined;
+    const search = query?.search?.trim().toLowerCase() ?? "";
+    const category = query?.category?.trim().toLowerCase() ?? "";
+    const fonts = LOCAL_FONT_LIBRARY.filter((font) => {
+      const categoryMatches = !category || font.category === category;
+      const searchMatches =
+        !search || font.family.toLowerCase().includes(search);
+      return categoryMatches && searchMatches;
+    });
+    return reply.code(200).send({ fonts });
   });
 
   app.post("/api/agent/generate-image", async (request, reply) => {
-    const user = await auth.authenticate(request);
-    if (!user) {
-      return reply.code(401).send(
-        unauthenticatedErrorResponseSchema.parse({
-          error: {
-            code: "unauthorized",
-            message: "Missing or invalid bearer token.",
-          },
-        }),
-      );
-    }
-
     const payload = request.body as {
       prompt?: string;
     };
@@ -672,17 +628,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.post("/api/local-agent/respond", async (request, reply) => {
     try {
-      const user = await auth.authenticate(request);
-      if (!user) {
-        return reply.code(401).send(
-          unauthenticatedErrorResponseSchema.parse({
-            error: {
-              code: "unauthorized",
-              message: "Missing local access token.",
-            },
-          }),
-        );
-      }
       const payload = runCreateRequestSchema.parse(request.body);
       const text = buildAssistantReply({
         prompt: payload.prompt,
@@ -695,6 +640,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         content: text,
         contentBlocks: [{ type: "text", text }],
       });
+      if (!message) {
+        return sendApplicationError(
+          reply,
+          "session_not_found",
+          "Chat session not found.",
+          404,
+        );
+      }
       return reply.code(200).send({ message });
     } catch {
       return sendApplicationError(
@@ -754,7 +707,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
       const filePath = await resolveStaticFile(webDistDir, requestPath);
       if (!filePath) {
-        return reply.code(404).send("Static asset not found.");
+        const notFoundFilePath = await resolveStaticFile(webDistDir, "/404");
+        if (!notFoundFilePath) {
+          return reply.code(404).send("Static asset not found.");
+        }
+        const notFoundPayload = await readFile(notFoundFilePath);
+        reply.header("content-type", getStaticContentType(notFoundFilePath));
+        reply.header("cache-control", "no-cache");
+        return reply.code(404).send(notFoundPayload);
       }
 
       const payload = await readFile(filePath);

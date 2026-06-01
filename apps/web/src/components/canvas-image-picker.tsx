@@ -30,19 +30,10 @@ export type ImageModelMentionItem = {
   iconUrl?: string;
 };
 
-export type SkillMentionItem = {
-  kind: "skill";
-  id: string;
-  label: string;
-  slug: string;
-  description?: string;
-};
-
 export type MessageMentionPickerItem =
   | CanvasImageItem
   | BrandKitMentionItem
-  | ImageModelMentionItem
-  | SkillMentionItem;
+  | ImageModelMentionItem;
 
 type MessageMentionPickerProps = {
   items: MessageMentionPickerItem[];
@@ -58,14 +49,12 @@ function itemLabel(item: MessageMentionPickerItem): string {
 function itemKeywords(item: MessageMentionPickerItem): string[] {
   if (item.kind === "canvas-image") return [item.name];
   if (item.kind === "image-model") return [item.label, item.description ?? ""];
-  if (item.kind === "skill") return [item.label, item.slug, item.description ?? ""];
   return [item.label, item.assetType, item.textContent ?? ""];
 }
 
 function groupTitle(kind: MessageMentionPickerItem["kind"]): string {
   if (kind === "canvas-image") return "This Project";
   if (kind === "brand-kit-asset") return "Brand Kit";
-  if (kind === "skill") return "Skills";
   return "Model";
 }
 
@@ -96,7 +85,6 @@ export function MessageMentionPicker({
       "canvas-image": [],
       "brand-kit-asset": [],
       "image-model": [],
-      "skill": [],
     },
   );
 
@@ -144,7 +132,6 @@ export function MessageMentionPicker({
             "canvas-image",
             "brand-kit-asset",
             "image-model",
-            "skill",
           ] as const
         ).map((kind) => {
           const sectionItems = groupedItems[kind];
@@ -176,11 +163,6 @@ export function MessageMentionPicker({
                       </div>
                     )}
                     {item.kind === "image-model" && item.description && (
-                      <div className="truncate text-[11px] text-muted-foreground">
-                        {item.description}
-                      </div>
-                    )}
-                    {item.kind === "skill" && item.description && (
                       <div className="truncate text-[11px] text-muted-foreground">
                         {item.description}
                       </div>
@@ -231,9 +213,7 @@ function PickerLeadingVisual({ item }: { item: MessageMentionPickerItem }) {
     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border bg-muted text-[10px] font-medium uppercase text-muted-foreground">
       {item.kind === "brand-kit-asset"
         ? item.assetType.slice(0, 2)
-        : item.kind === "skill"
-          ? "SK"
-          : "AI"}
+        : "AI"}
     </div>
   );
 }

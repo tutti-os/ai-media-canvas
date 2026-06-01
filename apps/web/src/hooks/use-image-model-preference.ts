@@ -4,7 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import type { ImageGenerationPreference } from "@aimc/shared";
 
 const STORAGE_KEY = "aimc:image-model-preference";
-const DEFAULT_MODEL = "google/nano-banana-2";
+const DEFAULT_MODEL = "local:placeholder-image";
 
 export type ImageModelPreference = ImageGenerationPreference;
 

@@ -8,39 +8,44 @@ import { Label } from "./ui/label";
 
 interface ProfileSectionProps {
   displayName: string;
-  email: string;
   onSave: (displayName: string) => Promise<void>;
 }
 
 export function ProfileSection({
   displayName: initialName,
-  email,
   onSave,
 }: ProfileSectionProps) {
   const [displayName, setDisplayName] = useState(initialName);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
-    message: string;
+      message: string;
   } | null>(null);
 
-  const hasChanges = displayName.trim() !== initialName;
+  const trimmedDisplayName = displayName.trim();
+  const hasChanges = trimmedDisplayName !== initialName;
+  const canSubmit = trimmedDisplayName.length > 0 && hasChanges;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const trimmed = displayName.trim();
-    if (!trimmed) return;
+    if (!trimmedDisplayName) {
+      setFeedback({
+        type: "error",
+        message: "Display Name 不能为空。",
+      });
+      return;
+    }
 
     setSaving(true);
     setFeedback(null);
 
     try {
-      await onSave(trimmed);
-      setFeedback({ type: "success", message: "Profile updated." });
+      await onSave(trimmedDisplayName);
+      setFeedback({ type: "success", message: "Local settings updated." });
     } catch {
       setFeedback({
         type: "error",
-        message: "Failed to update profile. Please try again.",
+        message: "Failed to update local settings. Please try again.",
       });
     } finally {
       setSaving(false);
@@ -49,9 +54,9 @@ export function ProfileSection({
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-1">Profile</h2>
+      <h2 className="text-lg font-semibold mb-1">Local Settings</h2>
       <p className="text-sm text-muted-foreground mb-6">
-        Manage the local profile stored on this machine.
+        Manage the local details stored on this machine.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
@@ -65,14 +70,6 @@ export function ProfileSection({
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="email">Local identity</Label>
-          <Input id="email" value={email} disabled className="opacity-60" />
-          <p className="text-xs text-muted-foreground">
-            This local identity is only used inside this standalone app.
-          </p>
-        </div>
-
         {feedback && (
           <p
             className={`text-sm ${feedback.type === "success" ? "text-success" : "text-destructive"}`}
@@ -81,7 +78,7 @@ export function ProfileSection({
           </p>
         )}
 
-        <Button type="submit" disabled={saving || !hasChanges} size="sm">
+        <Button type="submit" disabled={saving || !canSubmit} size="sm">
           {saving ? "Saving..." : "Save"}
         </Button>
       </form>

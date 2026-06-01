@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback } from "react";
 
 import type { Message } from "../../hooks/use-chat-sessions";
 import { ChatMessage } from "../chat-message";
-import { ChatSkills } from "../chat-skills";
+import { ChatTemplates } from "../chat-templates";
 import { ErrorBoundary } from "../error-boundary";
 import { MessageErrorBoundary } from "./message-error-boundary";
 
@@ -62,7 +62,7 @@ export const MessageList = React.memo(function MessageList({
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
           </div>
         ) : messages.length === 0 ? (
-          <ChatSkills onSend={onSend} />
+          <ChatTemplates onSend={onSend} />
         ) : (
           messages.map((msg, index) => {
             // Only the last assistant message during streaming gets the

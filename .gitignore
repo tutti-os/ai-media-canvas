@@ -14,7 +14,6 @@
 **/.next/
 /out/
 apps/web/out/
-supabase/.temp/
 
 # production
 /build
@@ -44,14 +43,10 @@ yarn-error.log*
 # service account credentials (never commit)
 **/credentials/*.json
 
-# vercel
-.vercel
-
 # typescript
 *.tsbuildinfo
 next-env.d.ts
 logs/
-supabase/supabase/
 
 tmp/
 temp/.claude/worktrees/
@@ -63,5 +58,3 @@ docs/CODE_QUALITY_AUDIT_REPORT.md
 docs/DEPLOY_CHECKLIST.md
 docs/home-discovery-library.md
 docs/lovart-deep-analysis-*.md
-docs/tech/pricing-profitability-report.md
-docs/tech/replicate-models-pricing.md
