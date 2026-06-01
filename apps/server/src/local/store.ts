@@ -1,0 +1,1317 @@
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { extname, join, resolve } from "node:path";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+
+import type {
+  AssetBucket,
+  AssetObject,
+  BrandKitAsset,
+  BrandKitAssetCreateRequest,
+  BrandKitAssetType,
+  BrandKitAssetUpdateRequest,
+  BrandKitCreateRequest,
+  BrandKitDetail,
+  BrandKitSummary,
+  BrandKitUpdateRequest,
+  CanvasContent,
+  CanvasDetail,
+  ChatMessage,
+  ChatMessageCreateRequest,
+  ChatSessionSummary,
+  ProjectCreateRequest,
+  ProjectSummary,
+  ProjectUpdateRequest,
+  ViewerResponse,
+  WorkspaceSettings,
+} from "@aimc/shared";
+
+const LOCAL_USER_ID = "local-user";
+const LOCAL_WORKSPACE_ID = "local-workspace";
+const LOCAL_ACCESS_TOKEN = "local-dev-token";
+const DEFAULT_PROJECT_NAME = "My First Project";
+const DEFAULT_CANVAS_NAME = "Main Canvas";
+const DEFAULT_EMAIL = "local@aimc.app";
+const DEFAULT_DISPLAY_NAME = "Local User";
+
+type AssetRow = {
+  id: string;
+  bucket: AssetBucket;
+  object_path: string;
+  mime_type: string | null;
+  byte_size: number | null;
+  workspace_id: string;
+  project_id: string | null;
+  created_at: string;
+};
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function slugify(input: string) {
+  const normalized = input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "untitled";
+}
+
+function parseJson<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function mimeToExt(mimeType: string) {
+  switch (mimeType) {
+    case "image/png":
+      return ".png";
+    case "image/jpeg":
+      return ".jpg";
+    case "image/webp":
+      return ".webp";
+    case "image/svg+xml":
+      return ".svg";
+    case "image/gif":
+      return ".gif";
+    default:
+      return ".bin";
+  }
+}
+
+export type LocalStore = ReturnType<typeof createLocalStore>;
+
+export function createLocalStore(options: {
+  assetBaseUrl: string;
+  dataRoot?: string;
+  defaultModel: string;
+}) {
+  const dataRoot =
+    options.dataRoot ?? resolve(process.cwd(), "../../local-data");
+  const assetsRoot = join(dataRoot, "assets");
+  const uploadsRoot = join(assetsRoot, "uploads");
+  const brandKitRoot = join(assetsRoot, "brand-kits");
+  const projectRoot = join(assetsRoot, "projects");
+  const generatedRoot = join(assetsRoot, "generated");
+  mkdirSync(dataRoot, { recursive: true });
+  mkdirSync(uploadsRoot, { recursive: true });
+  mkdirSync(brandKitRoot, { recursive: true });
+  mkdirSync(projectRoot, { recursive: true });
+  mkdirSync(generatedRoot, { recursive: true });
+
+  const db = new DatabaseSync(join(dataRoot, "ai-media-canvas.db"));
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE IF NOT EXISTS app_profile (
+      id TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      email TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS workspace_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      default_model TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      description TEXT,
+      brand_kit_id TEXT,
+      thumbnail_asset_id TEXT,
+      primary_canvas_id TEXT,
+      archived_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS canvases (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      is_primary INTEGER NOT NULL DEFAULT 0,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      id TEXT PRIMARY KEY,
+      canvas_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      content_blocks TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS assets (
+      id TEXT PRIMARY KEY,
+      bucket TEXT NOT NULL,
+      object_path TEXT NOT NULL,
+      mime_type TEXT,
+      byte_size INTEGER,
+      workspace_id TEXT NOT NULL,
+      project_id TEXT,
+      file_path TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS brand_kits (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      guidance_text TEXT,
+      cover_asset_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS brand_kit_assets (
+      id TEXT PRIMARY KEY,
+      kit_id TEXT NOT NULL,
+      asset_type TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      role TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      text_content TEXT,
+      file_asset_id TEXT,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  seedBaseData();
+  ensureDefaultProject();
+
+  function assetUrl(assetId: string) {
+    return `${options.assetBaseUrl}/local-assets/${assetId}`;
+  }
+
+  function seedBaseData() {
+    db.prepare(
+      `
+        INSERT INTO app_profile (id, display_name, email)
+        VALUES (?, ?, ?)
+        ON CONFLICT(id) DO NOTHING
+      `,
+    ).run(LOCAL_USER_ID, DEFAULT_DISPLAY_NAME, DEFAULT_EMAIL);
+    db.prepare(
+      `
+        INSERT INTO workspace_settings (id, default_model)
+        VALUES (1, ?)
+        ON CONFLICT(id) DO NOTHING
+      `,
+    ).run(options.defaultModel);
+  }
+
+  function ensureDefaultProject() {
+    const existing = db
+      .prepare(
+        `SELECT id FROM projects WHERE archived_at IS NULL ORDER BY created_at ASC LIMIT 1`,
+      )
+      .get() as { id: string } | undefined;
+    if (existing) return;
+
+    const timestamp = nowIso();
+    const projectId = randomUUID();
+    const canvasId = randomUUID();
+    db.exec("BEGIN");
+    try {
+      db.prepare(
+        `
+          INSERT INTO projects (
+            id, name, slug, description, primary_canvas_id, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+      ).run(
+        projectId,
+        DEFAULT_PROJECT_NAME,
+        slugify(DEFAULT_PROJECT_NAME),
+        null,
+        canvasId,
+        timestamp,
+        timestamp,
+      );
+      db.prepare(
+        `
+          INSERT INTO canvases (
+            id, project_id, name, is_primary, content, created_at, updated_at
+          ) VALUES (?, ?, ?, 1, ?, ?, ?)
+        `,
+      ).run(
+        canvasId,
+        projectId,
+        DEFAULT_CANVAS_NAME,
+        JSON.stringify({ elements: [], appState: {}, files: {} }),
+        timestamp,
+        timestamp,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  function getProfile() {
+    const row = db
+      .prepare(`SELECT id, display_name, email FROM app_profile WHERE id = ?`)
+      .get(LOCAL_USER_ID) as
+      | { id: string; display_name: string; email: string }
+      | undefined;
+    if (!row) {
+      return {
+        id: LOCAL_USER_ID,
+        displayName: DEFAULT_DISPLAY_NAME,
+        email: DEFAULT_EMAIL,
+        avatarUrl: null,
+      } as const;
+    }
+
+    return {
+      id: row.id,
+      displayName: row.display_name,
+      email: row.email,
+      avatarUrl: null,
+    } as const;
+  }
+
+  function getViewer(): ViewerResponse {
+    return {
+      profile: getProfile(),
+      workspace: {
+        id: LOCAL_WORKSPACE_ID,
+        name: "Local Workspace",
+        ownerUserId: LOCAL_USER_ID,
+        type: "personal",
+      },
+      membership: {
+        workspaceId: LOCAL_WORKSPACE_ID,
+        userId: LOCAL_USER_ID,
+        role: "owner",
+      },
+    };
+  }
+
+  function updateProfile(displayName: string) {
+    db.prepare(`UPDATE app_profile SET display_name = ? WHERE id = ?`).run(
+      displayName,
+      LOCAL_USER_ID,
+    );
+    return getProfile();
+  }
+
+  function getWorkspaceSettings(): WorkspaceSettings {
+    const row = db
+      .prepare(`SELECT default_model FROM workspace_settings WHERE id = 1`)
+      .get() as { default_model: string } | undefined;
+    return {
+      defaultModel: row?.default_model ?? options.defaultModel,
+    };
+  }
+
+  function updateWorkspaceSettings(settings: WorkspaceSettings) {
+    db.prepare(
+      `
+        INSERT INTO workspace_settings (id, default_model)
+        VALUES (1, ?)
+        ON CONFLICT(id) DO UPDATE SET default_model = excluded.default_model
+      `,
+    ).run(settings.defaultModel);
+    return getWorkspaceSettings();
+  }
+
+  function getAssetRow(assetId: string) {
+    return db
+      .prepare(
+        `
+          SELECT id, bucket, object_path, mime_type, byte_size, workspace_id, project_id, file_path, created_at
+          FROM assets
+          WHERE id = ?
+        `,
+      )
+      .get(assetId) as
+      | (AssetRow & { file_path: string })
+      | undefined;
+  }
+
+  function assetObjectFromRow(row: AssetRow): AssetObject {
+    return {
+      id: row.id,
+      bucket: row.bucket,
+      objectPath: row.object_path,
+      mimeType: row.mime_type,
+      byteSize: row.byte_size,
+      workspaceId: row.workspace_id,
+      projectId: row.project_id,
+      createdAt: row.created_at,
+    };
+  }
+
+  function writeAssetFile(input: {
+    bucket: AssetBucket;
+    buffer: Buffer;
+    mimeType: string;
+    projectId?: string;
+    fileName: string;
+    scope: "upload" | "brand-kit" | "project" | "generated";
+  }) {
+    const ext = extname(input.fileName) || mimeToExt(input.mimeType);
+    const assetId = randomUUID();
+    const objectPath = `${input.scope}/${assetId}${ext}`;
+    const dir =
+      input.scope === "brand-kit"
+        ? brandKitRoot
+        : input.scope === "project"
+          ? projectRoot
+          : input.scope === "generated"
+            ? generatedRoot
+            : uploadsRoot;
+    const filePath = join(dir, `${assetId}${ext}`);
+    writeFileSync(filePath, input.buffer);
+    const createdAt = nowIso();
+    db.prepare(
+      `
+        INSERT INTO assets (
+          id, bucket, object_path, mime_type, byte_size, workspace_id, project_id, file_path, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      assetId,
+      input.bucket,
+      objectPath,
+      input.mimeType,
+      input.buffer.length,
+      LOCAL_WORKSPACE_ID,
+      input.projectId ?? null,
+      filePath,
+      createdAt,
+    );
+    const row = getAssetRow(assetId);
+    if (!row) {
+      throw new Error("Failed to persist local asset.");
+    }
+    return {
+      asset: assetObjectFromRow(row),
+      url: assetUrl(assetId),
+      filePath,
+    };
+  }
+
+  function deleteAsset(assetId: string) {
+    const row = getAssetRow(assetId);
+    if (!row) return false;
+    try {
+      unlinkSync(row.file_path);
+    } catch {
+      // ignore missing local file
+    }
+    db.prepare(`DELETE FROM assets WHERE id = ?`).run(assetId);
+    return true;
+  }
+
+  function resolveAssetUrl(assetId: string | null | undefined) {
+    if (!assetId) return null;
+    const row = getAssetRow(assetId);
+    if (!row) return null;
+    return assetUrl(row.id);
+  }
+
+  function mapProjectRow(row: {
+    id: string;
+    name: string;
+    slug: string;
+    description: string | null;
+    primary_canvas_id: string;
+    thumbnail_asset_id: string | null;
+    created_at: string;
+    updated_at: string;
+  }): ProjectSummary {
+    const canvas = db
+      .prepare(
+        `SELECT id, name, is_primary FROM canvases WHERE id = ? LIMIT 1`,
+      )
+      .get(row.primary_canvas_id) as
+      | { id: string; name: string; is_primary: number }
+      | undefined;
+
+    return {
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      thumbnailUrl: resolveAssetUrl(row.thumbnail_asset_id),
+      workspace: getViewer().workspace,
+      primaryCanvas: {
+        id: canvas?.id ?? row.primary_canvas_id,
+        name: canvas?.name ?? DEFAULT_CANVAS_NAME,
+        isPrimary: !!canvas?.is_primary,
+      },
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  function listProjects() {
+    const rows = db
+      .prepare(
+        `
+          SELECT id, name, slug, description, primary_canvas_id, thumbnail_asset_id, created_at, updated_at
+          FROM projects
+          WHERE archived_at IS NULL
+          ORDER BY updated_at DESC
+        `,
+      )
+      .all() as Array<{
+      id: string;
+      name: string;
+      slug: string;
+      description: string | null;
+      primary_canvas_id: string;
+      thumbnail_asset_id: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    return rows.map(mapProjectRow);
+  }
+
+  function createProject(input: ProjectCreateRequest) {
+    const timestamp = nowIso();
+    const projectId = randomUUID();
+    const canvasId = randomUUID();
+    const name = input.name.trim();
+    const slug = slugify(name);
+
+    const existing = db
+      .prepare(
+        `SELECT id FROM projects WHERE slug = ? AND archived_at IS NULL LIMIT 1`,
+      )
+      .get(slug) as { id: string } | undefined;
+    if (existing) {
+      throw new Error("project_slug_taken");
+    }
+
+    db.exec("BEGIN");
+    try {
+      db.prepare(
+        `
+          INSERT INTO projects (
+            id, name, slug, description, primary_canvas_id, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+      ).run(
+        projectId,
+        name,
+        slug,
+        input.description?.trim() || null,
+        canvasId,
+        timestamp,
+        timestamp,
+      );
+      db.prepare(
+        `
+          INSERT INTO canvases (
+            id, project_id, name, is_primary, content, created_at, updated_at
+          ) VALUES (?, ?, ?, 1, ?, ?, ?)
+        `,
+      ).run(
+        canvasId,
+        projectId,
+        DEFAULT_CANVAS_NAME,
+        JSON.stringify({ elements: [], appState: {}, files: {} }),
+        timestamp,
+        timestamp,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+
+    const row = db
+      .prepare(
+        `
+          SELECT id, name, slug, description, primary_canvas_id, thumbnail_asset_id, created_at, updated_at
+          FROM projects WHERE id = ?
+        `,
+      )
+      .get(projectId) as {
+      id: string;
+      name: string;
+      slug: string;
+      description: string | null;
+      primary_canvas_id: string;
+      thumbnail_asset_id: string | null;
+      created_at: string;
+      updated_at: string;
+    };
+
+    return mapProjectRow(row);
+  }
+
+  function getProject(projectId: string) {
+    const row = db
+      .prepare(
+        `
+          SELECT id, name, slug, description, brand_kit_id, created_at, updated_at
+          FROM projects
+          WHERE id = ? AND archived_at IS NULL
+          LIMIT 1
+        `,
+      )
+      .get(projectId) as
+      | {
+          id: string;
+          name: string;
+          slug: string;
+          description: string | null;
+          brand_kit_id: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      workspace_id: LOCAL_WORKSPACE_ID,
+      brand_kit_id: row.brand_kit_id,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  function updateProject(projectId: string, input: ProjectUpdateRequest) {
+    const existing = getProject(projectId);
+    if (!existing) return false;
+    const patch: string[] = [];
+    const values: SQLInputValue[] = [];
+    if (input.name !== undefined) {
+      patch.push("name = ?");
+      values.push(input.name.trim());
+    }
+    if (input.brand_kit_id !== undefined) {
+      patch.push("brand_kit_id = ?");
+      values.push(input.brand_kit_id);
+    }
+    patch.push("updated_at = ?");
+    values.push(nowIso());
+    values.push(projectId);
+    db.prepare(
+      `UPDATE projects SET ${patch.join(", ")} WHERE id = ?`,
+    ).run(...values);
+    return true;
+  }
+
+  function archiveProject(projectId: string) {
+    const existing = getProject(projectId);
+    if (!existing) return false;
+    db.prepare(`UPDATE projects SET archived_at = ?, updated_at = ? WHERE id = ?`).run(
+      nowIso(),
+      nowIso(),
+      projectId,
+    );
+    return true;
+  }
+
+  function saveProjectThumbnail(projectId: string, buffer: Buffer, mimeType: string) {
+    const existing = getProject(projectId);
+    if (!existing) return null;
+    const stored = writeAssetFile({
+      bucket: "project-assets",
+      buffer,
+      mimeType,
+      projectId,
+      fileName: "thumbnail" + mimeToExt(mimeType),
+      scope: "project",
+    });
+    db.prepare(
+      `UPDATE projects SET thumbnail_asset_id = ?, updated_at = ? WHERE id = ?`,
+    ).run(stored.asset.id, nowIso(), projectId);
+    return { thumbnailUrl: stored.url };
+  }
+
+  function getCanvas(canvasId: string): CanvasDetail | null {
+    const row = db
+      .prepare(
+        `SELECT id, name, project_id, content FROM canvases WHERE id = ? LIMIT 1`,
+      )
+      .get(canvasId) as
+      | {
+          id: string;
+          name: string;
+          project_id: string;
+          content: string;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      projectId: row.project_id,
+      content: parseJson<CanvasContent>(row.content, {
+        elements: [],
+        appState: {},
+        files: {},
+      }),
+    };
+  }
+
+  function saveCanvas(canvasId: string, content: CanvasContent) {
+    const existing = getCanvas(canvasId);
+    if (!existing) return false;
+    const timestamp = nowIso();
+    db.prepare(
+      `UPDATE canvases SET content = ?, updated_at = ? WHERE id = ?`,
+    ).run(JSON.stringify(content), timestamp, canvasId);
+    db.prepare(
+      `
+        UPDATE projects
+        SET updated_at = ?
+        WHERE id = (SELECT project_id FROM canvases WHERE id = ?)
+      `,
+    ).run(timestamp, canvasId);
+    return true;
+  }
+
+  function listSessions(canvasId: string): ChatSessionSummary[] {
+    const rows = db
+      .prepare(
+        `
+          SELECT id, title, updated_at
+          FROM chat_sessions
+          WHERE canvas_id = ?
+          ORDER BY updated_at DESC
+        `,
+      )
+      .all(canvasId) as Array<{
+      id: string;
+      title: string;
+      updated_at: string;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      updatedAt: row.updated_at,
+    }));
+  }
+
+  function createSession(canvasId: string, title?: string): ChatSessionSummary {
+    const timestamp = nowIso();
+    const id = randomUUID();
+    db.prepare(
+      `
+        INSERT INTO chat_sessions (
+          id, canvas_id, title, thread_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      id,
+      canvasId,
+      title?.trim() || "New chat",
+      `thread:${id}`,
+      timestamp,
+      timestamp,
+    );
+    return {
+      id,
+      title: title?.trim() || "New chat",
+      updatedAt: timestamp,
+    };
+  }
+
+  function updateSessionTitle(sessionId: string, title: string) {
+    db.prepare(
+      `UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?`,
+    ).run(title, nowIso(), sessionId);
+  }
+
+  function deleteSession(sessionId: string) {
+    db.prepare(`DELETE FROM chat_messages WHERE session_id = ?`).run(sessionId);
+    db.prepare(`DELETE FROM chat_sessions WHERE id = ?`).run(sessionId);
+  }
+
+  function listMessages(sessionId: string): ChatMessage[] {
+    const rows = db
+      .prepare(
+        `
+          SELECT id, role, content, content_blocks, created_at
+          FROM chat_messages
+          WHERE session_id = ?
+          ORDER BY created_at ASC
+        `,
+      )
+      .all(sessionId) as Array<{
+      id: string;
+      role: "user" | "assistant";
+      content: string;
+      content_blocks: string | null;
+      created_at: string;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      role: row.role,
+      content: row.content,
+      toolActivities: null,
+      contentBlocks: parseJson(row.content_blocks, null),
+      createdAt: row.created_at,
+    }));
+  }
+
+  function createMessage(sessionId: string, input: ChatMessageCreateRequest): ChatMessage {
+    const id = randomUUID();
+    const timestamp = nowIso();
+    db.prepare(
+      `
+        INSERT INTO chat_messages (
+          id, session_id, role, content, content_blocks, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      id,
+      sessionId,
+      input.role,
+      input.content,
+      input.contentBlocks ? JSON.stringify(input.contentBlocks) : null,
+      timestamp,
+    );
+    db.prepare(`UPDATE chat_sessions SET updated_at = ? WHERE id = ?`).run(
+      timestamp,
+      sessionId,
+    );
+    return {
+      id,
+      role: input.role,
+      content: input.content,
+      toolActivities: input.toolActivities ?? null,
+      contentBlocks: input.contentBlocks ?? null,
+      createdAt: timestamp,
+    };
+  }
+
+  function listBrandKits(): BrandKitSummary[] {
+    const kits = db
+      .prepare(
+        `
+          SELECT id, name, is_default, cover_asset_id, created_at, updated_at
+          FROM brand_kits
+          ORDER BY created_at ASC
+        `,
+      )
+      .all() as Array<{
+      id: string;
+      name: string;
+      is_default: number;
+      cover_asset_id: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    return kits.map((kit) => {
+      const assetCounts = db
+        .prepare(
+          `
+            SELECT asset_type, COUNT(*) as count
+            FROM brand_kit_assets
+            WHERE kit_id = ?
+            GROUP BY asset_type
+          `,
+        )
+        .all(kit.id) as Array<{ asset_type: BrandKitAssetType; count: number }>;
+      const counts = { color: 0, font: 0, logo: 0, image: 0 };
+      for (const entry of assetCounts) {
+        counts[entry.asset_type] = entry.count;
+      }
+      return {
+        id: kit.id,
+        name: kit.name,
+        is_default: !!kit.is_default,
+        cover_url: resolveAssetUrl(kit.cover_asset_id),
+        asset_counts: counts,
+        created_at: kit.created_at,
+        updated_at: kit.updated_at,
+      };
+    });
+  }
+
+  function mapBrandKitAsset(row: {
+    id: string;
+    asset_type: BrandKitAssetType;
+    display_name: string;
+    role: string | null;
+    sort_order: number;
+    text_content: string | null;
+    file_asset_id: string | null;
+    metadata: string;
+    created_at: string;
+    updated_at: string;
+  }): BrandKitAsset {
+    return {
+      id: row.id,
+      asset_type: row.asset_type,
+      display_name: row.display_name,
+      role: row.role,
+      sort_order: row.sort_order,
+      text_content: row.text_content,
+      file_url: resolveAssetUrl(row.file_asset_id),
+      metadata: parseJson(row.metadata, {}),
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  function getBrandKit(kitId: string): BrandKitDetail | null {
+    const row = db
+      .prepare(
+        `
+          SELECT id, name, is_default, guidance_text, cover_asset_id, created_at, updated_at
+          FROM brand_kits
+          WHERE id = ?
+          LIMIT 1
+        `,
+      )
+      .get(kitId) as
+      | {
+          id: string;
+          name: string;
+          is_default: number;
+          guidance_text: string | null;
+          cover_asset_id: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      | undefined;
+    if (!row) return null;
+    const assets = db
+      .prepare(
+        `
+          SELECT id, asset_type, display_name, role, sort_order, text_content, file_asset_id, metadata, created_at, updated_at
+          FROM brand_kit_assets
+          WHERE kit_id = ?
+          ORDER BY sort_order ASC, created_at ASC
+        `,
+      )
+      .all(kitId) as Array<{
+      id: string;
+      asset_type: BrandKitAssetType;
+      display_name: string;
+      role: string | null;
+      sort_order: number;
+      text_content: string | null;
+      file_asset_id: string | null;
+      metadata: string;
+      created_at: string;
+      updated_at: string;
+    }>;
+
+    return {
+      id: row.id,
+      name: row.name,
+      is_default: !!row.is_default,
+      guidance_text: row.guidance_text,
+      cover_url: resolveAssetUrl(row.cover_asset_id),
+      assets: assets.map(mapBrandKitAsset),
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  function createBrandKit(input?: BrandKitCreateRequest): BrandKitDetail {
+    const id = randomUUID();
+    const timestamp = nowIso();
+    db.prepare(
+      `
+        INSERT INTO brand_kits (id, name, is_default, guidance_text, created_at, updated_at)
+        VALUES (?, ?, 0, NULL, ?, ?)
+      `,
+    ).run(id, input?.name?.trim() || "Untitled", timestamp, timestamp);
+    return getBrandKit(id)!;
+  }
+
+  function updateBrandKit(kitId: string, input: BrandKitUpdateRequest) {
+    const existing = getBrandKit(kitId);
+    if (!existing) return null;
+    if (input.is_default) {
+      db.prepare(`UPDATE brand_kits SET is_default = 0`).run();
+    }
+    const patch: string[] = [];
+    const values: SQLInputValue[] = [];
+    if (input.name !== undefined) {
+      patch.push("name = ?");
+      values.push(input.name.trim());
+    }
+    if (input.guidance_text !== undefined) {
+      patch.push("guidance_text = ?");
+      values.push(input.guidance_text);
+    }
+    if (input.is_default !== undefined) {
+      patch.push("is_default = ?");
+      values.push(input.is_default ? 1 : 0);
+    }
+    patch.push("updated_at = ?");
+    values.push(nowIso(), kitId);
+    db.prepare(`UPDATE brand_kits SET ${patch.join(", ")} WHERE id = ?`).run(
+      ...values,
+    );
+    return getBrandKit(kitId);
+  }
+
+  function deleteBrandKit(kitId: string) {
+    const existing = getBrandKit(kitId);
+    if (!existing) return false;
+    const fileAssetIds = db
+      .prepare(
+        `SELECT file_asset_id FROM brand_kit_assets WHERE kit_id = ? AND file_asset_id IS NOT NULL`,
+      )
+      .all(kitId) as Array<{ file_asset_id: string }>;
+    for (const row of fileAssetIds) {
+      deleteAsset(row.file_asset_id);
+    }
+    db.prepare(`UPDATE projects SET brand_kit_id = NULL, updated_at = ? WHERE brand_kit_id = ?`).run(
+      nowIso(),
+      kitId,
+    );
+    db.prepare(`DELETE FROM brand_kit_assets WHERE kit_id = ?`).run(kitId);
+    db.prepare(`DELETE FROM brand_kits WHERE id = ?`).run(kitId);
+    return true;
+  }
+
+  function duplicateBrandKit(kitId: string) {
+    const existing = getBrandKit(kitId);
+    if (!existing) return null;
+    const duplicated = createBrandKit({ name: `${existing.name} Copy` });
+    const sourceAssets = db
+      .prepare(
+        `
+          SELECT id, asset_type, display_name, role, sort_order, text_content, file_asset_id, metadata
+          FROM brand_kit_assets
+          WHERE kit_id = ?
+          ORDER BY sort_order ASC, created_at ASC
+        `,
+      )
+      .all(kitId) as Array<{
+      id: string;
+      asset_type: BrandKitAssetType;
+      display_name: string;
+      role: string | null;
+      sort_order: number;
+      text_content: string | null;
+      file_asset_id: string | null;
+      metadata: string;
+    }>;
+    const copiedAssetIds = new Map<string, string>();
+    for (const asset of sourceAssets) {
+      let duplicatedFileAssetId: string | null = null;
+      if (asset.file_asset_id) {
+        const originalFileAsset = getAssetRow(asset.file_asset_id);
+        if (originalFileAsset) {
+          const duplicatedFile = writeAssetFile({
+            bucket: originalFileAsset.bucket,
+            buffer: readFileSync(originalFileAsset.file_path),
+            mimeType: originalFileAsset.mime_type ?? "application/octet-stream",
+            fileName: originalFileAsset.object_path.split("/").at(-1) ?? asset.display_name,
+            scope: "brand-kit",
+          });
+          duplicatedFileAssetId = duplicatedFile.asset.id;
+          copiedAssetIds.set(asset.file_asset_id, duplicatedFile.asset.id);
+        }
+      }
+      db.prepare(
+        `
+          INSERT INTO brand_kit_assets (
+            id, kit_id, asset_type, display_name, role, sort_order, text_content, file_asset_id, metadata, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      ).run(
+        randomUUID(),
+        duplicated.id,
+        asset.asset_type,
+        asset.display_name,
+        asset.role,
+        asset.sort_order,
+        asset.text_content,
+        duplicatedFileAssetId,
+        asset.metadata,
+        nowIso(),
+        nowIso(),
+      );
+    }
+    const sourceCoverAssetId = db
+      .prepare(`SELECT cover_asset_id FROM brand_kits WHERE id = ?`)
+      .get(kitId) as { cover_asset_id: string | null } | undefined;
+    const duplicatedCoverAssetId = sourceCoverAssetId?.cover_asset_id
+      ? copiedAssetIds.get(sourceCoverAssetId.cover_asset_id) ?? null
+      : null;
+    if (duplicatedCoverAssetId) {
+      db.prepare(`UPDATE brand_kits SET cover_asset_id = ?, updated_at = ? WHERE id = ?`).run(
+        duplicatedCoverAssetId,
+        nowIso(),
+        duplicated.id,
+      );
+    }
+    return getBrandKit(duplicated.id);
+  }
+
+  function createBrandKitAsset(
+    kitId: string,
+    input: BrandKitAssetCreateRequest,
+  ) {
+    if (!getBrandKit(kitId)) return null;
+    const id = randomUUID();
+    const timestamp = nowIso();
+    db.prepare(
+      `
+        INSERT INTO brand_kit_assets (
+          id, kit_id, asset_type, display_name, role, sort_order, text_content, file_asset_id, metadata, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+      `,
+    ).run(
+      id,
+      kitId,
+      input.asset_type,
+      input.display_name.trim(),
+      input.role ?? null,
+      0,
+      input.text_content ?? null,
+      JSON.stringify(input.metadata ?? {}),
+      timestamp,
+      timestamp,
+    );
+    const detail = getBrandKit(kitId);
+    return detail?.assets.find((asset) => asset.id === id) ?? null;
+  }
+
+  function updateBrandKitAsset(
+    kitId: string,
+    assetId: string,
+    input: BrandKitAssetUpdateRequest,
+  ) {
+    const existing = getBrandKit(kitId);
+    if (!existing) return null;
+    const patch: string[] = [];
+    const values: SQLInputValue[] = [];
+    if (input.display_name !== undefined) {
+      patch.push("display_name = ?");
+      values.push(input.display_name.trim());
+    }
+    if (input.text_content !== undefined) {
+      patch.push("text_content = ?");
+      values.push(input.text_content);
+    }
+    if (input.role !== undefined) {
+      patch.push("role = ?");
+      values.push(input.role);
+    }
+    if (input.sort_order !== undefined) {
+      patch.push("sort_order = ?");
+      values.push(input.sort_order);
+    }
+    if (input.metadata !== undefined) {
+      patch.push("metadata = ?");
+      values.push(JSON.stringify(input.metadata));
+    }
+    patch.push("updated_at = ?");
+    values.push(nowIso(), assetId, kitId);
+    db.prepare(
+      `UPDATE brand_kit_assets SET ${patch.join(", ")} WHERE id = ? AND kit_id = ?`,
+    ).run(...values);
+    const detail = getBrandKit(kitId);
+    return detail?.assets.find((asset) => asset.id === assetId) ?? null;
+  }
+
+  function deleteBrandKitAsset(kitId: string, assetId: string) {
+    const row = db
+      .prepare(
+        `SELECT file_asset_id FROM brand_kit_assets WHERE id = ? AND kit_id = ?`,
+      )
+      .get(assetId, kitId) as { file_asset_id: string | null } | undefined;
+    if (!row) return false;
+    if (row.file_asset_id) {
+      deleteAsset(row.file_asset_id);
+    }
+    db.prepare(`DELETE FROM brand_kit_assets WHERE id = ? AND kit_id = ?`).run(
+      assetId,
+      kitId,
+    );
+    return true;
+  }
+
+  function uploadBrandKitAsset(
+    kitId: string,
+    assetType: "logo" | "image",
+    fileName: string,
+    fileBuffer: Buffer,
+    mimeType: string,
+  ) {
+    const existing = getBrandKit(kitId);
+    if (!existing) return null;
+    const stored = writeAssetFile({
+      bucket: "project-assets",
+      buffer: fileBuffer,
+      mimeType,
+      fileName,
+      scope: "brand-kit",
+    });
+    const assetId = randomUUID();
+    const timestamp = nowIso();
+    db.prepare(
+      `
+        INSERT INTO brand_kit_assets (
+          id, kit_id, asset_type, display_name, role, sort_order, text_content, file_asset_id, metadata, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, NULL, 0, NULL, ?, '{}', ?, ?)
+      `,
+    ).run(
+      assetId,
+      kitId,
+      assetType,
+      fileName.replace(/\.[^.]+$/, ""),
+      stored.asset.id,
+      timestamp,
+      timestamp,
+    );
+    if (!existing.cover_url && assetType === "logo") {
+      db.prepare(`UPDATE brand_kits SET cover_asset_id = ?, updated_at = ? WHERE id = ?`).run(
+        stored.asset.id,
+        timestamp,
+        kitId,
+      );
+    }
+    const detail = getBrandKit(kitId);
+    return detail?.assets.find((asset) => asset.id === assetId) ?? null;
+  }
+
+  function uploadFile(input: {
+    bucket: AssetBucket;
+    fileName: string;
+    fileBuffer: Buffer;
+    mimeType: string;
+    projectId?: string;
+  }) {
+    return writeAssetFile({
+      bucket: input.bucket,
+      buffer: input.fileBuffer,
+      mimeType: input.mimeType,
+      fileName: input.fileName,
+      scope: "upload",
+      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+    });
+  }
+
+  function createGeneratedImage(prompt: string) {
+    const escaped = prompt
+      .slice(0, 180)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+        <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#f5ede1"/>
+            <stop offset="100%" stop-color="#e0eef8"/>
+          </linearGradient>
+        </defs>
+        <rect width="1024" height="1024" fill="url(#bg)" rx="48"/>
+        <rect x="72" y="72" width="880" height="880" rx="36" fill="rgba(255,255,255,0.82)" stroke="rgba(15,23,42,0.08)"/>
+        <text x="110" y="220" fill="#0f172a" font-size="48" font-family="Arial, sans-serif" font-weight="700">AI Media Canvas Local Preview</text>
+        <text x="110" y="300" fill="#334155" font-size="28" font-family="Arial, sans-serif">Prompt</text>
+        <foreignObject x="110" y="340" width="780" height="420">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Arial, sans-serif; font-size: 42px; line-height: 1.35; color: #0f172a;">
+            ${escaped}
+          </div>
+        </foreignObject>
+      </svg>
+    `.trim();
+    const stored = writeAssetFile({
+      bucket: "project-assets",
+      buffer: Buffer.from(svg, "utf-8"),
+      mimeType: "image/svg+xml",
+      fileName: "generated-image.svg",
+      scope: "generated",
+    });
+    return {
+      assetId: stored.asset.id,
+      url: stored.url,
+      mimeType: "image/svg+xml",
+      width: 1024,
+      height: 1024,
+      prompt,
+    };
+  }
+
+  function getAssetResponse(assetId: string) {
+    const row = getAssetRow(assetId);
+    if (!row) return null;
+    return {
+      filePath: row.file_path,
+      mimeType: row.mime_type ?? "application/octet-stream",
+      size: statSync(row.file_path).size,
+    };
+  }
+
+  function resetAllData() {
+    db.close();
+    rmSync(dataRoot, { force: true, recursive: true });
+  }
+
+  return {
+    assetBaseUrl: options.assetBaseUrl,
+    dataRoot,
+    localAccessToken: LOCAL_ACCESS_TOKEN,
+    localUser: {
+      accessToken: LOCAL_ACCESS_TOKEN,
+      email: DEFAULT_EMAIL,
+      id: LOCAL_USER_ID,
+      userMetadata: { mode: "local" },
+    },
+    getViewer,
+    updateProfile,
+    getWorkspaceSettings,
+    updateWorkspaceSettings,
+    listProjects,
+    createProject,
+    getProject,
+    updateProject,
+    archiveProject,
+    saveProjectThumbnail,
+    getCanvas,
+    saveCanvas,
+    listSessions,
+    createSession,
+    updateSessionTitle,
+    deleteSession,
+    listMessages,
+    createMessage,
+    listBrandKits,
+    getBrandKit,
+    createBrandKit,
+    updateBrandKit,
+    deleteBrandKit,
+    duplicateBrandKit,
+    createBrandKitAsset,
+    updateBrandKitAsset,
+    deleteBrandKitAsset,
+    uploadBrandKitAsset,
+    uploadFile,
+    getAssetUrl(assetId: string) {
+      return resolveAssetUrl(assetId);
+    },
+    deleteAsset,
+    createGeneratedImage,
+    getAssetResponse,
+    assetObjectFromId(assetId: string) {
+      const row = getAssetRow(assetId);
+      return row ? assetObjectFromRow(row) : null;
+    },
+    resetAllData,
+  };
+}
