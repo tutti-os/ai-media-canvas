@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import type { ImageArtifact, ToolBlock } from "@aimc/shared";
+import type { ImageArtifact, ToolBlock, VideoArtifact } from "@aimc/shared";
 import { ChatImage } from "./image-lightbox";
 import {
   formatModelDisplayName,
@@ -163,15 +163,21 @@ export const ToolBlockView = React.memo(function ToolBlockView({
     isCompleted &&
     (block.outputSummary || hasOutput);
 
-  // Extract artifacts for generate_image / generate_video inline preview
+  // Extract image artifacts for inline preview
   const imageArtifact = block.artifacts?.find(
     (artifact): artifact is ImageArtifact => artifact.type === "image",
+  );
+  const videoArtifact = block.artifacts?.find(
+    (artifact): artifact is VideoArtifact => artifact.type === "video",
   );
   const isImageTool = block.toolName === "generate_image";
   const isVideoTool = block.toolName === "generate_video";
   const isMediaTool = isImageTool || isVideoTool;
   const mediaError =
-    isMediaTool && isCompleted && !imageArtifact
+    isMediaTool &&
+    isCompleted &&
+    !imageArtifact &&
+    !videoArtifact
       ? ((block.output as Record<string, unknown> | undefined)
           ?.error as string | undefined)
       : undefined;
@@ -222,7 +228,11 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       )}
 
       {/* Layer 2b-err: Media generation failed */}
-      {isMediaTool && isCompleted && !imageArtifact && mediaError && (
+      {isMediaTool &&
+        isCompleted &&
+        !imageArtifact &&
+        !videoArtifact &&
+        mediaError && (
         <MediaErrorCard
           isVideoTool={isVideoTool}
           error={mediaError}
@@ -238,6 +248,8 @@ export const ToolBlockView = React.memo(function ToolBlockView({
           hasDetails={!!hasDetails}
           onOpenPanel={handleOpenPanel}
         />
+      ) : isVideoTool && isCompleted && videoArtifact ? (
+        <VideoArtifactCard artifact={videoArtifact} />
       ) : showCard ? (
         /* Layer 2: Generic output card (non-image tools) */
         <div className="rounded-xl border-[0.5px] border-border p-3">
@@ -491,6 +503,34 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
   );
 });
 
+const VideoArtifactCard = React.memo(function VideoArtifactCard({
+  artifact,
+}: {
+  artifact: VideoArtifact;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border-[0.5px] border-border">
+      <div className="bg-black">
+        <video
+          src={artifact.url}
+          controls
+          className="max-h-[280px] w-full object-contain"
+        />
+      </div>
+      <div className="px-3 py-2.5">
+        <div className="text-sm font-semibold text-foreground line-clamp-1">
+          {artifact.title ?? "Generated video"}
+        </div>
+        <div className="mt-0.5 text-[11px] text-muted-foreground">
+          {artifact.durationSeconds != null
+            ? `${artifact.durationSeconds}s · ${artifact.mimeType}`
+            : artifact.mimeType}
+        </div>
+      </div>
+    </div>
+  );
+});
+
 /* ------------------------------------------------------------------ */
 /*  ToolDetailPanel — floating panel to the left of chatbar            */
 /* ------------------------------------------------------------------ */
@@ -632,6 +672,13 @@ function ToolDetailPanel({
                       src={artifact.url}
                       alt={artifact.title ?? "Generated image"}
                       className="max-w-[200px] rounded-lg border border-border"
+                    />
+                  ) : artifact.type === "video" ? (
+                    <video
+                      key={artifact.url}
+                      src={artifact.url}
+                      controls
+                      className="max-w-[240px] rounded-lg border border-border bg-black"
                     />
                   ) : null,
                 )}

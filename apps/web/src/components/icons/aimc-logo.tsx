@@ -41,7 +41,7 @@ export function AimcLogo(props: SVGProps<SVGSVGElement>) {
 
 /**
  * Inverted variant for dark backgrounds — white blob, dark inner elements.
- * Use this when you need explicit colour control (e.g. OG images, login panel).
+ * Use this when you need explicit colour control (e.g. OG images, export cards).
  */
 export function AimcLogoInverted(props: SVGProps<SVGSVGElement>) {
   return (

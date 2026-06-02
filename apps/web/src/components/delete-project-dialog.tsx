@@ -26,7 +26,7 @@ export function DeleteProjectDialog({
     <Dialog open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
       <DialogContent className="sm:max-w-sm" showCloseButton={false}>
         <p className="text-sm font-medium text-foreground">
-          确定删除此项目？此操作无法撤销。
+          确定归档此项目？它会从项目列表中移除，但本地数据仍会保留。
         </p>
         <div className="mt-4 flex items-center justify-end gap-3">
           <Button
@@ -50,7 +50,7 @@ export function DeleteProjectDialog({
               >
                 <Loader2 size={16} />
               </motion.span>
-            ) : "永久删除"}
+            ) : "归档项目"}
           </Button>
         </div>
       </DialogContent>

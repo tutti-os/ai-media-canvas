@@ -22,6 +22,12 @@ interface NavItem {
 
 const TOP_NAV_ITEMS: NavItem[] = [
   {
+    href: "/home",
+    label: "Home",
+    viewBox: 20,
+    icon: "M10.707 2.293a1 1 0 0 0-1.414 0l-6 6A1 1 0 0 0 3 9v7a2 2 0 0 0 2 2h3.5a.5.5 0 0 0 .5-.5V13a1 1 0 0 1 1-1h0a1 1 0 0 1 1 1v4.5a.5.5 0 0 0 .5.5H15a2 2 0 0 0 2-2V9a1 1 0 0 0-.293-.707z",
+  },
+  {
     href: "/projects",
     label: "Projects",
     viewBox: 20,
@@ -32,6 +38,12 @@ const TOP_NAV_ITEMS: NavItem[] = [
     label: "Brand Kit",
     viewBox: 18,
     icon: "M6.938 1.5c.545 0 1.056.156 1.488.426a2.8 2.8 0 0 1 1.5.375l2.273 1.312c.473.273.837.663 1.076 1.113.45.239.84.603 1.112 1.075L15.7 8.074a2.81 2.81 0 0 1-1.03 3.842l-6.966 4.021A4.125 4.125 0 0 1 1.5 12.376V4.313A2.813 2.813 0 0 1 4.313 1.5zm-.563 10.875a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0m7.175-5.774a2.8 2.8 0 0 1-.321.854l-3.46 5.99 4.339-2.503a1.69 1.69 0 0 0 .617-2.305zM7.5 12.375a1.875 1.875 0 1 1-3.75 0 1.875 1.875 0 0 1 3.75 0m-4.875 0a3 3 0 1 0 6 0V4.313a1.684 1.684 0 0 0-1.687-1.688H4.313c-.932 0-1.688.756-1.688 1.688zm7.125-1.144 2.505-4.338a1.685 1.685 0 0 0-.618-2.306L9.6 3.412c.096.283.149.585.149.9z",
+  },
+  {
+    href: "/skills",
+    label: "Skills",
+    viewBox: 20,
+    icon: "M10 2a1 1 0 0 1 .894.553l1.18 2.39 2.638.384a1 1 0 0 1 .554 1.706l-1.91 1.86.451 2.628a1 1 0 0 1-1.451 1.054L10 11.336l-2.356 1.239a1 1 0 0 1-1.45-1.054l.45-2.628-1.91-1.86a1 1 0 0 1 .555-1.706l2.638-.384 1.18-2.39A1 1 0 0 1 10 2z",
   },
 ];
 
@@ -177,7 +189,7 @@ export function AppSidebar() {
       <aside className="hidden md:flex h-screen w-[60px] flex-col items-center border-r border-border bg-card py-3 gap-1">
         {/* Logo */}
         <Link
-          href="/projects"
+          href="/home"
           title="AI Media Canvas"
           className="mb-1 flex h-9 w-9 items-center justify-center"
         >

@@ -12,12 +12,8 @@ export const runIdSchema = identifierSchema;
 export const messageIdSchema = identifierSchema;
 export const toolCallIdSchema = identifierSchema;
 export const userIdSchema = identifierSchema;
-export const workspaceIdSchema = identifierSchema;
 export const projectIdSchema = identifierSchema;
 export const canvasIdSchema = identifierSchema;
-
-export const workspaceTypeSchema = z.enum(["personal", "team"]);
-export const workspaceRoleSchema = z.enum(["owner", "admin", "member"]);
 
 export const runStatusSchema = z.enum([
   "accepted",
@@ -48,17 +44,9 @@ export const brandKitAssetMentionSchema = z.object({
   fileUrl: z.string().url().nullable().optional(),
 });
 
-export const skillMentionSchema = z.object({
-  mentionType: z.literal("skill"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-  slug: z.string().min(1),
-});
-
 export const messageMentionSchema = z.discriminatedUnion("mentionType", [
   imageModelMentionSchema,
   brandKitAssetMentionSchema,
-  skillMentionSchema,
 ]);
 
 export const imageGenerationPreferenceSchema = z.object({
@@ -80,7 +68,6 @@ export const runCreateRequestSchema = z.object({
   imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
   videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
   mentions: z.array(messageMentionSchema).optional(),
-  accessToken: z.string().optional(),
   model: z.string().optional(),
 });
 
@@ -98,19 +85,6 @@ export const viewerProfileSchema = z.object({
   avatarUrl: z.string().url().nullable().optional(),
 });
 
-export const workspaceSummarySchema = z.object({
-  id: workspaceIdSchema,
-  name: z.string().min(1),
-  type: workspaceTypeSchema,
-  ownerUserId: userIdSchema,
-});
-
-export const workspaceMembershipSchema = z.object({
-  workspaceId: workspaceIdSchema,
-  userId: userIdSchema,
-  role: workspaceRoleSchema,
-});
-
 export const canvasSummarySchema = z.object({
   id: canvasIdSchema,
   name: z.string().min(1),
@@ -123,7 +97,6 @@ export const projectSummarySchema = z.object({
   slug: z.string().min(1),
   description: z.string().nullable(),
   thumbnailUrl: z.string().nullable().optional(),
-  workspace: workspaceSummarySchema,
   primaryCanvas: canvasSummarySchema,
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
@@ -144,10 +117,6 @@ export const canvasDetailSchema = z.object({
 
 export const profileUpdateRequestSchema = z.object({
   displayName: z.string().trim().min(1).max(100),
-});
-
-export const workspaceSettingsSchema = z.object({
-  defaultModel: z.string().min(1),
 });
 
 export const modelInfoSchema = z.object({
@@ -221,18 +190,9 @@ export const brandKitAssetMentionBlockSchema = z.object({
   fileUrl: z.string().url().nullable().optional(),
 });
 
-export const skillMentionBlockSchema = z.object({
-  type: z.literal("mention"),
-  mentionType: z.literal("skill"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-  slug: z.string().min(1),
-});
-
 export const mentionBlockSchema = z.union([
   imageModelMentionBlockSchema,
   brandKitAssetMentionBlockSchema,
-  skillMentionBlockSchema,
 ]);
 
 export const contentBlockSchema = z.union([
@@ -267,7 +227,6 @@ export const assetObjectSchema = z.object({
   objectPath: z.string().min(1),
   mimeType: z.string().min(1).nullable(),
   byteSize: z.number().int().nonnegative().nullable(),
-  workspaceId: workspaceIdSchema,
   projectId: projectIdSchema.nullable(),
   createdAt: timestampSchema,
 });
@@ -294,13 +253,10 @@ export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type ChatMessageCreateRequest = z.infer<typeof chatMessageCreateRequestSchema>;
 export type ChatToolActivity = z.infer<typeof chatToolActivitySchema>;
 export type ProfileUpdateRequest = z.infer<typeof profileUpdateRequestSchema>;
-export type WorkspaceSettings = z.infer<typeof workspaceSettingsSchema>;
 export type ModelInfo = z.infer<typeof modelInfoSchema>;
 export type RunCreateRequest = z.infer<typeof runCreateRequestSchema>;
 export type RunCreateResponse = z.infer<typeof runCreateResponseSchema>;
 export type ViewerProfile = z.infer<typeof viewerProfileSchema>;
-export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
-export type WorkspaceMembership = z.infer<typeof workspaceMembershipSchema>;
 export type CanvasSummary = z.infer<typeof canvasSummarySchema>;
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;
 export type CanvasContent = z.infer<typeof canvasContentSchema>;

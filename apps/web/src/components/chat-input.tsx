@@ -6,7 +6,6 @@ import type { MessageMention } from "@aimc/shared";
 import type { ImageAttachmentState } from "../hooks/use-image-attachments";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
-import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import { AgentModelSelector } from "./agent-model-selector";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
@@ -15,6 +14,7 @@ type ChatInputProps = {
   onSend: (message: string) => void;
   disabled?: boolean;
   attachments?: ImageAttachmentState[];
+  canSendAttachments?: boolean;
   onAddFiles?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
   onRetryAttachment?: (id: string) => void;
@@ -34,6 +34,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   onSend,
   disabled,
   attachments,
+  canSendAttachments,
   onAddFiles,
   onRemoveAttachment,
   onRetryAttachment,
@@ -47,7 +48,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { preference } = useImageModelPreference();
-  const { preference: videoPreference } = useVideoModelPreference();
   const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -63,13 +63,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
   const handleSubmit = useCallback(() => {
     const trimmed = value.trim();
-    if ((!trimmed && (!attachments || attachments.length === 0)) || disabled || isUploading) return;
+    const hasReadyAttachments =
+      canSendAttachments ?? !!attachments?.length;
+    if ((!trimmed && !hasReadyAttachments) || disabled || isUploading) return;
     onSend(trimmed);
     setValue("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [value, disabled, isUploading, onSend, attachments]);
+  }, [value, disabled, isUploading, onSend, attachments, canSendAttachments]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -170,7 +172,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     [onAddFiles],
   );
 
-  const hasContent = value.trim().length > 0 || (attachments && attachments.length > 0);
+  const hasContent =
+    value.trim().length > 0 ||
+    (canSendAttachments ?? !!attachments?.length);
 
   // Memoize canvas selection summary -- selectedCanvasElements changes on every
   // canvas interaction, but the counts only change when the selection actually differs
@@ -305,7 +309,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 onClick={() => setModelPopoverOpen((prev) => !prev)}
                 title="Image model"
                 className={`flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] transition-colors ${
-                  preference.mode === "manual" || videoPreference.mode === "manual"
+                  preference.mode === "manual"
                     ? "border-accent bg-accent/20 text-accent-foreground"
                     : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}

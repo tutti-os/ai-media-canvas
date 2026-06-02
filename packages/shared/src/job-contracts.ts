@@ -1,6 +1,13 @@
 import { z } from "zod";
 
-// --- Enums ---
+import {
+  canvasIdSchema,
+  identifierSchema,
+  projectIdSchema,
+  sessionIdSchema,
+  timestampSchema,
+  userIdSchema,
+} from "./contracts.js";
 
 export const backgroundJobStatusSchema = z.enum([
   "queued",
@@ -18,85 +25,81 @@ export const backgroundJobTypeSchema = z.enum([
 ]);
 export type BackgroundJobType = z.infer<typeof backgroundJobTypeSchema>;
 
-// --- Payloads ---
-
 export const imageGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
-  model: z.string().optional(),
-  aspect_ratio: z.string().optional(),
+  model: z.string().min(1).optional(),
+  aspect_ratio: z.string().min(1).optional(),
+  quality: z.enum(["standard", "hd", "ultra"]).optional(),
+  input_images: z.array(z.string().min(1)).optional(),
 });
 export type ImageGenerationPayload = z.infer<typeof imageGenerationPayloadSchema>;
 
 export const videoGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
-  model: z.string().optional(),
-  duration: z.number().int().optional(),
-  resolution: z.string().optional(),
-  aspect_ratio: z.string().optional(),
-  input_images: z.array(z.string()).optional(),
-  input_video: z.string().optional(),
+  model: z.string().min(1).optional(),
+  duration: z.number().int().min(1).optional(),
+  resolution: z.string().min(1).optional(),
+  aspect_ratio: z.string().min(1).optional(),
+  input_images: z.array(z.string().min(1)).optional(),
+  input_video: z.string().min(1).optional(),
   enable_audio: z.boolean().optional(),
 });
 export type VideoGenerationPayload = z.infer<typeof videoGenerationPayloadSchema>;
 
-export const createVideoJobRequestSchema = z.object({
-  project_id: z.string().uuid().optional(),
-  canvas_id: z.string().uuid().optional(),
-  session_id: z.string().uuid().optional(),
-  thread_id: z.string().optional(),
+export const createImageJobRequestSchema = z.object({
+  project_id: projectIdSchema.optional(),
+  canvas_id: canvasIdSchema.optional(),
+  session_id: sessionIdSchema.optional(),
+  thread_id: identifierSchema.optional(),
   prompt: z.string().min(1),
-  model: z.string().optional(),
-  duration: z.number().int().optional(),
-  resolution: z.string().optional(),
-  aspect_ratio: z.string().optional(),
-  input_images: z.array(z.string()).optional(),
-  input_video: z.string().optional(),
+  model: z.string().min(1).optional(),
+  aspect_ratio: z.string().min(1).optional(),
+  quality: z.enum(["standard", "hd", "ultra"]).optional(),
+  input_images: z.array(z.string().min(1)).optional(),
+});
+export type CreateImageJobRequest = z.infer<typeof createImageJobRequestSchema>;
+
+export const createVideoJobRequestSchema = z.object({
+  project_id: projectIdSchema.optional(),
+  canvas_id: canvasIdSchema.optional(),
+  session_id: sessionIdSchema.optional(),
+  thread_id: identifierSchema.optional(),
+  prompt: z.string().min(1),
+  model: z.string().min(1).optional(),
+  duration: z.number().int().min(1).optional(),
+  resolution: z.string().min(1).optional(),
+  aspect_ratio: z.string().min(1).optional(),
+  input_images: z.array(z.string().min(1)).optional(),
+  input_video: z.string().min(1).optional(),
   enable_audio: z.boolean().optional(),
 });
 export type CreateVideoJobRequest = z.infer<typeof createVideoJobRequestSchema>;
 
-// --- Job entity ---
-
 export const backgroundJobSchema = z.object({
-  id: z.string().uuid(),
-  workspace_id: z.string().uuid(),
-  project_id: z.string().uuid().nullable(),
-  canvas_id: z.string().uuid().nullable(),
-  session_id: z.string().uuid().nullable(),
-  thread_id: z.string().nullable(),
-  queue_name: z.string(),
+  id: identifierSchema,
+  workspace_id: identifierSchema,
+  project_id: projectIdSchema.nullable(),
+  canvas_id: canvasIdSchema.nullable(),
+  session_id: sessionIdSchema.nullable(),
+  thread_id: identifierSchema.nullable(),
+  queue_name: z.string().min(1),
   job_type: backgroundJobTypeSchema,
   status: backgroundJobStatusSchema,
   payload: z.record(z.string(), z.unknown()),
   result: z.record(z.string(), z.unknown()).nullable(),
   error_code: z.string().nullable(),
   error_message: z.string().nullable(),
-  attempt_count: z.number().int(),
-  max_attempts: z.number().int(),
-  created_by: z.string().uuid(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  started_at: z.string().nullable(),
-  completed_at: z.string().nullable(),
-  failed_at: z.string().nullable(),
-  canceled_at: z.string().nullable(),
+  attempt_count: z.number().int().nonnegative(),
+  max_attempts: z.number().int().positive(),
+  created_by: userIdSchema,
+  created_at: timestampSchema,
+  updated_at: timestampSchema,
+  started_at: timestampSchema.nullable(),
+  completed_at: timestampSchema.nullable(),
+  failed_at: timestampSchema.nullable(),
+  canceled_at: timestampSchema.nullable(),
 });
 export type BackgroundJob = z.infer<typeof backgroundJobSchema>;
-
-// --- API Request schemas ---
-
-export const createImageJobRequestSchema = z.object({
-  project_id: z.string().uuid().optional(),
-  canvas_id: z.string().uuid().optional(),
-  session_id: z.string().uuid().optional(),
-  thread_id: z.string().optional(),
-  prompt: z.string().min(1),
-  model: z.string().optional(),
-  aspect_ratio: z.string().optional(),
-});
-export type CreateImageJobRequest = z.infer<typeof createImageJobRequestSchema>;
-
-// --- API Response schemas ---
 
 export const jobResponseSchema = z.object({
   job: backgroundJobSchema,

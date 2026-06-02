@@ -14,13 +14,15 @@ type HomeDiscoveryGalleryProps = {
   onCaseSelect: (selection: HomeDiscoverySelection) => void;
 };
 
-type DiscoveryTabProps = {
+function DiscoveryTab({
+  active,
+  label,
+  onClick,
+}: {
   active: boolean;
   label: string;
   onClick: () => void;
-};
-
-function DiscoveryTab({ active, label, onClick }: DiscoveryTabProps) {
+}) {
   return (
     <button
       type="button"
@@ -63,37 +65,17 @@ export function HomeDiscoveryGallery({
       );
     }
 
-    const currentCategory = categories.find(
-      (category) => category.key === activeCategoryKey,
-    );
+    const category = categories.find((item) => item.key === activeCategoryKey);
+    if (!category) return [];
 
-    if (!currentCategory) {
-      return [];
-    }
-
-    return currentCategory.cases.map((item) => ({
+    return category.cases.map((item) => ({
       ...item,
-      categoryKey: currentCategory.key,
-      categoryLabel: currentCategory.label,
+      categoryKey: category.key,
+      categoryLabel: category.label,
     }));
   }, [activeCategoryKey, categories]);
 
-  if (categories.length === 0) {
-    return null;
-  }
-
-  const handleCaseClick = (
-    categoryKey: string,
-    categoryLabel: string,
-    item: HomeDiscoveryCase,
-  ) => {
-    const { sourceUrl: _sourceUrl, ...selectionCase } = item;
-    onCaseSelect({
-      ...selectionCase,
-      categoryKey,
-      categoryLabel,
-    });
-  };
+  if (categories.length === 0) return null;
 
   return (
     <section className="mt-14 w-full">
@@ -102,7 +84,7 @@ export function HomeDiscoveryGallery({
           <div>
             <h2 className="text-lg font-medium text-foreground">灵感发现</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              点击卡片后会直接按这条案例思路新建 AI Media Canvas 项目，并进入 agent 对话流。
+              点击卡片后会按这条创意方向直接新建本地项目，并把 prompt 带入画布侧边对话。
             </p>
           </div>
         </div>
@@ -130,9 +112,7 @@ export function HomeDiscoveryGallery({
             key={item.id}
             type="button"
             aria-label={item.title}
-            onClick={() =>
-              handleCaseClick(item.categoryKey, item.categoryLabel, item)
-            }
+            onClick={() => onCaseSelect(item)}
             className="group overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
           >
             <div className="relative aspect-[4/5] overflow-hidden bg-muted">

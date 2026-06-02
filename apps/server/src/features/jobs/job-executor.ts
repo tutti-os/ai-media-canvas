@@ -1,39 +1,45 @@
-import type { BackgroundJobType } from "@aimc/shared";
+import type { BackgroundJob } from "@aimc/shared";
 
+import type { LocalStore } from "../../local/store.js";
 import type { JobService } from "./job-service.js";
-import type { PgmqClient } from "../../queue/pgmq-client.js";
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
-import type { ServerEnv } from "../../config/env.js";
+import {
+  executeImageGenerationJob,
+  isRetryableImageGenerationError,
+} from "./executors/image-generation.js";
+import {
+  executeVideoGenerationJob,
+  isRetryableVideoGenerationError,
+} from "./executors/video-generation.js";
 
-export type ExecutorContext = {
-  jobService: JobService;
-  pgmq: PgmqClient;
-  getAdminClient: () => AdminSupabaseClient;
-  env: ServerEnv;
-  /** PGMQ queue name for the current job (set per-message by the worker). */
-  queue: string;
-  /** PGMQ message id for the current job (set per-message by the worker). */
-  msgId: number;
-  /**
-   * Best-effort VT renewal — extends visibility timeout so the message
-   * stays invisible while the executor is still working.
-   * Never throws; logs on failure.
-   */
-  renewVt: (vtSeconds: number) => Promise<void>;
-};
-
-export type JobExecutor = (
-  jobId: string,
-  payload: Record<string, unknown>,
-  ctx: ExecutorContext,
-) => Promise<Record<string, unknown>>;
-
-const executors = new Map<BackgroundJobType, JobExecutor>();
-
-export function registerExecutor(jobType: BackgroundJobType, executor: JobExecutor): void {
-  executors.set(jobType, executor);
-}
-
-export function getExecutor(jobType: BackgroundJobType): JobExecutor | undefined {
-  return executors.get(jobType);
+export async function executeBackgroundJob(
+  store: LocalStore,
+  jobService: JobService,
+  job: BackgroundJob,
+) {
+  try {
+    let result: Record<string, unknown>;
+    if (job.job_type === "image_generation") {
+      result = await executeImageGenerationJob(store, job);
+    } else if (job.job_type === "video_generation") {
+      result = await executeVideoGenerationJob(store, job);
+    } else {
+      throw new Error(`Unsupported job type: ${job.job_type}`);
+    }
+    return await jobService.markSucceeded(job.id, result);
+  } catch (error) {
+    const retryable =
+      job.job_type === "image_generation"
+        ? isRetryableImageGenerationError(error)
+        : isRetryableVideoGenerationError(error);
+    return jobService.markFailed({
+      jobId: job.id,
+      errorCode:
+        error instanceof Error && "code" in error && typeof error.code === "string"
+          ? error.code
+          : "generation_failed",
+      errorMessage:
+        error instanceof Error ? error.message : "Background generation failed.",
+      retryable,
+    });
+  }
 }

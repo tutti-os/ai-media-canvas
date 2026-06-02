@@ -1,13 +1,12 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { LOCAL_ACCESS_TOKEN } from "@/lib/auth-context";
 import { useToast } from "@/components/toast";
 import { deleteProject } from "@/lib/server-api";
 
 /**
  * Shared hook for deleting a project with confirmation dialog state.
- * Used by Home page, Projects page, and Canvas logo menu.
+ * Used by the projects page and canvas navigation entry points.
  */
 export function useDeleteProject(opts?: {
   onDeleted?: (projectId: string) => void;
@@ -27,11 +26,11 @@ export function useDeleteProject(opts?: {
 
     setDeleting(true);
     try {
-      await deleteProject(LOCAL_ACCESS_TOKEN, pendingId);
-      toastSuccess("项目已删除");
+      await deleteProject(pendingId);
+      toastSuccess("项目已归档");
       opts?.onDeleted?.(pendingId);
     } catch {
-      toastError("项目删除失败");
+      toastError("项目归档失败");
     } finally {
       setDeleting(false);
       setPendingId(null);

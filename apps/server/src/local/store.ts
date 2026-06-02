@@ -6,6 +6,9 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type {
   AssetBucket,
   AssetObject,
+  BackgroundJob,
+  BackgroundJobStatus,
+  BackgroundJobType,
   BrandKitAsset,
   BrandKitAssetCreateRequest,
   BrandKitAssetType,
@@ -19,16 +22,23 @@ import type {
   ChatMessage,
   ChatMessageCreateRequest,
   ChatSessionSummary,
+  ImageGenerationPayload,
   ProjectCreateRequest,
   ProjectSummary,
   ProjectUpdateRequest,
+  SkillCreateRequest,
+  SkillDetail,
+  SkillFileEntry,
+  SkillImportRequest,
+  SkillListItem,
+  SkillToggleRequest,
+  VideoGenerationPayload,
   ViewerResponse,
-  WorkspaceSettings,
 } from "@aimc/shared";
+import { getBundledSkills } from "./skill-catalog.js";
 
 const LOCAL_USER_ID = "local-user";
 const LOCAL_WORKSPACE_ID = "local-workspace";
-const LOCAL_ACCESS_TOKEN = "local-dev-token";
 const DEFAULT_PROJECT_NAME = "My First Project";
 const DEFAULT_CANVAS_NAME = "Main Canvas";
 const DEFAULT_EMAIL = "local@aimc.app";
@@ -45,6 +55,34 @@ type AssetRow = {
   created_at: string;
 };
 
+type BackgroundJobRow = {
+  id: string;
+  workspace_id: string;
+  project_id: string | null;
+  canvas_id: string | null;
+  session_id: string | null;
+  thread_id: string | null;
+  queue_name: string;
+  job_type: BackgroundJobType;
+  status: BackgroundJobStatus;
+  payload: string;
+  result: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  attempt_count: number;
+  max_attempts: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
+  canceled_at: string | null;
+  next_run_at: string | null;
+  locked_at: string | null;
+  locked_by: string | null;
+};
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -56,6 +94,25 @@ function slugify(input: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return normalized || "untitled";
+}
+
+function nextAvailableSlug(existingSlugs: string[], baseSlug: string) {
+  if (!existingSlugs.includes(baseSlug)) {
+    return baseSlug;
+  }
+
+  let maxSuffix = 1;
+  const pattern = new RegExp(`^${baseSlug}-(\\d+)$`);
+  for (const slug of existingSlugs) {
+    const match = pattern.exec(slug);
+    if (!match) continue;
+    const suffix = Number.parseInt(match[1] ?? "", 10);
+    if (Number.isFinite(suffix) && suffix > maxSuffix) {
+      maxSuffix = suffix;
+    }
+  }
+
+  return `${baseSlug}-${maxSuffix + 1}`;
 }
 
 function parseJson<T>(value: string | null | undefined, fallback: T): T {
@@ -89,7 +146,6 @@ export type LocalStore = ReturnType<typeof createLocalStore>;
 export function createLocalStore(options: {
   assetBaseUrl: string;
   dataRoot?: string;
-  defaultModel: string;
 }) {
   const dataRoot =
     options.dataRoot ?? resolve(process.cwd(), "../../local-data");
@@ -111,10 +167,6 @@ export function createLocalStore(options: {
       id TEXT PRIMARY KEY,
       display_name TEXT NOT NULL,
       email TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS workspace_settings (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      default_model TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -186,9 +238,72 @@ export function createLocalStore(options: {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS skills (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      description TEXT NOT NULL,
+      author TEXT NOT NULL,
+      version TEXT NOT NULL,
+      category TEXT NOT NULL,
+      icon_name TEXT,
+      source TEXT NOT NULL,
+      is_featured INTEGER NOT NULL DEFAULT 0,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      license TEXT,
+      skill_content TEXT NOT NULL,
+      created_by TEXT,
+      source_url TEXT,
+      package_name TEXT,
+      is_catalog INTEGER NOT NULL DEFAULT 0,
+      installed INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      installed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS skill_files (
+      id TEXT PRIMARY KEY,
+      skill_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      content TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS background_jobs (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      project_id TEXT,
+      canvas_id TEXT,
+      session_id TEXT,
+      thread_id TEXT,
+      queue_name TEXT NOT NULL,
+      job_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      result TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 3,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      failed_at TEXT,
+      canceled_at TEXT,
+      next_run_at TEXT,
+      locked_at TEXT,
+      locked_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_background_jobs_status_next_run
+      ON background_jobs(status, next_run_at, created_at);
   `);
 
   seedBaseData();
+  seedBundledSkills();
   ensureDefaultProject();
 
   function assetUrl(assetId: string) {
@@ -203,13 +318,64 @@ export function createLocalStore(options: {
         ON CONFLICT(id) DO NOTHING
       `,
     ).run(LOCAL_USER_ID, DEFAULT_DISPLAY_NAME, DEFAULT_EMAIL);
-    db.prepare(
-      `
-        INSERT INTO workspace_settings (id, default_model)
-        VALUES (1, ?)
-        ON CONFLICT(id) DO NOTHING
-      `,
-    ).run(options.defaultModel);
+  }
+
+  function seedBundledSkills() {
+    const bundledSkills = getBundledSkills();
+
+    for (const skill of bundledSkills) {
+      const timestamp = nowIso();
+      db.prepare(
+        `
+          INSERT INTO skills (
+            id, name, slug, description, author, version, category, icon_name,
+            source, is_featured, metadata, license, skill_content, created_by,
+            source_url, package_name, is_catalog, installed, enabled, installed_at,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            slug = excluded.slug,
+            description = excluded.description,
+            author = excluded.author,
+            version = excluded.version,
+            category = excluded.category,
+            icon_name = excluded.icon_name,
+            source = excluded.source,
+            is_featured = excluded.is_featured,
+            metadata = excluded.metadata,
+            license = excluded.license,
+            skill_content = excluded.skill_content,
+            created_by = excluded.created_by,
+            source_url = excluded.source_url,
+            package_name = excluded.package_name,
+            is_catalog = 1,
+            updated_at = excluded.updated_at
+        `,
+      ).run(
+        skill.id,
+        skill.name,
+        skill.slug,
+        skill.description,
+        skill.author,
+        skill.version,
+        skill.category,
+        skill.iconName,
+        skill.source,
+        skill.isFeatured ? 1 : 0,
+        JSON.stringify(skill.metadata ?? {}),
+        skill.license,
+        skill.skillContent,
+        skill.createdBy,
+        skill.sourceUrl,
+        skill.packageName,
+        skill.installedByDefault ? 1 : 0,
+        skill.installedByDefault ? 1 : 0,
+        skill.installedByDefault ? timestamp : null,
+        timestamp,
+        timestamp,
+      );
+    }
   }
 
   function ensureDefaultProject() {
@@ -287,17 +453,6 @@ export function createLocalStore(options: {
   function getViewer(): ViewerResponse {
     return {
       profile: getProfile(),
-      workspace: {
-        id: LOCAL_WORKSPACE_ID,
-        name: "Local Workspace",
-        ownerUserId: LOCAL_USER_ID,
-        type: "personal",
-      },
-      membership: {
-        workspaceId: LOCAL_WORKSPACE_ID,
-        userId: LOCAL_USER_ID,
-        role: "owner",
-      },
     };
   }
 
@@ -307,26 +462,6 @@ export function createLocalStore(options: {
       LOCAL_USER_ID,
     );
     return getProfile();
-  }
-
-  function getWorkspaceSettings(): WorkspaceSettings {
-    const row = db
-      .prepare(`SELECT default_model FROM workspace_settings WHERE id = 1`)
-      .get() as { default_model: string } | undefined;
-    return {
-      defaultModel: row?.default_model ?? options.defaultModel,
-    };
-  }
-
-  function updateWorkspaceSettings(settings: WorkspaceSettings) {
-    db.prepare(
-      `
-        INSERT INTO workspace_settings (id, default_model)
-        VALUES (1, ?)
-        ON CONFLICT(id) DO UPDATE SET default_model = excluded.default_model
-      `,
-    ).run(settings.defaultModel);
-    return getWorkspaceSettings();
   }
 
   function getAssetRow(assetId: string) {
@@ -350,10 +485,51 @@ export function createLocalStore(options: {
       objectPath: row.object_path,
       mimeType: row.mime_type,
       byteSize: row.byte_size,
-      workspaceId: row.workspace_id,
       projectId: row.project_id,
       createdAt: row.created_at,
     };
+  }
+
+  function mapBackgroundJobRow(row: BackgroundJobRow): BackgroundJob {
+    return {
+      id: row.id,
+      workspace_id: row.workspace_id,
+      project_id: row.project_id,
+      canvas_id: row.canvas_id,
+      session_id: row.session_id,
+      thread_id: row.thread_id,
+      queue_name: row.queue_name,
+      job_type: row.job_type,
+      status: row.status,
+      payload: parseJson(row.payload, {}),
+      result: parseJson(row.result, null),
+      error_code: row.error_code,
+      error_message: row.error_message,
+      attempt_count: row.attempt_count,
+      max_attempts: row.max_attempts,
+      created_by: row.created_by,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      started_at: row.started_at,
+      completed_at: row.completed_at,
+      failed_at: row.failed_at,
+      canceled_at: row.canceled_at,
+    };
+  }
+
+  function getBackgroundJobRow(jobId: string) {
+    return db
+      .prepare(
+        `
+          SELECT id, workspace_id, project_id, canvas_id, session_id, thread_id,
+            queue_name, job_type, status, payload, result, error_code, error_message,
+            attempt_count, max_attempts, created_by, created_at, updated_at,
+            started_at, completed_at, failed_at, canceled_at, next_run_at, locked_at, locked_by
+          FROM background_jobs
+          WHERE id = ?
+        `,
+      )
+      .get(jobId) as BackgroundJobRow | undefined;
   }
 
   function writeAssetFile(input: {
@@ -407,15 +583,74 @@ export function createLocalStore(options: {
   }
 
   function deleteAsset(assetId: string) {
+    return deleteAssetRecord(assetId);
+  }
+
+  function findAssetReference(assetId: string) {
+    const thumbnailReference = db
+      .prepare(
+        `SELECT id FROM projects WHERE thumbnail_asset_id = ? LIMIT 1`,
+      )
+      .get(assetId) as { id: string } | undefined;
+    if (thumbnailReference) {
+      return { kind: "project_thumbnail", id: thumbnailReference.id };
+    }
+
+    const brandKitFileReference = db
+      .prepare(
+        `SELECT id FROM brand_kit_assets WHERE file_asset_id = ? LIMIT 1`,
+      )
+      .get(assetId) as { id: string } | undefined;
+    if (brandKitFileReference) {
+      return { kind: "brand_kit_asset", id: brandKitFileReference.id };
+    }
+
+    const brandKitCoverReference = db
+      .prepare(
+        `SELECT id FROM brand_kits WHERE cover_asset_id = ? LIMIT 1`,
+      )
+      .get(assetId) as { id: string } | undefined;
+    if (brandKitCoverReference) {
+      return { kind: "brand_kit_cover", id: brandKitCoverReference.id };
+    }
+
+    const chatReference = db
+      .prepare(
+        `SELECT id FROM chat_messages WHERE content_blocks LIKE ? LIMIT 1`,
+      )
+      .get(`%"assetId":"${assetId}"%`) as { id: string } | undefined;
+    if (chatReference) {
+      return { kind: "chat_message", id: chatReference.id };
+    }
+
+    const canvasReference = db
+      .prepare(
+        `SELECT id FROM canvases WHERE content LIKE ? LIMIT 1`,
+      )
+      .get(`%"id":"${assetId}"%`) as { id: string } | undefined;
+    if (canvasReference) {
+      return { kind: "canvas_content", id: canvasReference.id };
+    }
+
+    return null;
+  }
+
+  function deleteAssetRecord(
+    assetId: string,
+    options?: { force?: boolean },
+  ): { ok: true } | { ok: false; reason: "asset_not_found" | "asset_in_use" } {
     const row = getAssetRow(assetId);
-    if (!row) return false;
+    if (!row) return { ok: false, reason: "asset_not_found" };
+    if (!options?.force && findAssetReference(assetId)) {
+      return { ok: false, reason: "asset_in_use" };
+    }
     try {
       unlinkSync(row.file_path);
     } catch {
       // ignore missing local file
     }
     db.prepare(`DELETE FROM assets WHERE id = ?`).run(assetId);
-    return true;
+    return { ok: true };
   }
 
   function resolveAssetUrl(assetId: string | null | undefined) {
@@ -449,7 +684,6 @@ export function createLocalStore(options: {
       slug: row.slug,
       description: row.description,
       thumbnailUrl: resolveAssetUrl(row.thumbnail_asset_id),
-      workspace: getViewer().workspace,
       primaryCanvas: {
         id: canvas?.id ?? row.primary_canvas_id,
         name: canvas?.name ?? DEFAULT_CANVAS_NAME,
@@ -488,24 +722,40 @@ export function createLocalStore(options: {
     const projectId = randomUUID();
     const canvasId = randomUUID();
     const name = input.name.trim();
-    const slug = slugify(name);
-
-    const existing = db
+    const defaultBrandKit = db
       .prepare(
-        `SELECT id FROM projects WHERE slug = ? AND archived_at IS NULL LIMIT 1`,
+        `
+          SELECT id
+          FROM brand_kits
+          WHERE is_default = 1
+          ORDER BY updated_at DESC
+          LIMIT 1
+        `,
       )
-      .get(slug) as { id: string } | undefined;
-    if (existing) {
-      throw new Error("project_slug_taken");
-    }
+      .get() as { id: string } | undefined;
+    const baseSlug = slugify(name);
+    const existingRows = db
+      .prepare(
+        `
+          SELECT slug
+          FROM projects
+          WHERE archived_at IS NULL
+            AND (slug = ? OR slug LIKE ?)
+        `,
+      )
+      .all(baseSlug, `${baseSlug}-%`) as Array<{ slug: string }>;
+    const slug = nextAvailableSlug(
+      existingRows.map((row) => row.slug),
+      baseSlug,
+    );
 
     db.exec("BEGIN");
     try {
       db.prepare(
         `
           INSERT INTO projects (
-            id, name, slug, description, primary_canvas_id, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            id, name, slug, description, primary_canvas_id, brand_kit_id, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `,
       ).run(
         projectId,
@@ -513,6 +763,7 @@ export function createLocalStore(options: {
         slug,
         input.description?.trim() || null,
         canvasId,
+        defaultBrandKit?.id ?? null,
         timestamp,
         timestamp,
       );
@@ -591,18 +842,24 @@ export function createLocalStore(options: {
     };
   }
 
-  function updateProject(projectId: string, input: ProjectUpdateRequest) {
+  function updateProject(
+    projectId: string,
+    input: ProjectUpdateRequest,
+  ): { ok: true } | { ok: false; reason: "project_not_found" | "brand_kit_not_found" } {
     const existing = getProject(projectId);
-    if (!existing) return false;
+    if (!existing) return { ok: false, reason: "project_not_found" };
     const patch: string[] = [];
     const values: SQLInputValue[] = [];
     if (input.name !== undefined) {
       patch.push("name = ?");
       values.push(input.name.trim());
     }
-    if (input.brand_kit_id !== undefined) {
+    if (input.brandKitId !== undefined) {
+      if (input.brandKitId !== null && !getBrandKit(input.brandKitId)) {
+        return { ok: false, reason: "brand_kit_not_found" };
+      }
       patch.push("brand_kit_id = ?");
-      values.push(input.brand_kit_id);
+      values.push(input.brandKitId);
     }
     patch.push("updated_at = ?");
     values.push(nowIso());
@@ -610,7 +867,7 @@ export function createLocalStore(options: {
     db.prepare(
       `UPDATE projects SET ${patch.join(", ")} WHERE id = ?`,
     ).run(...values);
-    return true;
+    return { ok: true };
   }
 
   function archiveProject(projectId: string) {
@@ -644,7 +901,13 @@ export function createLocalStore(options: {
   function getCanvas(canvasId: string): CanvasDetail | null {
     const row = db
       .prepare(
-        `SELECT id, name, project_id, content FROM canvases WHERE id = ? LIMIT 1`,
+        `
+          SELECT canvases.id, canvases.name, canvases.project_id, canvases.content
+          FROM canvases
+          INNER JOIN projects ON projects.id = canvases.project_id
+          WHERE canvases.id = ? AND projects.archived_at IS NULL
+          LIMIT 1
+        `,
       )
       .get(canvasId) as
       | {
@@ -667,6 +930,10 @@ export function createLocalStore(options: {
     };
   }
 
+  function hasCanvas(canvasId: string) {
+    return !!getCanvas(canvasId);
+  }
+
   function saveCanvas(canvasId: string, content: CanvasContent) {
     const existing = getCanvas(canvasId);
     if (!existing) return false;
@@ -684,7 +951,8 @@ export function createLocalStore(options: {
     return true;
   }
 
-  function listSessions(canvasId: string): ChatSessionSummary[] {
+  function listSessions(canvasId: string): ChatSessionSummary[] | null {
+    if (!hasCanvas(canvasId)) return null;
     const rows = db
       .prepare(
         `
@@ -706,7 +974,24 @@ export function createLocalStore(options: {
     }));
   }
 
-  function createSession(canvasId: string, title?: string): ChatSessionSummary {
+  function hasSession(sessionId: string) {
+    const row = db
+      .prepare(
+        `
+          SELECT chat_sessions.id
+          FROM chat_sessions
+          INNER JOIN canvases ON canvases.id = chat_sessions.canvas_id
+          INNER JOIN projects ON projects.id = canvases.project_id
+          WHERE chat_sessions.id = ? AND projects.archived_at IS NULL
+          LIMIT 1
+        `,
+      )
+      .get(sessionId) as { id: string } | undefined;
+    return !!row;
+  }
+
+  function createSession(canvasId: string, title?: string): ChatSessionSummary | null {
+    if (!hasCanvas(canvasId)) return null;
     const timestamp = nowIso();
     const id = randomUUID();
     db.prepare(
@@ -731,17 +1016,21 @@ export function createLocalStore(options: {
   }
 
   function updateSessionTitle(sessionId: string, title: string) {
-    db.prepare(
+    const result = db.prepare(
       `UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?`,
     ).run(title, nowIso(), sessionId);
+    return result.changes > 0;
   }
 
   function deleteSession(sessionId: string) {
+    if (!hasSession(sessionId)) return false;
     db.prepare(`DELETE FROM chat_messages WHERE session_id = ?`).run(sessionId);
     db.prepare(`DELETE FROM chat_sessions WHERE id = ?`).run(sessionId);
+    return true;
   }
 
-  function listMessages(sessionId: string): ChatMessage[] {
+  function listMessages(sessionId: string): ChatMessage[] | null {
+    if (!hasSession(sessionId)) return null;
     const rows = db
       .prepare(
         `
@@ -768,7 +1057,8 @@ export function createLocalStore(options: {
     }));
   }
 
-  function createMessage(sessionId: string, input: ChatMessageCreateRequest): ChatMessage {
+  function createMessage(sessionId: string, input: ChatMessageCreateRequest): ChatMessage | null {
+    if (!hasSession(sessionId)) return null;
     const id = randomUUID();
     const timestamp = nowIso();
     db.prepare(
@@ -973,15 +1263,24 @@ export function createLocalStore(options: {
         `SELECT file_asset_id FROM brand_kit_assets WHERE kit_id = ? AND file_asset_id IS NOT NULL`,
       )
       .all(kitId) as Array<{ file_asset_id: string }>;
-    for (const row of fileAssetIds) {
-      deleteAsset(row.file_asset_id);
-    }
+    const coverAssetId = db
+      .prepare(`SELECT cover_asset_id FROM brand_kits WHERE id = ?`)
+      .get(kitId) as { cover_asset_id: string | null } | undefined;
     db.prepare(`UPDATE projects SET brand_kit_id = NULL, updated_at = ? WHERE brand_kit_id = ?`).run(
       nowIso(),
       kitId,
     );
     db.prepare(`DELETE FROM brand_kit_assets WHERE kit_id = ?`).run(kitId);
     db.prepare(`DELETE FROM brand_kits WHERE id = ?`).run(kitId);
+    const ownedAssetIds = new Set(
+      fileAssetIds.map((row) => row.file_asset_id).filter(Boolean),
+    );
+    if (coverAssetId?.cover_asset_id) {
+      ownedAssetIds.add(coverAssetId.cover_asset_id);
+    }
+    for (const assetId of ownedAssetIds) {
+      deleteAssetRecord(assetId, { force: true });
+    }
     return true;
   }
 
@@ -1136,12 +1435,19 @@ export function createLocalStore(options: {
       .get(assetId, kitId) as { file_asset_id: string | null } | undefined;
     if (!row) return false;
     if (row.file_asset_id) {
-      deleteAsset(row.file_asset_id);
+      db.prepare(`UPDATE brand_kits SET cover_asset_id = NULL, updated_at = ? WHERE id = ? AND cover_asset_id = ?`).run(
+        nowIso(),
+        kitId,
+        row.file_asset_id,
+      );
     }
     db.prepare(`DELETE FROM brand_kit_assets WHERE id = ? AND kit_id = ?`).run(
       assetId,
       kitId,
     );
+    if (row.file_asset_id) {
+      deleteAssetRecord(row.file_asset_id, { force: true });
+    }
     return true;
   }
 
@@ -1189,6 +1495,615 @@ export function createLocalStore(options: {
     return detail?.assets.find((asset) => asset.id === assetId) ?? null;
   }
 
+  function mapSkillRow(row: {
+    id: string;
+    name: string;
+    slug: string;
+    description: string;
+    author: string;
+    version: string;
+    category: SkillListItem["category"];
+    icon_name: string | null;
+    source: SkillListItem["source"];
+    is_featured: number;
+    metadata: string;
+    installed: number;
+    enabled: number;
+    installed_at: string | null;
+    created_at: string;
+    updated_at: string;
+  }): SkillListItem {
+    return {
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      author: row.author,
+      version: row.version,
+      category: row.category,
+      iconName: row.icon_name,
+      source: row.source,
+      isFeatured: !!row.is_featured,
+      metadata: parseJson(row.metadata, {}),
+      installed: !!row.installed,
+      enabled: !!row.enabled,
+      installedAt: row.installed_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  function getSkillFiles(skillId: string): SkillFileEntry[] {
+    const rows = db
+      .prepare(
+        `
+          SELECT id, file_path, content, mime_type, created_at, updated_at
+          FROM skill_files
+          WHERE skill_id = ?
+          ORDER BY created_at ASC
+        `,
+      )
+      .all(skillId) as Array<{
+      id: string;
+      file_path: string;
+      content: string;
+      mime_type: string;
+      created_at: string;
+      updated_at: string;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      filePath: row.file_path,
+      content: row.content,
+      mimeType: row.mime_type,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+  }
+
+  function listInstalledSkills(): SkillListItem[] {
+    const rows = db
+      .prepare(
+        `
+          SELECT id, name, slug, description, author, version, category, icon_name,
+            source, is_featured, metadata, installed, enabled, installed_at, created_at, updated_at
+          FROM skills
+          WHERE installed = 1
+          ORDER BY updated_at DESC, name ASC
+        `,
+      )
+      .all() as Array<{
+      id: string;
+      name: string;
+      slug: string;
+      description: string;
+      author: string;
+      version: string;
+      category: SkillListItem["category"];
+      icon_name: string | null;
+      source: SkillListItem["source"];
+      is_featured: number;
+      metadata: string;
+      installed: number;
+      enabled: number;
+      installed_at: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    return rows.map(mapSkillRow);
+  }
+
+  function listCatalogSkills(): SkillListItem[] {
+    const rows = db
+      .prepare(
+        `
+          SELECT id, name, slug, description, author, version, category, icon_name,
+            source, is_featured, metadata, installed, enabled, installed_at, created_at, updated_at
+          FROM skills
+          WHERE is_catalog = 1
+          ORDER BY is_featured DESC, name ASC
+        `,
+      )
+      .all() as Array<{
+      id: string;
+      name: string;
+      slug: string;
+      description: string;
+      author: string;
+      version: string;
+      category: SkillListItem["category"];
+      icon_name: string | null;
+      source: SkillListItem["source"];
+      is_featured: number;
+      metadata: string;
+      installed: number;
+      enabled: number;
+      installed_at: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    return rows.map(mapSkillRow);
+  }
+
+  function getSkillDetail(skillId: string): SkillDetail | null {
+    const row = db
+      .prepare(
+        `
+          SELECT id, name, slug, description, author, version, category, icon_name,
+            source, is_featured, metadata, license, skill_content, created_by,
+            source_url, package_name, installed, enabled, installed_at, created_at, updated_at
+          FROM skills
+          WHERE id = ?
+          LIMIT 1
+        `,
+      )
+      .get(skillId) as
+      | {
+          id: string;
+          name: string;
+          slug: string;
+          description: string;
+          author: string;
+          version: string;
+          category: SkillListItem["category"];
+          icon_name: string | null;
+          source: SkillListItem["source"];
+          is_featured: number;
+          metadata: string;
+          license: string | null;
+          skill_content: string;
+          created_by: string | null;
+          source_url: string | null;
+          package_name: string | null;
+          installed: number;
+          enabled: number;
+          installed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      ...mapSkillRow(row),
+      license: row.license,
+      skillContent: row.skill_content,
+      createdBy: row.created_by,
+      sourceUrl: row.source_url,
+      packageName: row.package_name,
+      files: getSkillFiles(skillId),
+    };
+  }
+
+  function deriveSkillDescription(skillContent: string) {
+    const match = /## Description\s+([\s\S]*?)(?:\n## |\n# |$)/i.exec(skillContent);
+    return match?.[1]?.trim() || "Imported local skill.";
+  }
+
+  function deriveSkillName(skillContent: string, filePath: string) {
+    const heading = /^#\s+(.+)$/m.exec(skillContent)?.[1]?.trim();
+    if (heading) return heading;
+    return filePath
+      .split("/")
+      .at(-1)
+      ?.replace(/\.[^.]+$/, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase()) || "Imported Skill";
+  }
+
+  function insertSkillRecord(input: {
+    name: string;
+    description: string;
+    category: SkillListItem["category"];
+    skillContent: string;
+    source: SkillListItem["source"];
+    author: string;
+    files?: Array<{ filePath: string; content: string; mimeType?: string }>;
+    metadata?: Record<string, unknown>;
+  }) {
+    const timestamp = nowIso();
+    const skillId = randomUUID();
+    const slug = nextAvailableSlug(
+      (
+        db.prepare(`SELECT slug FROM skills WHERE slug = ? OR slug LIKE ?`).all(
+          slugify(input.name),
+          `${slugify(input.name)}-%`,
+        ) as Array<{ slug: string }>
+      ).map((row) => row.slug),
+      slugify(input.name),
+    );
+    db.exec("BEGIN");
+    try {
+      db.prepare(
+        `
+          INSERT INTO skills (
+            id, name, slug, description, author, version, category, icon_name,
+            source, is_featured, metadata, license, skill_content, created_by,
+            source_url, package_name, is_catalog, installed, enabled, installed_at,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, '1.0.0', ?, NULL, ?, 0, ?, 'Local', ?, ?, NULL, NULL, 0, 1, 1, ?, ?, ?)
+        `,
+      ).run(
+        skillId,
+        input.name.trim(),
+        slug,
+        input.description.trim(),
+        input.author,
+        input.category,
+        input.source,
+        JSON.stringify(input.metadata ?? {}),
+        input.skillContent,
+        input.author,
+        timestamp,
+        timestamp,
+        timestamp,
+      );
+
+      for (const file of input.files ?? []) {
+        db.prepare(
+          `
+            INSERT INTO skill_files (
+              id, skill_id, file_path, content, mime_type, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+        ).run(
+          randomUUID(),
+          skillId,
+          file.filePath,
+          file.content,
+          file.mimeType ?? "text/plain",
+          timestamp,
+          timestamp,
+        );
+      }
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    return getSkillDetail(skillId)!;
+  }
+
+  function createSkill(input: SkillCreateRequest) {
+    return insertSkillRecord({
+      name: input.name,
+      description: input.description,
+      category: input.category,
+      skillContent: input.skillContent,
+      source: "user",
+      author: getProfile().displayName,
+      ...(input.files
+        ? {
+            files: input.files.map((file) => ({
+              filePath: file.filePath,
+              content: file.content,
+              ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+            })),
+          }
+        : {}),
+      metadata: { origin: "created-local" },
+    });
+  }
+
+  function importSkill(input: SkillImportRequest) {
+    const normalizedFiles = input.files.map((file) => ({
+      filePath: file.filePath.replace(/^\.?\//, ""),
+      content: file.content,
+      mimeType: file.mimeType ?? "text/plain",
+    }));
+    const skillFile =
+      normalizedFiles.find((file) => /(^|\/)SKILL\.md$/i.test(file.filePath)) ??
+      normalizedFiles[0];
+    const skillContent = skillFile?.content?.trim();
+    if (!skillFile || !skillContent) {
+      return null;
+    }
+    return insertSkillRecord({
+      name: input.name?.trim() || deriveSkillName(skillContent, skillFile.filePath),
+      description:
+        input.description?.trim() || deriveSkillDescription(skillContent),
+      category: input.category ?? "custom",
+      skillContent,
+      source: "user",
+      author: getProfile().displayName,
+      files: normalizedFiles,
+      metadata: {
+        origin: "imported-local",
+        importedFileCount: normalizedFiles.length,
+      },
+    });
+  }
+
+  function installCatalogSkill(skillId: string) {
+    const row = db
+      .prepare(`SELECT id FROM skills WHERE id = ? AND is_catalog = 1 LIMIT 1`)
+      .get(skillId) as { id: string } | undefined;
+    if (!row) return null;
+    const timestamp = nowIso();
+    db.prepare(
+      `UPDATE skills SET installed = 1, enabled = 1, installed_at = COALESCE(installed_at, ?), updated_at = ? WHERE id = ?`,
+    ).run(timestamp, timestamp, skillId);
+    return getSkillDetail(skillId);
+  }
+
+  function toggleSkill(skillId: string, input: SkillToggleRequest) {
+    const row = db
+      .prepare(`SELECT id FROM skills WHERE id = ? AND installed = 1 LIMIT 1`)
+      .get(skillId) as { id: string } | undefined;
+    if (!row) return null;
+    db.prepare(`UPDATE skills SET enabled = ?, updated_at = ? WHERE id = ?`).run(
+      input.enabled ? 1 : 0,
+      nowIso(),
+      skillId,
+    );
+    return getSkillDetail(skillId);
+  }
+
+  function uninstallSkill(skillId: string) {
+    const row = db
+      .prepare(`SELECT id, is_catalog FROM skills WHERE id = ? LIMIT 1`)
+      .get(skillId) as { id: string; is_catalog: number } | undefined;
+    if (!row) return false;
+    if (row.is_catalog) {
+      db.prepare(
+        `UPDATE skills SET installed = 0, enabled = 0, updated_at = ? WHERE id = ?`,
+      ).run(nowIso(), skillId);
+      return true;
+    }
+    db.prepare(`DELETE FROM skill_files WHERE skill_id = ?`).run(skillId);
+    db.prepare(`DELETE FROM skills WHERE id = ?`).run(skillId);
+    return true;
+  }
+
+  function listEnabledSkills(): SkillListItem[] {
+    const rows = db
+      .prepare(
+        `
+          SELECT id, name, slug, description, author, version, category, icon_name,
+            source, is_featured, metadata, installed, enabled, installed_at, created_at, updated_at
+          FROM skills
+          WHERE installed = 1 AND enabled = 1
+          ORDER BY updated_at DESC, name ASC
+        `,
+      )
+      .all() as Array<{
+      id: string;
+      name: string;
+      slug: string;
+      description: string;
+      author: string;
+      version: string;
+      category: SkillListItem["category"];
+      icon_name: string | null;
+      source: SkillListItem["source"];
+      is_featured: number;
+      metadata: string;
+      installed: number;
+      enabled: number;
+      installed_at: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    return rows.map(mapSkillRow);
+  }
+
+  function createBackgroundJob(input: {
+    jobType: BackgroundJobType;
+    queueName: string;
+    payload: ImageGenerationPayload | VideoGenerationPayload;
+    projectId?: string;
+    canvasId?: string;
+    sessionId?: string;
+    threadId?: string;
+    maxAttempts?: number;
+  }) {
+    const id = randomUUID();
+    const createdAt = nowIso();
+    db.prepare(
+      `
+        INSERT INTO background_jobs (
+          id, workspace_id, project_id, canvas_id, session_id, thread_id,
+          queue_name, job_type, status, payload, attempt_count, max_attempts,
+          created_by, created_at, updated_at, next_run_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      id,
+      LOCAL_WORKSPACE_ID,
+      input.projectId ?? null,
+      input.canvasId ?? null,
+      input.sessionId ?? null,
+      input.threadId ?? null,
+      input.queueName,
+      input.jobType,
+      "queued",
+      JSON.stringify(input.payload),
+      0,
+      input.maxAttempts ?? 3,
+      LOCAL_USER_ID,
+      createdAt,
+      createdAt,
+      createdAt,
+    );
+    const row = getBackgroundJobRow(id);
+    if (!row) {
+      throw new Error("Failed to persist background job.");
+    }
+    return mapBackgroundJobRow(row);
+  }
+
+  function getBackgroundJob(jobId: string) {
+    const row = getBackgroundJobRow(jobId);
+    return row ? mapBackgroundJobRow(row) : null;
+  }
+
+  function listBackgroundJobs(filters?: {
+    status?: BackgroundJobStatus;
+    jobType?: BackgroundJobType;
+  }) {
+    const conditions = ["created_by = ?"];
+    const values: SQLInputValue[] = [LOCAL_USER_ID];
+    if (filters?.status) {
+      conditions.push("status = ?");
+      values.push(filters.status);
+    }
+    if (filters?.jobType) {
+      conditions.push("job_type = ?");
+      values.push(filters.jobType);
+    }
+
+    const rows = db
+      .prepare(
+        `
+          SELECT id, workspace_id, project_id, canvas_id, session_id, thread_id,
+            queue_name, job_type, status, payload, result, error_code, error_message,
+            attempt_count, max_attempts, created_by, created_at, updated_at,
+            started_at, completed_at, failed_at, canceled_at, next_run_at, locked_at, locked_by
+          FROM background_jobs
+          WHERE ${conditions.join(" AND ")}
+          ORDER BY created_at DESC
+          LIMIT 100
+        `,
+      )
+      .all(...values) as BackgroundJobRow[];
+
+    return rows.map(mapBackgroundJobRow);
+  }
+
+  function cancelBackgroundJob(jobId: string) {
+    const updatedAt = nowIso();
+    const result = db.prepare(
+      `
+        UPDATE background_jobs
+        SET status = 'canceled',
+            updated_at = ?,
+            canceled_at = ?,
+            locked_at = NULL,
+            locked_by = NULL
+        WHERE id = ?
+          AND status IN ('queued', 'running', 'failed')
+      `,
+    ).run(updatedAt, updatedAt, jobId);
+
+    if (result.changes === 0) {
+      return null;
+    }
+    return getBackgroundJob(jobId);
+  }
+
+  function claimBackgroundJobs(input: {
+    workerId: string;
+    limit?: number;
+  }) {
+    const now = nowIso();
+    const rows = db
+      .prepare(
+        `
+          SELECT id, workspace_id, project_id, canvas_id, session_id, thread_id,
+            queue_name, job_type, status, payload, result, error_code, error_message,
+            attempt_count, max_attempts, created_by, created_at, updated_at,
+            started_at, completed_at, failed_at, canceled_at, next_run_at, locked_at, locked_by
+          FROM background_jobs
+          WHERE status IN ('queued', 'failed')
+            AND canceled_at IS NULL
+            AND (next_run_at IS NULL OR next_run_at <= ?)
+            AND locked_at IS NULL
+          ORDER BY created_at ASC
+          LIMIT ?
+        `,
+      )
+      .all(now, input.limit ?? 5) as BackgroundJobRow[];
+
+    const claimed: BackgroundJob[] = [];
+    for (const row of rows) {
+      const updatedAt = nowIso();
+      const result = db.prepare(
+        `
+          UPDATE background_jobs
+          SET status = 'running',
+              attempt_count = attempt_count + 1,
+              updated_at = ?,
+              started_at = COALESCE(started_at, ?),
+              failed_at = NULL,
+              error_code = NULL,
+              error_message = NULL,
+              locked_at = ?,
+              locked_by = ?
+          WHERE id = ?
+            AND locked_at IS NULL
+            AND status IN ('queued', 'failed')
+        `,
+      ).run(updatedAt, updatedAt, updatedAt, input.workerId, row.id);
+      if (result.changes > 0) {
+        const claimedRow = getBackgroundJobRow(row.id);
+        if (claimedRow) {
+          claimed.push(mapBackgroundJobRow(claimedRow));
+        }
+      }
+    }
+    return claimed;
+  }
+
+  function markBackgroundJobSucceeded(
+    jobId: string,
+    resultPayload: Record<string, unknown>,
+  ) {
+    const updatedAt = nowIso();
+    db.prepare(
+      `
+        UPDATE background_jobs
+        SET status = 'succeeded',
+            result = ?,
+            updated_at = ?,
+            completed_at = ?,
+            locked_at = NULL,
+            locked_by = NULL
+        WHERE id = ?
+      `,
+    ).run(JSON.stringify(resultPayload), updatedAt, updatedAt, jobId);
+    return getBackgroundJob(jobId);
+  }
+
+  function markBackgroundJobFailed(input: {
+    jobId: string;
+    errorCode: string;
+    errorMessage: string;
+    retryable?: boolean;
+    retryDelayMs?: number;
+  }) {
+    const row = getBackgroundJobRow(input.jobId);
+    if (!row) return null;
+    const updatedAt = nowIso();
+    const canRetry =
+      input.retryable !== false && row.attempt_count < row.max_attempts;
+    const nextStatus: BackgroundJobStatus = canRetry ? "failed" : "dead_letter";
+    const nextRunAt = canRetry
+      ? new Date(Date.now() + (input.retryDelayMs ?? 2_000)).toISOString()
+      : null;
+    db.prepare(
+      `
+        UPDATE background_jobs
+        SET status = ?,
+            error_code = ?,
+            error_message = ?,
+            updated_at = ?,
+            failed_at = ?,
+            next_run_at = ?,
+            locked_at = NULL,
+            locked_by = NULL
+        WHERE id = ?
+      `,
+    ).run(
+      nextStatus,
+      input.errorCode,
+      input.errorMessage,
+      updatedAt,
+      updatedAt,
+      nextRunAt,
+      input.jobId,
+    );
+    return getBackgroundJob(input.jobId);
+  }
+
   function uploadFile(input: {
     bucket: AssetBucket;
     fileName: string;
@@ -1206,31 +2121,48 @@ export function createLocalStore(options: {
     });
   }
 
-  function createGeneratedImage(prompt: string) {
-    const escaped = prompt
-      .slice(0, 180)
+  function buildGeneratedPreviewSvg(input: {
+    title: string;
+    subtitle: string;
+    body: string;
+    width?: number;
+    height?: number;
+  }) {
+    const escapedBody = input.body
+      .slice(0, 320)
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;");
-    const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+    const width = input.width ?? 1024;
+    const height = input.height ?? 1024;
+    return `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
         <defs>
           <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stop-color="#f5ede1"/>
-            <stop offset="100%" stop-color="#e0eef8"/>
+            <stop offset="100%" stop-color="#dbeafe"/>
           </linearGradient>
         </defs>
-        <rect width="1024" height="1024" fill="url(#bg)" rx="48"/>
-        <rect x="72" y="72" width="880" height="880" rx="36" fill="rgba(255,255,255,0.82)" stroke="rgba(15,23,42,0.08)"/>
-        <text x="110" y="220" fill="#0f172a" font-size="48" font-family="Arial, sans-serif" font-weight="700">AI Media Canvas Local Preview</text>
-        <text x="110" y="300" fill="#334155" font-size="28" font-family="Arial, sans-serif">Prompt</text>
-        <foreignObject x="110" y="340" width="780" height="420">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Arial, sans-serif; font-size: 42px; line-height: 1.35; color: #0f172a;">
-            ${escaped}
+        <rect width="${width}" height="${height}" fill="url(#bg)" rx="48"/>
+        <rect x="72" y="72" width="${width - 144}" height="${height - 144}" rx="36" fill="rgba(255,255,255,0.82)" stroke="rgba(15,23,42,0.08)"/>
+        <text x="110" y="190" fill="#0f172a" font-size="44" font-family="Arial, sans-serif" font-weight="700">${input.title}</text>
+        <text x="110" y="250" fill="#475569" font-size="28" font-family="Arial, sans-serif">${input.subtitle}</text>
+        <text x="110" y="330" fill="#334155" font-size="24" font-family="Arial, sans-serif">Key prompt</text>
+        <foreignObject x="110" y="360" width="${width - 220}" height="${Math.max(height - 520, 280)}">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Arial, sans-serif; font-size: 38px; line-height: 1.35; color: #0f172a;">
+            ${escapedBody}
           </div>
         </foreignObject>
       </svg>
     `.trim();
+  }
+
+  function createGeneratedImage(prompt: string) {
+    const svg = buildGeneratedPreviewSvg({
+      title: "AI Media Canvas Local Preview",
+      subtitle: "Prompt",
+      body: prompt,
+    });
     const stored = writeAssetFile({
       bucket: "project-assets",
       buffer: Buffer.from(svg, "utf-8"),
@@ -1245,6 +2177,67 @@ export function createLocalStore(options: {
       width: 1024,
       height: 1024,
       prompt,
+    };
+  }
+
+  function createGeneratedVideoPlan(input: {
+    prompt: string;
+    model?: string;
+    duration?: number;
+    resolution?: string;
+    projectId?: string;
+  }) {
+    const duration = input.duration ?? 8;
+    const resolution = input.resolution ?? "1080p";
+    const previewSvg = buildGeneratedPreviewSvg({
+      title: "AI Media Canvas Video Storyboard",
+      subtitle: `${input.model ?? "local:storyboard-motion"} · ${duration}s · ${resolution}`,
+      body: input.prompt,
+      width: 1280,
+      height: 720,
+    });
+    const preview = writeAssetFile({
+      bucket: "project-assets",
+      buffer: Buffer.from(previewSvg, "utf-8"),
+      mimeType: "image/svg+xml",
+      fileName: "generated-video-preview.svg",
+      scope: "generated",
+      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+    });
+    const plan = {
+      title: "AI Media Canvas Local Video Plan",
+      prompt: input.prompt,
+      model: input.model ?? "local:storyboard-motion",
+      durationSeconds: duration,
+      resolution,
+      beats: [
+        "Open with the clearest visual hook from the prompt.",
+        "Use the middle beats to establish rhythm, motion, and sequencing.",
+        "Close on the strongest payoff frame.",
+      ],
+      generatedAt: nowIso(),
+    };
+    const planAsset = writeAssetFile({
+      bucket: "project-assets",
+      buffer: Buffer.from(JSON.stringify(plan, null, 2), "utf-8"),
+      mimeType: "application/json",
+      fileName: "generated-video-plan.json",
+      scope: "generated",
+      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+    });
+    return {
+      assetId: preview.asset.id,
+      url: preview.url,
+      mimeType: "image/svg+xml",
+      width: 1280,
+      height: 720,
+      prompt: input.prompt,
+      durationSeconds: duration,
+      previewAssetId: preview.asset.id,
+      previewUrl: preview.url,
+      planAssetId: planAsset.asset.id,
+      planUrl: planAsset.url,
+      resolution,
     };
   }
 
@@ -1266,17 +2259,13 @@ export function createLocalStore(options: {
   return {
     assetBaseUrl: options.assetBaseUrl,
     dataRoot,
-    localAccessToken: LOCAL_ACCESS_TOKEN,
     localUser: {
-      accessToken: LOCAL_ACCESS_TOKEN,
       email: DEFAULT_EMAIL,
       id: LOCAL_USER_ID,
       userMetadata: { mode: "local" },
     },
     getViewer,
     updateProfile,
-    getWorkspaceSettings,
-    updateWorkspaceSettings,
     listProjects,
     createProject,
     getProject,
@@ -1301,12 +2290,29 @@ export function createLocalStore(options: {
     updateBrandKitAsset,
     deleteBrandKitAsset,
     uploadBrandKitAsset,
+    listInstalledSkills,
+    listCatalogSkills,
+    getSkillDetail,
+    createSkill,
+    importSkill,
+    installCatalogSkill,
+    toggleSkill,
+    uninstallSkill,
+    listEnabledSkills,
+    createBackgroundJob,
+    getBackgroundJob,
+    listBackgroundJobs,
+    cancelBackgroundJob,
+    claimBackgroundJobs,
+    markBackgroundJobSucceeded,
+    markBackgroundJobFailed,
     uploadFile,
     getAssetUrl(assetId: string) {
       return resolveAssetUrl(assetId);
     },
     deleteAsset,
     createGeneratedImage,
+    createGeneratedVideoPlan,
     getAssetResponse,
     assetObjectFromId(assetId: string) {
       const row = getAssetRow(assetId);

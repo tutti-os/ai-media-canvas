@@ -1,12 +1,15 @@
 import { getViewportCenter } from "./canvas-elements";
 
-// Aspect ratio to pixel dimensions mapping (video ratios only)
 const RATIO_DIMENSIONS: Record<string, { w: number; h: number }> = {
   "16:9": { w: 1024, h: 576 },
   "9:16": { w: 576, h: 1024 },
 };
 
-export type VideoGeneratorStatus = "idle" | "generating" | "completed" | "error";
+export type VideoGeneratorStatus =
+  | "idle"
+  | "generating"
+  | "completed"
+  | "error";
 
 export type VideoGeneratorData = {
   type: "video-generator";
@@ -27,10 +30,6 @@ function generateId(): string {
   ).slice(0, 20);
 }
 
-/**
- * Get display dimensions for a video aspect ratio, scaled to fit nicely on canvas.
- * Canvas display size is smaller than actual generation size.
- */
 export function getDisplayDimensions(
   aspectRatio: string,
   displayMaxSize = 400,
@@ -43,9 +42,6 @@ export function getDisplayDimensions(
   };
 }
 
-/**
- * Create an Excalidraw rectangle element that serves as a video generator placeholder.
- */
 export function createVideoGeneratorElement(
   api: {
     getAppState: () => any;
@@ -112,24 +108,17 @@ export function createVideoGeneratorElement(
   return id;
 }
 
-/**
- * Check if an Excalidraw element is a video-generator placeholder.
- */
-export function isVideoGeneratorElement(element: any): element is { customData: VideoGeneratorData } & Record<string, unknown> {
+export function isVideoGeneratorElement(
+  element: any,
+): element is { customData: VideoGeneratorData } & Record<string, unknown> {
   return element?.customData?.type === "video-generator";
 }
 
-/**
- * Get the video-generator data from an element, or null if not a video-generator.
- */
 export function getVideoGeneratorData(element: any): VideoGeneratorData | null {
   if (!isVideoGeneratorElement(element)) return null;
   return element.customData as VideoGeneratorData;
 }
 
-/**
- * Update the customData of a video-generator element.
- */
 export function updateVideoGeneratorElement(
   api: {
     getSceneElements: () => readonly any[];
@@ -151,9 +140,6 @@ export function updateVideoGeneratorElement(
   api.updateScene({ elements, captureUpdate: "IMMEDIATELY" });
 }
 
-/**
- * Resize a video-generator element when aspect ratio changes.
- */
 export function resizeVideoGeneratorElement(
   api: {
     getSceneElements: () => readonly any[];
@@ -165,7 +151,6 @@ export function resizeVideoGeneratorElement(
   const { width, height } = getDisplayDimensions(aspectRatio);
   const elements = api.getSceneElements().map((el: any) => {
     if (el.id !== elementId) return el;
-    // Keep center position, adjust size
     const cx = el.x + el.width / 2;
     const cy = el.y + el.height / 2;
     return {
@@ -183,9 +168,6 @@ export function resizeVideoGeneratorElement(
   api.updateScene({ elements, captureUpdate: "IMMEDIATELY" });
 }
 
-/**
- * Delete a video-generator element from the canvas (soft delete).
- */
 export function deleteVideoGeneratorElement(
   api: {
     getSceneElements: () => readonly any[];

@@ -85,7 +85,7 @@ export function ProjectList({
                 e.stopPropagation();
                 requestDelete(project.id);
               }}
-              aria-label={`Delete ${project.name}`}
+              aria-label={`Archive ${project.name}`}
               className="absolute right-3 top-3 z-10 flex size-8 items-center justify-center rounded-[4px] bg-foreground/70 text-background opacity-0 transition-all duration-300 hover:bg-foreground/80 group-hover:opacity-100 sm:right-5 sm:top-5 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:opacity-100"
             >
               <Trash2 size={14} />

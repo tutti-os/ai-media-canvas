@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
 import { Play } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 
 type VideoCanvasElementProps = {
   src: string;
@@ -9,15 +9,6 @@ type VideoCanvasElementProps = {
   height: number;
 };
 
-/**
- * Lightweight inline video player rendered inside Excalidraw embeddable elements.
- *
- * Behavior:
- * - Hover-to-play: auto-play (muted) on mouse enter, pause on mouse leave
- * - Click-to-toggle: clicking toggles play/pause
- * - Play icon overlay when paused
- * - Stops event propagation so Excalidraw canvas interactions are not affected
- */
 export function VideoCanvasElement({
   src,
   width,
@@ -29,9 +20,7 @@ export function VideoCanvasElement({
   const play = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    video.play().catch(() => {
-      // Autoplay may be blocked by the browser; fail silently
-    });
+    video.play().catch(() => {});
     setPlaying(true);
   }, []);
 
@@ -42,18 +31,8 @@ export function VideoCanvasElement({
     setPlaying(false);
   }, []);
 
-  const handleMouseEnter = useCallback(() => {
-    play();
-  }, [play]);
-
-  const handleMouseLeave = useCallback(() => {
-    pause();
-  }, [pause]);
-
   const handleClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      e.preventDefault();
+    (_e: React.MouseEvent) => {
       if (playing) {
         pause();
       } else {
@@ -63,21 +42,12 @@ export function VideoCanvasElement({
     [playing, play, pause],
   );
 
-  // Prevent Excalidraw from capturing pointer/wheel events on the video area
-  const stopPropagation = useCallback((e: React.SyntheticEvent) => {
-    e.stopPropagation();
-  }, []);
-
   return (
     <div
       style={{ width, height }}
       className="relative flex items-center justify-center overflow-hidden rounded-lg bg-black"
-      onPointerDown={stopPropagation}
-      onPointerUp={stopPropagation}
-      onPointerMove={stopPropagation}
-      onWheel={stopPropagation}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      onMouseEnter={play}
+      onMouseLeave={pause}
       onClick={handleClick}
     >
       <video
@@ -90,7 +60,6 @@ export function VideoCanvasElement({
         className="h-full w-full object-contain"
       />
 
-      {/* Play icon overlay — visible when paused */}
       {!playing && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity duration-200">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm">

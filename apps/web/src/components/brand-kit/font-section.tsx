@@ -138,7 +138,7 @@ export function FontSection({
                   }}
                   className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
                 >
-                  从字体库选择
+                  从内置字体列表选择
                 </button>
                 <button
                   type="button"

@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Film } from "lucide-react";
 
 import type { ImageModelInfo } from "../lib/server-api";
 import type { VideoModelInfo } from "../lib/server-api";
@@ -19,10 +20,14 @@ export function ImageModelPreferencePopover({
   anchorRef: React.RefObject<HTMLElement | null>;
 }) {
   const { preference, setMode, toggleModel } = useImageModelPreference();
+  const {
+    preference: videoPreference,
+    setMode: setVideoMode,
+    toggleModel: toggleVideoModel,
+  } = useVideoModelPreference();
   const [models, setModels] = useState<ImageModelInfo[]>([]);
-  const [activeTab, setActiveTab] = useState<"image" | "video">("image");
-  const videoPreference = useVideoModelPreference();
   const [videoModels, setVideoModels] = useState<VideoModelInfo[]>([]);
+  const [activeTab, setActiveTab] = useState<"image" | "video">("image");
   const popoverRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
 
@@ -78,12 +83,14 @@ export function ImageModelPreferencePopover({
     return () => document.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  const currentPreference = activeTab === "image" ? preference : videoPreference.preference;
-  const currentModels = activeTab === "image" ? models : videoModels;
-  const currentSetMode = activeTab === "image" ? setMode : videoPreference.setMode;
-  const currentToggleModel = activeTab === "image" ? toggleModel : videoPreference.toggleModel;
-
   if (!open || !pos) return null;
+
+  const currentPreference =
+    activeTab === "image" ? preference : videoPreference;
+  const currentModels = activeTab === "image" ? models : videoModels;
+  const currentSetMode = activeTab === "image" ? setMode : setVideoMode;
+  const currentToggleModel =
+    activeTab === "image" ? toggleModel : toggleVideoModel;
 
   return createPortal(
     <div
@@ -96,7 +103,6 @@ export function ImageModelPreferencePopover({
       className="fixed z-[9999] w-[380px] rounded-xl border-[0.5px] border-border bg-card p-1 shadow-card"
     >
       <div className="flex flex-col gap-3 py-2">
-        {/* Tab switcher */}
         <div className="px-3">
           <div className="flex rounded-lg bg-muted p-0.5">
             {(["image", "video"] as const).map((tab) => (
@@ -120,7 +126,7 @@ export function ImageModelPreferencePopover({
         <div className="flex flex-col gap-2 px-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-foreground">
-              {activeTab === "image" ? "Image Model" : "Video Model"}
+              {activeTab === "image" ? "Image Renderer" : "Video Planner"}
             </span>
             <button
               type="button"
@@ -135,7 +141,9 @@ export function ImageModelPreferencePopover({
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  currentPreference.mode === "auto" ? "bg-accent" : "bg-muted-foreground"
+                  currentPreference.mode === "auto"
+                    ? "bg-accent"
+                    : "bg-muted-foreground"
                 }`}
               />
               {currentPreference.mode === "auto" ? "Auto" : "Manual"}
@@ -143,8 +151,12 @@ export function ImageModelPreferencePopover({
           </div>
           <span className="text-[11px] text-muted-foreground">
             {currentPreference.mode === "auto"
-              ? `AI Media Canvas automatically selects the best model for each ${activeTab} task`
-              : `AI Media Canvas chooses from your selected models for each ${activeTab} task`}
+              ? activeTab === "image"
+                ? "AI Media Canvas uses the built-in local renderer for image tasks."
+                : "AI Media Canvas uses local video-planning presets for storyboard and motion tasks."
+              : activeTab === "image"
+                ? "AI Media Canvas keeps using the local renderer while prioritizing your pinned presets."
+                : "AI Media Canvas keeps using your chosen local video-planning presets."}
           </span>
         </div>
 
@@ -172,7 +184,8 @@ export function ImageModelPreferencePopover({
                   <span className="text-[13px] font-medium text-foreground">
                     {m.displayName}
                   </span>
-                  <span className="text-[11px] leading-tight text-muted-foreground">
+                  <span className="flex items-center gap-1 text-[11px] leading-tight text-muted-foreground">
+                    {activeTab === "video" ? <Film className="h-3 w-3 shrink-0" /> : null}
                     {m.description}
                   </span>
                 </div>

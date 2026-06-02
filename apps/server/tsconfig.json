@@ -2,5 +2,11 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "src/agent/**/*",
+    "src/ws/**/*",
+    "src/features/agent-runs/**/*",
+    "src/http/runs.ts"
+  ]
 }

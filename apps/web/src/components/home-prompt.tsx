@@ -7,19 +7,24 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ImageGenerationPreference, VideoGenerationPreference } from "@aimc/shared";
+import type {
+  ImageGenerationPreference,
+  VideoGenerationPreference,
+} from "@aimc/shared";
 
-import type { ImageAttachmentState, ReadyAttachment } from "../hooks/use-image-attachments";
+import type {
+  ImageAttachmentState,
+  ReadyAttachment,
+} from "@/hooks/use-image-attachments";
 import type { HomeExampleSelection } from "@/lib/home-example-seeds";
-import { AgentModelSelector } from "./agent-model-selector";
-import { ImageAttachmentBar } from "./image-attachment-bar";
-import { ImageModelPreferencePopover } from "./image-model-preference";
-import { useAgentModel } from "../hooks/use-agent-model";
-import { useImageModelPreference } from "../hooks/use-image-model-preference";
-import { useVideoModelPreference } from "../hooks/use-video-model-preference";
+import { AgentModelSelector } from "@/components/agent-model-selector";
+import { ImageAttachmentBar } from "@/components/image-attachment-bar";
+import { ImageModelPreferencePopover } from "@/components/image-model-preference";
+import { useAgentModel } from "@/hooks/use-agent-model";
+import { useImageModelPreference } from "@/hooks/use-image-model-preference";
+import { useVideoModelPreference } from "@/hooks/use-video-model-preference";
 
 export type HomePromptHandle = {
-  /** Programmatically set the textarea value (e.g. from an example pill). */
   fill: (text: string) => void;
 };
 
@@ -86,14 +91,12 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     useImperativeHandle(ref, () => ({
       fill(text: string) {
         setValue(text);
-        // Auto-resize after filling
         requestAnimationFrame(() => {
-          const ta = textareaRef.current;
-          if (ta) {
-            ta.style.height = "auto";
-            ta.style.height = `${ta.scrollHeight}px`;
-            ta.focus();
-          }
+          const textarea = textareaRef.current;
+          if (!textarea) return;
+          textarea.style.height = "auto";
+          textarea.style.height = `${textarea.scrollHeight}px`;
+          textarea.focus();
         });
       },
     }));
@@ -107,24 +110,26 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
         (!trimmed && (!attachments || attachments.length === 0) && !selectedSeed) ||
         disabled ||
         isUploading
-      )
+      ) {
         return;
+      }
 
-      // Merge user-uploaded attachments with example seed images
-      let mergedAttachments: ReadyAttachment[] | undefined =
+      let mergedAttachments =
         readyAttachments && readyAttachments.length > 0
           ? [...readyAttachments]
           : undefined;
 
       const seedImageMentions =
-        selectedSeed?.inputMentions?.filter((m) => m.type === "image") ?? [];
+        selectedSeed?.inputMentions?.filter((mention) => mention.type === "image") ?? [];
       if (seedImageMentions.length > 0) {
         const seedAttachments: ReadyAttachment[] = seedImageMentions.map(
-          (mention, i) => ({
-            assetId: `seed-${selectedSeed!.categoryKey}-${i}`,
+          (mention, index) => ({
+            assetId: `seed-${selectedSeed?.categoryKey ?? "seed"}-${index}`,
             url: mention.imgSrc,
-            mimeType: "image/webp",
-            source: "upload" as const,
+            mimeType: mention.imgSrc.startsWith("data:image/svg")
+              ? "image/svg+xml"
+              : "image/webp",
+            source: "upload",
             name: mention.name,
           }),
         );
@@ -148,13 +153,27 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
-    }, [value, disabled, isUploading, onSubmit, attachments, readyAttachments, preference, videoPreference, agentModel, selectedSeed]);
+    }, [
+      agentModel,
+      attachments,
+      disabled,
+      isUploading,
+      onSubmit,
+      preference,
+      readyAttachments,
+      selectedSeed,
+      videoPreference,
+      value,
+    ]);
 
     const handleKeyDown = useCallback(
-      (e: React.KeyboardEvent) => {
-        // Ignore Enter during IME composition (e.g. Chinese input confirming a candidate)
-        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-          e.preventDefault();
+      (event: React.KeyboardEvent) => {
+        if (
+          event.key === "Enter" &&
+          !event.shiftKey &&
+          !event.nativeEvent.isComposing
+        ) {
+          event.preventDefault();
           handleSubmit();
         }
       },
@@ -162,14 +181,14 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     );
 
     const handlePaste = useCallback(
-      (e: React.ClipboardEvent) => {
+      (event: React.ClipboardEvent) => {
         if (!onAddFiles) return;
-        const files = Array.from(e.clipboardData.items)
+        const files = Array.from(event.clipboardData.items)
           .filter((item) => item.type.startsWith("image/"))
           .map((item) => item.getAsFile())
-          .filter((f): f is File => f !== null);
+          .filter((file): file is File => file !== null);
         if (files.length > 0) {
-          e.preventDefault();
+          event.preventDefault();
           onAddFiles(files);
         }
       },
@@ -185,12 +204,13 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
 
     return (
       <div className="overflow-hidden rounded-xl border-[0.5px] border-border bg-muted shadow-[0_4px_8px_rgba(0,0,0,0.04)] sm:rounded-2xl">
-        {attachments && onRemoveAttachment && (
+        {attachments && onRemoveAttachment ? (
           <ImageAttachmentBar
             attachments={attachments}
             onRemove={onRemoveAttachment}
           />
-        )}
+        ) : null}
+
         {selectedSeed ? (
           <div className="flex flex-col gap-3 border-b border-border/80 px-4 py-3">
             <div className="flex items-start justify-between gap-3">
@@ -232,10 +252,11 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             </div>
           </div>
         ) : null}
+
         <textarea
           ref={textareaRef}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(event) => setValue(event.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           onInput={handleInput}
@@ -255,130 +276,62 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
                   accept="image/png,image/jpeg,image/webp,image/gif"
                   multiple
                   className="hidden"
-                  onChange={(e) => {
-                    const files = e.target.files;
+                  onChange={(event) => {
+                    const files = event.target.files;
                     if (files && files.length > 0) {
                       onAddFiles(Array.from(files));
+                      event.target.value = "";
                     }
-                    e.target.value = "";
                   }}
                 />
                 <button
                   type="button"
+                  aria-label="添加图片附件"
                   onClick={() => fileInputRef.current?.click()}
-                  title="Attach"
-                  className="flex h-10 w-10 items-center justify-center rounded-full border-[0.5px] border-border text-foreground transition-colors hover:bg-muted sm:h-8 sm:w-8"
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                 >
-                  <svg
-                    className="h-[14px] w-[14px]"
-                    viewBox={toolbarButtons[0].viewBox}
-                    fill="currentColor"
-                    role="img"
-                    aria-label="Attach"
-                  >
+                  <svg viewBox={toolbarButtons[0].viewBox} className="h-4 w-4 fill-current">
                     <path d={toolbarButtons[0].path} />
                   </svg>
                 </button>
               </>
-            ) : (
-              <button
-                type="button"
-                disabled
-                title="Attach"
-                className="flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-full border-[0.5px] border-border text-foreground opacity-30 transition-colors sm:h-8 sm:w-8"
-              >
-                <svg
-                  className="h-[14px] w-[14px]"
-                  viewBox={toolbarButtons[0].viewBox}
-                  fill="currentColor"
-                  role="img"
-                  aria-label="Attach"
-                >
-                  <path d={toolbarButtons[0].path} />
-                </svg>
-              </button>
-            )}
-          </div>
+            ) : null}
 
-          <div className="flex items-center gap-2">
-            <AgentModelSelector />
-            <div className="flex items-center gap-0.5">
-              {toolbarButtons.slice(1).map((btn) => {
-                if (btn.name === "Agent") {
-                  return (
-                    <div key={btn.name} className="relative">
-                      <button
-                        ref={agentBtnRef}
-                        type="button"
-                        onClick={() => setModelPopoverOpen((prev) => !prev)}
-                        title={btn.name}
-                        className={`flex h-10 w-10 items-center justify-center rounded-full border-[0.5px] transition-colors sm:h-8 sm:w-8 ${
-                          preference.mode === "manual"
-                            ? "border-accent bg-accent/30 text-accent-foreground"
-                            : "border-border text-foreground hover:bg-muted"
-                        }`}
-                      >
-                        <svg
-                          className="h-[14px] w-[14px]"
-                          viewBox={btn.viewBox}
-                          fill="currentColor"
-                          role="img"
-                          aria-label={btn.name}
-                        >
-                          <path d={btn.path} />
-                        </svg>
-                      </button>
-                      <ImageModelPreferencePopover
-                        open={modelPopoverOpen}
-                        onClose={() => setModelPopoverOpen(false)}
-                        anchorRef={agentBtnRef}
-                      />
-                    </div>
-                  );
-                }
-                return (
-                  <button
-                    key={btn.name}
-                    type="button"
-                    disabled
-                    title={btn.name}
-                    className="flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-full border-[0.5px] border-border text-foreground opacity-30 transition-colors sm:h-8 sm:w-8"
-                  >
-                    <svg
-                      className="h-[14px] w-[14px]"
-                      viewBox={btn.viewBox}
-                      fill="currentColor"
-                      role="img"
-                      aria-label={btn.name}
-                    >
-                      <path d={btn.path} />
-                    </svg>
-                  </button>
-                );
-              })}
-            </div>
             <button
+              ref={agentBtnRef}
               type="button"
-              onClick={handleSubmit}
-              disabled={disabled || isUploading || !hasContent}
-              className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors sm:h-8 sm:w-8 ${
-                hasContent && !disabled && !isUploading
-                  ? "bg-primary text-primary-foreground hover:bg-primary/80 hover:accent-glow active:bg-primary/90"
-                  : "cursor-not-allowed bg-primary text-primary-foreground opacity-30"
-              }`}
+              aria-label="图片生成偏好"
+              onClick={() => setModelPopoverOpen((current) => !current)}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
             >
-              <svg
-                className="h-[14px] w-[14px]"
-                viewBox={submitIcon.viewBox}
-                fill="currentColor"
-                role="img"
-                aria-label="Submit"
-              >
-                <path d={submitIcon.path} />
+              <svg viewBox={toolbarButtons[1].viewBox} className="h-4 w-4 fill-current">
+                <path d={toolbarButtons[1].path} />
               </svg>
             </button>
+
+            <div className="ml-1">
+              <AgentModelSelector compact />
+            </div>
           </div>
+
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={disabled || isUploading || !hasContent}
+            aria-label="提交 prompt"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:bg-foreground/25"
+          >
+            <svg viewBox={submitIcon.viewBox} className="h-4 w-4 fill-current">
+              <path d={submitIcon.path} />
+            </svg>
+          </button>
         </div>
+
+        <ImageModelPreferencePopover
+          open={modelPopoverOpen}
+          onClose={() => setModelPopoverOpen(false)}
+          anchorRef={agentBtnRef}
+        />
       </div>
     );
   },

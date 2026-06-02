@@ -40,7 +40,7 @@ export async function registerWsRoute(
 ) {
   const { agentRuns, connectionManager } = options;
 
-  (app as any).get("/api/ws", { websocket: true }, (socket: WebSocket, request: FastifyRequest) => {
+  app.get("/api/ws", { websocket: true }, (socket: WebSocket, request: FastifyRequest) => {
     const url = new URL(request.url, `http://${request.headers.host}`);
     const token = url.searchParams.get("token");
 

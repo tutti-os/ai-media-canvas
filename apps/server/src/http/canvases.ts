@@ -5,19 +5,18 @@ import {
   canvasGetResponseSchema,
   canvasSaveRequestSchema,
   canvasSaveResponseSchema,
-  unauthenticatedErrorResponseSchema,
 } from "@aimc/shared";
 
 import {
   CanvasServiceError,
   type CanvasService,
 } from "../features/canvas/canvas-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 
 export async function registerCanvasRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localUser: AuthenticatedUser;
     canvasService: CanvasService;
   },
 ) {
@@ -25,10 +24,8 @@ export async function registerCanvasRoutes(
     "/api/canvases/:canvasId",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-        if (!user) return sendUnauthorized(reply);
         const canvas = await options.canvasService.getCanvas(
-          user,
+          options.localUser,
           request.params.canvasId,
         );
         return reply
@@ -45,11 +42,9 @@ export async function registerCanvasRoutes(
     { bodyLimit: 50 * 1024 * 1024 }, // 50 MB — canvas content includes base64 image data
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-        if (!user) return sendUnauthorized(reply);
         const payload = canvasSaveRequestSchema.parse(request.body);
         await options.canvasService.saveCanvasContent(
-          user,
+          options.localUser,
           request.params.canvasId,
           payload.content,
         );
@@ -72,17 +67,6 @@ export async function registerCanvasRoutes(
   );
 }
 
-function sendUnauthorized(reply: FastifyReply) {
-  return reply.code(401).send(
-    unauthenticatedErrorResponseSchema.parse({
-      error: {
-        code: "unauthorized",
-        message: "Missing or invalid bearer token.",
-      },
-    }),
-  );
-}
-
 function sendCanvasError(error: unknown, reply: FastifyReply) {
   if (error instanceof CanvasServiceError) {
     return reply.code(error.statusCode).send(
@@ -96,10 +80,14 @@ function sendCanvasError(error: unknown, reply: FastifyReply) {
   }
 
   if (isZodError(error)) {
-    return reply.code(400).send({
-      issues: error.issues,
-      message: "Invalid request body",
-    });
+    return reply.code(400).send(
+      applicationErrorResponseSchema.parse({
+        error: {
+          code: "application_error",
+          message: "Invalid request body.",
+        },
+      }),
+    );
   }
 
   return reply.code(500).send(

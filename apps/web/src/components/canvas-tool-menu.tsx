@@ -13,6 +13,7 @@ import {
   Sparkles,
   Square,
   Type,
+  Video,
 } from "lucide-react";
 
 import {
@@ -22,12 +23,14 @@ import {
   type ImageGeneratorData,
 } from "../lib/canvas-image-generator";
 import {
-  isVideoGeneratorElement,
+  createVideoGeneratorElement,
   getVideoGeneratorData,
+  isVideoGeneratorElement,
   type VideoGeneratorData,
 } from "../lib/canvas-video-generator";
 import { isVideoUrl } from "../lib/canvas-elements";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
+import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
 import { VideoPlayerPanel } from "./canvas/video-player-panel";
 
 type ToolType =
@@ -80,9 +83,10 @@ const TOOL_LABELS: Record<ToolType, string> = {
 };
 
 type CanvasToolMenuProps = {
-  accessToken: string;
+  canvasId: string;
   excalidrawApi: any;
   leftPanelOpen?: boolean;
+  projectId: string;
 };
 
 /** Memoized shimmer overlay for a single generating element */
@@ -143,7 +147,12 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
   );
 });
 
-export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: CanvasToolMenuProps) {
+export function CanvasToolMenu({
+  canvasId,
+  excalidrawApi,
+  leftPanelOpen,
+  projectId,
+}: CanvasToolMenuProps) {
   const [activeTool, setActiveTool] = useState<string>("selection");
 
   // Image generator state
@@ -156,7 +165,6 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
     height: number;
   } | null>(null);
 
-  // Video generator state
   const [activeVideoGenId, setActiveVideoGenId] = useState<string | null>(null);
   const [videoGenData, setVideoGenData] = useState<VideoGeneratorData | null>(null);
   const [videoGenBounds, setVideoGenBounds] = useState<{
@@ -166,7 +174,6 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
     height: number;
   } | null>(null);
 
-  // Video player state (for completed video elements)
   const [activeVideoPlayerId, setActiveVideoPlayerId] = useState<string | null>(null);
   const [videoPlayerData, setVideoPlayerData] = useState<{
     videoUrl: string;
@@ -175,7 +182,10 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
     title?: string;
   } | null>(null);
   const [videoPlayerBounds, setVideoPlayerBounds] = useState<{
-    x: number; y: number; width: number; height: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
   } | null>(null);
 
   const [canvasScrollZoom, setCanvasScrollZoom] = useState({
@@ -196,7 +206,7 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
     }>
   >([]);
 
-  // Keep activeGeneratorId / activeVideoGenId accessible inside onChange without causing re-subscription
+  // Keep activeGeneratorId accessible inside onChange without causing re-subscription
   const activeGeneratorIdRef = useRef(activeGeneratorId);
   activeGeneratorIdRef.current = activeGeneratorId;
   const activeVideoGenIdRef = useRef(activeVideoGenId);
@@ -249,7 +259,6 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
 
         const currentId = activeGeneratorIdRef.current;
         const currentVideoId = activeVideoGenIdRef.current;
-
         if (selectedElements.length === 1) {
           const sel = selectedElements[0];
 
@@ -259,8 +268,16 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
               const data = getImageGeneratorData(sel);
               setActiveGeneratorId(sel.id as string);
               setGeneratorData(data);
-              if (currentVideoId) { setActiveVideoGenId(null); setVideoGenData(null); setVideoGenBounds(null); }
-              if (activeVideoPlayerIdRef.current) { setActiveVideoPlayerId(null); setVideoPlayerData(null); setVideoPlayerBounds(null); }
+              if (currentVideoId) {
+                setActiveVideoGenId(null);
+                setVideoGenData(null);
+                setVideoGenBounds(null);
+              }
+              if (activeVideoPlayerIdRef.current) {
+                setActiveVideoPlayerId(null);
+                setVideoPlayerData(null);
+                setVideoPlayerBounds(null);
+              }
             }
             // Always update bounds (element may have been moved/resized)
             setGeneratorBounds({
@@ -272,22 +289,31 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
               const data = getVideoGeneratorData(sel);
               setActiveVideoGenId(sel.id as string);
               setVideoGenData(data);
-              if (currentId) { setActiveGeneratorId(null); setGeneratorData(null); setGeneratorBounds(null); }
-              if (activeVideoPlayerIdRef.current) { setActiveVideoPlayerId(null); setVideoPlayerData(null); setVideoPlayerBounds(null); }
+              if (currentId) {
+                setActiveGeneratorId(null);
+                setGeneratorData(null);
+                setGeneratorBounds(null);
+              }
+              if (activeVideoPlayerIdRef.current) {
+                setActiveVideoPlayerId(null);
+                setVideoPlayerData(null);
+                setVideoPlayerBounds(null);
+              }
             }
             setVideoGenBounds({
-              x: sel.x as number, y: sel.y as number,
-              width: sel.width as number, height: sel.height as number,
+              x: sel.x as number,
+              y: sel.y as number,
+              width: sel.width as number,
+              height: sel.height as number,
             });
           } else if (
             sel.type === "embeddable" &&
             (isVideoUrl(sel.link as string) || sel.customData?.isVideo === true)
           ) {
             if (activeVideoPlayerIdRef.current !== sel.id) {
-              const videoLink = sel.link as string;
               setActiveVideoPlayerId(sel.id as string);
               setVideoPlayerData({
-                videoUrl: videoLink,
+                videoUrl: sel.link as string,
                 mimeType: (sel.customData?.mimeType as string) ?? "video/mp4",
                 ...(sel.customData?.durationSeconds != null
                   ? { durationSeconds: sel.customData.durationSeconds as number }
@@ -296,21 +322,29 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
                   ? { title: sel.customData.title as string }
                   : {}),
               });
-              if (currentId) { setActiveGeneratorId(null); setGeneratorData(null); setGeneratorBounds(null); }
-              if (currentVideoId) { setActiveVideoGenId(null); setVideoGenData(null); setVideoGenBounds(null); }
+              if (currentId) {
+                setActiveGeneratorId(null);
+                setGeneratorData(null);
+                setGeneratorBounds(null);
+              }
+              if (currentVideoId) {
+                setActiveVideoGenId(null);
+                setVideoGenData(null);
+                setVideoGenBounds(null);
+              }
             }
             setVideoPlayerBounds({
-              x: sel.x as number, y: sel.y as number,
-              width: sel.width as number, height: sel.height as number,
+              x: sel.x as number,
+              y: sel.y as number,
+              width: sel.width as number,
+              height: sel.height as number,
             });
           } else {
-            // Neither generator nor video player -- close all if any was open
             if (currentId || currentVideoId || activeVideoPlayerIdRef.current) {
               closeAllPanels();
             }
           }
         } else {
-          // Zero or multiple selected -- close all panels if any was open
           if (currentId || currentVideoId || activeVideoPlayerIdRef.current) {
             closeAllPanels();
           }
@@ -383,6 +417,34 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
     setGeneratorBounds(null);
   }, []);
 
+  const handleCreateVideoGenerator = useCallback(() => {
+    if (!excalidrawApi) return;
+    const elementId = createVideoGeneratorElement(excalidrawApi, {
+      aspectRatio: "16:9",
+    });
+    excalidrawApi.updateScene({
+      appState: { selectedElementIds: { [elementId]: true } },
+    });
+    setActiveVideoGenId(elementId);
+    const elements = excalidrawApi.getSceneElements();
+    const el = elements.find((item: any) => item.id === elementId);
+    if (el) {
+      setVideoGenData(getVideoGeneratorData(el));
+      setVideoGenBounds({
+        x: el.x as number,
+        y: el.y as number,
+        width: el.width as number,
+        height: el.height as number,
+      });
+    }
+  }, [excalidrawApi]);
+
+  const handleCloseVideoGenerator = useCallback(() => {
+    setActiveVideoGenId(null);
+    setVideoGenData(null);
+    setVideoGenBounds(null);
+  }, []);
+
   const handleCloseVideoPlayer = useCallback(() => {
     setActiveVideoPlayerId(null);
     setVideoPlayerData(null);
@@ -451,6 +513,20 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
           <Sparkles className="size-[16px]" />
         </button>
 
+        <button
+          type="button"
+          title="AI 生成视频"
+          aria-label="AI 生成视频"
+          onClick={handleCreateVideoGenerator}
+          className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 outline-none ${
+            activeVideoGenId
+              ? "bg-foreground/[0.08] text-foreground"
+              : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
+          }`}
+        >
+          <Video className="size-[16px]" />
+        </button>
+
       </div>
 
       {/* Image Generator Panel -- floats below the selected placeholder */}
@@ -460,21 +536,36 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
           elementBounds={generatorBounds}
           data={generatorData}
           excalidrawApi={excalidrawApi}
-          accessToken={accessToken}
           canvasScrollZoom={canvasScrollZoom}
           onClose={handleCloseGenerator}
         />
       )}
 
-      {/* Video Player Panel -- floats when a completed video element is selected */}
+      {activeVideoGenId && videoGenData && videoGenBounds && (
+        <VideoGeneratorPanel
+          elementId={activeVideoGenId}
+          elementBounds={videoGenBounds}
+          canvasId={canvasId}
+          data={videoGenData}
+          excalidrawApi={excalidrawApi}
+          projectId={projectId}
+          canvasScrollZoom={canvasScrollZoom}
+          onClose={handleCloseVideoGenerator}
+        />
+      )}
+
       {activeVideoPlayerId && videoPlayerData && videoPlayerBounds && (
         <VideoPlayerPanel
           elementId={activeVideoPlayerId}
           elementBounds={videoPlayerBounds}
           videoUrl={videoPlayerData.videoUrl}
           mimeType={videoPlayerData.mimeType}
-          {...(videoPlayerData.durationSeconds != null ? { durationSeconds: videoPlayerData.durationSeconds } : {})}
-          {...(videoPlayerData.title != null ? { title: videoPlayerData.title } : {})}
+          {...(videoPlayerData.durationSeconds != null
+            ? { durationSeconds: videoPlayerData.durationSeconds }
+            : {})}
+          {...(videoPlayerData.title != null
+            ? { title: videoPlayerData.title }
+            : {})}
           canvasScrollZoom={canvasScrollZoom}
           onClose={handleCloseVideoPlayer}
         />

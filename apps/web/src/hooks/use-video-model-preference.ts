@@ -4,7 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import type { VideoGenerationPreference } from "@aimc/shared";
 
 const STORAGE_KEY = "aimc:video-model-preference";
-const DEFAULT_MODEL = "google/veo-3.1";
+const DEFAULT_MODEL = "google-official/veo-3.1-generate-preview";
 
 export type VideoModelPreference = VideoGenerationPreference;
 
@@ -27,7 +27,11 @@ function getSnapshot(): VideoModelPreference {
     if (raw !== cachedRaw) {
       cachedRaw = raw;
       cachedPreference = raw
-        ? normalizePreference(JSON.parse(raw) as Partial<VideoModelPreference> & { model?: string })
+        ? normalizePreference(
+            JSON.parse(raw) as Partial<VideoModelPreference> & {
+              model?: string;
+            },
+          )
         : defaultPreference;
     }
     return cachedPreference;
@@ -65,7 +69,11 @@ function normalizePreference(
 }
 
 export function useVideoModelPreference() {
-  const preference = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const preference = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
 
   const setPreference = useCallback((next: VideoModelPreference) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));

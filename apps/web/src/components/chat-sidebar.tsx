@@ -5,12 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useBreakpoint } from "../hooks/use-breakpoint";
 import type {
   ContentBlock,
-  ImageArtifact,
   ImageGenerationPreference,
+  VideoGenerationPreference,
   MessageMention,
   StreamEvent,
-  VideoArtifact,
-  VideoGenerationPreference,
+  ToolArtifact,
 } from "@aimc/shared";
 import { useAgentModel } from "../hooks/use-agent-model";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
@@ -19,6 +18,7 @@ import {
   INITIAL_AGENT_MODEL_KEY,
   INITIAL_ATTACHMENTS_KEY,
   INITIAL_IMAGE_GENERATION_PREFERENCE_KEY,
+  INITIAL_VIDEO_GENERATION_PREFERENCE_KEY,
 } from "../hooks/use-create-project";
 import type { ReadyAttachment } from "../hooks/use-image-attachments";
 import { useImageAttachments } from "../hooks/use-image-attachments";
@@ -37,18 +37,17 @@ import {
 } from "./canvas-image-picker";
 import { ChatInput } from "./chat-input";
 import { ChatMessage } from "./chat-message";
-import { ChatSkills } from "./chat-skills";
+import { ChatTemplates } from "./chat-templates";
 import { useToast } from "./toast";
 import { ErrorBoundary } from "./error-boundary";
 import { SessionSelector } from "./session-selector";
 
 type ChatSidebarProps = {
-  accessToken: string;
   canvasId: string;
+  projectId: string;
   open: boolean;
   onToggle: () => void;
-  onImageGenerated?: (artifact: ImageArtifact) => void;
-  onVideoGenerated?: (artifact: VideoArtifact) => void;
+  onImageGenerated?: (artifact: ToolArtifact) => void;
   onCanvasSync?: () => void;
   /** Called for every stream event — used by job fallback polling to detect timed-out jobs */
   onStreamEvent?: (event: StreamEvent) => void;
@@ -62,12 +61,11 @@ type ChatSidebarProps = {
 };
 
 export function ChatSidebar({
-  accessToken,
   canvasId,
+  projectId,
   open,
   onToggle,
   onImageGenerated,
-  onVideoGenerated,
   onCanvasSync,
   onStreamEvent,
   initialPrompt,
@@ -99,10 +97,8 @@ export function ChatSidebar({
     handleDeleteSession,
     autoTitleSession,
     reloadMessages,
-    accessTokenRef,
   } = useChatSessions({
     canvasId,
-    accessToken,
     initialSessionId,
     onSessionChange,
   });
@@ -124,6 +120,7 @@ export function ChatSidebar({
   const initialPromptSent = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef(false);
+  const sendingRef = useRef(false);
   const messageMentionsRef = useRef(messageMentions);
   messageMentionsRef.current = messageMentions;
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
@@ -139,14 +136,13 @@ export function ChatSidebar({
     clearAll: clearAttachments,
     isUploading,
     readyAttachments,
-  } = useImageAttachments(accessToken);
+  } = useImageAttachments(projectId);
 
   const { activeImageGenerationPreference } = useImageModelPreference();
   const activeImageGenerationPreferenceRef = useRef(
     activeImageGenerationPreference,
   );
   activeImageGenerationPreferenceRef.current = activeImageGenerationPreference;
-
   const { activeVideoGenerationPreference } = useVideoModelPreference();
   const activeVideoGenerationPreferenceRef = useRef(
     activeVideoGenerationPreference,
@@ -285,7 +281,7 @@ export function ChatSidebar({
     }
 
     let cancelled = false;
-    fetchBrandKit(accessTokenRef.current, currentBrandKitId)
+    fetchBrandKit(currentBrandKitId)
       .then((kit) => {
         if (cancelled) return;
         setBrandKitMentionItems(
@@ -312,7 +308,7 @@ export function ChatSidebar({
     return () => {
       cancelled = true;
     };
-  }, [currentBrandKitId, accessTokenRef]);
+  }, [currentBrandKitId]);
 
   // ── Send message ──
   const handleSend = useCallback(
@@ -320,10 +316,12 @@ export function ChatSidebar({
       text: string,
       attachmentsOverride?: ReadyAttachment[],
       imageGenerationPreferenceOverride?: ImageGenerationPreference,
+      videoGenerationPreferenceOverride?: VideoGenerationPreference,
       mentionsOverride?: MessageMention[],
     ) => {
       const currentSessionId = activeSessionIdRef.current;
-      if (streaming || !currentSessionId) return;
+      if (sendingRef.current || !currentSessionId) return;
+      sendingRef.current = true;
 
       // Merge explicitly-attached images with auto-sensed canvas selection images
       let currentAttachments = attachmentsOverride ?? readyAttachments;
@@ -351,6 +349,7 @@ export function ChatSidebar({
         imageGenerationPreferenceOverride ??
         activeImageGenerationPreferenceRef.current;
       const currentVideoGenerationPreference =
+        videoGenerationPreferenceOverride ??
         activeVideoGenerationPreferenceRef.current;
       const currentMentions = mentionsOverride ?? messageMentionsRef.current;
 
@@ -370,16 +369,6 @@ export function ChatSidebar({
             mentionType: "image-model" as const,
             id: mention.id,
             label: mention.label,
-          };
-        }
-
-        if (mention.mentionType === "skill") {
-          return {
-            type: "mention" as const,
-            mentionType: "skill" as const,
-            id: mention.id,
-            label: mention.label,
-            slug: mention.slug,
           };
         }
 
@@ -409,7 +398,7 @@ export function ChatSidebar({
       updateSessionMessages(currentSessionId, (prev) => [...prev, userMsg]);
 
       // Persist user message (fire-and-forget)
-      saveMessage(accessTokenRef.current, currentSessionId, {
+      saveMessage(currentSessionId, {
         role: "user",
         content: text,
         contentBlocks: [
@@ -482,11 +471,8 @@ export function ChatSidebar({
             !backendInserted
           ) {
             for (const artifact of event.artifacts) {
-              if (artifact.type === "image" && onImageGenerated) {
-                onImageGenerated(artifact as ImageArtifact);
-              }
-              if (artifact.type === "video" && onVideoGenerated) {
-                onVideoGenerated(artifact as VideoArtifact);
+              if (onImageGenerated) {
+                onImageGenerated(artifact);
               }
             }
           }
@@ -528,7 +514,6 @@ export function ChatSidebar({
               conversationId: canvasId,
               prompt: text,
               canvasId,
-              accessToken: accessTokenRef.current,
               ...(currentAttachments.length > 0
                 ? { attachments: currentAttachments }
                 : {}),
@@ -582,6 +567,7 @@ export function ChatSidebar({
           }),
         );
       } finally {
+        sendingRef.current = false;
         setStreaming(false);
       }
     },
@@ -591,14 +577,12 @@ export function ChatSidebar({
       applyStreamEvent,
       updateSessionMessages,
       onImageGenerated,
-      onVideoGenerated,
       onCanvasSync,
       onStreamEvent,
       readyAttachments,
       clearAttachments,
       ws,
       autoTitleSession,
-      accessTokenRef,
       activeSessionIdRef,
     ],
   );
@@ -626,8 +610,6 @@ export function ChatSidebar({
         let nextMention: MessageMention;
         if (item.kind === "image-model") {
           nextMention = { mentionType: "image-model", id: item.id, label: item.label };
-        } else if (item.kind === "skill") {
-          return prev;
         } else {
           nextMention = {
             mentionType: "brand-kit-asset",
@@ -679,6 +661,7 @@ export function ChatSidebar({
 
     let storedAttachments: ReadyAttachment[] | undefined;
     let storedImageGenerationPreference: ImageGenerationPreference | undefined;
+    let storedVideoGenerationPreference: VideoGenerationPreference | undefined;
     let storedAgentModel: string | undefined;
     try {
       const raw = sessionStorage.getItem(INITIAL_ATTACHMENTS_KEY);
@@ -695,6 +678,16 @@ export function ChatSidebar({
           preferenceRaw,
         ) as ImageGenerationPreference;
         sessionStorage.removeItem(INITIAL_IMAGE_GENERATION_PREFERENCE_KEY);
+      }
+
+      const videoPreferenceRaw = sessionStorage.getItem(
+        INITIAL_VIDEO_GENERATION_PREFERENCE_KEY,
+      );
+      if (videoPreferenceRaw) {
+        storedVideoGenerationPreference = JSON.parse(
+          videoPreferenceRaw,
+        ) as VideoGenerationPreference;
+        sessionStorage.removeItem(INITIAL_VIDEO_GENERATION_PREFERENCE_KEY);
       }
 
       const modelRaw = sessionStorage.getItem(INITIAL_AGENT_MODEL_KEY);
@@ -717,6 +710,7 @@ export function ChatSidebar({
         initialPrompt,
         storedAttachments,
         storedImageGenerationPreference,
+        storedVideoGenerationPreference,
       );
     }, 0);
 
@@ -754,6 +748,7 @@ export function ChatSidebar({
         const activeRunId = (ack.payload as Record<string, unknown>)
           .activeRunId;
         if (activeRunId && typeof activeRunId === "string") {
+          sendingRef.current = true;
           setStreaming(true);
 
           const assistantId = `resumed_${activeRunId}`;
@@ -793,11 +788,8 @@ export function ChatSidebar({
               !wsBackendInserted
             ) {
               for (const artifact of evt.artifacts) {
-                if (artifact.type === "image" && onImageGenerated) {
-                  onImageGenerated(artifact as ImageArtifact);
-                }
-                if (artifact.type === "video" && onVideoGenerated) {
-                  onVideoGenerated(artifact as VideoArtifact);
+                if (onImageGenerated) {
+                  onImageGenerated(artifact);
                 }
               }
             }
@@ -811,6 +803,7 @@ export function ChatSidebar({
               evt.type === "run.failed" ||
               evt.type === "run.canceled"
             ) {
+              sendingRef.current = false;
               setStreaming(false);
               unsub();
             }
@@ -826,7 +819,6 @@ export function ChatSidebar({
     applyStreamEvent,
     onStreamEvent,
     onImageGenerated,
-    onVideoGenerated,
     onCanvasSync,
     activeSessionIdRef,
     reloadMessages,
@@ -926,7 +918,7 @@ export function ChatSidebar({
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
             </div>
           ) : messages.length === 0 ? (
-            <ChatSkills onSend={handleSend} />
+            <ChatTemplates onSend={handleSend} />
           ) : (
             messages.map((msg) => (
               <ChatMessage
@@ -964,6 +956,7 @@ export function ChatSidebar({
           onSend={handleSend}
           disabled={streaming || sessionsLoading}
           attachments={imageAttachments}
+          canSendAttachments={readyAttachments.length > 0}
           onAddFiles={addFiles}
           onRemoveAttachment={removeAttachment}
           onRetryAttachment={retryUpload}

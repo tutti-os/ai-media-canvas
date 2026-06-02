@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Lock, Plus, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -12,14 +12,14 @@ import {
   resizeVideoGeneratorElement,
   type VideoGeneratorData,
 } from "../../lib/canvas-video-generator";
-// No longer needs poster frame extraction -- videos use embeddable elements
 
 type VideoGeneratorPanelProps = {
   elementId: string;
   elementBounds: { x: number; y: number; width: number; height: number };
+  canvasId: string;
   data: VideoGeneratorData;
   excalidrawApi: any;
-  accessToken: string;
+  projectId: string;
   canvasScrollZoom: { scrollX: number; scrollY: number; zoom: number };
   onClose: () => void;
 };
@@ -30,9 +30,10 @@ const DURATIONS = [4, 5, 6, 8] as const;
 export function VideoGeneratorPanel({
   elementId,
   elementBounds,
+  canvasId,
   data,
   excalidrawApi,
-  accessToken,
+  projectId,
   canvasScrollZoom,
   onClose,
 }: VideoGeneratorPanelProps) {
@@ -42,9 +43,7 @@ export function VideoGeneratorPanel({
   const [duration, setDuration] = useState(data.duration);
   const [resolution, setResolution] = useState(data.resolution);
   const [loading, setLoading] = useState(data.status === "generating");
-  const [error, setError] = useState<string | null>(
-    data.errorMessage ?? null,
-  );
+  const [error, setError] = useState<string | null>(data.errorMessage ?? null);
   const [models, setModels] = useState<VideoModelInfo[]>([]);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showParamsPopover, setShowParamsPopover] = useState(false);
@@ -61,26 +60,23 @@ export function VideoGeneratorPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const firstFrameInputRef = useRef<HTMLInputElement>(null);
   const lastFrameInputRef = useRef<HTMLInputElement>(null);
-  const accessTokenRef = useRef(accessToken);
-  accessTokenRef.current = accessToken;
   const { handleGenerationError } = useGenerationErrorHandler();
-  // AbortController for in-flight generation requests so we can cancel on unmount
   const abortRef = useRef<AbortController | null>(null);
 
-  // Fetch available models with error logging
   useEffect(() => {
     let cancelled = false;
     fetchVideoModels()
-      .then((r) => {
-        if (!cancelled) setModels(r.models);
+      .then((response) => {
+        if (!cancelled) setModels(response.models);
       })
       .catch((err) => {
         console.warn("[video-gen] Failed to fetch models:", err);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Close dropdowns when clicking outside the panel
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
@@ -92,14 +88,12 @@ export function VideoGeneratorPanel({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Cancel in-flight generation on unmount to prevent memory leaks
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
     };
   }, []);
 
-  // Auto-resize textarea
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -107,13 +101,12 @@ export function VideoGeneratorPanel({
     ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
   }, [prompt]);
 
-  // Calculate panel screen position from canvas coordinates
   const { scrollX, scrollY, zoom } = canvasScrollZoom;
   const screenX = (elementBounds.x + scrollX) * zoom;
   const screenY =
     (elementBounds.y + elementBounds.height + scrollY) * zoom + 8;
 
-  const currentModel = models.find((m) => m.id === model);
+  const currentModel = models.find((item) => item.id === model);
 
   const handleAspectRatioChange = useCallback(
     (ratio: string) => {
@@ -127,18 +120,20 @@ export function VideoGeneratorPanel({
   );
 
   const handleDurationChange = useCallback(
-    (d: number) => {
-      setDuration(d);
-      updateVideoGeneratorElement(excalidrawApi, elementId, { duration: d });
+    (nextDuration: number) => {
+      setDuration(nextDuration);
+      updateVideoGeneratorElement(excalidrawApi, elementId, {
+        duration: nextDuration,
+      });
     },
     [excalidrawApi, elementId],
   );
 
   const handleModelChange = useCallback(
-    (m: string) => {
-      setModel(m);
+    (nextModel: string) => {
+      setModel(nextModel);
       setShowModelDropdown(false);
-      updateVideoGeneratorElement(excalidrawApi, elementId, { model: m });
+      updateVideoGeneratorElement(excalidrawApi, elementId, { model: nextModel });
     },
     [excalidrawApi, elementId],
   );
@@ -167,7 +162,6 @@ export function VideoGeneratorPanel({
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || loading) return;
 
-    // Cancel any previous in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -188,23 +182,18 @@ export function VideoGeneratorPanel({
       if (firstFrame) inputImages.push(firstFrame.dataUrl);
       if (lastFrame) inputImages.push(lastFrame.dataUrl);
 
-      const result = await generateVideoDirect(
-        accessTokenRef.current,
-        prompt.trim(),
-        {
-          model,
-          duration,
-          resolution,
-          aspectRatio,
-          ...(inputImages.length ? { inputImages } : {}),
-        },
-      );
+      const result = await generateVideoDirect(prompt.trim(), {
+        model,
+        duration,
+        resolution,
+        aspectRatio,
+        ...(inputImages.length ? { inputImages } : {}),
+        projectId,
+        canvasId,
+      });
 
-      // Check if this generation was cancelled while awaiting
       if (controller.signal.aborted) return;
 
-      // Create embeddable element for inline video playback on canvas.
-      // Dynamic import -- excalidraw is client-only.
       const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
       if (controller.signal.aborted) return;
 
@@ -226,7 +215,6 @@ export function VideoGeneratorPanel({
         } as any,
       ]);
 
-      // Replace generator placeholder with video embeddable element
       const elements = excalidrawApi
         .getSceneElements()
         .map((el: any) =>
@@ -239,7 +227,6 @@ export function VideoGeneratorPanel({
 
       onClose();
     } catch (err) {
-      // Ignore aborted requests (user cancelled or component unmounted)
       if (controller.signal.aborted) return;
 
       console.error("[video-gen] Generation error:", err);
@@ -269,7 +256,7 @@ export function VideoGeneratorPanel({
     handleGenerationError,
   ]);
 
-  const paramsLabel = `${aspectRatio} \u00B7 ${duration}s`;
+  const paramsLabel = `${aspectRatio} · ${duration}s`;
 
   return createPortal(
     <div
@@ -279,69 +266,7 @@ export function VideoGeneratorPanel({
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      {/* Frame upload area */}
-      <div className="flex gap-2 p-2 pb-0">
-        {/* First frame */}
-        <input
-          ref={firstFrameInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          className="hidden"
-          onChange={handleFrameUpload("first", setFirstFrame)}
-        />
-        <button
-          type="button"
-          onClick={() => firstFrameInputRef.current?.click()}
-          className="flex h-[68px] w-[56px] flex-col items-center justify-center gap-1 rounded-2xl bg-muted/60 transition-colors hover:bg-muted"
-        >
-          {firstFrame ? (
-            <img
-              src={firstFrame.dataUrl}
-              alt="首帧"
-              className="h-full w-full rounded-2xl object-cover"
-            />
-          ) : (
-            <>
-              <Plus className="h-4 w-4 text-muted-foreground" />
-              <span className="text-[10px] text-muted-foreground">
-                首帧
-              </span>
-            </>
-          )}
-        </button>
-
-        {/* Last frame */}
-        <input
-          ref={lastFrameInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          className="hidden"
-          onChange={handleFrameUpload("last", setLastFrame)}
-        />
-        <button
-          type="button"
-          onClick={() => lastFrameInputRef.current?.click()}
-          className="flex h-[68px] w-[56px] flex-col items-center justify-center gap-1 rounded-2xl bg-muted/60 transition-colors hover:bg-muted"
-        >
-          {lastFrame ? (
-            <img
-              src={lastFrame.dataUrl}
-              alt="尾帧"
-              className="h-full w-full rounded-2xl object-cover"
-            />
-          ) : (
-            <>
-              <Plus className="h-4 w-4 text-muted-foreground" />
-              <span className="text-[10px] text-muted-foreground">
-                尾帧
-              </span>
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* Prompt textarea */}
-      <div className="px-4 py-3">
+      <div className="px-5 pb-3 pt-4">
         <textarea
           ref={textareaRef}
           value={prompt}
@@ -352,171 +277,198 @@ export function VideoGeneratorPanel({
               void handleGenerate();
             }
           }}
-          placeholder="今天我们要创作什么"
+          placeholder="描述你想要的视频镜头、动作、节奏与画面氛围"
           disabled={loading}
           style={{ scrollbarWidth: "none" }}
-          className="min-h-[44px] max-h-[140px] w-full resize-none border-none bg-transparent text-[14px] leading-[22px] text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-scrollbar]:hidden"
+          className="min-h-[88px] max-h-[140px] w-full resize-none border-none bg-transparent p-0 text-[15px] leading-6 text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-scrollbar]:hidden"
         />
-      </div>
 
-      {error && (
-        <div className="mx-4 mb-2 rounded-lg bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
-          {error}
-        </div>
-      )}
+        {error && (
+          <div className="mt-3 rounded-2xl border border-destructive/15 bg-destructive/8 px-3 py-2 text-xs text-destructive">
+            {error}
+          </div>
+        )}
 
-      {/* Bottom toolbar */}
-      <div className="flex items-center justify-between px-2 pb-2">
-        {/* Left: params button */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowParamsPopover((v) => !v)}
-            className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
-          >
-            <span className="text-foreground">{paramsLabel}</span>
-            <svg
-              className="h-3 w-3 text-muted-foreground"
-              viewBox="0 0 12 24"
-              fill="currentColor"
-            >
-              <path d="M8.546 10.33a.4.4 0 0 1 .566 0l.424.424a.4.4 0 0 1 0 .566l-3.041 3.041a.7.7 0 0 1-.99 0l-3.04-3.04a.4.4 0 0 1 0-.567l.423-.424a.4.4 0 0 1 .567 0L6 12.876z" />
-            </svg>
-          </button>
-          {showParamsPopover && (
-            <div className="absolute bottom-full left-0 z-50 mb-1 w-[220px] rounded-xl border-[0.5px] border-border bg-card p-3 shadow-card">
-              {/* Aspect ratio row */}
-              <div className="mb-3">
-                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Aspect Ratio
-                </div>
-                <div className="flex gap-1">
-                  {ASPECT_RATIOS.map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => handleAspectRatioChange(r)}
-                      className={`rounded-lg px-3 py-1 text-xs transition-colors ${
-                        r === aspectRatio
-                          ? "bg-muted text-foreground"
-                          : "text-muted-foreground hover:bg-muted/60"
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {/* Duration row */}
-              <div>
-                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Duration
-                </div>
-                <div className="flex gap-1">
-                  {DURATIONS.map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => handleDurationChange(d)}
-                      className={`rounded-lg px-3 py-1 text-xs transition-colors ${
-                        d === duration
-                          ? "bg-muted text-foreground"
-                          : "text-muted-foreground hover:bg-muted/60"
-                      }`}
-                    >
-                      {d}s
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right: model selector + generate */}
-        <div className="flex items-center gap-1">
-          {/* Model selector */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowModelDropdown((v) => !v)}
-              className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
-            >
-              {currentModel?.iconUrl && (
-                <img
-                  src={currentModel.iconUrl}
-                  alt=""
-                  className="h-3.5 w-3.5 rounded-full"
-                />
-              )}
-              <span className="text-foreground">
-                {currentModel?.displayName ?? model.split("/").pop()}
-              </span>
-              <svg
-                className="h-3 w-3 text-muted-foreground"
-                viewBox="0 0 12 24"
-                fill="currentColor"
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowModelDropdown((value) => !value)}
+                className="flex h-9 items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60"
               >
-                <path d="M8.546 10.33a.4.4 0 0 1 .566 0l.424.424a.4.4 0 0 1 0 .566l-3.041 3.041a.7.7 0 0 1-.99 0l-3.04-3.04a.4.4 0 0 1 0-.567l.423-.424a.4.4 0 0 1 .567 0L6 12.876z" />
-              </svg>
-            </button>
-            {showModelDropdown && (
-              <div className="absolute bottom-full right-0 z-50 mb-1 max-h-[280px] w-[260px] overflow-y-auto rounded-xl border-[0.5px] border-border bg-card py-1 shadow-card">
-                {models.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => handleModelChange(m.id)}
-                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted ${m.id === model ? "bg-muted" : ""}`}
-                  >
-                    {m.iconUrl && (
-                      <img
-                        src={m.iconUrl}
-                        alt=""
-                        className="h-3.5 w-3.5 rounded-full"
-                      />
-                    )}
-                    <span className="flex-1 text-foreground">{m.displayName}</span>
-                    {m.id === model && (
-                      <svg
-                        className="h-3 w-3 text-foreground"
-                        viewBox="0 0 14 14"
-                        fill="currentColor"
+                <span className="truncate max-w-[180px]">
+                  {currentModel?.displayName ?? model}
+                </span>
+                <svg
+                  className="h-3.5 w-3.5 text-muted-foreground"
+                  viewBox="0 0 12 24"
+                  fill="currentColor"
+                >
+                  <path d="M8.546 10.33a.4.4 0 0 1 .566 0l.424.424a.4.4 0 0 1 0 .566l-3.041 3.041a.7.7 0 0 1-.99 0l-3.04-3.04a.4.4 0 0 1 0-.567l.423-.424a.4.4 0 0 1 .567 0L6 12.876z" />
+                </svg>
+              </button>
+              {showModelDropdown && (
+                <div className="absolute bottom-full left-0 z-50 mb-2 w-[280px] overflow-hidden rounded-2xl border border-border bg-popover shadow-card">
+                  <div className="max-h-[260px] overflow-y-auto py-1">
+                    {models.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleModelChange(item.id)}
+                        className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
                       >
-                        <path
-                          fillRule="evenodd"
-                          d="M12.08 3.087a.583.583 0 0 1 0 .825L5.661 10.33a.583.583 0 0 1-.824 0L1.92 7.412a.583.583 0 0 1 .825-.825L5.25 9.092l6.004-6.005a.583.583 0 0 1 .825 0"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
+                        <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-muted-foreground">
+                          {(item.displayName || item.id).slice(0, 1)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-foreground">
+                            {item.displayName}
+                          </div>
+                          <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                            {item.description}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowParamsPopover((value) => !value)}
+                className="flex h-9 items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60"
+              >
+                <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>{paramsLabel}</span>
+              </button>
+              {showParamsPopover && (
+                <div className="absolute bottom-full left-0 z-50 mb-2 w-[260px] rounded-2xl border border-border bg-popover p-3 shadow-card">
+                  <div className="space-y-3">
+                    <div>
+                      <div className="mb-2 text-xs font-medium text-muted-foreground">
+                        比例
+                      </div>
+                      <div className="flex gap-2">
+                        {ASPECT_RATIOS.map((ratio) => (
+                          <button
+                            key={ratio}
+                            type="button"
+                            onClick={() => handleAspectRatioChange(ratio)}
+                            className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
+                              aspectRatio === ratio
+                                ? "bg-foreground text-background"
+                                : "bg-muted text-muted-foreground hover:bg-muted/80"
+                            }`}
+                          >
+                            {ratio}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="mb-2 text-xs font-medium text-muted-foreground">
+                        时长
+                      </div>
+                      <div className="flex gap-2">
+                        {DURATIONS.map((value) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => handleDurationChange(value)}
+                            className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
+                              duration === value
+                                ? "bg-foreground text-background"
+                                : "bg-muted text-muted-foreground hover:bg-muted/80"
+                            }`}
+                          >
+                            {value}s
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="mb-2 text-xs font-medium text-muted-foreground">
+                        分辨率
+                      </div>
+                      <div className="flex gap-2">
+                        {["720p", "1080p"].map((value) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => {
+                              setResolution(value);
+                              updateVideoGeneratorElement(excalidrawApi, elementId, {
+                                resolution: value,
+                              });
+                            }}
+                            className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
+                              resolution === value
+                                ? "bg-foreground text-background"
+                                : "bg-muted text-muted-foreground hover:bg-muted/80"
+                            }`}
+                          >
+                            {value}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Generate button */}
           <button
             type="button"
             onClick={() => void handleGenerate()}
-            disabled={!prompt.trim() || loading}
-            className="flex h-8 items-center justify-center gap-1 rounded-full bg-primary px-3 text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+            disabled={loading || !prompt.trim()}
+            className="inline-flex h-10 items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? (
-              <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-primary-foreground/30 border-t-primary-foreground dark:border-primary-foreground/30 dark:border-t-primary-foreground" />
-            ) : (
-              <>
-                <svg
-                  className="h-3.5 w-[9.3px] shrink-0"
-                  viewBox="0 0 8 10"
-                  fill="currentColor"
-                >
-                  <path d="M6.9 4.36H5.385V.76c0-.84-.447-1.01-.991-.38L4 .835.677 4.685c-.457.525-.265.955.422.955h1.517v3.6c0 .84.446 1.01.991.38L4 9.165l3.323-3.85c.456-.525.265-.955-.422-.955" />
-                </svg>
-              </>
-            )}
+            {loading ? "生成中..." : "生成视频"}
           </button>
+        </div>
+
+        <div className="mt-4 flex items-center gap-2">
+          <input
+            ref={firstFrameInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handleFrameUpload("first", setFirstFrame)}
+          />
+          <input
+            ref={lastFrameInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handleFrameUpload("last", setLastFrame)}
+          />
+          <button
+            type="button"
+            onClick={() => firstFrameInputRef.current?.click()}
+            className="inline-flex h-9 items-center gap-2 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            首帧
+          </button>
+          <button
+            type="button"
+            onClick={() => lastFrameInputRef.current?.click()}
+            className="inline-flex h-9 items-center gap-2 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            尾帧
+          </button>
+          <div className="ml-auto inline-flex h-8 items-center gap-1 rounded-full bg-muted px-3 text-[11px] text-muted-foreground">
+            <Lock className="h-3 w-3" />
+            远端生成，本地落库
+          </div>
         </div>
       </div>
     </div>,

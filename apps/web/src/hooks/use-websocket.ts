@@ -26,9 +26,7 @@ export type WebSocketHandle = {
   resumeCanvas: (canvasId: string, onAck?: (ack: WsCommandAck) => void) => void;
 };
 
-export function useWebSocket(
-  _getToken: () => string | null,
-): WebSocketHandle {
+export function useWebSocket(): WebSocketHandle {
   const [connected, setConnected] = useState(true);
   const eventListeners = useRef<Set<EventCallback>>(new Set());
   const rpcHandlers = useRef<Map<string, RPCHandler>>(new Map());
@@ -73,9 +71,6 @@ export function useWebSocket(
           method: "POST",
           headers: {
             "content-type": "application/json",
-            ...(payload.accessToken
-              ? { Authorization: `Bearer ${payload.accessToken}` }
-              : {}),
           },
           body: JSON.stringify(payload),
           signal: controller.signal,

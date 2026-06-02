@@ -1,43 +1,31 @@
 import type {
-  RunCreateRequest,
-  RunCreateResponse,
   ViewerResponse,
   ProjectListResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
+  ProjectDetailResponse,
   ProjectUpdateRequest,
   CanvasDetail,
   ProfileUpdateResponse,
-  WorkspaceSettingsResponse,
   ModelListResponse,
   SessionListResponse,
   SessionCreateResponse,
   MessageListResponse,
   MessageCreateResponse,
   ChatMessageCreateRequest,
+  SkillCreateRequest,
+  SkillDetailResponse,
+  SkillImportRequest,
+  SkillListResponse,
+  SkillToggleRequest,
   UploadResponse,
   AssetSignedUrlResponse,
-  SkillListResponse,
-  SkillDetailResponse,
-  SkillCreateRequest,
-  SkillUpdateRequest,
-  WorkspaceSkillListResponse,
-  JobResponse,
-  MarketplaceSearchResponse,
-  MarketplaceDetail,
 } from "@aimc/shared";
 
 import { getServerBaseUrl } from "./env";
 import { dedupeRequest } from "./dedupe-request";
 
 // --- Error types ---
-
-export class ApiAuthError extends Error {
-  constructor(message = "unauthorized") {
-    super(message);
-    this.name = "ApiAuthError";
-  }
-}
 
 export class ApiApplicationError extends Error {
   code: string;
@@ -48,82 +36,33 @@ export class ApiApplicationError extends Error {
   }
 }
 
-// --- Existing ---
-
-export async function createRun(
-  payload: RunCreateRequest,
-  options?: { accessToken?: string },
-) {
-  const headers: Record<string, string> = {
-    "content-type": "application/json",
-  };
-  if (options?.accessToken) {
-    headers.Authorization = `Bearer ${options.accessToken}`;
-  }
-
-  const response = await fetch(`${getServerBaseUrl()}/api/agent/runs`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Run creation failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as RunCreateResponse;
-}
-
-// --- Local session API ---
-
-function authHeaders(accessToken: string): Record<string, string> {
-  return { Authorization: `Bearer ${accessToken}` };
-}
-
-function authJsonHeaders(accessToken: string): Record<string, string> {
-  return {
-    Authorization: `Bearer ${accessToken}`,
-    "content-type": "application/json",
-  };
-}
+// --- Local app API ---
 
 async function handleErrorResponse(response: Response): Promise<never> {
-  if (response.status === 401) {
-    throw new ApiAuthError();
-  }
   const body = await response.json().catch(() => null);
   const code = body?.error?.code ?? "application_error";
   const message = body?.error?.message ?? "Request failed";
   throw new ApiApplicationError(code, message);
 }
 
-export async function fetchViewer(
-  accessToken: string,
-): Promise<ViewerResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/viewer`, {
-    headers: authHeaders(accessToken),
-  });
+export async function fetchViewer(): Promise<ViewerResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/viewer`);
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as ViewerResponse;
 }
 
-export async function fetchProjects(
-  accessToken: string,
-): Promise<ProjectListResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/projects`, {
-    headers: authHeaders(accessToken),
-  });
+export async function fetchProjects(): Promise<ProjectListResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/projects`);
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as ProjectListResponse;
 }
 
 export async function createProject(
-  accessToken: string,
   data: ProjectCreateRequest,
 ): Promise<ProjectCreateResponse> {
   const response = await fetch(`${getServerBaseUrl()}/api/projects`, {
     method: "POST",
-    headers: authJsonHeaders(accessToken),
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(data),
   });
   if (!response.ok) return handleErrorResponse(response);
@@ -131,33 +70,28 @@ export async function createProject(
 }
 
 export async function deleteProject(
-  accessToken: string,
   projectId: string,
 ): Promise<void> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/projects/${projectId}`,
     {
       method: "DELETE",
-      headers: authHeaders(accessToken),
     },
   );
   if (!response.ok) return handleErrorResponse(response);
 }
 
 export async function fetchProject(
-  accessToken: string,
   projectId: string,
-): Promise<{ project: { id: string; name: string; brand_kit_id: string | null } }> {
+): Promise<ProjectDetailResponse> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/projects/${projectId}`,
-    { headers: authHeaders(accessToken) },
   );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as { project: { id: string; name: string; brand_kit_id: string | null } };
+  return (await response.json()) as ProjectDetailResponse;
 }
 
 export async function updateProject(
-  accessToken: string,
   projectId: string,
   data: ProjectUpdateRequest,
 ): Promise<void> {
@@ -165,7 +99,7 @@ export async function updateProject(
     `${getServerBaseUrl()}/api/projects/${projectId}`,
     {
       method: "PATCH",
-      headers: authJsonHeaders(accessToken),
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(data),
     },
   );
@@ -174,20 +108,15 @@ export async function updateProject(
 
 // --- Canvas API ---
 
-export async function fetchCanvas(
-  accessToken: string,
-  canvasId: string,
-): Promise<{ canvas: CanvasDetail }> {
+export async function fetchCanvas(canvasId: string): Promise<{ canvas: CanvasDetail }> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/canvases/${canvasId}`,
-    { headers: authHeaders(accessToken) },
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as { canvas: CanvasDetail };
 }
 
 export async function saveCanvas(
-  accessToken: string,
   canvasId: string,
   content: { elements: Record<string, unknown>[]; appState: Record<string, unknown>; files: Record<string, Record<string, unknown>> },
 ): Promise<void> {
@@ -195,7 +124,7 @@ export async function saveCanvas(
     `${getServerBaseUrl()}/api/canvases/${canvasId}`,
     {
       method: "PUT",
-      headers: authJsonHeaders(accessToken),
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ content }),
     },
   );
@@ -203,7 +132,6 @@ export async function saveCanvas(
 }
 
 export async function uploadThumbnail(
-  accessToken: string,
   projectId: string,
   blob: Blob,
 ): Promise<void> {
@@ -213,7 +141,6 @@ export async function uploadThumbnail(
     `${getServerBaseUrl()}/api/projects/${projectId}/thumbnail`,
     {
       method: "PUT",
-      headers: authHeaders(accessToken),
       body: formData,
     },
   );
@@ -223,43 +150,15 @@ export async function uploadThumbnail(
 // --- Settings API ---
 
 export async function updateProfile(
-  accessToken: string,
   data: { displayName: string },
 ): Promise<ProfileUpdateResponse> {
   const response = await fetch(`${getServerBaseUrl()}/api/viewer/profile`, {
     method: "PATCH",
-    headers: authJsonHeaders(accessToken),
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(data),
   });
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as ProfileUpdateResponse;
-}
-
-export async function fetchWorkspaceSettings(
-  accessToken: string,
-): Promise<WorkspaceSettingsResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/workspace/settings`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as WorkspaceSettingsResponse;
-}
-
-export async function updateWorkspaceSettings(
-  accessToken: string,
-  data: { defaultModel: string },
-): Promise<WorkspaceSettingsResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/workspace/settings`,
-    {
-      method: "PUT",
-      headers: authJsonHeaders(accessToken),
-      body: JSON.stringify(data),
-    },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as WorkspaceSettingsResponse;
 }
 
 export async function fetchModels(): Promise<ModelListResponse> {
@@ -273,13 +172,11 @@ export async function fetchModels(): Promise<ModelListResponse> {
 // --- Chat Session API ---
 
 export function fetchSessions(
-  accessToken: string,
   canvasId: string,
 ): Promise<SessionListResponse> {
   return dedupeRequest(`sessions:${canvasId}`, async () => {
     const response = await fetch(
       `${getServerBaseUrl()}/api/canvases/${canvasId}/sessions`,
-      { headers: authHeaders(accessToken) },
     );
     if (!response.ok) return handleErrorResponse(response);
     return (await response.json()) as SessionListResponse;
@@ -287,7 +184,6 @@ export function fetchSessions(
 }
 
 export async function createSession(
-  accessToken: string,
   canvasId: string,
   title?: string,
 ): Promise<SessionCreateResponse> {
@@ -295,7 +191,7 @@ export async function createSession(
     `${getServerBaseUrl()}/api/canvases/${canvasId}/sessions`,
     {
       method: "POST",
-      headers: authJsonHeaders(accessToken),
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(title ? { title } : {}),
     },
   );
@@ -304,7 +200,6 @@ export async function createSession(
 }
 
 export async function updateSessionTitle(
-  accessToken: string,
   sessionId: string,
   title: string,
 ): Promise<void> {
@@ -312,7 +207,7 @@ export async function updateSessionTitle(
     `${getServerBaseUrl()}/api/sessions/${sessionId}`,
     {
       method: "PATCH",
-      headers: authJsonHeaders(accessToken),
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ title }),
     },
   );
@@ -320,33 +215,26 @@ export async function updateSessionTitle(
 }
 
 export async function deleteSession(
-  accessToken: string,
   sessionId: string,
 ): Promise<void> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/sessions/${sessionId}`,
     {
       method: "DELETE",
-      headers: authHeaders(accessToken),
     },
   );
   if (!response.ok) return handleErrorResponse(response);
 }
 
-export async function fetchMessages(
-  accessToken: string,
-  sessionId: string,
-): Promise<MessageListResponse> {
+export async function fetchMessages(sessionId: string): Promise<MessageListResponse> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/sessions/${sessionId}/messages`,
-    { headers: authHeaders(accessToken) },
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as MessageListResponse;
 }
 
 export async function saveMessage(
-  accessToken: string,
   sessionId: string,
   data: ChatMessageCreateRequest,
 ): Promise<MessageCreateResponse> {
@@ -354,7 +242,7 @@ export async function saveMessage(
     `${getServerBaseUrl()}/api/sessions/${sessionId}/messages`,
     {
       method: "POST",
-      headers: authJsonHeaders(accessToken),
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(data),
     },
   );
@@ -365,7 +253,6 @@ export async function saveMessage(
 // --- Upload API ---
 
 export async function uploadFile(
-  accessToken: string,
   file: File,
   projectId?: string,
 ): Promise<UploadResponse> {
@@ -377,36 +264,98 @@ export async function uploadFile(
 
   const response = await fetch(`${getServerBaseUrl()}/api/uploads`, {
     method: "POST",
-    headers: authHeaders(accessToken),
     body: formData,
   });
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as UploadResponse;
 }
 
-export async function getAssetUrl(
-  accessToken: string,
-  assetId: string,
-): Promise<AssetSignedUrlResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/uploads/${assetId}/url`,
-    { headers: authHeaders(accessToken) },
-  );
+export async function getAssetUrl(assetId: string): Promise<AssetSignedUrlResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/uploads/${assetId}/url`);
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as AssetSignedUrlResponse;
 }
 
-export async function deleteAsset(
-  accessToken: string,
-  assetId: string,
-): Promise<void> {
+export async function deleteAsset(assetId: string): Promise<void> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/uploads/${assetId}`,
     {
       method: "DELETE",
-      headers: authHeaders(accessToken),
     },
   );
+  if (!response.ok) return handleErrorResponse(response);
+}
+
+// --- Skills API ---
+
+export async function fetchInstalledSkills(): Promise<SkillListResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills`);
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillListResponse;
+}
+
+export async function fetchSkillCatalog(): Promise<SkillListResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills/catalog`);
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillListResponse;
+}
+
+export async function fetchSkillDetail(skillId: string): Promise<SkillDetailResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills/${skillId}`);
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillDetailResponse;
+}
+
+export async function createSkill(
+  data: SkillCreateRequest,
+): Promise<SkillDetailResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillDetailResponse;
+}
+
+export async function importSkill(
+  data: SkillImportRequest,
+): Promise<SkillDetailResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills/import`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillDetailResponse;
+}
+
+export async function installSkill(skillId: string): Promise<SkillDetailResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/skills/catalog/${skillId}/install`,
+    { method: "POST" },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillDetailResponse;
+}
+
+export async function toggleSkill(
+  skillId: string,
+  data: SkillToggleRequest,
+): Promise<SkillDetailResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills/${skillId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillDetailResponse;
+}
+
+export async function uninstallSkill(skillId: string): Promise<void> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills/${skillId}`, {
+    method: "DELETE",
+  });
   if (!response.ok) return handleErrorResponse(response);
 }
 
@@ -445,9 +394,7 @@ export type VideoModelInfo = {
   description: string;
   provider: string;
   iconUrl?: string;
-  creditCost?: number;
   accessible?: boolean;
-  minTier?: string;
 };
 
 export async function fetchVideoModels(): Promise<{ models: VideoModelInfo[] }> {
@@ -459,7 +406,6 @@ export async function fetchVideoModels(): Promise<{ models: VideoModelInfo[] }> 
 }
 
 export async function generateImageDirect(
-  accessToken: string,
   prompt: string,
   options?: { model?: string; aspectRatio?: string; quality?: string },
 ): Promise<GenerateImageResponse> {
@@ -467,7 +413,7 @@ export async function generateImageDirect(
     `${getServerBaseUrl()}/api/agent/generate-image`,
     {
       method: "POST",
-      headers: authJsonHeaders(accessToken),
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({
         prompt,
         ...(options?.model ? { model: options.model } : {}),
@@ -491,7 +437,6 @@ export type GenerateVideoResponse = {
 };
 
 export async function generateVideoDirect(
-  accessToken: string,
   prompt: string,
   options?: {
     model?: string;
@@ -499,13 +444,15 @@ export async function generateVideoDirect(
     resolution?: string;
     aspectRatio?: string;
     inputImages?: string[];
+    projectId?: string;
+    canvasId?: string;
   },
 ): Promise<GenerateVideoResponse> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/agent/generate-video`,
     {
       method: "POST",
-      headers: authJsonHeaders(accessToken),
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({
         prompt,
         ...(options?.model ? { model: options.model } : {}),
@@ -513,220 +460,11 @@ export async function generateVideoDirect(
         ...(options?.resolution ? { resolution: options.resolution } : {}),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
         ...(options?.inputImages?.length ? { inputImages: options.inputImages } : {}),
+        ...(options?.projectId ? { projectId: options.projectId } : {}),
+        ...(options?.canvasId ? { canvasId: options.canvasId } : {}),
       }),
     },
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as GenerateVideoResponse;
-}
-
-// --- Jobs API ---
-
-export async function fetchJob(
-  accessToken: string,
-  jobId: string,
-): Promise<JobResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/jobs/${jobId}`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as JobResponse;
-}
-
-// --- Skills API ---
-
-export async function fetchSkills(
-  accessToken: string,
-): Promise<SkillListResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/skills`, {
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as SkillListResponse;
-}
-
-export async function fetchSkillDetail(
-  accessToken: string,
-  id: string,
-): Promise<SkillDetailResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/skills/${id}`, {
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as SkillDetailResponse;
-}
-
-export async function createSkill(
-  accessToken: string,
-  data: SkillCreateRequest,
-): Promise<SkillDetailResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/skills`, {
-    method: "POST",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as SkillDetailResponse;
-}
-
-export async function updateSkill(
-  accessToken: string,
-  id: string,
-  data: SkillUpdateRequest,
-): Promise<SkillDetailResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/skills/${id}`, {
-    method: "PUT",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as SkillDetailResponse;
-}
-
-export async function deleteSkill(
-  accessToken: string,
-  id: string,
-): Promise<void> {
-  const response = await fetch(`${getServerBaseUrl()}/api/skills/${id}`, {
-    method: "DELETE",
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-}
-
-export async function fetchSkillFiles(
-  accessToken: string,
-  skillId: string,
-): Promise<{ files: Array<{ id: string; filePath: string; content: string; mimeType: string; createdAt: string; updatedAt: string }> }> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/skills/${skillId}/files`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as any;
-}
-
-// --- Workspace Skills API ---
-
-export async function fetchWorkspaceSkills(
-  accessToken: string,
-): Promise<WorkspaceSkillListResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/workspaces/skills`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as WorkspaceSkillListResponse;
-}
-
-export async function installSkill(
-  accessToken: string,
-  skillId: string,
-): Promise<void> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/workspaces/skills`,
-    {
-      method: "POST",
-      headers: authJsonHeaders(accessToken),
-      body: JSON.stringify({ skillId }),
-    },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-}
-
-export async function uninstallSkill(
-  accessToken: string,
-  skillId: string,
-): Promise<void> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/workspaces/skills/${skillId}`,
-    {
-      method: "DELETE",
-      headers: authHeaders(accessToken),
-    },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-}
-
-export async function toggleSkill(
-  accessToken: string,
-  skillId: string,
-  enabled: boolean,
-): Promise<void> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/workspaces/skills/${skillId}`,
-    {
-      method: "PATCH",
-      headers: authJsonHeaders(accessToken),
-      body: JSON.stringify({ enabled }),
-    },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-}
-
-// --- Marketplace API ---
-
-export async function searchMarketplace(
-  accessToken: string,
-  query: string,
-  page: number = 1,
-  limit: number = 20,
-): Promise<MarketplaceSearchResponse> {
-  const params = new URLSearchParams({
-    q: query,
-    page: String(page),
-    limit: String(limit),
-  });
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/skills/marketplace/search?${params}`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as MarketplaceSearchResponse;
-}
-
-export async function getMarketplaceDetail(
-  accessToken: string,
-  packageName: string,
-): Promise<MarketplaceDetail> {
-  const params = new URLSearchParams({ name: packageName });
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/skills/marketplace/detail?${params}`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as MarketplaceDetail;
-}
-
-export async function installMarketplaceSkill(
-  accessToken: string,
-  packageName: string,
-): Promise<SkillDetailResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/skills/marketplace/install`,
-    {
-      method: "POST",
-      headers: authJsonHeaders(accessToken),
-      body: JSON.stringify({ packageName }),
-    },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as SkillDetailResponse;
-}
-
-export async function importSkillFromUrl(
-  accessToken: string,
-  url: string,
-): Promise<SkillDetailResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/skills/import`,
-    {
-      method: "POST",
-      headers: authJsonHeaders(accessToken),
-      body: JSON.stringify({ url }),
-    },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as SkillDetailResponse;
 }

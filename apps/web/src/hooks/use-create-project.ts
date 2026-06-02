@@ -2,14 +2,16 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ImageGenerationPreference, VideoGenerationPreference } from "@aimc/shared";
+import type {
+  ImageGenerationPreference,
+  VideoGenerationPreference,
+} from "@aimc/shared";
 
 import type { ReadyAttachment } from "@/hooks/use-image-attachments";
-import { LOCAL_ACCESS_TOKEN } from "@/lib/auth-context";
 import { useToast } from "@/components/toast";
 import { createProject } from "@/lib/server-api";
 
-/** sessionStorage key used to pass attachments from Home → Canvas auto-send. */
+/** sessionStorage key used to pass attachments into the next canvas session. */
 export const INITIAL_ATTACHMENTS_KEY = "aimc:initial-attachments";
 export const INITIAL_IMAGE_GENERATION_PREFERENCE_KEY =
   "aimc:initial-image-generation-preference";
@@ -17,14 +19,22 @@ export const INITIAL_VIDEO_GENERATION_PREFERENCE_KEY =
   "aimc:initial-video-generation-preference";
 export const INITIAL_AGENT_MODEL_KEY = "aimc:initial-agent-model";
 
+function clearInitialCreateProjectState() {
+  sessionStorage.removeItem(INITIAL_ATTACHMENTS_KEY);
+  sessionStorage.removeItem(INITIAL_IMAGE_GENERATION_PREFERENCE_KEY);
+  sessionStorage.removeItem(INITIAL_VIDEO_GENERATION_PREFERENCE_KEY);
+  sessionStorage.removeItem(INITIAL_AGENT_MODEL_KEY);
+}
+
 /**
  * Shared hook for creating an Untitled project and navigating to its canvas.
- * Used by Home page, Projects page, and Canvas logo menu.
+ * Used by the projects page and canvas navigation entry points.
  */
 export function useCreateProject() {
   const router = useRouter();
   const { error: toastError } = useToast();
   const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
 
   const routerRef = useRef(router);
   routerRef.current = router;
@@ -37,7 +47,8 @@ export function useCreateProject() {
       videoGenerationPreference?: VideoGenerationPreference;
       model?: string;
     }) => {
-      if (creating) return;
+      if (creatingRef.current) return;
+      creatingRef.current = true;
 
       // Persist attachments in sessionStorage BEFORE window.open so the
       // new tab's cloned sessionStorage already contains them.
@@ -91,14 +102,15 @@ export function useCreateProject() {
         sessionStorage.removeItem(INITIAL_AGENT_MODEL_KEY);
       }
 
-      // Open the new tab synchronously within the user gesture so the
-      // browser popup-blocker doesn't intervene. We'll set the real URL
-      // once the API call returns.
       const newTab = window.open("/loading-preview", "_blank");
+      const loadingPreviewUrl = new URL(
+        "/loading-preview",
+        window.location.origin,
+      ).href;
 
       setCreating(true);
       try {
-        const result = await createProject(LOCAL_ACCESS_TOKEN, { name: "Untitled" });
+        const result = await createProject({ name: "Untitled" });
         const canvasId = result.project.primaryCanvas.id;
 
         const url = opts?.prompt
@@ -106,20 +118,46 @@ export function useCreateProject() {
           : `/canvas?id=${canvasId}`;
 
         if (newTab) {
-          newTab.location.href = url;
+          try {
+            newTab.location.href = url;
+            // Some browser shells keep a truthy popup handle but fail to
+            // surface the newly opened tab. If the loading-preview popup
+            // never advances, close it and fall back to in-page navigation.
+            window.setTimeout(() => {
+              try {
+                const popupHref = newTab.location.href;
+                if (
+                  newTab.closed ||
+                  popupHref === "about:blank" ||
+                  popupHref === loadingPreviewUrl
+                ) {
+                  newTab.close();
+                  routerRef.current.push(url);
+                }
+              } catch {
+                newTab.close();
+                routerRef.current.push(url);
+              }
+            }, 400);
+          } catch {
+            newTab.close();
+            routerRef.current.push(url);
+          }
         } else {
           // Popup was blocked despite sync open — fallback to in-page navigation
           routerRef.current.push(url);
         }
-        setCreating(false);
-      } catch (err) {
+      } catch {
+        clearInitialCreateProjectState();
         // Close the blank tab on failure
         newTab?.close();
         toastError("项目创建失败");
+      } finally {
+        creatingRef.current = false;
         setCreating(false);
       }
     },
-    [creating, toastError],
+    [toastError],
   );
 
   return { create, creating };

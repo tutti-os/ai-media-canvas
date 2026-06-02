@@ -25,7 +25,7 @@ export const videoArtifactSchema = z.object({
   mimeType: z.string(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
-  durationSeconds: z.number().optional(),
+  durationSeconds: z.number().positive().optional(),
   placement: placementSchema.optional(),
   jobId: z.string().optional(),
 });

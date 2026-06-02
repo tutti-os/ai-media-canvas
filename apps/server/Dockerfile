@@ -62,19 +62,7 @@ RUN apt-get update && \
 # Copy skills (fonts + SKILL.md) to /opt/aimc/skills/
 COPY skills/ /opt/aimc/skills/
 
-# SERVICE_MODE: "api" (default) or "worker"
+# Standalone image only serves the API + static web bundle.
 ENV SERVICE_MODE=api
 
-# Write Google service account JSON from env var to file (for Vertex AI auth in cloud).
-# Set GOOGLE_SERVICE_ACCOUNT_JSON in Railway/cloud env vars with the full JSON content.
-CMD ["sh", "-c", "\
-  if [ -n \"$GOOGLE_SERVICE_ACCOUNT_JSON\" ]; then \
-    mkdir -p /app/apps/server/credentials && \
-    printf '%s' \"$GOOGLE_SERVICE_ACCOUNT_JSON\" > /app/apps/server/credentials/vertex-ai-service-account.json && \
-    export GOOGLE_APPLICATION_CREDENTIALS=/app/apps/server/credentials/vertex-ai-service-account.json; \
-  fi && \
-  if [ \"$SERVICE_MODE\" = \"worker\" ]; then \
-    exec node --import tsx src/worker.ts; \
-  else \
-    exec node --import tsx src/server.ts; \
-  fi"]
+CMD ["node", "--import", "tsx", "src/server.ts"]

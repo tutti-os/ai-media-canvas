@@ -4,42 +4,41 @@ import {
   applicationErrorResponseSchema,
   projectCreateRequestSchema,
   projectCreateResponseSchema,
+  projectDetailResponseSchema,
   projectListResponseSchema,
   projectUpdateRequestSchema,
-  unauthenticatedErrorResponseSchema,
 } from "@aimc/shared";
 
 import {
   ProjectServiceError,
   type ProjectService,
 } from "../features/projects/project-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 
 export async function registerProjectRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localUser: AuthenticatedUser;
     projectService: ProjectService;
   },
 ) {
   app.get("/api/projects/:projectId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return reply.code(401).send(
-          unauthenticatedErrorResponseSchema.parse({
-            error: {
-              code: "unauthorized",
-              message: "Missing or invalid bearer token.",
-            },
-          }),
-        );
-      }
-
       const { projectId } = request.params as { projectId: string };
-      const project = await options.projectService.getProject(user, projectId);
-      return reply.code(200).send({ project });
+      const project = await options.projectService.getProject(options.localUser, projectId);
+      return reply.code(200).send(
+        projectDetailResponseSchema.parse({
+          project: {
+            id: project.id,
+            name: project.name,
+            slug: project.slug,
+            description: project.description,
+            brandKitId: project.brand_kit_id,
+            createdAt: project.created_at,
+            updatedAt: project.updated_at,
+          },
+        }),
+      );
     } catch (error) {
       return sendProjectError(error, reply, "project_query_failed");
     }
@@ -47,20 +46,7 @@ export async function registerProjectRoutes(
 
   app.get("/api/projects", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return reply.code(401).send(
-          unauthenticatedErrorResponseSchema.parse({
-            error: {
-              code: "unauthorized",
-              message: "Missing or invalid bearer token.",
-            },
-          }),
-        );
-      }
-
-      const projects = await options.projectService.listProjects(user);
+      const projects = await options.projectService.listProjects(options.localUser);
       return reply.code(200).send(projectListResponseSchema.parse({ projects }));
     } catch (error) {
       return sendProjectError(error, reply, "project_query_failed");
@@ -69,21 +55,8 @@ export async function registerProjectRoutes(
 
   app.delete("/api/projects/:projectId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return reply.code(401).send(
-          unauthenticatedErrorResponseSchema.parse({
-            error: {
-              code: "unauthorized",
-              message: "Missing or invalid bearer token.",
-            },
-          }),
-        );
-      }
-
       const { projectId } = request.params as { projectId: string };
-      await options.projectService.archiveProject(user, projectId);
+      await options.projectService.archiveProject(options.localUser, projectId);
       return reply.code(204).send();
     } catch (error) {
       return sendProjectError(error, reply, "application_error");
@@ -92,21 +65,8 @@ export async function registerProjectRoutes(
 
   app.post("/api/projects", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return reply.code(401).send(
-          unauthenticatedErrorResponseSchema.parse({
-            error: {
-              code: "unauthorized",
-              message: "Missing or invalid bearer token.",
-            },
-          }),
-        );
-      }
-
       const payload = projectCreateRequestSchema.parse(request.body);
-      const project = await options.projectService.createProject(user, payload);
+      const project = await options.projectService.createProject(options.localUser, payload);
 
       return reply.code(201).send(
         projectCreateResponseSchema.parse({
@@ -115,10 +75,14 @@ export async function registerProjectRoutes(
       );
     } catch (error) {
       if (isZodError(error)) {
-        return reply.code(400).send({
-          issues: error.issues,
-          message: "Invalid request body",
-        });
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "application_error",
+              message: "Invalid request body.",
+            },
+          }),
+        );
       }
 
       return sendProjectError(error, reply, "project_create_failed");
@@ -127,30 +91,21 @@ export async function registerProjectRoutes(
 
   app.patch("/api/projects/:projectId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-
-      if (!user) {
-        return reply.code(401).send(
-          unauthenticatedErrorResponseSchema.parse({
-            error: {
-              code: "unauthorized",
-              message: "Missing or invalid bearer token.",
-            },
-          }),
-        );
-      }
-
       const { projectId } = request.params as { projectId: string };
       const payload = projectUpdateRequestSchema.parse(request.body);
-      await options.projectService.updateProject(user, projectId, payload);
+      await options.projectService.updateProject(options.localUser, projectId, payload);
 
       return reply.code(204).send();
     } catch (error) {
       if (isZodError(error)) {
-        return reply.code(400).send({
-          issues: error.issues,
-          message: "Invalid request body",
-        });
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "application_error",
+              message: "Invalid request body.",
+            },
+          }),
+        );
       }
 
       return sendProjectError(error, reply, "project_update_failed");
@@ -162,18 +117,6 @@ export async function registerProjectRoutes(
     { bodyLimit: 2 * 1024 * 1024 }, // 2 MB for thumbnails
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-        if (!user) {
-          return reply.code(401).send(
-            unauthenticatedErrorResponseSchema.parse({
-              error: {
-                code: "unauthorized",
-                message: "Missing or invalid bearer token.",
-              },
-            }),
-          );
-        }
-
         const file = await request.file();
         if (!file) {
           return reply.code(400).send(
@@ -190,7 +133,7 @@ export async function registerProjectRoutes(
         const mimeType = file.mimetype || "image/webp";
 
         const result = await options.projectService.saveThumbnail(
-          user,
+          options.localUser,
           request.params.projectId,
           buffer,
           mimeType,

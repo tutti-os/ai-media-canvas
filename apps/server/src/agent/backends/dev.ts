@@ -14,7 +14,7 @@ import type { AgentBackendResult } from "./index.js";
 
 type AgentBackendEnv = Pick<ServerEnv, "agentFilesRoot" | "skillsRoot">;
 
-const DEFAULT_DEV_SANDBOX_ROOT = "/tmp/aimc-sandbox-dev";
+const DEFAULT_DEV_SANDBOX_ROOT = "/tmp/ai-media-canvas-sandbox-dev";
 
 /**
  * Create a development backend with local sandbox execution.

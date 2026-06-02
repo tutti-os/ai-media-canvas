@@ -8,14 +8,12 @@ import { fetchBrandKits } from "@/lib/brand-kit-api";
 import { updateProject } from "@/lib/server-api";
 
 interface BrandKitSelectorProps {
-  accessToken: string;
   projectId: string;
   currentBrandKitId: string | null;
   onBrandKitChange: (kitId: string | null) => void;
 }
 
 export function BrandKitSelector({
-  accessToken,
   projectId,
   currentBrandKitId,
   onBrandKitChange,
@@ -25,14 +23,10 @@ export function BrandKitSelector({
   const [updating, setUpdating] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Use a ref for accessToken to prevent tab-switch reload cascades.
-  const accessTokenRef = useRef(accessToken);
-  accessTokenRef.current = accessToken;
-
   // Fetch brand kits on mount
   useEffect(() => {
     let cancelled = false;
-    fetchBrandKits(accessTokenRef.current)
+    fetchBrandKits()
       .then((res) => {
         if (!cancelled) setKits(res.brandKits);
       })
@@ -60,7 +54,11 @@ export function BrandKitSelector({
   }, [open]);
 
   const currentKit = kits.find((k) => k.id === currentBrandKitId);
-  const label = currentKit ? currentKit.name : "品牌套件: 无";
+  const label = currentKit
+    ? currentKit.name
+    : currentBrandKitId
+      ? "品牌套件: 已失效"
+      : "品牌套件: 无";
 
   const handleSelect = useCallback(
     async (kitId: string | null) => {
@@ -70,8 +68,8 @@ export function BrandKitSelector({
       }
       setUpdating(true);
       try {
-        await updateProject(accessTokenRef.current, projectId, {
-          brand_kit_id: kitId,
+        await updateProject(projectId, {
+          brandKitId: kitId,
         });
         onBrandKitChange(kitId);
       } catch {

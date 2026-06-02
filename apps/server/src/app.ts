@@ -10,17 +10,22 @@ import {
   profileUpdateRequestSchema,
   profileUpdateResponseSchema,
   runCreateRequestSchema,
-  unauthenticatedErrorResponseSchema,
+  type SkillDetail,
   viewerResponseSchema,
 } from "@aimc/shared";
 
 import { registerBrandKitRoutes } from "./http/brand-kits.js";
 import { registerCanvasRoutes } from "./http/canvases.js";
 import { registerChatRoutes } from "./http/chat.js";
+import { registerGenerateRoutes } from "./http/generate.js";
 import { registerHealthRoutes } from "./http/health.js";
+import { registerImageModelRoutes } from "./http/image-models.js";
+import { registerJobRoutes } from "./http/jobs.js";
+import { registerModelRoutes } from "./http/models.js";
 import { registerProjectRoutes } from "./http/projects.js";
-import { registerSettingsRoutes } from "./http/settings.js";
+import { registerSkillRoutes } from "./http/skills.js";
 import { registerUploadRoutes } from "./http/uploads.js";
+import { registerVideoModelRoutes } from "./http/video-models.js";
 import {
   BrandKitServiceError,
   type BrandKitService,
@@ -41,22 +46,21 @@ import {
   type ProjectService,
 } from "./features/projects/project-service.js";
 import {
-  SettingsServiceError,
-  type SettingsService,
-} from "./features/settings/settings-service.js";
-import {
   UploadServiceError,
   type UploadService,
 } from "./features/uploads/upload-service.js";
-import { loadServerEnv, resolveDefaultAgentModel, type ServerEnv } from "./config/env.js";
+import {
+  SkillServiceError,
+  type SkillService,
+} from "./features/skills/skill-service.js";
+import { createJobService } from "./features/jobs/job-service.js";
+import { registerAllProviders } from "./generation/providers/register-all.js";
+import { loadServerEnv, type ServerEnv } from "./config/env.js";
 import {
   createLocalStore,
   type LocalStore,
 } from "./local/store.js";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "./supabase/user.js";
+import type { AuthenticatedUser } from "./auth/types.js";
 
 export type BuildAppOptions = {
   env?: Partial<ServerEnv>;
@@ -82,6 +86,17 @@ const STATIC_CONTENT_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
+const LOCAL_FONT_LIBRARY = [
+  { family: "Inter", category: "sans-serif", variants: ["regular", "500", "700"] },
+  { family: "Noto Sans SC", category: "sans-serif", variants: ["regular", "500", "700"] },
+  { family: "Source Han Serif SC", category: "serif", variants: ["regular", "600", "700"] },
+  { family: "Merriweather", category: "serif", variants: ["regular", "700"] },
+  { family: "Playfair Display", category: "display", variants: ["regular", "700"] },
+  { family: "Bebas Neue", category: "display", variants: ["regular"] },
+  { family: "Caveat", category: "handwriting", variants: ["regular", "700"] },
+  { family: "JetBrains Mono", category: "monospace", variants: ["regular", "700"] },
+];
+
 function isAllowedLocalOrigin(origin: string, expectedOrigin: string) {
   try {
     const url = new URL(origin);
@@ -94,22 +109,6 @@ function isAllowedLocalOrigin(origin: string, expectedOrigin: string) {
   } catch {
     return false;
   }
-}
-
-function buildLocalAuth(user: AuthenticatedUser): RequestAuthenticator {
-  return {
-    async authenticate(request) {
-      const authorization = request.headers.authorization;
-      if (typeof authorization !== "string") {
-        return null;
-      }
-      const [scheme, token] = authorization.trim().split(/\s+/, 2);
-      if (scheme?.toLowerCase() !== "bearer" || token !== user.accessToken) {
-        return null;
-      }
-      return user;
-    },
-  };
 }
 
 function buildViewerService(store: LocalStore): ViewerService {
@@ -136,11 +135,11 @@ function buildProjectService(store: LocalStore): ProjectService {
         return store.createProject(input);
       } catch (error) {
         if (error instanceof Error && error.message === "project_slug_taken") {
-          throw new ProjectServiceError(
-            "project_slug_taken",
-            "Project slug is already taken in this workspace.",
-            409,
-          );
+        throw new ProjectServiceError(
+          "project_slug_taken",
+          "Project slug is already taken in this app.",
+          409,
+        );
         }
         throw new ProjectServiceError(
           "project_create_failed",
@@ -175,7 +174,15 @@ function buildProjectService(store: LocalStore): ProjectService {
       return result;
     },
     async updateProject(_user, projectId, input) {
-      if (!store.updateProject(projectId, input)) {
+      const result = store.updateProject(projectId, input);
+      if (!result.ok) {
+        if (result.reason === "brand_kit_not_found") {
+          throw new ProjectServiceError(
+            "brand_kit_not_found",
+            "Brand kit not found.",
+            404,
+          );
+        }
         throw new ProjectServiceError(
           "project_not_found",
           "Project not found.",
@@ -206,33 +213,66 @@ function buildCanvasService(store: LocalStore): CanvasService {
 function buildChatService(store: LocalStore): ChatService {
   return {
     async listSessions(_user, canvasId) {
-      return store.listSessions(canvasId);
+      const sessions = store.listSessions(canvasId);
+      if (!sessions) {
+        throw new ChatServiceError(
+          "canvas_not_found",
+          "Canvas not found.",
+          404,
+        );
+      }
+      return sessions;
     },
     async createSession(_user, canvasId, title) {
-      return store.createSession(canvasId, title);
+      const session = store.createSession(canvasId, title);
+      if (!session) {
+        throw new ChatServiceError(
+          "canvas_not_found",
+          "Canvas not found.",
+          404,
+        );
+      }
+      return session;
     },
     async updateSessionTitle(_user, sessionId, title) {
-      store.updateSessionTitle(sessionId, title);
+      if (!store.updateSessionTitle(sessionId, title)) {
+        throw new ChatServiceError(
+          "session_not_found",
+          "Chat session not found.",
+          404,
+        );
+      }
     },
     async deleteSession(_user, sessionId) {
-      store.deleteSession(sessionId);
+      if (!store.deleteSession(sessionId)) {
+        throw new ChatServiceError(
+          "session_not_found",
+          "Chat session not found.",
+          404,
+        );
+      }
     },
     async listMessages(_user, sessionId) {
-      return store.listMessages(sessionId);
+      const messages = store.listMessages(sessionId);
+      if (!messages) {
+        throw new ChatServiceError(
+          "session_not_found",
+          "Chat session not found.",
+          404,
+        );
+      }
+      return messages;
     },
     async createMessage(_user, sessionId, input) {
-      return store.createMessage(sessionId, input);
-    },
-  };
-}
-
-function buildSettingsService(store: LocalStore): SettingsService {
-  return {
-    async getWorkspaceSettings() {
-      return store.getWorkspaceSettings();
-    },
-    async updateWorkspaceSettings(_user, _workspaceId, settings) {
-      return store.updateWorkspaceSettings(settings);
+      const message = store.createMessage(sessionId, input);
+      if (!message) {
+        throw new ChatServiceError(
+          "session_not_found",
+          "Chat session not found.",
+          404,
+        );
+      }
+      return message;
     },
   };
 }
@@ -357,8 +397,87 @@ function buildUploadService(store: LocalStore): UploadService {
       return url;
     },
     async deleteAsset(_user, assetId) {
-      if (!store.deleteAsset(assetId)) {
+      const result = store.deleteAsset(assetId);
+      if (!result.ok) {
+        if (result.reason === "asset_in_use") {
+          throw new UploadServiceError(
+            "asset_in_use",
+            "Asset is still referenced by local app data.",
+            409,
+          );
+        }
         throw new UploadServiceError("asset_not_found", "Asset not found.", 404);
+      }
+    },
+  };
+}
+
+function buildSkillService(store: LocalStore): SkillService {
+  return {
+    async listInstalledSkills() {
+      return store.listInstalledSkills();
+    },
+    async listCatalogSkills() {
+      return store.listCatalogSkills();
+    },
+    async listEnabledSkills() {
+      return store.listEnabledSkills();
+    },
+    async getSkillDetail(_user, skillId) {
+      const skill = store.getSkillDetail(skillId);
+      if (!skill) {
+        throw new SkillServiceError("skill_not_found", "Skill not found.", 404);
+      }
+      return skill;
+    },
+    async createSkill(_user, input) {
+      try {
+        return store.createSkill(input);
+      } catch {
+        throw new SkillServiceError(
+          "skill_create_failed",
+          "Unable to create local skill.",
+          500,
+        );
+      }
+    },
+    async importSkill(_user, input) {
+      try {
+        const skill = store.importSkill(input);
+        if (!skill) {
+          throw new SkillServiceError(
+            "skill_import_failed",
+            "Imported files do not contain a usable SKILL.md payload.",
+            400,
+          );
+        }
+        return skill;
+      } catch (error) {
+        if (error instanceof SkillServiceError) throw error;
+        throw new SkillServiceError(
+          "skill_import_failed",
+          "Unable to import local skill.",
+          500,
+        );
+      }
+    },
+    async installCatalogSkill(_user, skillId) {
+      const skill = store.installCatalogSkill(skillId);
+      if (!skill) {
+        throw new SkillServiceError("skill_not_found", "Skill not found.", 404);
+      }
+      return skill;
+    },
+    async toggleSkill(_user, skillId, input) {
+      const skill = store.toggleSkill(skillId, input);
+      if (!skill) {
+        throw new SkillServiceError("skill_not_found", "Skill not found.", 404);
+      }
+      return skill;
+    },
+    async uninstallSkill(_user, skillId) {
+      if (!store.uninstallSkill(skillId)) {
+        throw new SkillServiceError("skill_not_found", "Skill not found.", 404);
       }
     },
   };
@@ -367,8 +486,13 @@ function buildUploadService(store: LocalStore): UploadService {
 function buildAssistantReply(input: {
   prompt: string;
   model?: string;
+  videoGenerationPreference?: {
+    models: string[];
+    mode: "auto" | "manual";
+  };
   attachmentsCount: number;
   mentions: string[];
+  enabledSkills: Array<Pick<SkillDetail, "name" | "description" | "skillContent">>;
 }) {
   const trimmed = input.prompt.trim();
   if (!trimmed) {
@@ -379,19 +503,108 @@ function buildAssistantReply(input: {
   if (input.model?.trim()) {
     contextNotes.push(`当前使用的本地模型偏好：${input.model.trim()}`);
   }
+  if (input.videoGenerationPreference?.models?.length) {
+    const planningMode =
+      input.videoGenerationPreference.mode === "manual" ? "手动指定" : "自动";
+    const planners = input.videoGenerationPreference.models
+      .map((model) => model.trim())
+      .filter(Boolean)
+      .join("、");
+    contextNotes.push(
+      `当前的视频规划偏好：${planners}（${planningMode}）`,
+    );
+  }
   if (input.attachmentsCount > 0) {
     contextNotes.push(`我收到了 ${input.attachmentsCount} 个参考附件。`);
   }
   if (input.mentions.length > 0) {
     contextNotes.push(`我也会参考这些补充上下文：${input.mentions.join("、")}`);
   }
+  if (input.enabledSkills.length > 0) {
+    contextNotes.push(
+      `当前已启用的本地技能：${input.enabledSkills.map((skill) => skill.name).join("、")}`,
+    );
+
+    const skillGuidance = buildSkillGuidance(trimmed, input.enabledSkills);
+    if (skillGuidance.length > 0) {
+      contextNotes.push(`这些技能会影响我的回应方式：${skillGuidance.join(" | ")}`);
+    }
+  }
 
   return [
     `我已经收到你的本地单机版请求：${trimmed}`,
     ...contextNotes,
-    "这是本地模式下的轻量回应链路，没有再经过 Supabase、积分或账号体系。",
+    "这是本地模式下的轻量回应链路，没有再经过云端账号、积分或订阅体系。",
+    ...(input.videoGenerationPreference
+      ? ["我会优先按当前视频规划偏好来组织分镜、镜头顺序和节奏建议。"]
+      : []),
     "如果你想生成图片，直接用画布里的图片生成面板会更稳定。",
   ].join("\n\n");
+}
+
+function buildSkillGuidance(
+  prompt: string,
+  skills: Array<Pick<SkillDetail, "name" | "description" | "skillContent">>,
+) {
+  const normalizedPrompt = prompt.toLowerCase();
+  const instructionsPerSkill = skills.length > 3 ? 1 : 2;
+
+  return [...skills]
+    .sort((left, right) => scoreSkillForPrompt(right, normalizedPrompt) - scoreSkillForPrompt(left, normalizedPrompt))
+    .map((skill) => {
+      const instructions = extractSkillInstructions(skill.skillContent).slice(
+        0,
+        instructionsPerSkill,
+      );
+      const details = instructions.length > 0
+        ? instructions.join("；")
+        : skill.description;
+      return `${skill.name}：${details}`;
+    });
+}
+
+function scoreSkillForPrompt(
+  skill: Pick<SkillDetail, "name" | "description" | "skillContent">,
+  normalizedPrompt: string,
+) {
+  const haystack = `${skill.name} ${skill.description} ${skill.skillContent}`.toLowerCase();
+  let score = 0;
+
+  for (const token of normalizedPrompt.split(/[^\p{L}\p{N}]+/u).filter((part) => part.length >= 2)) {
+    if (haystack.includes(token)) {
+      score += 2;
+    }
+  }
+
+  if (normalizedPrompt.includes("品牌") && haystack.includes("brand")) {
+    score += 3;
+  }
+  if (normalizedPrompt.includes("海报") && (haystack.includes("poster") || haystack.includes("design"))) {
+    score += 3;
+  }
+  if (normalizedPrompt.includes("提示词") && haystack.includes("prompt")) {
+    score += 3;
+  }
+  if (normalizedPrompt.includes("画布") && haystack.includes("canvas")) {
+    score += 3;
+  }
+
+  return score;
+}
+
+function extractSkillInstructions(skillContent: string) {
+  const sectionMatch = skillContent.match(
+    /##\s+Instructions\s+([\s\S]*?)(?:\n##\s+|$)/i,
+  );
+  if (!sectionMatch) {
+    return [];
+  }
+
+  return sectionMatch[1]!
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^\d+\.\s+/.test(line))
+    .map((line) => line.replace(/^\d+\.\s+/, ""));
 }
 
 function getStaticContentType(filePath: string) {
@@ -467,11 +680,11 @@ function sendStandaloneFeatureUnavailable(
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const env = loadServerEnv(options.env);
+  registerAllProviders(env);
   const assetBaseUrl = `http://127.0.0.1:${env.port}`;
   const webDistDir = env.webDistDir ?? DEFAULT_WEB_DIST_DIR;
   const store = createLocalStore({
     assetBaseUrl,
-    defaultModel: resolveDefaultAgentModel(env),
   });
 
   const app = Fastify({
@@ -486,7 +699,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         : env.webOrigin;
     reply.header("Access-Control-Allow-Origin", allowOrigin);
     reply.header("Vary", "Origin");
-    reply.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    reply.header("Access-Control-Allow-Headers", "Content-Type");
     reply.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
     if (request.method === "OPTIONS") {
       reply.code(204).send();
@@ -497,59 +710,42 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     limits: { fileSize: 10 * 1024 * 1024 },
   });
 
-  const auth = buildLocalAuth(store.localUser);
+  const localUser = store.localUser;
   const viewerService = buildViewerService(store);
   const projectService = buildProjectService(store);
   const canvasService = buildCanvasService(store);
   const chatService = buildChatService(store);
-  const settingsService = buildSettingsService(store);
   const brandKitService = buildBrandKitService(store);
   const uploadService = buildUploadService(store);
+  const skillService = buildSkillService(store);
+  const jobService = createJobService(store);
 
   void registerHealthRoutes(app, env);
-  void registerProjectRoutes(app, { auth, projectService });
-  void registerCanvasRoutes(app, { auth, canvasService });
-  void registerChatRoutes(app, { auth, chatService });
-  void registerSettingsRoutes(app, {
-    auth,
-    settingsService,
-    viewerService,
-  });
-  void registerBrandKitRoutes(app, { auth, brandKitService });
+  void registerProjectRoutes(app, { localUser, projectService });
+  void registerCanvasRoutes(app, { localUser, canvasService });
+  void registerChatRoutes(app, { localUser, chatService });
+  void registerBrandKitRoutes(app, { localUser, brandKitService });
+  void registerSkillRoutes(app, { localUser, skillService });
   void registerUploadRoutes(app, {
-    auth,
+    localUser,
     uploadService,
-    viewerService,
+  });
+  void registerModelRoutes(app, env);
+  void registerImageModelRoutes(app);
+  void registerVideoModelRoutes(app);
+  void registerJobRoutes(app, { localUser, jobService });
+  void registerGenerateRoutes(app, {
+    localUser,
+    jobService,
+    uploadService,
   });
 
-  app.get("/api/viewer", async (request, reply) => {
-    const user = await auth.authenticate(request);
-    if (!user) {
-      return reply.code(401).send(
-        unauthenticatedErrorResponseSchema.parse({
-          error: {
-            code: "unauthorized",
-            message: "Missing local access token.",
-          },
-        }),
-      );
-    }
+  app.get("/api/viewer", async (_request, reply) => {
     return reply.code(200).send(viewerResponseSchema.parse(store.getViewer()));
   });
 
   app.patch("/api/viewer/profile", async (request, reply) => {
     try {
-      const user = await auth.authenticate(request);
-      if (!user) {
-        return reply.code(401).send(
-          unauthenticatedErrorResponseSchema.parse({
-            error: {
-              code: "unauthorized",
-              message: "Missing local access token.",
-            },
-          }),
-        );
-      }
       const payload = profileUpdateRequestSchema.parse(request.body);
       return reply.code(200).send(
         profileUpdateResponseSchema.parse({
@@ -565,136 +761,54 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     }
   });
 
-  app.get("/api/models", async (_request, reply) => {
-    const models = [
-      { id: "local:assistant", name: "Local Assistant", provider: "local" },
-      { id: "openai:gpt-4.1", name: "OpenAI GPT-4.1", provider: "openai" },
-      { id: "google:gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "google" },
-    ];
-    return reply.code(200).send({ models });
-  });
-
-  app.get("/api/image-models", async (_request, reply) => {
-    return reply.code(200).send({
-      models: [
-        {
-          id: "local:placeholder-image",
-          displayName: "Local Placeholder Image",
-          description: "Generate a local placeholder image without cloud dependencies.",
-          provider: "local",
-          accessible: true,
-          iconUrl: undefined,
-        },
-      ],
+  app.get("/api/fonts", async (request, reply) => {
+    const query = request.query as { search?: string; category?: string } | undefined;
+    const search = query?.search?.trim().toLowerCase() ?? "";
+    const category = query?.category?.trim().toLowerCase() ?? "";
+    const fonts = LOCAL_FONT_LIBRARY.filter((font) => {
+      const categoryMatches = !category || font.category === category;
+      const searchMatches =
+        !search || font.family.toLowerCase().includes(search);
+      return categoryMatches && searchMatches;
     });
-  });
-
-  app.get("/api/video-models", async (_request, reply) => {
-    return reply.code(200).send({ models: [] });
-  });
-
-  app.post("/api/agent/generate-video", async (_request, reply) => {
-    return sendStandaloneFeatureUnavailable(reply, "Video generation");
-  });
-
-  app.get("/api/jobs/:jobId", async (_request, reply) => {
-    return sendStandaloneFeatureUnavailable(reply, "Background jobs", 404);
-  });
-
-  app.get("/api/skills/marketplace/search", async (_request, reply) => {
-    return reply.code(200).send({ skills: [], total: 0 });
-  });
-
-  app.get("/api/skills/marketplace/detail", async (_request, reply) => {
-    return sendStandaloneFeatureUnavailable(reply, "The skills marketplace");
-  });
-
-  app.post("/api/skills/marketplace/install", async (_request, reply) => {
-    return sendStandaloneFeatureUnavailable(reply, "The skills marketplace");
-  });
-
-  app.get("/api/workspaces/skills", async (_request, reply) => {
-    return reply.code(200).send({ skills: [] });
-  });
-
-  app.get("/api/credits", async (_request, reply) => {
-    return sendStandaloneFeatureUnavailable(reply, "Credits");
-  });
-
-  app.route({
-    method: ["GET", "POST"],
-    url: "/api/credits/*",
-    async handler(_request, reply) {
-      return sendStandaloneFeatureUnavailable(reply, "Credits");
-    },
-  });
-
-  app.route({
-    method: ["GET", "POST"],
-    url: "/api/payments/*",
-    async handler(_request, reply) {
-      return sendStandaloneFeatureUnavailable(reply, "Billing");
-    },
-  });
-
-  app.get("/api/fonts", async (_request, reply) => {
-    return reply.code(200).send({ fonts: [] });
-  });
-
-  app.post("/api/agent/generate-image", async (request, reply) => {
-    const user = await auth.authenticate(request);
-    if (!user) {
-      return reply.code(401).send(
-        unauthenticatedErrorResponseSchema.parse({
-          error: {
-            code: "unauthorized",
-            message: "Missing or invalid bearer token.",
-          },
-        }),
-      );
-    }
-
-    const payload = request.body as {
-      prompt?: string;
-    };
-    if (!payload?.prompt?.trim()) {
-      return sendApplicationError(
-        reply,
-        "application_error",
-        "Prompt is required.",
-        400,
-      );
-    }
-
-    const result = store.createGeneratedImage(payload.prompt.trim());
-    return reply.code(200).send(result);
+    return reply.code(200).send({ fonts });
   });
 
   app.post("/api/local-agent/respond", async (request, reply) => {
     try {
-      const user = await auth.authenticate(request);
-      if (!user) {
-        return reply.code(401).send(
-          unauthenticatedErrorResponseSchema.parse({
-            error: {
-              code: "unauthorized",
-              message: "Missing local access token.",
-            },
-          }),
-        );
-      }
       const payload = runCreateRequestSchema.parse(request.body);
+      const enabledSkills = store
+        .listEnabledSkills()
+        .map((skill) => store.getSkillDetail(skill.id))
+        .filter((skill): skill is SkillDetail => skill !== null)
+        .map((skill) => ({
+          name: skill.name,
+          description: skill.description,
+          skillContent: skill.skillContent,
+        }));
       const text = buildAssistantReply({
         prompt: payload.prompt,
         ...(payload.model ? { model: payload.model } : {}),
+        ...(payload.videoGenerationPreference
+          ? { videoGenerationPreference: payload.videoGenerationPreference }
+          : {}),
         attachmentsCount: payload.attachments?.length ?? 0,
         mentions: payload.mentions?.map((mention) => mention.label) ?? [],
+        enabledSkills,
       });
       const message = store.createMessage(payload.sessionId, {
         role: "assistant",
         content: text,
         contentBlocks: [{ type: "text", text }],
       });
+      if (!message) {
+        return sendApplicationError(
+          reply,
+          "session_not_found",
+          "Chat session not found.",
+          404,
+        );
+      }
       return reply.code(200).send({ message });
     } catch {
       return sendApplicationError(
@@ -754,7 +868,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
       const filePath = await resolveStaticFile(webDistDir, requestPath);
       if (!filePath) {
-        return reply.code(404).send("Static asset not found.");
+        const notFoundFilePath = await resolveStaticFile(webDistDir, "/404");
+        if (!notFoundFilePath) {
+          return reply.code(404).send("Static asset not found.");
+        }
+        const notFoundPayload = await readFile(notFoundFilePath);
+        reply.header("content-type", getStaticContentType(notFoundFilePath));
+        reply.header("cache-control", "no-cache");
+        return reply.code(404).send(notFoundPayload);
       }
 
       const payload = await readFile(filePath);

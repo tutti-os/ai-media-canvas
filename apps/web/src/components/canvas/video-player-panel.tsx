@@ -15,7 +15,7 @@ type VideoPlayerPanelProps = {
 };
 
 export function VideoPlayerPanel({
-  elementId,
+  elementId: _elementId,
   elementBounds,
   videoUrl,
   mimeType,
@@ -28,7 +28,6 @@ export function VideoPlayerPanel({
   const [screenX, setScreenX] = useState(0);
   const [screenY, setScreenY] = useState(0);
 
-  // Position panel below the selected element (same pattern as video-generator-panel)
   useEffect(() => {
     const { scrollX, scrollY, zoom } = canvasScrollZoom;
     const x = (elementBounds.x + scrollX) * zoom;
@@ -37,7 +36,6 @@ export function VideoPlayerPanel({
     setScreenY(Math.max(8, Math.min(y, window.innerHeight - 400)));
   }, [elementBounds, canvasScrollZoom]);
 
-  // Close on click outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
@@ -48,7 +46,6 @@ export function VideoPlayerPanel({
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
 
-  // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -61,13 +58,12 @@ export function VideoPlayerPanel({
     <div
       ref={panelRef}
       style={{ left: screenX, top: screenY }}
-      className="fixed z-[100] w-[480px] rounded-2xl border border-border bg-card/95 shadow-card backdrop-blur-lg overflow-hidden"
+      className="fixed z-[100] w-[480px] overflow-hidden rounded-2xl border border-border bg-card/95 shadow-card backdrop-blur-lg"
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
-        <div className="flex items-center gap-2 text-sm font-medium text-foreground truncate">
+      <div className="flex items-center justify-between border-b border-border/50 px-4 py-2.5">
+        <div className="flex items-center gap-2 truncate text-sm font-medium text-foreground">
           <svg className="h-4 w-4 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polygon points="5 3 19 12 5 21 5 3" />
           </svg>
@@ -79,7 +75,7 @@ export function VideoPlayerPanel({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-full p-1 hover:bg-muted/80 transition-colors"
+          className="rounded-full p-1 transition-colors hover:bg-muted/80"
         >
           <svg className="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -88,28 +84,26 @@ export function VideoPlayerPanel({
         </button>
       </div>
 
-      {/* Video Player */}
       <div className="bg-black">
         <video
           src={videoUrl}
           controls
           autoPlay
           playsInline
-          className="w-full max-h-[320px] object-contain"
+          className="max-h-[320px] w-full object-contain"
           style={{ display: "block" }}
         >
           <source src={videoUrl} type={mimeType} />
         </video>
       </div>
 
-      {/* Footer with download */}
-      <div className="flex items-center justify-end px-3 py-2 border-t border-border/50">
+      <div className="flex items-center justify-end border-t border-border/50 px-3 py-2">
         <a
           href={videoUrl}
           download={`${title || "video"}.mp4`}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/80 transition-colors"
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/80"
         >
           <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
