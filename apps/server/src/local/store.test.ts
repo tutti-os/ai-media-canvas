@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createLocalStore } from "./store.js";
@@ -219,5 +220,80 @@ Help the assistant break an idea into storyboard beats.
 
     expect(store.uninstallSkill(imported!.id)).toBe(true);
     expect(store.getSkillDetail(imported!.id)).toBeNull();
+  });
+
+  it("persists local workspace model and provider settings across store reloads", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const firstStore = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    firstStore.updateWorkspaceSettings({
+      defaultModel: "google:gemini-2.5-flash",
+      openAIApiKey: "sk-local-openai",
+      openAIApiBase: "http://127.0.0.1:4000/v1",
+      googleApiKey: "google-local-key",
+      googleVertexProject: "vertex-project",
+      googleVertexLocation: "global",
+      googleVertexVideoLocation: "us-central1",
+      replicateApiToken: "replicate-local-token",
+      volcesApiKey: "volces-local-key",
+      volcesBaseUrl: "https://volces.example.com/api/v3",
+    });
+
+    const reopenedStore = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    expect(reopenedStore.getWorkspaceSettings()).toEqual({
+      defaultModel: "google:gemini-2.5-flash",
+      openAIApiKey: "sk-local-openai",
+      openAIApiBase: "http://127.0.0.1:4000/v1",
+      googleApiKey: "google-local-key",
+      googleVertexProject: "vertex-project",
+      googleVertexLocation: "global",
+      googleVertexVideoLocation: "us-central1",
+      replicateApiToken: "replicate-local-token",
+      volcesApiKey: "volces-local-key",
+      volcesBaseUrl: "https://volces.example.com/api/v3",
+    });
+  });
+
+  it("migrates legacy workspace settings rows in existing sqlite data", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const db = new DatabaseSync(join(dataRoot, "ai-media-canvas.db"));
+    db.exec(`
+      CREATE TABLE workspace_settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        default_model TEXT NOT NULL
+      );
+      INSERT INTO workspace_settings (id, default_model)
+      VALUES (1, 'openai:gpt-4o');
+    `);
+    db.close();
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    expect(store.getWorkspaceSettings()).toEqual({
+      defaultModel: "openai:gpt-4o",
+      openAIApiKey: "",
+      openAIApiBase: "",
+      googleApiKey: "",
+      googleVertexProject: "",
+      googleVertexLocation: "",
+      googleVertexVideoLocation: "",
+      replicateApiToken: "",
+      volcesApiKey: "",
+      volcesBaseUrl: "",
+    });
   });
 });

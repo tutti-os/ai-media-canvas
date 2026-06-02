@@ -7,6 +7,7 @@ import { Film } from "lucide-react";
 import type { ImageModelInfo } from "../lib/server-api";
 import type { VideoModelInfo } from "../lib/server-api";
 import { fetchImageModels, fetchVideoModels } from "../lib/server-api";
+import { formatProviderLabel } from "../lib/provider-labels";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 
@@ -181,9 +182,14 @@ export function ImageModelPreferencePopover({
                   />
                 )}
                 <div className="flex flex-1 flex-col">
-                  <span className="text-[13px] font-medium text-foreground">
-                    {m.displayName}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-medium text-foreground">
+                      {m.displayName}
+                    </span>
+                    <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                      {formatProviderLabel(m.provider)}
+                    </span>
+                  </div>
                   <span className="flex items-center gap-1 text-[11px] leading-tight text-muted-foreground">
                     {activeTab === "video" ? <Film className="h-3 w-3 shrink-0" /> : null}
                     {m.description}

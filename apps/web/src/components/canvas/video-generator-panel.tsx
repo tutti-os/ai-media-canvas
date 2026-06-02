@@ -12,6 +12,7 @@ import {
   resizeVideoGeneratorElement,
   type VideoGeneratorData,
 } from "../../lib/canvas-video-generator";
+import { formatProviderLabel } from "../../lib/provider-labels";
 
 type VideoGeneratorPanelProps = {
   elementId: string;
@@ -298,7 +299,9 @@ export function VideoGeneratorPanel({
                 className="flex h-9 items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60"
               >
                 <span className="truncate max-w-[180px]">
-                  {currentModel?.displayName ?? model}
+                  {currentModel
+                    ? `${currentModel.displayName} · ${formatProviderLabel(currentModel.provider)}`
+                    : model}
                 </span>
                 <svg
                   className="h-3.5 w-3.5 text-muted-foreground"
@@ -322,8 +325,13 @@ export function VideoGeneratorPanel({
                           {(item.displayName || item.id).slice(0, 1)}
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-foreground">
-                            {item.displayName}
+                          <div className="flex items-center gap-2">
+                            <div className="truncate text-sm font-medium text-foreground">
+                              {item.displayName}
+                            </div>
+                            <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                              {formatProviderLabel(item.provider)}
+                            </span>
                           </div>
                           <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                             {item.description}

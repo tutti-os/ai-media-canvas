@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   env: {
+    NEXT_PUBLIC_AIMC_SERVER_BASE_URL:
+      process.env.NEXT_PUBLIC_AIMC_SERVER_BASE_URL ??
+      process.env.AIMC_SERVER_BASE_URL,
     AIMC_SERVER_BASE_URL: process.env.AIMC_SERVER_BASE_URL,
   },
 };

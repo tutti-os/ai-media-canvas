@@ -2,9 +2,11 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import {
+  fetchWorkspaceSettings,
   fetchViewer,
   fetchProjects,
   createProject,
+  updateWorkspaceSettings,
 } from "../src/lib/server-api";
 
 const mockFetch = vi.fn();
@@ -99,5 +101,58 @@ describe("local server API", () => {
     });
 
     await expect(fetchProjects()).rejects.toThrow("Bad token.");
+  });
+
+  it("fetchWorkspaceSettings reads local provider settings", async () => {
+    const payload = {
+      settings: {
+        defaultModel: "openai:gpt-4.1",
+        openAIApiKey: "sk-local-openai",
+        openAIApiBase: "http://127.0.0.1:4000/v1",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+
+    const result = await fetchWorkspaceSettings();
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/workspace/settings",
+    );
+    expect(result.settings.defaultModel).toBe("openai:gpt-4.1");
+  });
+
+  it("updateWorkspaceSettings sends the full local settings payload", async () => {
+    const payload = {
+      settings: {
+        defaultModel: "google:gemini-2.5-flash",
+        openAIApiKey: "",
+        openAIApiBase: "",
+        googleApiKey: "google-local-key",
+        googleVertexProject: "vertex-project",
+        googleVertexLocation: "global",
+        googleVertexVideoLocation: "us-central1",
+        replicateApiToken: "replicate-local-token",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+
+    const result = await updateWorkspaceSettings(payload.settings);
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/workspace/settings",
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload.settings),
+      },
+    );
+    expect(result.settings.googleApiKey).toBe("google-local-key");
   });
 });

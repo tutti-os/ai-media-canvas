@@ -1,5 +1,7 @@
 import type { BackgroundJob, VideoGenerationPayload } from "@aimc/shared";
 
+import type { ServerEnv } from "../../../config/env.js";
+import { refreshGenerationProviders } from "../../settings/settings-service.js";
 import { loadGeneratedAsset } from "../../../generation/generated-asset.js";
 import { generateVideo } from "../../../generation/video-generation.js";
 import { resolveVideoProviderName } from "../../../generation/providers/registry.js";
@@ -11,7 +13,11 @@ const DEFAULT_VIDEO_MODEL = "google-official/veo-3.1-generate-preview";
 export async function executeVideoGenerationJob(
   store: LocalStore,
   job: BackgroundJob,
+  env?: ServerEnv,
 ) {
+  if (env) {
+    refreshGenerationProviders(env);
+  }
   const payload = job.payload as VideoGenerationPayload;
   const model = payload.model ?? DEFAULT_VIDEO_MODEL;
   const provider = resolveVideoProviderName(model);

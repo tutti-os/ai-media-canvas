@@ -34,6 +34,7 @@ import type {
   SkillToggleRequest,
   VideoGenerationPayload,
   ViewerResponse,
+  WorkspaceSettings,
 } from "@aimc/shared";
 import { getBundledSkills } from "./skill-catalog.js";
 
@@ -43,6 +44,18 @@ const DEFAULT_PROJECT_NAME = "My First Project";
 const DEFAULT_CANVAS_NAME = "Main Canvas";
 const DEFAULT_EMAIL = "local@aimc.app";
 const DEFAULT_DISPLAY_NAME = "Local User";
+const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
+  defaultModel: "",
+  openAIApiKey: "",
+  openAIApiBase: "",
+  googleApiKey: "",
+  googleVertexProject: "",
+  googleVertexLocation: "",
+  googleVertexVideoLocation: "",
+  replicateApiToken: "",
+  volcesApiKey: "",
+  volcesBaseUrl: "",
+};
 
 type AssetRow = {
   id: string;
@@ -167,6 +180,19 @@ export function createLocalStore(options: {
       id TEXT PRIMARY KEY,
       display_name TEXT NOT NULL,
       email TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS workspace_settings (
+      workspace_id TEXT PRIMARY KEY,
+      default_model TEXT NOT NULL DEFAULT '',
+      openai_api_key TEXT NOT NULL DEFAULT '',
+      openai_api_base TEXT NOT NULL DEFAULT '',
+      google_api_key TEXT NOT NULL DEFAULT '',
+      google_vertex_project TEXT NOT NULL DEFAULT '',
+      google_vertex_location TEXT NOT NULL DEFAULT '',
+      google_vertex_video_location TEXT NOT NULL DEFAULT '',
+      replicate_api_token TEXT NOT NULL DEFAULT '',
+      volces_api_key TEXT NOT NULL DEFAULT '',
+      volces_base_url TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -302,6 +328,7 @@ export function createLocalStore(options: {
       ON background_jobs(status, next_run_at, created_at);
   `);
 
+  ensureWorkspaceSettingsSchema();
   seedBaseData();
   seedBundledSkills();
   ensureDefaultProject();
@@ -318,6 +345,64 @@ export function createLocalStore(options: {
         ON CONFLICT(id) DO NOTHING
       `,
     ).run(LOCAL_USER_ID, DEFAULT_DISPLAY_NAME, DEFAULT_EMAIL);
+    db.prepare(
+      `
+        INSERT OR IGNORE INTO workspace_settings (
+          workspace_id,
+          default_model,
+          openai_api_key,
+          openai_api_base,
+          google_api_key,
+          google_vertex_project,
+          google_vertex_location,
+          google_vertex_video_location,
+          replicate_api_token,
+          volces_api_key,
+          volces_base_url
+        ) VALUES (?, '', '', '', '', '', '', '', '', '', '')
+      `,
+    ).run(LOCAL_WORKSPACE_ID);
+  }
+
+  function ensureWorkspaceSettingsSchema() {
+    const columns = db
+      .prepare(`PRAGMA table_info(workspace_settings)`)
+      .all() as Array<{ name: string }>;
+    const columnNames = new Set(columns.map((column) => column.name));
+
+    if (!columnNames.has("workspace_id")) {
+      db.exec(
+        `ALTER TABLE workspace_settings ADD COLUMN workspace_id TEXT`,
+      );
+      db.prepare(
+        `UPDATE workspace_settings SET workspace_id = ? WHERE workspace_id IS NULL`,
+      ).run(LOCAL_WORKSPACE_ID);
+      columnNames.add("workspace_id");
+    }
+
+    const missingColumns: Array<[string, string]> = [
+      ["openai_api_key", "TEXT NOT NULL DEFAULT ''"],
+      ["openai_api_base", "TEXT NOT NULL DEFAULT ''"],
+      ["google_api_key", "TEXT NOT NULL DEFAULT ''"],
+      ["google_vertex_project", "TEXT NOT NULL DEFAULT ''"],
+      ["google_vertex_location", "TEXT NOT NULL DEFAULT ''"],
+      ["google_vertex_video_location", "TEXT NOT NULL DEFAULT ''"],
+      ["replicate_api_token", "TEXT NOT NULL DEFAULT ''"],
+      ["volces_api_key", "TEXT NOT NULL DEFAULT ''"],
+      ["volces_base_url", "TEXT NOT NULL DEFAULT ''"],
+    ];
+
+    for (const [columnName, columnSql] of missingColumns) {
+      if (columnNames.has(columnName)) continue;
+      db.exec(
+        `ALTER TABLE workspace_settings ADD COLUMN ${columnName} ${columnSql}`,
+      );
+    }
+
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_settings_workspace_id
+      ON workspace_settings(workspace_id)
+    `);
   }
 
   function seedBundledSkills() {
@@ -462,6 +547,105 @@ export function createLocalStore(options: {
       LOCAL_USER_ID,
     );
     return getProfile();
+  }
+
+  function getWorkspaceSettings(): WorkspaceSettings {
+    const row = db
+      .prepare(
+        `
+          SELECT
+            default_model,
+            openai_api_key,
+            openai_api_base,
+            google_api_key,
+            google_vertex_project,
+            google_vertex_location,
+            google_vertex_video_location,
+            replicate_api_token,
+            volces_api_key,
+            volces_base_url
+          FROM workspace_settings
+          WHERE workspace_id = ?
+        `,
+      )
+      .get(LOCAL_WORKSPACE_ID) as
+      | {
+          default_model: string;
+          openai_api_key: string;
+          openai_api_base: string;
+          google_api_key: string;
+          google_vertex_project: string;
+          google_vertex_location: string;
+          google_vertex_video_location: string;
+          replicate_api_token: string;
+          volces_api_key: string;
+          volces_base_url: string;
+        }
+      | undefined;
+
+    if (!row) {
+      return { ...EMPTY_WORKSPACE_SETTINGS };
+    }
+
+    return {
+      defaultModel: row.default_model ?? "",
+      openAIApiKey: row.openai_api_key ?? "",
+      openAIApiBase: row.openai_api_base ?? "",
+      googleApiKey: row.google_api_key ?? "",
+      googleVertexProject: row.google_vertex_project ?? "",
+      googleVertexLocation: row.google_vertex_location ?? "",
+      googleVertexVideoLocation: row.google_vertex_video_location ?? "",
+      replicateApiToken: row.replicate_api_token ?? "",
+      volcesApiKey: row.volces_api_key ?? "",
+      volcesBaseUrl: row.volces_base_url ?? "",
+    };
+  }
+
+  function updateWorkspaceSettings(
+    settings: WorkspaceSettings,
+  ): WorkspaceSettings {
+    db.prepare(
+      `
+        INSERT INTO workspace_settings (
+          workspace_id,
+          default_model,
+          openai_api_key,
+          openai_api_base,
+          google_api_key,
+          google_vertex_project,
+          google_vertex_location,
+          google_vertex_video_location,
+          replicate_api_token,
+          volces_api_key,
+          volces_base_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(workspace_id) DO UPDATE SET
+          default_model = excluded.default_model,
+          openai_api_key = excluded.openai_api_key,
+          openai_api_base = excluded.openai_api_base,
+          google_api_key = excluded.google_api_key,
+          google_vertex_project = excluded.google_vertex_project,
+          google_vertex_location = excluded.google_vertex_location,
+          google_vertex_video_location = excluded.google_vertex_video_location,
+          replicate_api_token = excluded.replicate_api_token,
+          volces_api_key = excluded.volces_api_key,
+          volces_base_url = excluded.volces_base_url
+      `,
+    ).run(
+      LOCAL_WORKSPACE_ID,
+      settings.defaultModel,
+      settings.openAIApiKey,
+      settings.openAIApiBase,
+      settings.googleApiKey,
+      settings.googleVertexProject,
+      settings.googleVertexLocation,
+      settings.googleVertexVideoLocation,
+      settings.replicateApiToken,
+      settings.volcesApiKey,
+      settings.volcesBaseUrl,
+    );
+
+    return getWorkspaceSettings();
   }
 
   function getAssetRow(assetId: string) {
@@ -2266,6 +2450,8 @@ export function createLocalStore(options: {
     },
     getViewer,
     updateProfile,
+    getWorkspaceSettings,
+    updateWorkspaceSettings,
     listProjects,
     createProject,
     getProject,

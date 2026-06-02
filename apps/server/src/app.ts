@@ -23,6 +23,7 @@ import { registerImageModelRoutes } from "./http/image-models.js";
 import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
 import { registerProjectRoutes } from "./http/projects.js";
+import { registerSettingsRoutes } from "./http/settings.js";
 import { registerSkillRoutes } from "./http/skills.js";
 import { registerUploadRoutes } from "./http/uploads.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
@@ -54,6 +55,10 @@ import {
   type SkillService,
 } from "./features/skills/skill-service.js";
 import { createJobService } from "./features/jobs/job-service.js";
+import {
+  createSettingsService,
+  LOCAL_WORKSPACE_ID,
+} from "./features/settings/settings-service.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { loadServerEnv, type ServerEnv } from "./config/env.js";
 import {
@@ -719,6 +724,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const uploadService = buildUploadService(store);
   const skillService = buildSkillService(store);
   const jobService = createJobService(store);
+  const settingsService = createSettingsService(store, env);
 
   void registerHealthRoutes(app, env);
   void registerProjectRoutes(app, { localUser, projectService });
@@ -730,13 +736,16 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     localUser,
     uploadService,
   });
-  void registerModelRoutes(app, env);
-  void registerImageModelRoutes(app);
-  void registerVideoModelRoutes(app);
+  void registerSettingsRoutes(app, { localUser, settingsService });
+  void registerModelRoutes(app, env, settingsService);
+  void registerImageModelRoutes(app, env, settingsService);
+  void registerVideoModelRoutes(app, env, settingsService);
   void registerJobRoutes(app, { localUser, jobService });
   void registerGenerateRoutes(app, {
+    env,
     localUser,
     jobService,
+    settingsService,
     uploadService,
   });
 
@@ -777,6 +786,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.post("/api/local-agent/respond", async (request, reply) => {
     try {
       const payload = runCreateRequestSchema.parse(request.body);
+      const effectiveEnv = await settingsService.getEffectiveServerEnv(
+        LOCAL_WORKSPACE_ID,
+      );
       const enabledSkills = store
         .listEnabledSkills()
         .map((skill) => store.getSkillDetail(skill.id))
@@ -788,7 +800,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         }));
       const text = buildAssistantReply({
         prompt: payload.prompt,
-        ...(payload.model ? { model: payload.model } : {}),
+        model: payload.model ?? effectiveEnv.agentModel,
         ...(payload.videoGenerationPreference
           ? { videoGenerationPreference: payload.videoGenerationPreference }
           : {}),

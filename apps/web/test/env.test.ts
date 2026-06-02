@@ -5,6 +5,7 @@ import { getServerBaseUrl, loadWebEnv } from "../src/lib/env";
 describe("@aimc/web env helpers", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it("loads the explicit AIMC server base url", () => {
@@ -30,5 +31,34 @@ describe("@aimc/web env helpers", () => {
     vi.stubEnv("AIMC_SERVER_BASE_URL", "http://localhost:4020");
 
     expect(getServerBaseUrl()).toBe("http://localhost:4020");
+  });
+
+  it("prefers the public client env when available", () => {
+    vi.stubEnv("AIMC_SERVER_BASE_URL", "http://localhost:4020");
+    vi.stubEnv("NEXT_PUBLIC_AIMC_SERVER_BASE_URL", "http://localhost:4030");
+
+    expect(getServerBaseUrl()).toBe("http://localhost:4030");
+  });
+
+  it("keeps the configured local API origin for loopback frontends on non-default ports", () => {
+    vi.stubEnv("AIMC_SERVER_BASE_URL", "http://127.0.0.1:3001");
+    vi.stubGlobal("window", {
+      location: {
+        origin: "http://127.0.0.1:3002",
+      },
+    } as Window & typeof globalThis);
+
+    expect(getServerBaseUrl()).toBe("http://127.0.0.1:3001");
+  });
+
+  it("treats localhost and 127.0.0.1 as the same loopback family", () => {
+    vi.stubEnv("AIMC_SERVER_BASE_URL", "http://localhost:3001");
+    vi.stubGlobal("window", {
+      location: {
+        origin: "http://127.0.0.1:3002",
+      },
+    } as Window & typeof globalThis);
+
+    expect(getServerBaseUrl()).toBe("http://localhost:3001");
   });
 });

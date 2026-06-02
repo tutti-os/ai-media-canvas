@@ -1,5 +1,6 @@
 import type { BackgroundJob } from "@aimc/shared";
 
+import type { ServerEnv } from "../../config/env.js";
 import type { LocalStore } from "../../local/store.js";
 import type { JobService } from "./job-service.js";
 import {
@@ -15,13 +16,14 @@ export async function executeBackgroundJob(
   store: LocalStore,
   jobService: JobService,
   job: BackgroundJob,
+  env?: ServerEnv,
 ) {
   try {
     let result: Record<string, unknown>;
     if (job.job_type === "image_generation") {
-      result = await executeImageGenerationJob(store, job);
+      result = await executeImageGenerationJob(store, job, env);
     } else if (job.job_type === "video_generation") {
-      result = await executeVideoGenerationJob(store, job);
+      result = await executeVideoGenerationJob(store, job, env);
     } else {
       throw new Error(`Unsupported job type: ${job.job_type}`);
     }

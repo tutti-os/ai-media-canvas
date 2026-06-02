@@ -119,6 +119,19 @@ export const profileUpdateRequestSchema = z.object({
   displayName: z.string().trim().min(1).max(100),
 });
 
+export const workspaceSettingsSchema = z.object({
+  defaultModel: z.string(),
+  openAIApiKey: z.string(),
+  openAIApiBase: z.string(),
+  googleApiKey: z.string(),
+  googleVertexProject: z.string(),
+  googleVertexLocation: z.string(),
+  googleVertexVideoLocation: z.string(),
+  replicateApiToken: z.string(),
+  volcesApiKey: z.string(),
+  volcesBaseUrl: z.string(),
+});
+
 export const modelInfoSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -257,6 +270,7 @@ export type ModelInfo = z.infer<typeof modelInfoSchema>;
 export type RunCreateRequest = z.infer<typeof runCreateRequestSchema>;
 export type RunCreateResponse = z.infer<typeof runCreateResponseSchema>;
 export type ViewerProfile = z.infer<typeof viewerProfileSchema>;
+export type WorkspaceSettings = z.infer<typeof workspaceSettingsSchema>;
 export type CanvasSummary = z.infer<typeof canvasSummarySchema>;
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;
 export type CanvasContent = z.infer<typeof canvasContentSchema>;

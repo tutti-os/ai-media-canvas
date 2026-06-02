@@ -8,6 +8,8 @@ import type {
   CanvasDetail,
   ProfileUpdateResponse,
   ModelListResponse,
+  WorkspaceSettingsResponse,
+  WorkspaceSettingsUpdateRequest,
   SessionListResponse,
   SessionCreateResponse,
   MessageListResponse,
@@ -159,6 +161,24 @@ export async function updateProfile(
   });
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as ProfileUpdateResponse;
+}
+
+export async function fetchWorkspaceSettings(): Promise<WorkspaceSettingsResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/workspace/settings`);
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as WorkspaceSettingsResponse;
+}
+
+export async function updateWorkspaceSettings(
+  data: WorkspaceSettingsUpdateRequest,
+): Promise<WorkspaceSettingsResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/workspace/settings`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as WorkspaceSettingsResponse;
 }
 
 export async function fetchModels(): Promise<ModelListResponse> {
