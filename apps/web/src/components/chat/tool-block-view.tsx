@@ -172,8 +172,9 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   );
   const isImageTool = block.toolName === "generate_image";
   const isVideoTool = block.toolName === "generate_video";
+  const isMediaTool = isImageTool || isVideoTool;
   const mediaError =
-    (isImageTool || isVideoTool) &&
+    isMediaTool &&
     isCompleted &&
     !imageArtifact &&
     !videoArtifact
@@ -182,7 +183,8 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       : undefined;
   const inputData = block.input as Record<string, unknown> | undefined;
   const modelName = inputData?.model as string | undefined;
-  const aspectRatio = (inputData?.aspectRatio as string) ?? "1:1";
+  const aspectRatio =
+    (inputData?.aspectRatio as string) ?? (isVideoTool ? "16:9" : "1:1");
 
   const handleOpenPanel = useCallback(() => {
     const rect = findSidebarRect(containerRef.current);
@@ -210,14 +212,14 @@ export const ToolBlockView = React.memo(function ToolBlockView({
           </svg>
         )}
         <span className="font-medium text-muted-foreground truncate">
-          {isImageTool && modelName
+          {isMediaTool && modelName
             ? formatModelDisplayName(modelName)
             : config.label}
         </span>
       </div>
 
       {/* Layer 2a: Media generation shimmer placeholder */}
-      {(isImageTool || isVideoTool) && !isCompleted && (
+      {isMediaTool && !isCompleted && (
         <MediaShimmer
           isVideoTool={isVideoTool}
           aspectRatio={aspectRatio}
@@ -226,7 +228,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       )}
 
       {/* Layer 2b-err: Media generation failed */}
-      {(isImageTool || isVideoTool) &&
+      {isMediaTool &&
         isCompleted &&
         !imageArtifact &&
         !videoArtifact &&
