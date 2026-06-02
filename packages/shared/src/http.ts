@@ -10,6 +10,7 @@ import {
   projectSummarySchema,
   runIdSchema,
   viewerProfileSchema,
+  workspaceSettingsSchema,
 } from "./contracts.js";
 import {
   skillCreateRequestSchema,
@@ -138,6 +139,12 @@ export const profileUpdateResponseSchema = z.object({
   profile: viewerProfileSchema,
 });
 
+export const workspaceSettingsResponseSchema = z.object({
+  settings: workspaceSettingsSchema,
+});
+
+export const workspaceSettingsUpdateRequestSchema = workspaceSettingsSchema;
+
 export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),
 });
@@ -166,6 +173,12 @@ export type CanvasGetResponse = z.infer<typeof canvasGetResponseSchema>;
 export type CanvasSaveRequest = z.infer<typeof canvasSaveRequestSchema>;
 export type CanvasSaveResponse = z.infer<typeof canvasSaveResponseSchema>;
 export type ProfileUpdateResponse = z.infer<typeof profileUpdateResponseSchema>;
+export type WorkspaceSettingsResponse = z.infer<
+  typeof workspaceSettingsResponseSchema
+>;
+export type WorkspaceSettingsUpdateRequest = z.infer<
+  typeof workspaceSettingsUpdateRequestSchema
+>;
 export type ModelListResponse = z.infer<typeof modelListResponseSchema>;
 
 export const uploadResponseSchema = z.object({

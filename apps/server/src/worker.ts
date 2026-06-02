@@ -9,6 +9,11 @@ if (process.env.GLOBAL_AGENT_HTTP_PROXY) {
 
 import { executeBackgroundJob } from "./features/jobs/job-executor.js";
 import { createJobService } from "./features/jobs/job-service.js";
+import {
+  applyEffectiveProviderEnv,
+  createSettingsService,
+  LOCAL_WORKSPACE_ID,
+} from "./features/settings/settings-service.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { loadServerEnv } from "./config/env.js";
 import { createLocalStore } from "./local/store.js";
@@ -24,6 +29,7 @@ const store = createLocalStore({
   assetBaseUrl: `http://${host}:${env.port}`,
 });
 const jobService = createJobService(store);
+const settingsService = createSettingsService(store, env);
 
 async function tick() {
   const jobs = await jobService.claimPendingJobs(
@@ -31,7 +37,11 @@ async function tick() {
     env.workerMaxBatchSize ?? 4,
   );
   for (const job of jobs) {
-    await executeBackgroundJob(store, jobService, job);
+    const effectiveEnv = await settingsService.getEffectiveServerEnv(
+      LOCAL_WORKSPACE_ID,
+    );
+    applyEffectiveProviderEnv(effectiveEnv);
+    await executeBackgroundJob(store, jobService, job, effectiveEnv);
   }
 }
 

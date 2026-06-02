@@ -1,12 +1,27 @@
-import type { GeneratedImage, ImageGenerateParams, ImageProvider } from "../types.js";
+import type {
+  GeneratedImage,
+  ImageGenerateParams,
+  ImageProvider,
+  ModelInfo,
+} from "../types.js";
 import { aspectRatioToDimensions, GenerationError } from "../utils.js";
 
 const DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+const ICON_VOLCES = "https://lf3-static.bytednsdoc.com/obj/eden-cn/uhbfnupenuhf/favicon.ico";
+
+const VOLCES_IMAGE_MODELS: readonly ModelInfo[] = [
+  {
+    id: "doubao-seedream-5-0-260128",
+    displayName: "Doubao Seedream 5.0",
+    description:
+      "Volces Ark's current flagship Seedream image generation model.",
+    iconUrl: ICON_VOLCES,
+  },
+];
 
 export class VolcesImageProvider implements ImageProvider {
   readonly name = "volces";
-  // TODO: 补充 models 列表后前端 image-models API 才会展示 Volces 模型供用户选择
-  readonly models = [] as const;
+  readonly models = VOLCES_IMAGE_MODELS;
   private apiKey: string;
   private baseURL: string;
 

@@ -1,5 +1,7 @@
 import type { BackgroundJob, ImageGenerationPayload } from "@aimc/shared";
 
+import type { ServerEnv } from "../../../config/env.js";
+import { refreshGenerationProviders } from "../../settings/settings-service.js";
 import { generateImage } from "../../../generation/image-generation.js";
 import { loadGeneratedAsset } from "../../../generation/generated-asset.js";
 import { resolveImageProviderName } from "../../../generation/providers/registry.js";
@@ -11,7 +13,11 @@ const DEFAULT_IMAGE_MODEL = "black-forest-labs/flux-kontext-pro";
 export async function executeImageGenerationJob(
   store: LocalStore,
   job: BackgroundJob,
+  env?: ServerEnv,
 ) {
+  if (env) {
+    refreshGenerationProviders(env);
+  }
   const payload = job.payload as ImageGenerationPayload;
   const model = payload.model ?? DEFAULT_IMAGE_MODEL;
   const provider = resolveImageProviderName(model);

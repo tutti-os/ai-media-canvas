@@ -3,6 +3,10 @@ import type { FastifyInstance } from "fastify";
 import { modelListResponseSchema, type ModelInfo } from "@aimc/shared";
 
 import type { ServerEnv } from "../config/env.js";
+import {
+  LOCAL_WORKSPACE_ID,
+  type SettingsService,
+} from "../features/settings/settings-service.js";
 
 const OPENAI_MODELS: ModelInfo[] = [
   { id: "openai:gpt-4.1", name: "OpenAI GPT-4.1", provider: "openai" },
@@ -19,11 +23,20 @@ const GOOGLE_MODELS: ModelInfo[] = [
 export async function registerModelRoutes(
   app: FastifyInstance,
   env: ServerEnv,
+  settingsService?: SettingsService,
 ) {
   app.get("/api/models", async (_request, reply) => {
+    const effectiveEnv = settingsService
+      ? await settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID)
+      : env;
     const models: ModelInfo[] = [];
-    if (env.openAIApiKey) models.push(...OPENAI_MODELS);
-    if (env.googleApiKey || env.googleVertexProject) models.push(...GOOGLE_MODELS);
+    if (effectiveEnv.openAIApiKey) models.push(...OPENAI_MODELS);
+    if (
+      effectiveEnv.googleApiKey ||
+      (effectiveEnv.googleVertexProject && effectiveEnv.googleVertexLocation)
+    ) {
+      models.push(...GOOGLE_MODELS);
+    }
     return reply.code(200).send(modelListResponseSchema.parse({ models }));
   });
 }

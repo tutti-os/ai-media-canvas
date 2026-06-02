@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { AimcLogo } from "@/components/icons/aimc-logo";
+import { SidebarSettingsMenu } from "@/components/sidebar-settings-menu";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -46,13 +47,6 @@ const TOP_NAV_ITEMS: NavItem[] = [
     icon: "M10 2a1 1 0 0 1 .894.553l1.18 2.39 2.638.384a1 1 0 0 1 .554 1.706l-1.91 1.86.451 2.628a1 1 0 0 1-1.451 1.054L10 11.336l-2.356 1.239a1 1 0 0 1-1.45-1.054l.45-2.628-1.91-1.86a1 1 0 0 1 .555-1.706l2.638-.384 1.18-2.39A1 1 0 0 1 10 2z",
   },
 ];
-
-const SETTINGS_ITEM: NavItem = {
-  href: "/settings",
-  label: "Settings",
-  viewBox: 20,
-  icon: "M10 1.667a5 5 0 0 1 2.525 9.313c3.355 1.035 5.844 4.047 6.03 7.37.013.22-.167.4-.388.4h-.5a.423.423 0 0 1-.414-.4C17.02 14.982 13.88 11.9 10 11.9s-7.02 3.082-7.252 6.45a.423.423 0 0 1-.414.4h-.501c-.22 0-.4-.18-.389-.4.187-3.323 2.675-6.333 6.029-7.369A5 5 0 0 1 10 1.667m0 1.3a3.7 3.7 0 1 0 .001 7.401A3.7 3.7 0 0 0 10 2.967",
-};
 
 // ---------------------------------------------------------------------------
 // Reusable nav-button with active indicator
@@ -145,30 +139,6 @@ function MobileBottomBar() {
           </Link>
         );
       })}
-
-      {/* Settings in bottom bar */}
-      <Link
-        href={SETTINGS_ITEM.href}
-        aria-label={SETTINGS_ITEM.label}
-        className={cn(
-          "flex min-h-[48px] min-w-[48px] flex-col items-center justify-center gap-0.5 px-2 py-1.5 transition-colors",
-          isActive(SETTINGS_ITEM.href)
-            ? "text-foreground"
-            : "text-muted-foreground",
-        )}
-      >
-        <svg
-          viewBox={`0 0 ${SETTINGS_ITEM.viewBox} ${SETTINGS_ITEM.viewBox}`}
-          fill="currentColor"
-          xmlns="http://www.w3.org/2000/svg"
-          className="h-5 w-5"
-        >
-          <path d={SETTINGS_ITEM.icon} />
-        </svg>
-        <span className="text-[10px] font-medium leading-none">
-          {SETTINGS_ITEM.label}
-        </span>
-      </Link>
     </nav>
   );
 }
@@ -214,11 +184,7 @@ export function AppSidebar() {
         {/* Spacer pushes bottom section down */}
         <div className="flex-1" />
 
-        {/* Settings / Profile */}
-        <NavButton
-          item={SETTINGS_ITEM}
-          active={isActive(SETTINGS_ITEM.href)}
-        />
+        <SidebarSettingsMenu />
       </aside>
 
       {/* Mobile bottom navigation bar */}

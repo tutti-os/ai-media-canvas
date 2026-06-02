@@ -9,7 +9,14 @@ import { generateImage } from "../generation/image-generation.js";
 import { resolveImageProviderName } from "../generation/providers/registry.js";
 import { GenerationError } from "../generation/utils.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import {
+  applyEffectiveProviderEnv,
+  LOCAL_WORKSPACE_ID,
+  refreshGenerationProviders,
+  type SettingsService,
+} from "../features/settings/settings-service.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
+import type { ServerEnv } from "../config/env.js";
 
 const generateImageRequestSchema = z.object({
   prompt: z.string().min(1),
@@ -35,13 +42,13 @@ const generateVideoRequestSchema = z.object({
   threadId: z.string().optional(),
 });
 
-const LOCAL_WORKSPACE_ID = "local-workspace";
-
 export async function registerGenerateRoutes(
   app: FastifyInstance,
   options: {
+    env: ServerEnv;
     localUser: AuthenticatedUser;
     jobService: JobService;
+    settingsService?: SettingsService;
     uploadService: UploadService;
   },
 ) {
@@ -62,6 +69,11 @@ export async function registerGenerateRoutes(
 
     const model = payload.model ?? "black-forest-labs/flux-kontext-pro";
     try {
+      const effectiveEnv = options.settingsService
+        ? await options.settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID)
+        : options.env;
+      applyEffectiveProviderEnv(effectiveEnv);
+      refreshGenerationProviders(effectiveEnv);
       const providerName = resolveImageProviderName(model);
       const generated = await generateImage(providerName, {
         prompt: payload.prompt,

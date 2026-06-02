@@ -1,12 +1,42 @@
 import OpenAI from "openai";
 
-import type { GeneratedImage, ImageGenerateParams, ImageProvider } from "../types.js";
+import type {
+  GeneratedImage,
+  ImageGenerateParams,
+  ImageProvider,
+  ModelInfo,
+} from "../types.js";
 import { aspectRatioToDimensions, GenerationError } from "../utils.js";
+
+const ICON_OPENAI = "https://github.com/openai.png";
+
+const OPENAI_IMAGE_MODELS: readonly ModelInfo[] = [
+  {
+    id: "gpt-image-1.5",
+    displayName: "GPT Image 1.5",
+    description:
+      "OpenAI's highest-quality image model for generation and editing.",
+    iconUrl: ICON_OPENAI,
+  },
+  {
+    id: "gpt-image-1",
+    displayName: "GPT Image 1",
+    description:
+      "OpenAI's general-purpose image generation and editing model.",
+    iconUrl: ICON_OPENAI,
+  },
+  {
+    id: "gpt-image-1-mini",
+    displayName: "GPT Image 1 Mini",
+    description:
+      "A lower-cost GPT Image variant for faster image generation tasks.",
+    iconUrl: ICON_OPENAI,
+  },
+];
 
 export class OpenAIImageProvider implements ImageProvider {
   readonly name = "openai";
-  // TODO: 补充 models 列表后前端 image-models API 才会展示 OpenAI 模型供用户选择
-  readonly models = [] as const;
+  readonly models = OPENAI_IMAGE_MODELS;
   private client: OpenAI;
 
   constructor(apiKey: string, baseURL?: string) {
