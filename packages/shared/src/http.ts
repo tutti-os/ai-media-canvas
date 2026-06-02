@@ -11,6 +11,13 @@ import {
   runIdSchema,
   viewerProfileSchema,
 } from "./contracts.js";
+import {
+  skillCreateRequestSchema,
+  skillDetailResponseSchema,
+  skillImportRequestSchema,
+  skillListResponseSchema,
+  skillToggleRequestSchema,
+} from "./skill-contracts.js";
 
 export const healthResponseSchema = z.object({
   ok: z.literal(true),
@@ -81,6 +88,14 @@ export const applicationErrorCodeSchema = z.enum([
   "asset_not_found",
   "variant_not_found",
   "generation_failed",
+  "route_not_found",
+  "skill_create_failed",
+  "skill_import_failed",
+  "skill_install_failed",
+  "skill_not_found",
+  "skill_query_failed",
+  "skill_toggle_failed",
+  "skill_uninstall_failed",
 ]);
 
 export const applicationErrorResponseSchema = z.object({
@@ -164,3 +179,11 @@ export const projectUpdateRequestSchema = z.object({
   name: z.string().min(1).max(100).optional(),
 });
 export type ProjectUpdateRequest = z.infer<typeof projectUpdateRequestSchema>;
+
+export {
+  skillCreateRequestSchema,
+  skillDetailResponseSchema,
+  skillImportRequestSchema,
+  skillListResponseSchema,
+  skillToggleRequestSchema,
+};

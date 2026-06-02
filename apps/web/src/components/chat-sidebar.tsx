@@ -7,6 +7,7 @@ import type {
   ContentBlock,
   ImageArtifact,
   ImageGenerationPreference,
+  VideoGenerationPreference,
   MessageMention,
   StreamEvent,
 } from "@aimc/shared";
@@ -17,10 +18,12 @@ import {
   INITIAL_AGENT_MODEL_KEY,
   INITIAL_ATTACHMENTS_KEY,
   INITIAL_IMAGE_GENERATION_PREFERENCE_KEY,
+  INITIAL_VIDEO_GENERATION_PREFERENCE_KEY,
 } from "../hooks/use-create-project";
 import type { ReadyAttachment } from "../hooks/use-image-attachments";
 import { useImageAttachments } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
+import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { fetchBrandKit } from "../lib/brand-kit-api";
 import { fetchImageModels, saveMessage } from "../lib/server-api";
@@ -140,6 +143,11 @@ export function ChatSidebar({
     activeImageGenerationPreference,
   );
   activeImageGenerationPreferenceRef.current = activeImageGenerationPreference;
+  const { activeVideoGenerationPreference } = useVideoModelPreference();
+  const activeVideoGenerationPreferenceRef = useRef(
+    activeVideoGenerationPreference,
+  );
+  activeVideoGenerationPreferenceRef.current = activeVideoGenerationPreference;
 
   const { model: agentModel } = useAgentModel();
   const agentModelRef = useRef(agentModel);
@@ -308,6 +316,7 @@ export function ChatSidebar({
       text: string,
       attachmentsOverride?: ReadyAttachment[],
       imageGenerationPreferenceOverride?: ImageGenerationPreference,
+      videoGenerationPreferenceOverride?: VideoGenerationPreference,
       mentionsOverride?: MessageMention[],
     ) => {
       const currentSessionId = activeSessionIdRef.current;
@@ -339,6 +348,9 @@ export function ChatSidebar({
       const currentImageGenerationPreference =
         imageGenerationPreferenceOverride ??
         activeImageGenerationPreferenceRef.current;
+      const currentVideoGenerationPreference =
+        videoGenerationPreferenceOverride ??
+        activeVideoGenerationPreferenceRef.current;
       const currentMentions = mentionsOverride ?? messageMentionsRef.current;
 
       // Add user message locally
@@ -513,6 +525,11 @@ export function ChatSidebar({
                     imageGenerationPreference: currentImageGenerationPreference,
                   }
                 : {}),
+              ...(currentVideoGenerationPreference
+                ? {
+                    videoGenerationPreference: currentVideoGenerationPreference,
+                  }
+                : {}),
               ...(agentModelRef.current
                 ? { model: agentModelRef.current }
                 : {}),
@@ -644,6 +661,7 @@ export function ChatSidebar({
 
     let storedAttachments: ReadyAttachment[] | undefined;
     let storedImageGenerationPreference: ImageGenerationPreference | undefined;
+    let storedVideoGenerationPreference: VideoGenerationPreference | undefined;
     let storedAgentModel: string | undefined;
     try {
       const raw = sessionStorage.getItem(INITIAL_ATTACHMENTS_KEY);
@@ -660,6 +678,16 @@ export function ChatSidebar({
           preferenceRaw,
         ) as ImageGenerationPreference;
         sessionStorage.removeItem(INITIAL_IMAGE_GENERATION_PREFERENCE_KEY);
+      }
+
+      const videoPreferenceRaw = sessionStorage.getItem(
+        INITIAL_VIDEO_GENERATION_PREFERENCE_KEY,
+      );
+      if (videoPreferenceRaw) {
+        storedVideoGenerationPreference = JSON.parse(
+          videoPreferenceRaw,
+        ) as VideoGenerationPreference;
+        sessionStorage.removeItem(INITIAL_VIDEO_GENERATION_PREFERENCE_KEY);
       }
 
       const modelRaw = sessionStorage.getItem(INITIAL_AGENT_MODEL_KEY);
@@ -682,6 +710,7 @@ export function ChatSidebar({
         initialPrompt,
         storedAttachments,
         storedImageGenerationPreference,
+        storedVideoGenerationPreference,
       );
     }, 0);
 

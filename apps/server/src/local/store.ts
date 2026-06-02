@@ -22,8 +22,15 @@ import type {
   ProjectCreateRequest,
   ProjectSummary,
   ProjectUpdateRequest,
+  SkillCreateRequest,
+  SkillDetail,
+  SkillFileEntry,
+  SkillImportRequest,
+  SkillListItem,
+  SkillToggleRequest,
   ViewerResponse,
 } from "@aimc/shared";
+import { getBundledSkills } from "./skill-catalog.js";
 
 const LOCAL_USER_ID = "local-user";
 const LOCAL_WORKSPACE_ID = "local-workspace";
@@ -198,9 +205,43 @@ export function createLocalStore(options: {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS skills (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      description TEXT NOT NULL,
+      author TEXT NOT NULL,
+      version TEXT NOT NULL,
+      category TEXT NOT NULL,
+      icon_name TEXT,
+      source TEXT NOT NULL,
+      is_featured INTEGER NOT NULL DEFAULT 0,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      license TEXT,
+      skill_content TEXT NOT NULL,
+      created_by TEXT,
+      source_url TEXT,
+      package_name TEXT,
+      is_catalog INTEGER NOT NULL DEFAULT 0,
+      installed INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      installed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS skill_files (
+      id TEXT PRIMARY KEY,
+      skill_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      content TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   seedBaseData();
+  seedBundledSkills();
   ensureDefaultProject();
 
   function assetUrl(assetId: string) {
@@ -215,6 +256,64 @@ export function createLocalStore(options: {
         ON CONFLICT(id) DO NOTHING
       `,
     ).run(LOCAL_USER_ID, DEFAULT_DISPLAY_NAME, DEFAULT_EMAIL);
+  }
+
+  function seedBundledSkills() {
+    const bundledSkills = getBundledSkills();
+
+    for (const skill of bundledSkills) {
+      const timestamp = nowIso();
+      db.prepare(
+        `
+          INSERT INTO skills (
+            id, name, slug, description, author, version, category, icon_name,
+            source, is_featured, metadata, license, skill_content, created_by,
+            source_url, package_name, is_catalog, installed, enabled, installed_at,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            slug = excluded.slug,
+            description = excluded.description,
+            author = excluded.author,
+            version = excluded.version,
+            category = excluded.category,
+            icon_name = excluded.icon_name,
+            source = excluded.source,
+            is_featured = excluded.is_featured,
+            metadata = excluded.metadata,
+            license = excluded.license,
+            skill_content = excluded.skill_content,
+            created_by = excluded.created_by,
+            source_url = excluded.source_url,
+            package_name = excluded.package_name,
+            is_catalog = 1,
+            updated_at = excluded.updated_at
+        `,
+      ).run(
+        skill.id,
+        skill.name,
+        skill.slug,
+        skill.description,
+        skill.author,
+        skill.version,
+        skill.category,
+        skill.iconName,
+        skill.source,
+        skill.isFeatured ? 1 : 0,
+        JSON.stringify(skill.metadata ?? {}),
+        skill.license,
+        skill.skillContent,
+        skill.createdBy,
+        skill.sourceUrl,
+        skill.packageName,
+        skill.installedByDefault ? 1 : 0,
+        skill.installedByDefault ? 1 : 0,
+        skill.installedByDefault ? timestamp : null,
+        timestamp,
+        timestamp,
+      );
+    }
   }
 
   function ensureDefaultProject() {
@@ -1292,6 +1391,397 @@ export function createLocalStore(options: {
     return detail?.assets.find((asset) => asset.id === assetId) ?? null;
   }
 
+  function mapSkillRow(row: {
+    id: string;
+    name: string;
+    slug: string;
+    description: string;
+    author: string;
+    version: string;
+    category: SkillListItem["category"];
+    icon_name: string | null;
+    source: SkillListItem["source"];
+    is_featured: number;
+    metadata: string;
+    installed: number;
+    enabled: number;
+    installed_at: string | null;
+    created_at: string;
+    updated_at: string;
+  }): SkillListItem {
+    return {
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      author: row.author,
+      version: row.version,
+      category: row.category,
+      iconName: row.icon_name,
+      source: row.source,
+      isFeatured: !!row.is_featured,
+      metadata: parseJson(row.metadata, {}),
+      installed: !!row.installed,
+      enabled: !!row.enabled,
+      installedAt: row.installed_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  function getSkillFiles(skillId: string): SkillFileEntry[] {
+    const rows = db
+      .prepare(
+        `
+          SELECT id, file_path, content, mime_type, created_at, updated_at
+          FROM skill_files
+          WHERE skill_id = ?
+          ORDER BY created_at ASC
+        `,
+      )
+      .all(skillId) as Array<{
+      id: string;
+      file_path: string;
+      content: string;
+      mime_type: string;
+      created_at: string;
+      updated_at: string;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      filePath: row.file_path,
+      content: row.content,
+      mimeType: row.mime_type,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+  }
+
+  function listInstalledSkills(): SkillListItem[] {
+    const rows = db
+      .prepare(
+        `
+          SELECT id, name, slug, description, author, version, category, icon_name,
+            source, is_featured, metadata, installed, enabled, installed_at, created_at, updated_at
+          FROM skills
+          WHERE installed = 1
+          ORDER BY updated_at DESC, name ASC
+        `,
+      )
+      .all() as Array<{
+      id: string;
+      name: string;
+      slug: string;
+      description: string;
+      author: string;
+      version: string;
+      category: SkillListItem["category"];
+      icon_name: string | null;
+      source: SkillListItem["source"];
+      is_featured: number;
+      metadata: string;
+      installed: number;
+      enabled: number;
+      installed_at: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    return rows.map(mapSkillRow);
+  }
+
+  function listCatalogSkills(): SkillListItem[] {
+    const rows = db
+      .prepare(
+        `
+          SELECT id, name, slug, description, author, version, category, icon_name,
+            source, is_featured, metadata, installed, enabled, installed_at, created_at, updated_at
+          FROM skills
+          WHERE is_catalog = 1
+          ORDER BY is_featured DESC, name ASC
+        `,
+      )
+      .all() as Array<{
+      id: string;
+      name: string;
+      slug: string;
+      description: string;
+      author: string;
+      version: string;
+      category: SkillListItem["category"];
+      icon_name: string | null;
+      source: SkillListItem["source"];
+      is_featured: number;
+      metadata: string;
+      installed: number;
+      enabled: number;
+      installed_at: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    return rows.map(mapSkillRow);
+  }
+
+  function getSkillDetail(skillId: string): SkillDetail | null {
+    const row = db
+      .prepare(
+        `
+          SELECT id, name, slug, description, author, version, category, icon_name,
+            source, is_featured, metadata, license, skill_content, created_by,
+            source_url, package_name, installed, enabled, installed_at, created_at, updated_at
+          FROM skills
+          WHERE id = ?
+          LIMIT 1
+        `,
+      )
+      .get(skillId) as
+      | {
+          id: string;
+          name: string;
+          slug: string;
+          description: string;
+          author: string;
+          version: string;
+          category: SkillListItem["category"];
+          icon_name: string | null;
+          source: SkillListItem["source"];
+          is_featured: number;
+          metadata: string;
+          license: string | null;
+          skill_content: string;
+          created_by: string | null;
+          source_url: string | null;
+          package_name: string | null;
+          installed: number;
+          enabled: number;
+          installed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      ...mapSkillRow(row),
+      license: row.license,
+      skillContent: row.skill_content,
+      createdBy: row.created_by,
+      sourceUrl: row.source_url,
+      packageName: row.package_name,
+      files: getSkillFiles(skillId),
+    };
+  }
+
+  function deriveSkillDescription(skillContent: string) {
+    const match = /## Description\s+([\s\S]*?)(?:\n## |\n# |$)/i.exec(skillContent);
+    return match?.[1]?.trim() || "Imported local skill.";
+  }
+
+  function deriveSkillName(skillContent: string, filePath: string) {
+    const heading = /^#\s+(.+)$/m.exec(skillContent)?.[1]?.trim();
+    if (heading) return heading;
+    return filePath
+      .split("/")
+      .at(-1)
+      ?.replace(/\.[^.]+$/, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase()) || "Imported Skill";
+  }
+
+  function insertSkillRecord(input: {
+    name: string;
+    description: string;
+    category: SkillListItem["category"];
+    skillContent: string;
+    source: SkillListItem["source"];
+    author: string;
+    files?: Array<{ filePath: string; content: string; mimeType?: string }>;
+    metadata?: Record<string, unknown>;
+  }) {
+    const timestamp = nowIso();
+    const skillId = randomUUID();
+    const slug = nextAvailableSlug(
+      (
+        db.prepare(`SELECT slug FROM skills WHERE slug = ? OR slug LIKE ?`).all(
+          slugify(input.name),
+          `${slugify(input.name)}-%`,
+        ) as Array<{ slug: string }>
+      ).map((row) => row.slug),
+      slugify(input.name),
+    );
+    db.exec("BEGIN");
+    try {
+      db.prepare(
+        `
+          INSERT INTO skills (
+            id, name, slug, description, author, version, category, icon_name,
+            source, is_featured, metadata, license, skill_content, created_by,
+            source_url, package_name, is_catalog, installed, enabled, installed_at,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, '1.0.0', ?, NULL, ?, 0, ?, 'Local', ?, ?, NULL, NULL, 0, 1, 1, ?, ?, ?)
+        `,
+      ).run(
+        skillId,
+        input.name.trim(),
+        slug,
+        input.description.trim(),
+        input.author,
+        input.category,
+        input.source,
+        JSON.stringify(input.metadata ?? {}),
+        input.skillContent,
+        input.author,
+        timestamp,
+        timestamp,
+        timestamp,
+      );
+
+      for (const file of input.files ?? []) {
+        db.prepare(
+          `
+            INSERT INTO skill_files (
+              id, skill_id, file_path, content, mime_type, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+        ).run(
+          randomUUID(),
+          skillId,
+          file.filePath,
+          file.content,
+          file.mimeType ?? "text/plain",
+          timestamp,
+          timestamp,
+        );
+      }
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    return getSkillDetail(skillId)!;
+  }
+
+  function createSkill(input: SkillCreateRequest) {
+    return insertSkillRecord({
+      name: input.name,
+      description: input.description,
+      category: input.category,
+      skillContent: input.skillContent,
+      source: "user",
+      author: getProfile().displayName,
+      ...(input.files
+        ? {
+            files: input.files.map((file) => ({
+              filePath: file.filePath,
+              content: file.content,
+              ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+            })),
+          }
+        : {}),
+      metadata: { origin: "created-local" },
+    });
+  }
+
+  function importSkill(input: SkillImportRequest) {
+    const normalizedFiles = input.files.map((file) => ({
+      filePath: file.filePath.replace(/^\.?\//, ""),
+      content: file.content,
+      mimeType: file.mimeType ?? "text/plain",
+    }));
+    const skillFile =
+      normalizedFiles.find((file) => /(^|\/)SKILL\.md$/i.test(file.filePath)) ??
+      normalizedFiles[0];
+    const skillContent = skillFile?.content?.trim();
+    if (!skillFile || !skillContent) {
+      return null;
+    }
+    return insertSkillRecord({
+      name: input.name?.trim() || deriveSkillName(skillContent, skillFile.filePath),
+      description:
+        input.description?.trim() || deriveSkillDescription(skillContent),
+      category: input.category ?? "custom",
+      skillContent,
+      source: "user",
+      author: getProfile().displayName,
+      files: normalizedFiles,
+      metadata: {
+        origin: "imported-local",
+        importedFileCount: normalizedFiles.length,
+      },
+    });
+  }
+
+  function installCatalogSkill(skillId: string) {
+    const row = db
+      .prepare(`SELECT id FROM skills WHERE id = ? AND is_catalog = 1 LIMIT 1`)
+      .get(skillId) as { id: string } | undefined;
+    if (!row) return null;
+    const timestamp = nowIso();
+    db.prepare(
+      `UPDATE skills SET installed = 1, enabled = 1, installed_at = COALESCE(installed_at, ?), updated_at = ? WHERE id = ?`,
+    ).run(timestamp, timestamp, skillId);
+    return getSkillDetail(skillId);
+  }
+
+  function toggleSkill(skillId: string, input: SkillToggleRequest) {
+    const row = db
+      .prepare(`SELECT id FROM skills WHERE id = ? AND installed = 1 LIMIT 1`)
+      .get(skillId) as { id: string } | undefined;
+    if (!row) return null;
+    db.prepare(`UPDATE skills SET enabled = ?, updated_at = ? WHERE id = ?`).run(
+      input.enabled ? 1 : 0,
+      nowIso(),
+      skillId,
+    );
+    return getSkillDetail(skillId);
+  }
+
+  function uninstallSkill(skillId: string) {
+    const row = db
+      .prepare(`SELECT id, is_catalog FROM skills WHERE id = ? LIMIT 1`)
+      .get(skillId) as { id: string; is_catalog: number } | undefined;
+    if (!row) return false;
+    if (row.is_catalog) {
+      db.prepare(
+        `UPDATE skills SET installed = 0, enabled = 0, updated_at = ? WHERE id = ?`,
+      ).run(nowIso(), skillId);
+      return true;
+    }
+    db.prepare(`DELETE FROM skill_files WHERE skill_id = ?`).run(skillId);
+    db.prepare(`DELETE FROM skills WHERE id = ?`).run(skillId);
+    return true;
+  }
+
+  function listEnabledSkills(): SkillListItem[] {
+    const rows = db
+      .prepare(
+        `
+          SELECT id, name, slug, description, author, version, category, icon_name,
+            source, is_featured, metadata, installed, enabled, installed_at, created_at, updated_at
+          FROM skills
+          WHERE installed = 1 AND enabled = 1
+          ORDER BY updated_at DESC, name ASC
+        `,
+      )
+      .all() as Array<{
+      id: string;
+      name: string;
+      slug: string;
+      description: string;
+      author: string;
+      version: string;
+      category: SkillListItem["category"];
+      icon_name: string | null;
+      source: SkillListItem["source"];
+      is_featured: number;
+      metadata: string;
+      installed: number;
+      enabled: number;
+      installed_at: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    return rows.map(mapSkillRow);
+  }
+
   function uploadFile(input: {
     bucket: AssetBucket;
     fileName: string;
@@ -1400,6 +1890,15 @@ export function createLocalStore(options: {
     updateBrandKitAsset,
     deleteBrandKitAsset,
     uploadBrandKitAsset,
+    listInstalledSkills,
+    listCatalogSkills,
+    getSkillDetail,
+    createSkill,
+    importSkill,
+    installCatalogSkill,
+    toggleSkill,
+    uninstallSkill,
+    listEnabledSkills,
     uploadFile,
     getAssetUrl(assetId: string) {
       return resolveAssetUrl(assetId);

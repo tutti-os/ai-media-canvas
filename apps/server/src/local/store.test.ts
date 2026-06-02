@@ -161,4 +161,63 @@ describe("createLocalStore", () => {
       reason: "asset_in_use",
     });
   });
+
+  it("manages bundled and imported local skills", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const catalog = store.listCatalogSkills();
+    expect(catalog.length).toBeGreaterThan(0);
+
+    expect(catalog.some((skill) => skill.installed)).toBe(true);
+    expect(catalog.some((skill) => skill.name === "Canvas Design")).toBe(true);
+
+    const bundled = catalog.find((skill) => skill.installed) ?? catalog[0];
+    expect(bundled).toBeDefined();
+    const localDirectorySkill = catalog.find((skill) => skill.name === "Canvas Design");
+    expect(localDirectorySkill).toBeDefined();
+    const localDirectoryDetail = store.getSkillDetail(localDirectorySkill!.id);
+    expect(localDirectoryDetail?.metadata).toMatchObject({
+      scope: "local-directory",
+      path: "skills/canvas-design/SKILL.md",
+    });
+    expect(localDirectoryDetail?.metadata.files).toContain("canvas-fonts/ArsenalSC-Regular.ttf");
+
+    const imported = store.importSkill({
+      files: [
+        {
+          filePath: "custom/SKILL.md",
+          content: `# Local Storyboard Skill
+
+## Description
+Help the assistant break an idea into storyboard beats.
+
+## Instructions
+1. Ask for the key beats.
+2. Suggest a shot list.
+`,
+        },
+      ],
+    });
+
+    expect(imported).not.toBeNull();
+    expect(imported?.name).toBe("Local Storyboard Skill");
+
+    const enabled = store.listEnabledSkills().map((skill) => skill.id);
+    expect(enabled).toContain(bundled!.id);
+    expect(enabled).toContain(imported!.id);
+
+    store.toggleSkill(imported!.id, { enabled: false });
+    expect(store.listEnabledSkills().map((skill) => skill.id)).not.toContain(
+      imported!.id,
+    );
+
+    expect(store.uninstallSkill(imported!.id)).toBe(true);
+    expect(store.getSkillDetail(imported!.id)).toBeNull();
+  });
 });

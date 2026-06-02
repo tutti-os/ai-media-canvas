@@ -10,6 +10,7 @@ import {
   profileUpdateRequestSchema,
   profileUpdateResponseSchema,
   runCreateRequestSchema,
+  type SkillDetail,
   viewerResponseSchema,
 } from "@aimc/shared";
 
@@ -18,6 +19,7 @@ import { registerCanvasRoutes } from "./http/canvases.js";
 import { registerChatRoutes } from "./http/chat.js";
 import { registerHealthRoutes } from "./http/health.js";
 import { registerProjectRoutes } from "./http/projects.js";
+import { registerSkillRoutes } from "./http/skills.js";
 import { registerUploadRoutes } from "./http/uploads.js";
 import {
   BrandKitServiceError,
@@ -42,6 +44,10 @@ import {
   UploadServiceError,
   type UploadService,
 } from "./features/uploads/upload-service.js";
+import {
+  SkillServiceError,
+  type SkillService,
+} from "./features/skills/skill-service.js";
 import { loadServerEnv, type ServerEnv } from "./config/env.js";
 import {
   createLocalStore,
@@ -399,11 +405,87 @@ function buildUploadService(store: LocalStore): UploadService {
   };
 }
 
+function buildSkillService(store: LocalStore): SkillService {
+  return {
+    async listInstalledSkills() {
+      return store.listInstalledSkills();
+    },
+    async listCatalogSkills() {
+      return store.listCatalogSkills();
+    },
+    async listEnabledSkills() {
+      return store.listEnabledSkills();
+    },
+    async getSkillDetail(_user, skillId) {
+      const skill = store.getSkillDetail(skillId);
+      if (!skill) {
+        throw new SkillServiceError("skill_not_found", "Skill not found.", 404);
+      }
+      return skill;
+    },
+    async createSkill(_user, input) {
+      try {
+        return store.createSkill(input);
+      } catch {
+        throw new SkillServiceError(
+          "skill_create_failed",
+          "Unable to create local skill.",
+          500,
+        );
+      }
+    },
+    async importSkill(_user, input) {
+      try {
+        const skill = store.importSkill(input);
+        if (!skill) {
+          throw new SkillServiceError(
+            "skill_import_failed",
+            "Imported files do not contain a usable SKILL.md payload.",
+            400,
+          );
+        }
+        return skill;
+      } catch (error) {
+        if (error instanceof SkillServiceError) throw error;
+        throw new SkillServiceError(
+          "skill_import_failed",
+          "Unable to import local skill.",
+          500,
+        );
+      }
+    },
+    async installCatalogSkill(_user, skillId) {
+      const skill = store.installCatalogSkill(skillId);
+      if (!skill) {
+        throw new SkillServiceError("skill_not_found", "Skill not found.", 404);
+      }
+      return skill;
+    },
+    async toggleSkill(_user, skillId, input) {
+      const skill = store.toggleSkill(skillId, input);
+      if (!skill) {
+        throw new SkillServiceError("skill_not_found", "Skill not found.", 404);
+      }
+      return skill;
+    },
+    async uninstallSkill(_user, skillId) {
+      if (!store.uninstallSkill(skillId)) {
+        throw new SkillServiceError("skill_not_found", "Skill not found.", 404);
+      }
+    },
+  };
+}
+
 function buildAssistantReply(input: {
   prompt: string;
   model?: string;
+  videoGenerationPreference?: {
+    models: string[];
+    mode: "auto" | "manual";
+  };
   attachmentsCount: number;
   mentions: string[];
+  enabledSkills: Array<Pick<SkillDetail, "name" | "description" | "skillContent">>;
 }) {
   const trimmed = input.prompt.trim();
   if (!trimmed) {
@@ -414,19 +496,108 @@ function buildAssistantReply(input: {
   if (input.model?.trim()) {
     contextNotes.push(`当前使用的本地模型偏好：${input.model.trim()}`);
   }
+  if (input.videoGenerationPreference?.models?.length) {
+    const planningMode =
+      input.videoGenerationPreference.mode === "manual" ? "手动指定" : "自动";
+    const planners = input.videoGenerationPreference.models
+      .map((model) => model.trim())
+      .filter(Boolean)
+      .join("、");
+    contextNotes.push(
+      `当前的视频规划偏好：${planners}（${planningMode}）`,
+    );
+  }
   if (input.attachmentsCount > 0) {
     contextNotes.push(`我收到了 ${input.attachmentsCount} 个参考附件。`);
   }
   if (input.mentions.length > 0) {
     contextNotes.push(`我也会参考这些补充上下文：${input.mentions.join("、")}`);
   }
+  if (input.enabledSkills.length > 0) {
+    contextNotes.push(
+      `当前已启用的本地技能：${input.enabledSkills.map((skill) => skill.name).join("、")}`,
+    );
+
+    const skillGuidance = buildSkillGuidance(trimmed, input.enabledSkills);
+    if (skillGuidance.length > 0) {
+      contextNotes.push(`这些技能会影响我的回应方式：${skillGuidance.join(" | ")}`);
+    }
+  }
 
   return [
     `我已经收到你的本地单机版请求：${trimmed}`,
     ...contextNotes,
     "这是本地模式下的轻量回应链路，没有再经过云端账号、积分或订阅体系。",
+    ...(input.videoGenerationPreference
+      ? ["我会优先按当前视频规划偏好来组织分镜、镜头顺序和节奏建议。"]
+      : []),
     "如果你想生成图片，直接用画布里的图片生成面板会更稳定。",
   ].join("\n\n");
+}
+
+function buildSkillGuidance(
+  prompt: string,
+  skills: Array<Pick<SkillDetail, "name" | "description" | "skillContent">>,
+) {
+  const normalizedPrompt = prompt.toLowerCase();
+  const instructionsPerSkill = skills.length > 3 ? 1 : 2;
+
+  return [...skills]
+    .sort((left, right) => scoreSkillForPrompt(right, normalizedPrompt) - scoreSkillForPrompt(left, normalizedPrompt))
+    .map((skill) => {
+      const instructions = extractSkillInstructions(skill.skillContent).slice(
+        0,
+        instructionsPerSkill,
+      );
+      const details = instructions.length > 0
+        ? instructions.join("；")
+        : skill.description;
+      return `${skill.name}：${details}`;
+    });
+}
+
+function scoreSkillForPrompt(
+  skill: Pick<SkillDetail, "name" | "description" | "skillContent">,
+  normalizedPrompt: string,
+) {
+  const haystack = `${skill.name} ${skill.description} ${skill.skillContent}`.toLowerCase();
+  let score = 0;
+
+  for (const token of normalizedPrompt.split(/[^\p{L}\p{N}]+/u).filter((part) => part.length >= 2)) {
+    if (haystack.includes(token)) {
+      score += 2;
+    }
+  }
+
+  if (normalizedPrompt.includes("品牌") && haystack.includes("brand")) {
+    score += 3;
+  }
+  if (normalizedPrompt.includes("海报") && (haystack.includes("poster") || haystack.includes("design"))) {
+    score += 3;
+  }
+  if (normalizedPrompt.includes("提示词") && haystack.includes("prompt")) {
+    score += 3;
+  }
+  if (normalizedPrompt.includes("画布") && haystack.includes("canvas")) {
+    score += 3;
+  }
+
+  return score;
+}
+
+function extractSkillInstructions(skillContent: string) {
+  const sectionMatch = skillContent.match(
+    /##\s+Instructions\s+([\s\S]*?)(?:\n##\s+|$)/i,
+  );
+  if (!sectionMatch) {
+    return [];
+  }
+
+  return sectionMatch[1]!
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^\d+\.\s+/.test(line))
+    .map((line) => line.replace(/^\d+\.\s+/, ""));
 }
 
 function getStaticContentType(filePath: string) {
@@ -538,12 +709,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const chatService = buildChatService(store);
   const brandKitService = buildBrandKitService(store);
   const uploadService = buildUploadService(store);
+  const skillService = buildSkillService(store);
 
   void registerHealthRoutes(app, env);
   void registerProjectRoutes(app, { localUser, projectService });
   void registerCanvasRoutes(app, { localUser, canvasService });
   void registerChatRoutes(app, { localUser, chatService });
   void registerBrandKitRoutes(app, { localUser, brandKitService });
+  void registerSkillRoutes(app, { localUser, skillService });
   void registerUploadRoutes(app, {
     localUser,
     uploadService,
@@ -596,6 +769,29 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     });
   });
 
+  app.get("/api/video-models", async (_request, reply) => {
+    return reply.code(200).send({
+      models: [
+        {
+          id: "local:storyboard-motion",
+          displayName: "Storyboard Motion",
+          description:
+            "Plan local storyboard and motion beats before you move into full video production.",
+          provider: "local",
+          accessible: true,
+        },
+        {
+          id: "local:shot-sequencer",
+          displayName: "Shot Sequencer",
+          description:
+            "Prioritize camera order, transition rhythm, and title-card pacing for short-form clips.",
+          provider: "local",
+          accessible: true,
+        },
+      ],
+    });
+  });
+
   app.get("/api/fonts", async (request, reply) => {
     const query = request.query as { search?: string; category?: string } | undefined;
     const search = query?.search?.trim().toLowerCase() ?? "";
@@ -629,11 +825,24 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.post("/api/local-agent/respond", async (request, reply) => {
     try {
       const payload = runCreateRequestSchema.parse(request.body);
+      const enabledSkills = store
+        .listEnabledSkills()
+        .map((skill) => store.getSkillDetail(skill.id))
+        .filter((skill): skill is SkillDetail => skill !== null)
+        .map((skill) => ({
+          name: skill.name,
+          description: skill.description,
+          skillContent: skill.skillContent,
+        }));
       const text = buildAssistantReply({
         prompt: payload.prompt,
         ...(payload.model ? { model: payload.model } : {}),
+        ...(payload.videoGenerationPreference
+          ? { videoGenerationPreference: payload.videoGenerationPreference }
+          : {}),
         attachmentsCount: payload.attachments?.length ?? 0,
         mentions: payload.mentions?.map((mention) => mention.label) ?? [],
+        enabledSkills,
       });
       const message = store.createMessage(payload.sessionId, {
         role: "assistant",

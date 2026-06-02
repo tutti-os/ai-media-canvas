@@ -2,7 +2,10 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ImageGenerationPreference } from "@aimc/shared";
+import type {
+  ImageGenerationPreference,
+  VideoGenerationPreference,
+} from "@aimc/shared";
 
 import type { ReadyAttachment } from "@/hooks/use-image-attachments";
 import { useToast } from "@/components/toast";
@@ -12,11 +15,14 @@ import { createProject } from "@/lib/server-api";
 export const INITIAL_ATTACHMENTS_KEY = "aimc:initial-attachments";
 export const INITIAL_IMAGE_GENERATION_PREFERENCE_KEY =
   "aimc:initial-image-generation-preference";
+export const INITIAL_VIDEO_GENERATION_PREFERENCE_KEY =
+  "aimc:initial-video-generation-preference";
 export const INITIAL_AGENT_MODEL_KEY = "aimc:initial-agent-model";
 
 function clearInitialCreateProjectState() {
   sessionStorage.removeItem(INITIAL_ATTACHMENTS_KEY);
   sessionStorage.removeItem(INITIAL_IMAGE_GENERATION_PREFERENCE_KEY);
+  sessionStorage.removeItem(INITIAL_VIDEO_GENERATION_PREFERENCE_KEY);
   sessionStorage.removeItem(INITIAL_AGENT_MODEL_KEY);
 }
 
@@ -38,6 +44,7 @@ export function useCreateProject() {
       prompt?: string;
       attachments?: ReadyAttachment[];
       imageGenerationPreference?: ImageGenerationPreference;
+      videoGenerationPreference?: VideoGenerationPreference;
       model?: string;
     }) => {
       if (creatingRef.current) return;
@@ -70,6 +77,19 @@ export function useCreateProject() {
         }
       } else {
         sessionStorage.removeItem(INITIAL_IMAGE_GENERATION_PREFERENCE_KEY);
+      }
+
+      if (opts?.videoGenerationPreference) {
+        try {
+          sessionStorage.setItem(
+            INITIAL_VIDEO_GENERATION_PREFERENCE_KEY,
+            JSON.stringify(opts.videoGenerationPreference),
+          );
+        } catch {
+          // sessionStorage write failure is non-fatal
+        }
+      } else {
+        sessionStorage.removeItem(INITIAL_VIDEO_GENERATION_PREFERENCE_KEY);
       }
 
       if (opts?.model) {

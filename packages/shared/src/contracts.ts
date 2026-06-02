@@ -54,6 +54,11 @@ export const imageGenerationPreferenceSchema = z.object({
   models: z.array(z.string().min(1)),
 });
 
+export const videoGenerationPreferenceSchema = z.object({
+  mode: z.enum(["auto", "manual"]),
+  models: z.array(z.string().min(1)),
+});
+
 export const runCreateRequestSchema = z.object({
   sessionId: sessionIdSchema,
   conversationId: conversationIdSchema,
@@ -61,6 +66,7 @@ export const runCreateRequestSchema = z.object({
   canvasId: canvasIdSchema.optional(),
   attachments: z.array(imageAttachmentSchema).optional(),
   imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
+  videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
   mentions: z.array(messageMentionSchema).optional(),
   model: z.string().optional(),
 });
@@ -237,6 +243,9 @@ export type MentionBlock = z.infer<typeof mentionBlockSchema>;
 export type ImageAttachment = z.infer<typeof imageAttachmentSchema>;
 export type ImageGenerationPreference = z.infer<
   typeof imageGenerationPreferenceSchema
+>;
+export type VideoGenerationPreference = z.infer<
+  typeof videoGenerationPreferenceSchema
 >;
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 export type ChatSessionSummary = z.infer<typeof chatSessionSummarySchema>;

@@ -13,6 +13,11 @@ import type {
   MessageListResponse,
   MessageCreateResponse,
   ChatMessageCreateRequest,
+  SkillCreateRequest,
+  SkillDetailResponse,
+  SkillImportRequest,
+  SkillListResponse,
+  SkillToggleRequest,
   UploadResponse,
   AssetSignedUrlResponse,
 } from "@aimc/shared";
@@ -281,6 +286,79 @@ export async function deleteAsset(assetId: string): Promise<void> {
   if (!response.ok) return handleErrorResponse(response);
 }
 
+// --- Skills API ---
+
+export async function fetchInstalledSkills(): Promise<SkillListResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills`);
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillListResponse;
+}
+
+export async function fetchSkillCatalog(): Promise<SkillListResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills/catalog`);
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillListResponse;
+}
+
+export async function fetchSkillDetail(skillId: string): Promise<SkillDetailResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills/${skillId}`);
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillDetailResponse;
+}
+
+export async function createSkill(
+  data: SkillCreateRequest,
+): Promise<SkillDetailResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillDetailResponse;
+}
+
+export async function importSkill(
+  data: SkillImportRequest,
+): Promise<SkillDetailResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills/import`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillDetailResponse;
+}
+
+export async function installSkill(skillId: string): Promise<SkillDetailResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/skills/catalog/${skillId}/install`,
+    { method: "POST" },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillDetailResponse;
+}
+
+export async function toggleSkill(
+  skillId: string,
+  data: SkillToggleRequest,
+): Promise<SkillDetailResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills/${skillId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SkillDetailResponse;
+}
+
+export async function uninstallSkill(skillId: string): Promise<void> {
+  const response = await fetch(`${getServerBaseUrl()}/api/skills/${skillId}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) return handleErrorResponse(response);
+}
+
 // --- Canvas-Native Generation API ---
 
 export type GenerateImageResponse = {
@@ -308,6 +386,23 @@ export async function fetchImageModels(): Promise<{ models: ImageModelInfo[] }> 
     throw new Error(`Failed to fetch image models: ${response.status}`);
   }
   return (await response.json()) as { models: ImageModelInfo[] };
+}
+
+export type VideoModelInfo = {
+  id: string;
+  displayName: string;
+  description: string;
+  provider: string;
+  iconUrl?: string;
+  accessible?: boolean;
+};
+
+export async function fetchVideoModels(): Promise<{ models: VideoModelInfo[] }> {
+  const response = await fetch(`${getServerBaseUrl()}/api/video-models`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch video models: ${response.status}`);
+  }
+  return (await response.json()) as { models: VideoModelInfo[] };
 }
 
 export async function generateImageDirect(
