@@ -2,8 +2,13 @@ import { readFileSync } from "node:fs";
 
 export const DEFAULT_SERVER_PORT = 3001;
 export const DEFAULT_WEB_ORIGIN = "http://localhost:3000";
+export const DEFAULT_AGENT_MODEL = "openai:gpt-5-mini";
+export const DEFAULT_GOOGLE_AGENT_MODEL = "gemini-2.5-flash";
 
 export type ServerEnv = {
+  agentBackendMode: "state" | "filesystem";
+  agentFilesRoot?: string;
+  agentModel: string;
   googleApiKey?: string;
   googleApplicationCredentials?: string;
   googleVertexLocation?: string;
@@ -13,6 +18,7 @@ export type ServerEnv = {
   openAIApiKey?: string;
   port: number;
   replicateApiToken?: string;
+  skillsRoot?: string;
   version: string;
   volcesApiKey?: string;
   volcesBaseUrl?: string;
@@ -29,6 +35,20 @@ export function loadServerEnv(
 ): ServerEnv {
   const webDistDir =
     overrides.webDistDir ?? normalizeOptionalString(source.AIMC_WEB_DIST);
+  const agentBackendMode =
+    overrides.agentBackendMode ??
+    parseAgentBackendMode(
+      source.AIMC_AGENT_BACKEND_MODE ?? source.AGENT_BACKEND_MODE,
+    );
+  const agentFilesRoot =
+    overrides.agentFilesRoot ??
+    normalizeOptionalString(
+      source.AIMC_AGENT_FILES_ROOT ?? source.AGENT_FILES_ROOT,
+    );
+  const agentModel =
+    overrides.agentModel ??
+    normalizeOptionalString(source.AIMC_AGENT_MODEL ?? source.AGENT_MODEL) ??
+    DEFAULT_AGENT_MODEL;
   const openAIApiBase =
     overrides.openAIApiBase ??
     normalizeOptionalString(source.AIMC_OPENAI_API_BASE ?? source.OPENAI_API_BASE);
@@ -65,6 +85,9 @@ export function loadServerEnv(
     normalizeOptionalString(
       source.AIMC_REPLICATE_API_TOKEN ?? source.REPLICATE_API_TOKEN,
     );
+  const skillsRoot =
+    overrides.skillsRoot ??
+    normalizeOptionalString(source.AIMC_SKILLS_ROOT ?? source.SKILLS_ROOT);
   const volcesApiKey =
     overrides.volcesApiKey ??
     normalizeOptionalString(source.AIMC_VOLCES_API_KEY ?? source.VOLCES_API_KEY);
@@ -86,10 +109,13 @@ export function loadServerEnv(
     );
 
   return {
+    agentBackendMode,
+    agentModel,
     port: overrides.port ?? parsePort(source.AIMC_SERVER_PORT ?? source.PORT),
     version: overrides.version ?? readServerVersion(),
     webOrigin:
       overrides.webOrigin ?? source.AIMC_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
+    ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(webDistDir ? { webDistDir } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
     ...(openAIApiKey ? { openAIApiKey } : {}),
@@ -99,6 +125,7 @@ export function loadServerEnv(
     ...(googleVertexLocation ? { googleVertexLocation } : {}),
     ...(googleVertexVideoLocation ? { googleVertexVideoLocation } : {}),
     ...(replicateApiToken ? { replicateApiToken } : {}),
+    ...(skillsRoot ? { skillsRoot } : {}),
     ...(volcesApiKey ? { volcesApiKey } : {}),
     ...(volcesBaseUrl ? { volcesBaseUrl } : {}),
     ...(workerId ? { workerId } : {}),
@@ -129,6 +156,22 @@ function parsePort(rawPort: string | undefined) {
   }
 
   return port;
+}
+
+function parseAgentBackendMode(
+  rawMode: string | undefined,
+): "state" | "filesystem" {
+  if (!rawMode) {
+    return "state";
+  }
+
+  if (rawMode === "state" || rawMode === "filesystem") {
+    return rawMode;
+  }
+
+  throw new Error(
+    `Invalid AIMC_AGENT_BACKEND_MODE value: ${rawMode}`,
+  );
 }
 
 function readServerVersion() {

@@ -1,6 +1,6 @@
 # AI Media Canvas 能力回退恢复与本地化改造方案
 
-> 这份文档用于纠正当前执行路线：后续不再以 `ai-media-canvas` 当前基线继续“补骨架”，而是以原始 `Loomic` 的完整能力为恢复源，先把需要保留的产品能力按模块回退恢复，再在恢复结果上做单机本地化改造。
+> 这份文档用于纠正当前执行路线：后续不再以 `ai-media-canvas` 当前基线继续“补骨架”，而是以原始旧源仓库的完整能力为恢复源，先把需要保留的产品能力按模块回退恢复，再在恢复结果上做单机本地化改造。
 
 ## 1. 这份文档解决什么问题
 
@@ -23,7 +23,7 @@
 
 因此，后续目标不是继续在当前“轻量替代品”基础上渐进增强，而是：
 
-1. 先恢复原始 `Loomic` 中仍然需要的能力
+1. 先恢复原始旧源仓库中仍然需要的能力
 2. 再把这些能力的底层实现切换到单机版底座
 3. 最后再做结构优化与命名清理
 
@@ -57,7 +57,7 @@
 - `SQLite` 与本地文件底座
 - `/home` 与 `/skills` 的单机版路由恢复
 - 产品品牌切换为 `AI Media Canvas`
-- `supabase / loomic` 大部分命名与配置清理
+- `supabase / 旧命名` 大部分命名与配置清理
 
 如果直接做大范围整体回退，会把这些已经正确的工作也一起打掉，导致来回折腾。
 
@@ -65,11 +65,11 @@
 
 真正仍然保留完整能力的恢复源是：
 
-- 原始仓库：[/Users/wwcome/work/demo/Loomic](/Users/wwcome/work/demo/Loomic)
+- 原始仓库：[<legacy-source-repo>](<legacy-source-repo>)
 
 因此后续执行原则应改为：
 
-> **从 `Loomic` 按模块恢复能力，而不是从 `ai-media-canvas origin/main` 整体回退。**
+> **从 `旧源仓库` 按模块恢复能力，而不是从 `ai-media-canvas origin/main` 整体回退。**
 
 ---
 
@@ -125,7 +125,7 @@
 
 ### 阶段 A：能力回退恢复
 
-从 `Loomic` 里把需要保留的能力按模块恢复回来，优先恢复：
+从 `旧源仓库` 里把需要保留的能力按模块恢复回来，优先恢复：
 
 1. `jobs + worker + providers`
 2. `models / image-models / video-models / generate / jobs` 接口
@@ -160,11 +160,11 @@
 
 来自：
 
-- [/Users/wwcome/work/demo/Loomic/apps/server/src/features/jobs](/Users/wwcome/work/demo/Loomic/apps/server/src/features/jobs)
-- [/Users/wwcome/work/demo/Loomic/apps/server/src/generation](/Users/wwcome/work/demo/Loomic/apps/server/src/generation)
-- [/Users/wwcome/work/demo/Loomic/apps/server/src/worker.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/worker.ts)
-- [/Users/wwcome/work/demo/Loomic/apps/server/src/http/jobs.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/http/jobs.ts)
-- [/Users/wwcome/work/demo/Loomic/apps/server/src/http/generate.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/http/generate.ts)
+- [<legacy-source-repo>/apps/server/src/features/jobs](<legacy-source-repo>/apps/server/src/features/jobs)
+- [<legacy-source-repo>/apps/server/src/generation](<legacy-source-repo>/apps/server/src/generation)
+- [<legacy-source-repo>/apps/server/src/worker.ts](<legacy-source-repo>/apps/server/src/worker.ts)
+- [<legacy-source-repo>/apps/server/src/http/jobs.ts](<legacy-source-repo>/apps/server/src/http/jobs.ts)
+- [<legacy-source-repo>/apps/server/src/http/generate.ts](<legacy-source-repo>/apps/server/src/http/generate.ts)
 
 ### 恢复目标
 
@@ -199,12 +199,12 @@
 
 来自：
 
-- [/Users/wwcome/work/demo/Loomic/apps/server/src/agent/runtime.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/agent/runtime.ts)
-- [/Users/wwcome/work/demo/Loomic/apps/server/src/agent/deep-agent.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/agent/deep-agent.ts)
-- [/Users/wwcome/work/demo/Loomic/apps/server/src/agent/tools](/Users/wwcome/work/demo/Loomic/apps/server/src/agent/tools)
-- [/Users/wwcome/work/demo/Loomic/apps/server/src/agent/workspace-skills.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/agent/workspace-skills.ts)
-- [/Users/wwcome/work/demo/Loomic/apps/server/src/ws](/Users/wwcome/work/demo/Loomic/apps/server/src/ws)
-- [/Users/wwcome/work/demo/Loomic/apps/server/src/http/runs.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/http/runs.ts)
+- [<legacy-source-repo>/apps/server/src/agent/runtime.ts](<legacy-source-repo>/apps/server/src/agent/runtime.ts)
+- [<legacy-source-repo>/apps/server/src/agent/deep-agent.ts](<legacy-source-repo>/apps/server/src/agent/deep-agent.ts)
+- [<legacy-source-repo>/apps/server/src/agent/tools](<legacy-source-repo>/apps/server/src/agent/tools)
+- [<legacy-source-repo>/apps/server/src/agent/workspace-skills.ts](<legacy-source-repo>/apps/server/src/agent/workspace-skills.ts)
+- [<legacy-source-repo>/apps/server/src/ws](<legacy-source-repo>/apps/server/src/ws)
+- [<legacy-source-repo>/apps/server/src/http/runs.ts](<legacy-source-repo>/apps/server/src/http/runs.ts)
 
 ### 恢复目标
 
@@ -236,7 +236,7 @@
 
 来自：
 
-- [/Users/wwcome/work/demo/Loomic/apps/server/src/agent/workspace-skills.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/agent/workspace-skills.ts)
+- [<legacy-source-repo>/apps/server/src/agent/workspace-skills.ts](<legacy-source-repo>/apps/server/src/agent/workspace-skills.ts)
 
 ### 恢复目标
 
@@ -287,7 +287,7 @@
 以下部分不应直接继续叠加成最终版：
 
 - 只保留本地 placeholder provider 而不恢复原始 provider 抽象
-- 跳过 `Loomic` 原始 `job-service / runtime / runs / ws` 直接重写另一套新契约
+- 跳过 `旧源仓库` 原始 `job-service / runtime / runs / ws` 直接重写另一套新契约
 - 让 `/api/local-agent/respond` 继续承担真正 runtime 的角色
 
 ### 6.4 推荐处理方式
@@ -295,7 +295,7 @@
 推荐策略：
 
 1. 保留这批草稿做临时参考
-2. 以 `Loomic` 原文件为主，重新按模块恢复
+2. 以 `旧源仓库` 原文件为主，重新按模块恢复
 3. 再把草稿中“本地化适配”的部分摘进去
 
 也就是说：
@@ -314,10 +314,10 @@
 
 ### 步骤
 
-1. 从 `Loomic` 恢复 `generation/*`
-2. 从 `Loomic` 恢复 `features/jobs/*`
-3. 从 `Loomic` 恢复 `worker.ts`
-4. 从 `Loomic` 恢复 `http/jobs.ts` 与 `http/generate.ts`
+1. 从 `旧源仓库` 恢复 `generation/*`
+2. 从 `旧源仓库` 恢复 `features/jobs/*`
+3. 从 `旧源仓库` 恢复 `worker.ts`
+4. 从 `旧源仓库` 恢复 `http/jobs.ts` 与 `http/generate.ts`
 5. 将 `PGMQ` 相关实现改接 `SQLite queue`
 6. 让 `/api/models`、`/api/image-models`、`/api/video-models`、`/api/jobs/*` 真正可用
 
@@ -336,9 +336,9 @@
 
 ### 步骤
 
-1. 从 `Loomic` 恢复 `agent/*`
-2. 从 `Loomic` 恢复 `ws/*`
-3. 从 `Loomic` 恢复 `http/runs.ts`
+1. 从 `旧源仓库` 恢复 `agent/*`
+2. 从 `旧源仓库` 恢复 `ws/*`
+3. 从 `旧源仓库` 恢复 `http/runs.ts`
 4. 用本地上下文替换 `Supabase auth/viewer`
 5. 用本地持久化替换原 checkpointer
 
@@ -457,4 +457,4 @@ pnpm --filter @aimc/server test
 
 后续执行必须遵循这条主线：
 
-> **不是从 `ai-media-canvas origin/main` 整体回退，而是从 `Loomic` 按能力模块回退恢复，在保留已完成单机化成果的前提下，把恢复回来的能力逐步改接到 `SQLite + 本地文件` 底座上。**
+> **不是从 `ai-media-canvas origin/main` 整体回退，而是从 `旧源仓库` 按能力模块回退恢复，在保留已完成单机化成果的前提下，把恢复回来的能力逐步改接到 `SQLite + 本地文件` 底座上。**

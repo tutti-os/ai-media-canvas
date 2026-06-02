@@ -9,8 +9,8 @@ import {
   ToolMessage as ToolMessageClass,
 } from "@langchain/core/messages";
 
-import { imageArtifactSchema, videoArtifactSchema } from "@loomic/shared";
-import type { StreamEvent, ToolArtifact } from "@loomic/shared";
+import { imageArtifactSchema, videoArtifactSchema } from "@aimc/shared";
+import type { StreamEvent, ToolArtifact } from "@aimc/shared";
 
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 

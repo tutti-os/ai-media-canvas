@@ -9,8 +9,8 @@ import {
   StoreBackend,
 } from "deepagents";
 
-const DEFAULT_SANDBOX_ROOT = "/tmp/loomic-sandbox";
-const DEFAULT_SKILLS_ROOT = "/opt/loomic/skills";
+const DEFAULT_SANDBOX_ROOT = "/tmp/ai-media-canvas-sandbox";
+const DEFAULT_SKILLS_ROOT = "/opt/ai-media-canvas/skills";
 
 /**
  * Create a production backend with per-project LocalShellBackend sandbox.

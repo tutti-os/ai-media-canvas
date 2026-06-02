@@ -8,19 +8,19 @@ import { createDeepAgent } from "deepagents";
 import { DEFAULT_AGENT_MODEL, DEFAULT_GOOGLE_AGENT_MODEL, type ServerEnv } from "../config/env.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createAgentBackend, type AgentBackendResult } from "./backends/index.js";
-import { LOOMIC_SYSTEM_PROMPT } from "./prompts/loomic-main.js";
+import { AI_MEDIA_CANVAS_SYSTEM_PROMPT } from "./prompts/ai-media-canvas-main.js";
 import { createVideoSubAgent } from "./sub-agents.js";
 import { createMainAgentTools } from "./tools/index.js";
 import type { PersistImageFn, SubmitImageJobFn } from "./tools/image-generate.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
-export type LoomicAgent = Pick<
+export type AiMediaCanvasAgent = Pick<
   ReturnType<typeof createDeepAgent>,
   "stream" | "streamEvents"
 >;
 
-export type LoomicAgentFactory = (options: {
+export type AiMediaCanvasAgentFactory = (options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
   canvasId?: string;
@@ -35,9 +35,9 @@ export type LoomicAgentFactory = (options: {
   submitVideoJob?: SubmitVideoJobFn;
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
-}) => LoomicAgent;
+}) => AiMediaCanvasAgent;
 
-export function createLoomicDeepAgent(options: {
+export function createAiMediaCanvasDeepAgent(options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
   canvasId?: string;
@@ -52,7 +52,7 @@ export function createLoomicDeepAgent(options: {
   submitVideoJob?: SubmitVideoJobFn;
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
-}): LoomicAgent {
+}): AiMediaCanvasAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
 
@@ -68,14 +68,14 @@ export function createLoomicDeepAgent(options: {
     options.createUserClient ??
     ((_accessToken: string): never => {
       throw new Error(
-        "inspect_canvas is unavailable: no createUserClient was provided to createLoomicDeepAgent.",
+        "inspect_canvas is unavailable: no createUserClient was provided to createAiMediaCanvasDeepAgent.",
       );
     });
 
   let systemPrompt = options.brandKitId
-    ? LOOMIC_SYSTEM_PROMPT +
+    ? AI_MEDIA_CANVAS_SYSTEM_PROMPT +
       "\n\n当前项目已绑定品牌套件。在进行设计相关工作时，请先使用 get_brand_kit 工具查询品牌信息，确保设计符合品牌规范。"
-    : LOOMIC_SYSTEM_PROMPT;
+    : AI_MEDIA_CANVAS_SYSTEM_PROMPT;
 
   // Inject enabled skills (both system and user-created) into the system prompt.
   // All skills are loaded from the database via loadWorkspaceSkills() in runtime.ts.
@@ -105,7 +105,7 @@ export function createLoomicDeepAgent(options: {
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
     model: resolvedModel,
-    name: "loomic",
+    name: "ai-media-canvas",
     ...(options.store ? { store: options.store } : {}),
     subagents: [createVideoSubAgent()],
     systemPrompt,

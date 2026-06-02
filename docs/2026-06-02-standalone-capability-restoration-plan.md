@@ -1,6 +1,6 @@
 # AI Media Canvas 单机版能力恢复与本地化改造方案
 
-> 目标不是继续“做减法”，而是先把原始 `Loomic` 中仍然需要保留的核心产品能力恢复回来，再把这些能力从云端/SaaS 实现迁移到单机本地实现。
+> 目标不是继续“做减法”，而是先把原始旧源仓库中仍然需要保留的核心产品能力恢复回来，再把这些能力从云端/SaaS 实现迁移到单机本地实现。
 
 ## 1. 文档目的
 
@@ -28,7 +28,7 @@
 - 不依赖 `Supabase`
 - 使用 `SQLite` 作为核心结构化数据存储
 - 使用本地文件系统作为资产与技能包存储
-- 保留接近原始 `Loomic` 的核心产品能力
+- 保留接近原始旧源仓库的核心产品能力
 
 ### 2.2 必须保留的核心能力
 
@@ -64,7 +64,7 @@
 当前分支已经完成的正确方向包括：
 
 - 产品命名已切换到 `AI Media Canvas`
-- `supabase` / `loomic` 文案与文件残留已大幅清理
+- `supabase` / `旧命名` 文案与文件残留已大幅清理
 - `/`、`/home`、`/projects`、`/brand-kit`、`/skills`、`/settings` 已本地可访问
 - `SQLite + 本地文件` 的基础存储链路已建立
 - `/skills` 本地安装/导入/启停基础链路已恢复
@@ -104,7 +104,7 @@
 - 原始 run lifecycle 对应的前端会话/事件流能力
 - 完整的 Agent 工具执行反馈体验
 
-当前本地版 Agent 仅相当于“本地增强回复器”，还不是原始 `Loomic` 的完整 Agent 工作流。
+当前本地版 Agent 仅相当于“本地增强回复器”，还不是原始旧源仓库的完整 Agent 工作流。
 
 ## 4. 总体改造原则
 
@@ -136,9 +136,9 @@
 
 禁止先做大规模重构，再去想“怎样把原能力补回来”。
 
-## 4.3 优先复用原始 Loomic 的接口与流程
+## 4.3 优先复用原始旧源仓库的接口与流程
 
-在能复用原始 `Loomic` 代码时，优先考虑：
+在能复用原始旧源仓库代码时，优先考虑：
 
 - 先按原始接口恢复
 - 再把实现改接本地底座
@@ -158,7 +158,7 @@
 
 ### 阶段 A：能力回退恢复
 
-从原始 `Loomic` 中恢复以下系统的“产品能力与接口”：
+从原始旧源仓库中恢复以下系统的“产品能力与接口”：
 
 - 生成 providers / model registry / image & video routes
 - job service / worker / queue abstraction
@@ -193,7 +193,7 @@
 - 路径会越走越偏
 - 最终仍然要回到 run lifecycle / tool runtime / worker / jobs
 - 越晚恢复，前端和后端差异会越大
-- 后续合并原始 `Loomic` 能力时冲突会更多
+- 后续合并原始旧源仓库能力时冲突会更多
 
 ## 6. 目标架构
 
@@ -229,14 +229,14 @@ flowchart LR
 - job 重试/失败/取消
 - worker 后台执行
 
-### 原始 Loomic 参考面
+### 原始旧源仓库参考面
 
-- [pgmq-client.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/queue/pgmq-client.ts)
-- [worker.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/worker.ts)
-- [job-service.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/features/jobs/job-service.ts)
-- [generation/](/Users/wwcome/work/demo/Loomic/apps/server/src/generation)
-- [http/generate.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/http/generate.ts)
-- [http/jobs.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/http/jobs.ts)
+- [pgmq-client.ts](<legacy-source-repo>/apps/server/src/queue/pgmq-client.ts)
+- [worker.ts](<legacy-source-repo>/apps/server/src/worker.ts)
+- [job-service.ts](<legacy-source-repo>/apps/server/src/features/jobs/job-service.ts)
+- [generation/](<legacy-source-repo>/apps/server/src/generation)
+- [http/generate.ts](<legacy-source-repo>/apps/server/src/http/generate.ts)
+- [http/jobs.ts](<legacy-source-repo>/apps/server/src/http/jobs.ts)
 
 ### 当前单机版缺口
 
@@ -250,7 +250,7 @@ flowchart LR
 
 #### 恢复接口层
 
-先恢复原始 `Loomic` 的这些接口形态：
+先恢复原始旧源仓库的这些接口形态：
 
 - `/api/models`
 - `/api/image-models`
@@ -285,7 +285,7 @@ flowchart LR
 - 图片：`OpenAI` / `Replicate` / `Google`
 - 视频：至少恢复一个可用 provider
 
-首版可以通过环境变量控制启用哪些 provider，但产品接口应与原始 Loomic 尽量对齐。
+首版可以通过环境变量控制启用哪些 provider，但产品接口应与原始旧源仓库尽量对齐。
 
 ## 7.2 Agent runtime / LangGraph / WebSocket
 
@@ -299,12 +299,12 @@ flowchart LR
 - 实时 WS 事件
 - thread/session/run 生命周期
 
-### 原始 Loomic 参考面
+### 原始旧源仓库参考面
 
-- [runtime.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/agent/runtime.ts)
-- [deep-agent.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/agent/deep-agent.ts)
-- [workspace-skills.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/agent/workspace-skills.ts)
-- [ws/handler.ts](/Users/wwcome/work/demo/Loomic/apps/server/src/ws/handler.ts)
+- [runtime.ts](<legacy-source-repo>/apps/server/src/agent/runtime.ts)
+- [deep-agent.ts](<legacy-source-repo>/apps/server/src/agent/deep-agent.ts)
+- [workspace-skills.ts](<legacy-source-repo>/apps/server/src/agent/workspace-skills.ts)
+- [ws/handler.ts](<legacy-source-repo>/apps/server/src/ws/handler.ts)
 
 ### 当前单机版缺口
 
@@ -324,7 +324,7 @@ flowchart LR
 - canvas resume
 - run accepted / running / completed / failed
 
-保留前端现有调用方式的兼容性，但目标是重新回到原始 Loomic 的主链。
+保留前端现有调用方式的兼容性，但目标是重新回到原始旧源仓库的主链。
 
 #### 恢复 deep agent / tool calling
 
@@ -337,7 +337,7 @@ flowchart LR
 - `brand-kit`
 - `project-search`
 
-工具可以先局部恢复，但骨架要按原始 Loomic 的工具体系恢复，不建议继续用“文本模拟工具效果”。
+工具可以先局部恢复，但骨架要按原始旧源仓库的工具体系恢复，不建议继续用“文本模拟工具效果”。
 
 #### 替换持久化
 
@@ -375,7 +375,7 @@ flowchart LR
 
 但还缺：
 
-- 像原始 Loomic 那样把 skill 当成完整运行时包挂载
+- 像原始旧源仓库那样把 skill 当成完整运行时包挂载
 
 ### 恢复策略
 
@@ -597,7 +597,7 @@ pnpm --filter @aimc/server worker
 
 执行过程中避免以下动作：
 
-- 直接把原始 Loomic 整仓硬拷贝覆盖
+- 直接把原始旧源仓库整仓硬拷贝覆盖
 - 在恢复前先大改命名与目录结构
 - 在未跑通前先继续精简模块
 - 用“临时 mock”长期占位核心能力
@@ -617,5 +617,5 @@ pnpm --filter @aimc/server worker
 
 后续改造应遵循这条主线：
 
-> **先把 `Loomic` 中仍然需要的产品能力恢复回来，再把这些能力逐步从云端实现替换为单机本地实现，而不是继续沿着“轻量本地替代品”方向补丁式演化。**
+> **先把旧源仓库中仍然需要的产品能力恢复回来，再把这些能力逐步从云端实现替换为单机本地实现，而不是继续沿着“轻量本地替代品”方向补丁式演化。**
 

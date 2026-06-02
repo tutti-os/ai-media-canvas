@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe("generation executors", () => {
-  it("persists generated image bytes locally and returns Loomic-compatible fields", async () => {
+  it("persists generated image bytes locally and returns AIMC-compatible fields", async () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-job-image-"));
     tempDirs.push(dataRoot);
 
@@ -81,7 +81,7 @@ describe("generation executors", () => {
     expect(readFileSync(asset!.filePath)).toEqual(imageBytes);
   });
 
-  it("persists generated video bytes locally and returns Loomic-compatible fields", async () => {
+  it("persists generated video bytes locally and returns AIMC-compatible fields", async () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-job-video-"));
     tempDirs.push(dataRoot);
 
