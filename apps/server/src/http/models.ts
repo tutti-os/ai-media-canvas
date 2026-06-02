@@ -20,6 +20,10 @@ const GOOGLE_MODELS: ModelInfo[] = [
   { id: "google:gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite", provider: "google" },
 ];
 
+const AGNES_MODELS: ModelInfo[] = [
+  { id: "agnes:agnes-2.0-flash", name: "Agnes 2.0 Flash", provider: "agnes" },
+];
+
 export async function registerModelRoutes(
   app: FastifyInstance,
   env: ServerEnv,
@@ -31,6 +35,7 @@ export async function registerModelRoutes(
       : env;
     const models: ModelInfo[] = [];
     if (effectiveEnv.openAIApiKey) models.push(...OPENAI_MODELS);
+    if (effectiveEnv.agnesApiKey) models.push(...AGNES_MODELS);
     if (
       effectiveEnv.googleApiKey ||
       (effectiveEnv.googleVertexProject && effectiveEnv.googleVertexLocation)

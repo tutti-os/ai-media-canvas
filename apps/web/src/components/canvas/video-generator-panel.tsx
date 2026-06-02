@@ -182,6 +182,8 @@ export function VideoGeneratorPanel({
       const inputImages: string[] = [];
       if (firstFrame) inputImages.push(firstFrame.dataUrl);
       if (lastFrame) inputImages.push(lastFrame.dataUrl);
+      const videoMode =
+        firstFrame && lastFrame ? ("keyframes" as const) : undefined;
 
       const result = await generateVideoDirect(prompt.trim(), {
         model,
@@ -189,6 +191,7 @@ export function VideoGeneratorPanel({
         resolution,
         aspectRatio,
         ...(inputImages.length ? { inputImages } : {}),
+        ...(videoMode ? { videoMode } : {}),
         projectId,
         canvasId,
       });

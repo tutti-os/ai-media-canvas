@@ -5,7 +5,12 @@ import { ChatVertexAI } from "@langchain/google-vertexai";
 import { ChatOpenAI } from "@langchain/openai";
 import { createDeepAgent } from "deepagents";
 
-import { DEFAULT_AGENT_MODEL, DEFAULT_GOOGLE_AGENT_MODEL, type ServerEnv } from "../config/env.js";
+import {
+  DEFAULT_AGENT_MODEL,
+  DEFAULT_AGNES_BASE_URL,
+  DEFAULT_GOOGLE_AGENT_MODEL,
+  type ServerEnv,
+} from "../config/env.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createAgentBackend, type AgentBackendResult } from "./backends/index.js";
 import { AIMC_SYSTEM_PROMPT } from "./prompts/aimc-main.js";
@@ -61,7 +66,7 @@ export function createAimcDeepAgent(options: {
   const modelSpec = options.model ?? createDefaultModelSpecifier(options.env);
   const resolvedModel =
     typeof modelSpec === "string"
-      ? createStreamingChatModel(modelSpec)
+      ? createStreamingChatModel(modelSpec, options.env)
       : modelSpec;
 
   const createUserClient =
@@ -131,14 +136,38 @@ export function createAimcDeepAgent(options: {
  * - `google` — uses ChatGoogleGenerativeAI (Google AI Studio, API Key) or
  *   ChatVertexAI (Vertex AI, service account) depending on available config.
  */
-function createStreamingChatModel(specifier: string): BaseLanguageModel {
+function createStreamingChatModel(
+  specifier: string,
+  env?: Pick<
+    ServerEnv,
+    | "agnesApiKey"
+    | "agnesBaseUrl"
+    | "googleApiKey"
+    | "googleVertexLocation"
+    | "googleVertexProject"
+    | "openAIApiBase"
+    | "openAIApiKey"
+  >,
+): BaseLanguageModel {
   const colonIdx = specifier.indexOf(":");
   let provider = colonIdx > 0 ? specifier.slice(0, colonIdx) : "openai";
   let modelName = colonIdx > 0 ? specifier.slice(colonIdx + 1) : specifier;
 
-  const hasGoogleApiKey = !!process.env.GOOGLE_API_KEY;
-  const hasVertexAI = !!(process.env.GOOGLE_VERTEX_PROJECT && process.env.GOOGLE_VERTEX_LOCATION);
+  const resolvedAgnesApiKey = env?.agnesApiKey ?? process.env.AGNES_API_KEY;
+  const resolvedAgnesBaseUrl =
+    env?.agnesBaseUrl ??
+    process.env.AGNES_BASE_URL ??
+    DEFAULT_AGNES_BASE_URL;
+  const resolvedOpenAIApiKey = env?.openAIApiKey ?? process.env.OPENAI_API_KEY;
+  const resolvedOpenAIBaseUrl =
+    env?.openAIApiBase ?? process.env.OPENAI_BASE_URL;
+  const hasGoogleApiKey = !!(env?.googleApiKey ?? process.env.GOOGLE_API_KEY);
+  const hasVertexAI = !!(
+    (env?.googleVertexProject ?? process.env.GOOGLE_VERTEX_PROJECT) &&
+    (env?.googleVertexLocation ?? process.env.GOOGLE_VERTEX_LOCATION)
+  );
   const hasGoogle = hasGoogleApiKey || hasVertexAI;
+  const hasAgnes = !!resolvedAgnesApiKey;
 
   // Provider availability fallback
   if (provider === "google" && !hasGoogle) {
@@ -146,18 +175,35 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
     provider = "openai";
     modelName = DEFAULT_AGENT_MODEL;
   }
-  if (provider === "openai" && !process.env.OPENAI_API_KEY && hasGoogle) {
+  if (provider === "openai" && !resolvedOpenAIApiKey && hasGoogle) {
     console.warn(`[model] OpenAI unavailable (no OPENAI_API_KEY), falling back to Google for: ${specifier}`);
     provider = "google";
     modelName = DEFAULT_GOOGLE_AGENT_MODEL;
   }
 
   switch (provider) {
+    case "agnes":
+      if (!hasAgnes) {
+        throw new Error(
+          `Agnes model selected without Agnes API key: ${specifier}`,
+        );
+      }
+      return new ChatOpenAI({
+        model: modelName,
+        apiKey: resolvedAgnesApiKey,
+        configuration: {
+          baseURL: resolvedAgnesBaseUrl,
+        },
+        streaming: true,
+        streamUsage: false,
+      });
     case "google":
       // Prefer Vertex AI (service account) when configured; fall back to Developer API key
       if (hasVertexAI) {
-        const vertexProject = process.env.GOOGLE_VERTEX_PROJECT!;
-        const vertexLocation = process.env.GOOGLE_VERTEX_LOCATION!;
+        const vertexProject =
+          env?.googleVertexProject ?? process.env.GOOGLE_VERTEX_PROJECT!;
+        const vertexLocation =
+          env?.googleVertexLocation ?? process.env.GOOGLE_VERTEX_LOCATION!;
         console.log(`[model] Using Vertex AI for: ${modelName} (project=${vertexProject}, location=${vertexLocation})`);
         return new ChatVertexAI({
           model: modelName,
@@ -168,7 +214,7 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
       }
       return new ChatGoogleGenerativeAI({
         model: modelName,
-        apiKey: process.env.GOOGLE_API_KEY!,
+        apiKey: env?.googleApiKey ?? process.env.GOOGLE_API_KEY!,
         streaming: true,
         thinkingConfig: {
           includeThoughts: true,
@@ -179,6 +225,14 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
     default:
       return new ChatOpenAI({
         model: modelName,
+        ...(resolvedOpenAIApiKey ? { apiKey: resolvedOpenAIApiKey } : {}),
+        ...(resolvedOpenAIBaseUrl
+          ? {
+              configuration: {
+                baseURL: resolvedOpenAIBaseUrl,
+              },
+            }
+          : {}),
         streaming: true,
         streamUsage: false,
       });
@@ -187,6 +241,7 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
 
 /** Known model-name prefixes that map to Google Gemini. */
 const GOOGLE_MODEL_PREFIXES = ["gemini-"];
+const AGNES_MODEL_PREFIXES = ["agnes-"];
 
 export function createDefaultModelSpecifier(
   env: Pick<ServerEnv, "agentModel">,
@@ -197,6 +252,8 @@ export function createDefaultModelSpecifier(
   // Auto-detect Google models by name prefix.
   if (GOOGLE_MODEL_PREFIXES.some((p) => model.startsWith(p)))
     return `google:${model}`;
+  if (AGNES_MODEL_PREFIXES.some((p) => model.startsWith(p)))
+    return `agnes:${model}`;
   return `openai:${model}`;
 }
 

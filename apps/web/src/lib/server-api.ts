@@ -427,7 +427,14 @@ export async function fetchVideoModels(): Promise<{ models: VideoModelInfo[] }> 
 
 export async function generateImageDirect(
   prompt: string,
-  options?: { model?: string; aspectRatio?: string; quality?: string },
+  options?: {
+    model?: string;
+    aspectRatio?: string;
+    quality?: string;
+    inputImages?: string[];
+    size?: string;
+    seed?: number;
+  },
 ): Promise<GenerateImageResponse> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/agent/generate-image`,
@@ -439,6 +446,9 @@ export async function generateImageDirect(
         ...(options?.model ? { model: options.model } : {}),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
         ...(options?.quality ? { quality: options.quality } : {}),
+        ...(options?.inputImages?.length ? { inputImages: options.inputImages } : {}),
+        ...(options?.size ? { size: options.size } : {}),
+        ...(options?.seed !== undefined ? { seed: options.seed } : {}),
       }),
     },
   );
@@ -464,6 +474,11 @@ export async function generateVideoDirect(
     resolution?: string;
     aspectRatio?: string;
     inputImages?: string[];
+    videoMode?: "multivideo" | "keyframes";
+    seed?: number;
+    negativePrompt?: string;
+    frameRate?: number;
+    numFrames?: number;
     projectId?: string;
     canvasId?: string;
   },
@@ -480,6 +495,17 @@ export async function generateVideoDirect(
         ...(options?.resolution ? { resolution: options.resolution } : {}),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
         ...(options?.inputImages?.length ? { inputImages: options.inputImages } : {}),
+        ...(options?.videoMode ? { videoMode: options.videoMode } : {}),
+        ...(options?.seed !== undefined ? { seed: options.seed } : {}),
+        ...(options?.negativePrompt
+          ? { negativePrompt: options.negativePrompt }
+          : {}),
+        ...(options?.frameRate !== undefined
+          ? { frameRate: options.frameRate }
+          : {}),
+        ...(options?.numFrames !== undefined
+          ? { numFrames: options.numFrames }
+          : {}),
         ...(options?.projectId ? { projectId: options.projectId } : {}),
         ...(options?.canvasId ? { canvasId: options.canvasId } : {}),
       }),

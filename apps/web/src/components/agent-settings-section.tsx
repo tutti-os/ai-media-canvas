@@ -13,7 +13,7 @@ interface AgentSettingsSectionProps {
   onSave: (settings: WorkspaceSettings) => Promise<void>;
 }
 
-type AgentProtocolId = "openai" | "google" | "vertex" | "anthropic";
+type AgentProtocolId = "agnes" | "openai" | "google" | "vertex" | "anthropic";
 
 const AGENT_PROTOCOLS: Array<{
   id: AgentProtocolId;
@@ -25,6 +25,11 @@ const AGENT_PROTOCOLS: Array<{
     id: "openai",
     label: "OpenAI-compatible",
     description: "OpenAI and OpenAI-compatible gateways",
+  },
+  {
+    id: "agnes",
+    label: "Agnes",
+    description: "Agnes OpenAI-compatible chat route",
   },
   {
     id: "google",
@@ -44,13 +49,26 @@ const AGENT_PROTOCOLS: Array<{
   },
 ];
 
+function getInitialProtocol(settings: WorkspaceSettings): AgentProtocolId {
+  const provider = settings.defaultModel.split(":")[0];
+  if (
+    provider === "agnes" ||
+    provider === "google" ||
+    provider === "vertex" ||
+    provider === "anthropic"
+  ) {
+    return provider;
+  }
+  return "openai";
+}
+
 export function AgentSettingsSection({
   settings: initialSettings,
   onSave,
 }: AgentSettingsSectionProps) {
   const [settings, setSettings] = useState(initialSettings);
   const [activeProtocol, setActiveProtocol] =
-    useState<AgentProtocolId>("openai");
+    useState<AgentProtocolId>(() => getInitialProtocol(initialSettings));
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -59,6 +77,7 @@ export function AgentSettingsSection({
 
   useEffect(() => {
     setSettings(initialSettings);
+    setActiveProtocol(getInitialProtocol(initialSettings));
   }, [initialSettings]);
 
   const normalizedInitial = useMemo(
@@ -110,6 +129,10 @@ export function AgentSettingsSection({
               </code>{" "}
               or{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                agnes:agnes-2.0-flash
+              </code>{" "}
+              or{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 google:gemini-2.5-flash
               </code>
               .
@@ -121,7 +144,7 @@ export function AgentSettingsSection({
               id="defaultModel"
               value={settings.defaultModel}
               onChange={(event) => updateField("defaultModel", event.target.value)}
-              placeholder="openai:gpt-4.1 or google:gemini-2.5-flash"
+              placeholder="openai:gpt-4.1, agnes:agnes-2.0-flash, or google:gemini-2.5-flash"
             />
           </div>
         </section>
@@ -156,6 +179,44 @@ export function AgentSettingsSection({
               </button>
             ))}
           </div>
+
+          {activeProtocol === "agnes" ? (
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="agnesApiKey">Agnes API Key</Label>
+                <Input
+                  id="agnesApiKey"
+                  value={settings.agnesApiKey}
+                  onChange={(event) =>
+                    updateField("agnesApiKey", event.target.value)
+                  }
+                  placeholder="sk-..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="agnesBaseUrl">Agnes Base URL</Label>
+                <Input
+                  id="agnesBaseUrl"
+                  value={settings.agnesBaseUrl}
+                  onChange={(event) =>
+                    updateField("agnesBaseUrl", event.target.value)
+                  }
+                  placeholder="https://apihub.agnes-ai.com/v1"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="agnesDefaultModel">Agnes Default Model</Label>
+                <Input
+                  id="agnesDefaultModel"
+                  value={settings.agnesDefaultModel}
+                  onChange={(event) =>
+                    updateField("agnesDefaultModel", event.target.value)
+                  }
+                  placeholder="agnes:agnes-2.0-flash"
+                />
+              </div>
+            </div>
+          ) : null}
 
           {activeProtocol === "openai" ? (
             <div className="grid gap-4 md:grid-cols-2">

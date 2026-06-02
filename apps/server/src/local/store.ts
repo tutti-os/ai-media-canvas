@@ -48,6 +48,9 @@ const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   defaultModel: "",
   openAIApiKey: "",
   openAIApiBase: "",
+  agnesApiKey: "",
+  agnesBaseUrl: "",
+  agnesDefaultModel: "",
   googleApiKey: "",
   googleVertexProject: "",
   googleVertexLocation: "",
@@ -186,6 +189,9 @@ export function createLocalStore(options: {
       default_model TEXT NOT NULL DEFAULT '',
       openai_api_key TEXT NOT NULL DEFAULT '',
       openai_api_base TEXT NOT NULL DEFAULT '',
+      agnes_api_key TEXT NOT NULL DEFAULT '',
+      agnes_base_url TEXT NOT NULL DEFAULT '',
+      agnes_default_model TEXT NOT NULL DEFAULT '',
       google_api_key TEXT NOT NULL DEFAULT '',
       google_vertex_project TEXT NOT NULL DEFAULT '',
       google_vertex_location TEXT NOT NULL DEFAULT '',
@@ -352,6 +358,9 @@ export function createLocalStore(options: {
           default_model,
           openai_api_key,
           openai_api_base,
+          agnes_api_key,
+          agnes_base_url,
+          agnes_default_model,
           google_api_key,
           google_vertex_project,
           google_vertex_location,
@@ -359,7 +368,7 @@ export function createLocalStore(options: {
           replicate_api_token,
           volces_api_key,
           volces_base_url
-        ) VALUES (?, '', '', '', '', '', '', '', '', '', '')
+        ) VALUES (?, '', '', '', '', '', '', '', '', '', '', '', '', '')
       `,
     ).run(LOCAL_WORKSPACE_ID);
   }
@@ -383,6 +392,9 @@ export function createLocalStore(options: {
     const missingColumns: Array<[string, string]> = [
       ["openai_api_key", "TEXT NOT NULL DEFAULT ''"],
       ["openai_api_base", "TEXT NOT NULL DEFAULT ''"],
+      ["agnes_api_key", "TEXT NOT NULL DEFAULT ''"],
+      ["agnes_base_url", "TEXT NOT NULL DEFAULT ''"],
+      ["agnes_default_model", "TEXT NOT NULL DEFAULT ''"],
       ["google_api_key", "TEXT NOT NULL DEFAULT ''"],
       ["google_vertex_project", "TEXT NOT NULL DEFAULT ''"],
       ["google_vertex_location", "TEXT NOT NULL DEFAULT ''"],
@@ -557,6 +569,9 @@ export function createLocalStore(options: {
             default_model,
             openai_api_key,
             openai_api_base,
+            agnes_api_key,
+            agnes_base_url,
+            agnes_default_model,
             google_api_key,
             google_vertex_project,
             google_vertex_location,
@@ -573,6 +588,9 @@ export function createLocalStore(options: {
           default_model: string;
           openai_api_key: string;
           openai_api_base: string;
+          agnes_api_key: string;
+          agnes_base_url: string;
+          agnes_default_model: string;
           google_api_key: string;
           google_vertex_project: string;
           google_vertex_location: string;
@@ -591,6 +609,9 @@ export function createLocalStore(options: {
       defaultModel: row.default_model ?? "",
       openAIApiKey: row.openai_api_key ?? "",
       openAIApiBase: row.openai_api_base ?? "",
+      agnesApiKey: row.agnes_api_key ?? "",
+      agnesBaseUrl: row.agnes_base_url ?? "",
+      agnesDefaultModel: row.agnes_default_model ?? "",
       googleApiKey: row.google_api_key ?? "",
       googleVertexProject: row.google_vertex_project ?? "",
       googleVertexLocation: row.google_vertex_location ?? "",
@@ -611,6 +632,9 @@ export function createLocalStore(options: {
           default_model,
           openai_api_key,
           openai_api_base,
+          agnes_api_key,
+          agnes_base_url,
+          agnes_default_model,
           google_api_key,
           google_vertex_project,
           google_vertex_location,
@@ -618,11 +642,14 @@ export function createLocalStore(options: {
           replicate_api_token,
           volces_api_key,
           volces_base_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(workspace_id) DO UPDATE SET
           default_model = excluded.default_model,
           openai_api_key = excluded.openai_api_key,
           openai_api_base = excluded.openai_api_base,
+          agnes_api_key = excluded.agnes_api_key,
+          agnes_base_url = excluded.agnes_base_url,
+          agnes_default_model = excluded.agnes_default_model,
           google_api_key = excluded.google_api_key,
           google_vertex_project = excluded.google_vertex_project,
           google_vertex_location = excluded.google_vertex_location,
@@ -636,6 +663,9 @@ export function createLocalStore(options: {
       settings.defaultModel,
       settings.openAIApiKey,
       settings.openAIApiBase,
+      settings.agnesApiKey,
+      settings.agnesBaseUrl,
+      settings.agnesDefaultModel,
       settings.googleApiKey,
       settings.googleVertexProject,
       settings.googleVertexLocation,

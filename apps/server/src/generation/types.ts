@@ -25,10 +25,14 @@ export interface ImageGenerateParams {
   model: string;
   aspectRatio?: string;
   inputImages?: string[];
+  /** Provider-specific size override, e.g. "1536x1024". */
+  size?: string;
   /** Semantic quality level, provider translates to model-specific resolution */
   quality?: ImageQuality;
   /** Output format preference */
   outputFormat?: OutputFormat;
+  /** Optional deterministic seed when the provider supports it. */
+  seed?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -53,6 +57,11 @@ export interface VideoGenerateParams {
   aspectRatio?: string;
   inputImages?: string[];
   inputVideo?: string;
+  videoMode?: "multivideo" | "keyframes";
+  seed?: number;
+  negativePrompt?: string;
+  frameRate?: number;
+  numFrames?: number;
   /** Enable audio generation (only supported by some providers). */
   enableAudio?: boolean;
 }

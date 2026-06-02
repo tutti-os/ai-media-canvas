@@ -26,7 +26,9 @@ export async function executeImageGenerationJob(
     model,
     ...(payload.aspect_ratio ? { aspectRatio: payload.aspect_ratio } : {}),
     ...(payload.quality ? { quality: payload.quality } : {}),
-        ...(payload.input_images ? { inputImages: payload.input_images } : {}),
+    ...(payload.input_images ? { inputImages: payload.input_images } : {}),
+    ...(payload.size ? { size: payload.size } : {}),
+    ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
   });
 
   const { buffer, mimeType } = await loadGeneratedAsset(

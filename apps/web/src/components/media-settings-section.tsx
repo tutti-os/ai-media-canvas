@@ -14,7 +14,7 @@ interface MediaSettingsSectionProps {
 }
 
 type MediaProviderCard = {
-  id: "openai" | "google" | "vertex" | "replicate" | "volces";
+  id: "agnes" | "openai" | "google" | "vertex" | "replicate" | "volces";
   label: string;
   capabilities: string;
   summary: string;
@@ -27,6 +27,30 @@ type MediaProviderCard = {
 };
 
 const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
+  {
+    id: "agnes",
+    label: "Agnes",
+    capabilities: "Image + Video",
+    summary:
+      "Agnes multimodal route. Uses agnes-ai-cli for image/video generation, including compose and keyframe-capable video modes.",
+    models: [
+      "Agnes Image 2.1 Flash",
+      "Agnes Image 2.0 Flash",
+      "Agnes Video v2.0",
+    ],
+    fields: [
+      {
+        key: "agnesApiKey",
+        label: "Agnes API Key",
+        placeholder: "sk-...",
+      },
+      {
+        key: "agnesBaseUrl",
+        label: "Agnes Base URL",
+        placeholder: "https://apihub.agnes-ai.com/v1",
+      },
+    ],
+  },
   {
     id: "replicate",
     label: "Replicate",
