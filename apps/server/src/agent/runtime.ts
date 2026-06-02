@@ -32,10 +32,10 @@ import { TierGuardError, type TierGuard } from "../features/credits/tier-guard.j
 import { getPlanConfig, type BillingErrorCode, type ImageQualityLevel } from "@aimc/shared";
 import { createAgentBackend } from "./backends/index.js";
 import {
-  type AiMediaCanvasAgent,
-  type AiMediaCanvasAgentFactory,
+  type AimcAgent,
+  type AimcAgentFactory,
   createDefaultModelSpecifier,
-  createAiMediaCanvasDeepAgent,
+  createAimcDeepAgent,
 } from "./deep-agent.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
@@ -248,7 +248,7 @@ type RuntimeRunRecord = RunCreateRequest & {
 
 type CreateAgentRuntimeOptions = {
   agentPersistenceService?: AgentPersistenceService;
-  agentFactory?: AiMediaCanvasAgentFactory;
+  agentFactory?: AimcAgentFactory;
   agentRunMetadataService?: AgentRunMetadataService;
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => unknown;
@@ -272,10 +272,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     options.runIdFactory ??
     (() => randomUUID());
 
-  const resolvedAgentFactory: AiMediaCanvasAgentFactory =
+  const resolvedAgentFactory: AimcAgentFactory =
     options.agentFactory ??
     ((agentOptions) =>
-      createAiMediaCanvasDeepAgent({
+      createAimcDeepAgent({
         ...agentOptions,
         ...(options.createUserClient
           ? { createUserClient: options.createUserClient }
@@ -865,7 +865,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       );
 
       try {
-      let agent: AiMediaCanvasAgent;
+      let agent: AimcAgent;
       try {
         const resolvedModel = run.modelOverride
           ? (run.modelOverride.includes(":")

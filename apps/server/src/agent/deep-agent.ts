@@ -8,19 +8,19 @@ import { createDeepAgent } from "deepagents";
 import { DEFAULT_AGENT_MODEL, DEFAULT_GOOGLE_AGENT_MODEL, type ServerEnv } from "../config/env.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createAgentBackend, type AgentBackendResult } from "./backends/index.js";
-import { AI_MEDIA_CANVAS_SYSTEM_PROMPT } from "./prompts/ai-media-canvas-main.js";
+import { AIMC_SYSTEM_PROMPT } from "./prompts/aimc-main.js";
 import { createVideoSubAgent } from "./sub-agents.js";
 import { createMainAgentTools } from "./tools/index.js";
 import type { PersistImageFn, SubmitImageJobFn } from "./tools/image-generate.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
-export type AiMediaCanvasAgent = Pick<
+export type AimcAgent = Pick<
   ReturnType<typeof createDeepAgent>,
   "stream" | "streamEvents"
 >;
 
-export type AiMediaCanvasAgentFactory = (options: {
+export type AimcAgentFactory = (options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
   canvasId?: string;
@@ -35,9 +35,9 @@ export type AiMediaCanvasAgentFactory = (options: {
   submitVideoJob?: SubmitVideoJobFn;
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
-}) => AiMediaCanvasAgent;
+}) => AimcAgent;
 
-export function createAiMediaCanvasDeepAgent(options: {
+export function createAimcDeepAgent(options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
   canvasId?: string;
@@ -52,7 +52,7 @@ export function createAiMediaCanvasDeepAgent(options: {
   submitVideoJob?: SubmitVideoJobFn;
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
-}): AiMediaCanvasAgent {
+}): AimcAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
 
@@ -68,14 +68,14 @@ export function createAiMediaCanvasDeepAgent(options: {
     options.createUserClient ??
     ((_accessToken: string): never => {
       throw new Error(
-        "inspect_canvas is unavailable: no createUserClient was provided to createAiMediaCanvasDeepAgent.",
+        "inspect_canvas is unavailable: no createUserClient was provided to createAimcDeepAgent.",
       );
     });
 
   let systemPrompt = options.brandKitId
-    ? AI_MEDIA_CANVAS_SYSTEM_PROMPT +
+    ? AIMC_SYSTEM_PROMPT +
       "\n\n当前项目已绑定品牌套件。在进行设计相关工作时，请先使用 get_brand_kit 工具查询品牌信息，确保设计符合品牌规范。"
-    : AI_MEDIA_CANVAS_SYSTEM_PROMPT;
+    : AIMC_SYSTEM_PROMPT;
 
   // Inject enabled skills (both system and user-created) into the system prompt.
   // All skills are loaded from the database via loadWorkspaceSkills() in runtime.ts.
