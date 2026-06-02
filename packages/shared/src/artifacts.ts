@@ -18,8 +18,24 @@ export const imageArtifactSchema = z.object({
   jobId: z.string().optional(),
 });
 
-export const toolArtifactSchema = z.discriminatedUnion("type", [imageArtifactSchema]);
+export const videoArtifactSchema = z.object({
+  type: z.literal("video"),
+  title: z.string().optional(),
+  url: z.string(),
+  mimeType: z.string(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  durationSeconds: z.number().positive().optional(),
+  placement: placementSchema.optional(),
+  jobId: z.string().optional(),
+});
+
+export const toolArtifactSchema = z.discriminatedUnion("type", [
+  imageArtifactSchema,
+  videoArtifactSchema,
+]);
 
 export type Placement = z.infer<typeof placementSchema>;
 export type ImageArtifact = z.infer<typeof imageArtifactSchema>;
+export type VideoArtifact = z.infer<typeof videoArtifactSchema>;
 export type ToolArtifact = z.infer<typeof toolArtifactSchema>;

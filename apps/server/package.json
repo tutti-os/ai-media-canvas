@@ -6,7 +6,10 @@
   "dependencies": {
     "@fastify/multipart": "^9.4.0",
     "@aimc/shared": "workspace:*",
+    "@google/genai": "^1.47.0",
     "fastify": "^5.2.1",
+    "google-auth-library": "^10.6.2",
+    "openai": "^6.32.0",
     "undici": "^7.24.5",
     "zod": "^4.3.6"
   },
@@ -20,8 +23,10 @@
   "scripts": {
     "build": "node ../../scripts/validate-foundation-app.mjs build",
     "predev": "pnpm --filter @aimc/shared build",
-    "dev": "node --watch --env-file=../../.env.local --import tsx ./src/server.ts",
+    "dev": "node --watch --env-file=../../.env.local --import tsx ./src/server.ts & AIMC_WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",
     "dev:server": "node --watch --env-file=../../.env.local --import tsx ./src/server.ts",
+    "dev:worker": "node --watch --env-file=../../.env.local --import tsx ./src/worker.ts",
+    "worker": "node --env-file=../../.env.local --import tsx ./src/worker.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }

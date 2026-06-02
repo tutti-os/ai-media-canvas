@@ -4,7 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import type { VideoGenerationPreference } from "@aimc/shared";
 
 const STORAGE_KEY = "aimc:video-model-preference";
-const DEFAULT_MODEL = "local:storyboard-motion";
+const DEFAULT_MODEL = "google-official/veo-3.1-generate-preview";
 
 export type VideoModelPreference = VideoGenerationPreference;
 

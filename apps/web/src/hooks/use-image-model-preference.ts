@@ -4,7 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import type { ImageGenerationPreference } from "@aimc/shared";
 
 const STORAGE_KEY = "aimc:image-model-preference";
-const DEFAULT_MODEL = "local:placeholder-image";
+const DEFAULT_MODEL = "black-forest-labs/flux-kontext-pro";
 
 export type ImageModelPreference = ImageGenerationPreference;
 

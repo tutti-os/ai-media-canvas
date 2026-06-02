@@ -425,3 +425,46 @@ export async function generateImageDirect(
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as GenerateImageResponse;
 }
+
+export type GenerateVideoResponse = {
+  url: string;
+  assetId: string;
+  prompt: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  durationSeconds: number;
+};
+
+export async function generateVideoDirect(
+  prompt: string,
+  options?: {
+    model?: string;
+    duration?: number;
+    resolution?: string;
+    aspectRatio?: string;
+    inputImages?: string[];
+    projectId?: string;
+    canvasId?: string;
+  },
+): Promise<GenerateVideoResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/agent/generate-video`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        ...(options?.model ? { model: options.model } : {}),
+        ...(options?.duration != null ? { duration: options.duration } : {}),
+        ...(options?.resolution ? { resolution: options.resolution } : {}),
+        ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
+        ...(options?.inputImages?.length ? { inputImages: options.inputImages } : {}),
+        ...(options?.projectId ? { projectId: options.projectId } : {}),
+        ...(options?.canvasId ? { canvasId: options.canvasId } : {}),
+      }),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as GenerateVideoResponse;
+}

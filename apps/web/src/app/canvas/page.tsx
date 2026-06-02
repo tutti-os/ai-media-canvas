@@ -3,7 +3,7 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 
-import type { ImageArtifact } from "@aimc/shared";
+import type { ToolArtifact } from "@aimc/shared";
 import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { LoadingScreen } from "../../components/loading-screen";
@@ -13,7 +13,10 @@ import { ChatSidebar } from "../../components/chat-sidebar";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { EditableProjectName } from "../../components/editable-project-name";
-import { insertImageOnCanvas } from "../../lib/canvas-elements";
+import {
+  insertImageOnCanvas,
+  insertVideoOnCanvas,
+} from "../../lib/canvas-elements";
 import { fetchCanvas, fetchProject } from "../../lib/server-api";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
@@ -76,11 +79,15 @@ function CanvasPageContent() {
     setExcalidrawApi(api);
   }, []);
 
-  const handleImageGenerated = useCallback((artifact: ImageArtifact) => {
+  const handleImageGenerated = useCallback((artifact: ToolArtifact) => {
     const api = excalidrawApiRef.current;
     if (!api) return;
-    insertImageOnCanvas(api, artifact).catch((err) => {
-      console.warn("Failed to insert image on canvas:", err);
+    const task =
+      artifact.type === "video"
+        ? insertVideoOnCanvas(api, artifact)
+        : insertImageOnCanvas(api, artifact);
+    task.catch((err) => {
+      console.warn("Failed to insert generated media on canvas:", err);
     });
   }, []);
 

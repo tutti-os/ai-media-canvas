@@ -6,6 +6,9 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type {
   AssetBucket,
   AssetObject,
+  BackgroundJob,
+  BackgroundJobStatus,
+  BackgroundJobType,
   BrandKitAsset,
   BrandKitAssetCreateRequest,
   BrandKitAssetType,
@@ -19,6 +22,7 @@ import type {
   ChatMessage,
   ChatMessageCreateRequest,
   ChatSessionSummary,
+  ImageGenerationPayload,
   ProjectCreateRequest,
   ProjectSummary,
   ProjectUpdateRequest,
@@ -28,6 +32,7 @@ import type {
   SkillImportRequest,
   SkillListItem,
   SkillToggleRequest,
+  VideoGenerationPayload,
   ViewerResponse,
 } from "@aimc/shared";
 import { getBundledSkills } from "./skill-catalog.js";
@@ -48,6 +53,34 @@ type AssetRow = {
   workspace_id: string;
   project_id: string | null;
   created_at: string;
+};
+
+type BackgroundJobRow = {
+  id: string;
+  workspace_id: string;
+  project_id: string | null;
+  canvas_id: string | null;
+  session_id: string | null;
+  thread_id: string | null;
+  queue_name: string;
+  job_type: BackgroundJobType;
+  status: BackgroundJobStatus;
+  payload: string;
+  result: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  attempt_count: number;
+  max_attempts: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
+  canceled_at: string | null;
+  next_run_at: string | null;
+  locked_at: string | null;
+  locked_by: string | null;
 };
 
 function nowIso() {
@@ -238,6 +271,35 @@ export function createLocalStore(options: {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS background_jobs (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      project_id TEXT,
+      canvas_id TEXT,
+      session_id TEXT,
+      thread_id TEXT,
+      queue_name TEXT NOT NULL,
+      job_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      result TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 3,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      failed_at TEXT,
+      canceled_at TEXT,
+      next_run_at TEXT,
+      locked_at TEXT,
+      locked_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_background_jobs_status_next_run
+      ON background_jobs(status, next_run_at, created_at);
   `);
 
   seedBaseData();
@@ -426,6 +488,48 @@ export function createLocalStore(options: {
       projectId: row.project_id,
       createdAt: row.created_at,
     };
+  }
+
+  function mapBackgroundJobRow(row: BackgroundJobRow): BackgroundJob {
+    return {
+      id: row.id,
+      workspace_id: row.workspace_id,
+      project_id: row.project_id,
+      canvas_id: row.canvas_id,
+      session_id: row.session_id,
+      thread_id: row.thread_id,
+      queue_name: row.queue_name,
+      job_type: row.job_type,
+      status: row.status,
+      payload: parseJson(row.payload, {}),
+      result: parseJson(row.result, null),
+      error_code: row.error_code,
+      error_message: row.error_message,
+      attempt_count: row.attempt_count,
+      max_attempts: row.max_attempts,
+      created_by: row.created_by,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      started_at: row.started_at,
+      completed_at: row.completed_at,
+      failed_at: row.failed_at,
+      canceled_at: row.canceled_at,
+    };
+  }
+
+  function getBackgroundJobRow(jobId: string) {
+    return db
+      .prepare(
+        `
+          SELECT id, workspace_id, project_id, canvas_id, session_id, thread_id,
+            queue_name, job_type, status, payload, result, error_code, error_message,
+            attempt_count, max_attempts, created_by, created_at, updated_at,
+            started_at, completed_at, failed_at, canceled_at, next_run_at, locked_at, locked_by
+          FROM background_jobs
+          WHERE id = ?
+        `,
+      )
+      .get(jobId) as BackgroundJobRow | undefined;
   }
 
   function writeAssetFile(input: {
@@ -1782,6 +1886,224 @@ export function createLocalStore(options: {
     return rows.map(mapSkillRow);
   }
 
+  function createBackgroundJob(input: {
+    jobType: BackgroundJobType;
+    queueName: string;
+    payload: ImageGenerationPayload | VideoGenerationPayload;
+    projectId?: string;
+    canvasId?: string;
+    sessionId?: string;
+    threadId?: string;
+    maxAttempts?: number;
+  }) {
+    const id = randomUUID();
+    const createdAt = nowIso();
+    db.prepare(
+      `
+        INSERT INTO background_jobs (
+          id, workspace_id, project_id, canvas_id, session_id, thread_id,
+          queue_name, job_type, status, payload, attempt_count, max_attempts,
+          created_by, created_at, updated_at, next_run_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      id,
+      LOCAL_WORKSPACE_ID,
+      input.projectId ?? null,
+      input.canvasId ?? null,
+      input.sessionId ?? null,
+      input.threadId ?? null,
+      input.queueName,
+      input.jobType,
+      "queued",
+      JSON.stringify(input.payload),
+      0,
+      input.maxAttempts ?? 3,
+      LOCAL_USER_ID,
+      createdAt,
+      createdAt,
+      createdAt,
+    );
+    const row = getBackgroundJobRow(id);
+    if (!row) {
+      throw new Error("Failed to persist background job.");
+    }
+    return mapBackgroundJobRow(row);
+  }
+
+  function getBackgroundJob(jobId: string) {
+    const row = getBackgroundJobRow(jobId);
+    return row ? mapBackgroundJobRow(row) : null;
+  }
+
+  function listBackgroundJobs(filters?: {
+    status?: BackgroundJobStatus;
+    jobType?: BackgroundJobType;
+  }) {
+    const conditions = ["created_by = ?"];
+    const values: SQLInputValue[] = [LOCAL_USER_ID];
+    if (filters?.status) {
+      conditions.push("status = ?");
+      values.push(filters.status);
+    }
+    if (filters?.jobType) {
+      conditions.push("job_type = ?");
+      values.push(filters.jobType);
+    }
+
+    const rows = db
+      .prepare(
+        `
+          SELECT id, workspace_id, project_id, canvas_id, session_id, thread_id,
+            queue_name, job_type, status, payload, result, error_code, error_message,
+            attempt_count, max_attempts, created_by, created_at, updated_at,
+            started_at, completed_at, failed_at, canceled_at, next_run_at, locked_at, locked_by
+          FROM background_jobs
+          WHERE ${conditions.join(" AND ")}
+          ORDER BY created_at DESC
+          LIMIT 100
+        `,
+      )
+      .all(...values) as BackgroundJobRow[];
+
+    return rows.map(mapBackgroundJobRow);
+  }
+
+  function cancelBackgroundJob(jobId: string) {
+    const updatedAt = nowIso();
+    const result = db.prepare(
+      `
+        UPDATE background_jobs
+        SET status = 'canceled',
+            updated_at = ?,
+            canceled_at = ?,
+            locked_at = NULL,
+            locked_by = NULL
+        WHERE id = ?
+          AND status IN ('queued', 'running', 'failed')
+      `,
+    ).run(updatedAt, updatedAt, jobId);
+
+    if (result.changes === 0) {
+      return null;
+    }
+    return getBackgroundJob(jobId);
+  }
+
+  function claimBackgroundJobs(input: {
+    workerId: string;
+    limit?: number;
+  }) {
+    const now = nowIso();
+    const rows = db
+      .prepare(
+        `
+          SELECT id, workspace_id, project_id, canvas_id, session_id, thread_id,
+            queue_name, job_type, status, payload, result, error_code, error_message,
+            attempt_count, max_attempts, created_by, created_at, updated_at,
+            started_at, completed_at, failed_at, canceled_at, next_run_at, locked_at, locked_by
+          FROM background_jobs
+          WHERE status IN ('queued', 'failed')
+            AND canceled_at IS NULL
+            AND (next_run_at IS NULL OR next_run_at <= ?)
+            AND locked_at IS NULL
+          ORDER BY created_at ASC
+          LIMIT ?
+        `,
+      )
+      .all(now, input.limit ?? 5) as BackgroundJobRow[];
+
+    const claimed: BackgroundJob[] = [];
+    for (const row of rows) {
+      const updatedAt = nowIso();
+      const result = db.prepare(
+        `
+          UPDATE background_jobs
+          SET status = 'running',
+              attempt_count = attempt_count + 1,
+              updated_at = ?,
+              started_at = COALESCE(started_at, ?),
+              failed_at = NULL,
+              error_code = NULL,
+              error_message = NULL,
+              locked_at = ?,
+              locked_by = ?
+          WHERE id = ?
+            AND locked_at IS NULL
+            AND status IN ('queued', 'failed')
+        `,
+      ).run(updatedAt, updatedAt, updatedAt, input.workerId, row.id);
+      if (result.changes > 0) {
+        const claimedRow = getBackgroundJobRow(row.id);
+        if (claimedRow) {
+          claimed.push(mapBackgroundJobRow(claimedRow));
+        }
+      }
+    }
+    return claimed;
+  }
+
+  function markBackgroundJobSucceeded(
+    jobId: string,
+    resultPayload: Record<string, unknown>,
+  ) {
+    const updatedAt = nowIso();
+    db.prepare(
+      `
+        UPDATE background_jobs
+        SET status = 'succeeded',
+            result = ?,
+            updated_at = ?,
+            completed_at = ?,
+            locked_at = NULL,
+            locked_by = NULL
+        WHERE id = ?
+      `,
+    ).run(JSON.stringify(resultPayload), updatedAt, updatedAt, jobId);
+    return getBackgroundJob(jobId);
+  }
+
+  function markBackgroundJobFailed(input: {
+    jobId: string;
+    errorCode: string;
+    errorMessage: string;
+    retryable?: boolean;
+    retryDelayMs?: number;
+  }) {
+    const row = getBackgroundJobRow(input.jobId);
+    if (!row) return null;
+    const updatedAt = nowIso();
+    const canRetry =
+      input.retryable !== false && row.attempt_count < row.max_attempts;
+    const nextStatus: BackgroundJobStatus = canRetry ? "failed" : "dead_letter";
+    const nextRunAt = canRetry
+      ? new Date(Date.now() + (input.retryDelayMs ?? 2_000)).toISOString()
+      : null;
+    db.prepare(
+      `
+        UPDATE background_jobs
+        SET status = ?,
+            error_code = ?,
+            error_message = ?,
+            updated_at = ?,
+            failed_at = ?,
+            next_run_at = ?,
+            locked_at = NULL,
+            locked_by = NULL
+        WHERE id = ?
+      `,
+    ).run(
+      nextStatus,
+      input.errorCode,
+      input.errorMessage,
+      updatedAt,
+      updatedAt,
+      nextRunAt,
+      input.jobId,
+    );
+    return getBackgroundJob(input.jobId);
+  }
+
   function uploadFile(input: {
     bucket: AssetBucket;
     fileName: string;
@@ -1799,31 +2121,48 @@ export function createLocalStore(options: {
     });
   }
 
-  function createGeneratedImage(prompt: string) {
-    const escaped = prompt
-      .slice(0, 180)
+  function buildGeneratedPreviewSvg(input: {
+    title: string;
+    subtitle: string;
+    body: string;
+    width?: number;
+    height?: number;
+  }) {
+    const escapedBody = input.body
+      .slice(0, 320)
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;");
-    const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+    const width = input.width ?? 1024;
+    const height = input.height ?? 1024;
+    return `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
         <defs>
           <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stop-color="#f5ede1"/>
-            <stop offset="100%" stop-color="#e0eef8"/>
+            <stop offset="100%" stop-color="#dbeafe"/>
           </linearGradient>
         </defs>
-        <rect width="1024" height="1024" fill="url(#bg)" rx="48"/>
-        <rect x="72" y="72" width="880" height="880" rx="36" fill="rgba(255,255,255,0.82)" stroke="rgba(15,23,42,0.08)"/>
-        <text x="110" y="220" fill="#0f172a" font-size="48" font-family="Arial, sans-serif" font-weight="700">AI Media Canvas Local Preview</text>
-        <text x="110" y="300" fill="#334155" font-size="28" font-family="Arial, sans-serif">Prompt</text>
-        <foreignObject x="110" y="340" width="780" height="420">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Arial, sans-serif; font-size: 42px; line-height: 1.35; color: #0f172a;">
-            ${escaped}
+        <rect width="${width}" height="${height}" fill="url(#bg)" rx="48"/>
+        <rect x="72" y="72" width="${width - 144}" height="${height - 144}" rx="36" fill="rgba(255,255,255,0.82)" stroke="rgba(15,23,42,0.08)"/>
+        <text x="110" y="190" fill="#0f172a" font-size="44" font-family="Arial, sans-serif" font-weight="700">${input.title}</text>
+        <text x="110" y="250" fill="#475569" font-size="28" font-family="Arial, sans-serif">${input.subtitle}</text>
+        <text x="110" y="330" fill="#334155" font-size="24" font-family="Arial, sans-serif">Key prompt</text>
+        <foreignObject x="110" y="360" width="${width - 220}" height="${Math.max(height - 520, 280)}">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Arial, sans-serif; font-size: 38px; line-height: 1.35; color: #0f172a;">
+            ${escapedBody}
           </div>
         </foreignObject>
       </svg>
     `.trim();
+  }
+
+  function createGeneratedImage(prompt: string) {
+    const svg = buildGeneratedPreviewSvg({
+      title: "AI Media Canvas Local Preview",
+      subtitle: "Prompt",
+      body: prompt,
+    });
     const stored = writeAssetFile({
       bucket: "project-assets",
       buffer: Buffer.from(svg, "utf-8"),
@@ -1838,6 +2177,67 @@ export function createLocalStore(options: {
       width: 1024,
       height: 1024,
       prompt,
+    };
+  }
+
+  function createGeneratedVideoPlan(input: {
+    prompt: string;
+    model?: string;
+    duration?: number;
+    resolution?: string;
+    projectId?: string;
+  }) {
+    const duration = input.duration ?? 8;
+    const resolution = input.resolution ?? "1080p";
+    const previewSvg = buildGeneratedPreviewSvg({
+      title: "AI Media Canvas Video Storyboard",
+      subtitle: `${input.model ?? "local:storyboard-motion"} · ${duration}s · ${resolution}`,
+      body: input.prompt,
+      width: 1280,
+      height: 720,
+    });
+    const preview = writeAssetFile({
+      bucket: "project-assets",
+      buffer: Buffer.from(previewSvg, "utf-8"),
+      mimeType: "image/svg+xml",
+      fileName: "generated-video-preview.svg",
+      scope: "generated",
+      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+    });
+    const plan = {
+      title: "AI Media Canvas Local Video Plan",
+      prompt: input.prompt,
+      model: input.model ?? "local:storyboard-motion",
+      durationSeconds: duration,
+      resolution,
+      beats: [
+        "Open with the clearest visual hook from the prompt.",
+        "Use the middle beats to establish rhythm, motion, and sequencing.",
+        "Close on the strongest payoff frame.",
+      ],
+      generatedAt: nowIso(),
+    };
+    const planAsset = writeAssetFile({
+      bucket: "project-assets",
+      buffer: Buffer.from(JSON.stringify(plan, null, 2), "utf-8"),
+      mimeType: "application/json",
+      fileName: "generated-video-plan.json",
+      scope: "generated",
+      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+    });
+    return {
+      assetId: preview.asset.id,
+      url: preview.url,
+      mimeType: "image/svg+xml",
+      width: 1280,
+      height: 720,
+      prompt: input.prompt,
+      durationSeconds: duration,
+      previewAssetId: preview.asset.id,
+      previewUrl: preview.url,
+      planAssetId: planAsset.asset.id,
+      planUrl: planAsset.url,
+      resolution,
     };
   }
 
@@ -1899,12 +2299,20 @@ export function createLocalStore(options: {
     toggleSkill,
     uninstallSkill,
     listEnabledSkills,
+    createBackgroundJob,
+    getBackgroundJob,
+    listBackgroundJobs,
+    cancelBackgroundJob,
+    claimBackgroundJobs,
+    markBackgroundJobSucceeded,
+    markBackgroundJobFailed,
     uploadFile,
     getAssetUrl(assetId: string) {
       return resolveAssetUrl(assetId);
     },
     deleteAsset,
     createGeneratedImage,
+    createGeneratedVideoPlan,
     getAssetResponse,
     assetObjectFromId(assetId: string) {
       const row = getAssetRow(assetId);

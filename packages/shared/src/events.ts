@@ -11,8 +11,18 @@ import {
 } from "./contracts.js";
 import { aimcErrorSchema } from "./errors.js";
 
-export { imageArtifactSchema, placementSchema, toolArtifactSchema } from "./artifacts.js";
-export type { ImageArtifact, Placement, ToolArtifact } from "./artifacts.js";
+export {
+  imageArtifactSchema,
+  placementSchema,
+  toolArtifactSchema,
+  videoArtifactSchema,
+} from "./artifacts.js";
+export type {
+  ImageArtifact,
+  Placement,
+  ToolArtifact,
+  VideoArtifact,
+} from "./artifacts.js";
 
 export const runStartedEventSchema = z.object({
   type: z.literal("run.started"),

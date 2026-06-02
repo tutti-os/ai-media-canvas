@@ -1,4 +1,17 @@
-import type { ImageArtifact } from "@aimc/shared";
+import type { ImageArtifact, VideoArtifact } from "@aimc/shared";
+
+const VIDEO_EXTENSIONS = [".mp4", ".webm", ".ogg", ".mov"];
+
+export function isVideoUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const pathname = new URL(url, "https://placeholder").pathname.toLowerCase();
+    return VIDEO_EXTENSIONS.some((ext) => pathname.endsWith(ext));
+  } catch {
+    const lower = url.toLowerCase();
+    return VIDEO_EXTENSIONS.some((ext) => lower.includes(ext));
+  }
+}
 
 /**
  * Scale dimensions to fit within maxSize while preserving aspect ratio.
@@ -195,6 +208,74 @@ export async function insertImageOnCanvas(
 
   api.updateScene({
     elements: [...api.getSceneElements(), element],
+    captureUpdate: "IMMEDIATELY",
+  });
+}
+
+export async function insertVideoOnCanvas(
+  api: {
+    getSceneElements: () => readonly any[];
+    getAppState: () => any;
+    updateScene: (scene: {
+      elements: any[];
+      captureUpdate?: string;
+    }) => void;
+  },
+  artifact: VideoArtifact,
+): Promise<void> {
+  const width = artifact.placement?.width ?? scaleToFit(artifact.width, artifact.height, 640).width;
+  const height = artifact.placement?.height ?? scaleToFit(artifact.width, artifact.height, 640).height;
+
+  let x: number;
+  let y: number;
+
+  if (artifact.placement) {
+    x = artifact.placement.x;
+    y = artifact.placement.y;
+  } else {
+    const elements = api.getSceneElements().filter((el: any) => !el.isDeleted);
+    if (elements.length === 0) {
+      const center = getViewportCenter(api.getAppState());
+      x = center.x - width / 2;
+      y = center.y - height / 2;
+    } else {
+      const GAP = 40;
+      let maxRight = -Infinity;
+      let rightEdgeY = 0;
+      for (const el of elements) {
+        const elRight = (el.x ?? 0) + (el.width ?? 0);
+        if (elRight > maxRight) {
+          maxRight = elRight;
+          rightEdgeY = (el.y ?? 0) + (el.height ?? 0) / 2;
+        }
+      }
+      x = maxRight + GAP;
+      y = rightEdgeY - height / 2;
+    }
+  }
+
+  const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+  const newElements = convertToExcalidrawElements([
+    {
+      type: "embeddable",
+      link: artifact.url,
+      x,
+      y,
+      width,
+      height,
+      customData: {
+        isVideo: true,
+        mimeType: artifact.mimeType,
+        ...(artifact.durationSeconds != null
+          ? { durationSeconds: artifact.durationSeconds }
+          : {}),
+        ...(artifact.title ? { title: artifact.title } : {}),
+      },
+    } as any,
+  ]);
+
+  api.updateScene({
+    elements: [...api.getSceneElements(), ...newElements],
     captureUpdate: "IMMEDIATELY",
   });
 }

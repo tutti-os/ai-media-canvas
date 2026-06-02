@@ -9,6 +9,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { getServerBaseUrl } from "../lib/env";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
+import { VideoCanvasElement } from "./canvas/video-canvas-element";
+import { isVideoUrl } from "../lib/canvas-elements";
 import { CanvasToolMenu } from "./canvas-tool-menu";
 import { normalizeCanvasElements } from "../lib/canvas-normalize";
 import { ErrorBoundary } from "./error-boundary";
@@ -525,6 +527,25 @@ export function CanvasEditor({
     };
   }, []);
 
+  const renderEmbeddable = useCallback((element: any) => {
+    const link = element?.link;
+    if (
+      typeof link === "string" &&
+      (isVideoUrl(link) || element?.customData?.isVideo === true)
+    ) {
+      return (
+        <VideoCanvasElement
+          src={link}
+          width={element.width ?? 640}
+          height={element.height ?? 360}
+        />
+      );
+    }
+    return null;
+  }, []);
+
+  const validateEmbeddable = useCallback(() => true, []);
+
   return (
     <ErrorBoundary
       onError={(err) => console.error("[canvas-editor] render crashed:", err)}
@@ -539,11 +560,15 @@ export function CanvasEditor({
           }}
           onChange={handleChange}
           excalidrawAPI={handleExcalidrawApi}
+          renderEmbeddable={renderEmbeddable}
+          validateEmbeddable={validateEmbeddable}
         />
         {excalidrawApi && (
           <MemoizedCanvasToolMenu
+            canvasId={canvasId}
             excalidrawApi={excalidrawApi}
             leftPanelOpen={leftPanelOpen ?? false}
+            projectId={projectId}
           />
         )}
       </div>

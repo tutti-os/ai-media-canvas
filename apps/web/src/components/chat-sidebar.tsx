@@ -5,11 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useBreakpoint } from "../hooks/use-breakpoint";
 import type {
   ContentBlock,
-  ImageArtifact,
   ImageGenerationPreference,
   VideoGenerationPreference,
   MessageMention,
   StreamEvent,
+  ToolArtifact,
 } from "@aimc/shared";
 import { useAgentModel } from "../hooks/use-agent-model";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
@@ -47,7 +47,7 @@ type ChatSidebarProps = {
   projectId: string;
   open: boolean;
   onToggle: () => void;
-  onImageGenerated?: (artifact: ImageArtifact) => void;
+  onImageGenerated?: (artifact: ToolArtifact) => void;
   onCanvasSync?: () => void;
   /** Called for every stream event — used by job fallback polling to detect timed-out jobs */
   onStreamEvent?: (event: StreamEvent) => void;
@@ -471,8 +471,8 @@ export function ChatSidebar({
             !backendInserted
           ) {
             for (const artifact of event.artifacts) {
-              if (artifact.type === "image" && onImageGenerated) {
-                onImageGenerated(artifact as ImageArtifact);
+              if (onImageGenerated) {
+                onImageGenerated(artifact);
               }
             }
           }
@@ -788,8 +788,8 @@ export function ChatSidebar({
               !wsBackendInserted
             ) {
               for (const artifact of evt.artifacts) {
-                if (artifact.type === "image" && onImageGenerated) {
-                  onImageGenerated(artifact as ImageArtifact);
+                if (onImageGenerated) {
+                  onImageGenerated(artifact);
                 }
               }
             }

@@ -112,7 +112,11 @@ export function ImageGeneratorPanel({
     });
 
     try {
-      const result = await generateImageDirect(prompt.trim());
+      const result = await generateImageDirect(prompt.trim(), {
+        model: data.model,
+        aspectRatio,
+        quality: data.quality,
+      });
 
       // Check if this generation was cancelled while awaiting
       if (controller.signal.aborted) return;
@@ -214,7 +218,7 @@ export function ImageGeneratorPanel({
       <div className="mt-1 flex items-center justify-between">
         <div className="flex items-center">
           <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">
-            本地占位图生成
+            远端生图，本地落库
           </span>
         </div>
 

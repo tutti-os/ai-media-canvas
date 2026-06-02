@@ -17,10 +17,15 @@ import {
 import { registerBrandKitRoutes } from "./http/brand-kits.js";
 import { registerCanvasRoutes } from "./http/canvases.js";
 import { registerChatRoutes } from "./http/chat.js";
+import { registerGenerateRoutes } from "./http/generate.js";
 import { registerHealthRoutes } from "./http/health.js";
+import { registerImageModelRoutes } from "./http/image-models.js";
+import { registerJobRoutes } from "./http/jobs.js";
+import { registerModelRoutes } from "./http/models.js";
 import { registerProjectRoutes } from "./http/projects.js";
 import { registerSkillRoutes } from "./http/skills.js";
 import { registerUploadRoutes } from "./http/uploads.js";
+import { registerVideoModelRoutes } from "./http/video-models.js";
 import {
   BrandKitServiceError,
   type BrandKitService,
@@ -48,6 +53,8 @@ import {
   SkillServiceError,
   type SkillService,
 } from "./features/skills/skill-service.js";
+import { createJobService } from "./features/jobs/job-service.js";
+import { registerAllProviders } from "./generation/providers/register-all.js";
 import { loadServerEnv, type ServerEnv } from "./config/env.js";
 import {
   createLocalStore,
@@ -673,6 +680,7 @@ function sendStandaloneFeatureUnavailable(
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const env = loadServerEnv(options.env);
+  registerAllProviders(env);
   const assetBaseUrl = `http://127.0.0.1:${env.port}`;
   const webDistDir = env.webDistDir ?? DEFAULT_WEB_DIST_DIR;
   const store = createLocalStore({
@@ -710,6 +718,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const brandKitService = buildBrandKitService(store);
   const uploadService = buildUploadService(store);
   const skillService = buildSkillService(store);
+  const jobService = createJobService(store);
 
   void registerHealthRoutes(app, env);
   void registerProjectRoutes(app, { localUser, projectService });
@@ -719,6 +728,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void registerSkillRoutes(app, { localUser, skillService });
   void registerUploadRoutes(app, {
     localUser,
+    uploadService,
+  });
+  void registerModelRoutes(app, env);
+  void registerImageModelRoutes(app);
+  void registerVideoModelRoutes(app);
+  void registerJobRoutes(app, { localUser, jobService });
+  void registerGenerateRoutes(app, {
+    localUser,
+    jobService,
     uploadService,
   });
 
@@ -743,55 +761,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     }
   });
 
-  app.get("/api/models", async (_request, reply) => {
-    const models = [
-      {
-        id: "local:assistant",
-        name: "Local Assistant",
-        provider: "local",
-      },
-    ];
-    return reply.code(200).send({ models });
-  });
-
-  app.get("/api/image-models", async (_request, reply) => {
-    return reply.code(200).send({
-      models: [
-        {
-          id: "local:placeholder-image",
-          displayName: "Local Placeholder Image",
-          description: "Generate a local placeholder image without cloud dependencies.",
-          provider: "local",
-          accessible: true,
-          iconUrl: undefined,
-        },
-      ],
-    });
-  });
-
-  app.get("/api/video-models", async (_request, reply) => {
-    return reply.code(200).send({
-      models: [
-        {
-          id: "local:storyboard-motion",
-          displayName: "Storyboard Motion",
-          description:
-            "Plan local storyboard and motion beats before you move into full video production.",
-          provider: "local",
-          accessible: true,
-        },
-        {
-          id: "local:shot-sequencer",
-          displayName: "Shot Sequencer",
-          description:
-            "Prioritize camera order, transition rhythm, and title-card pacing for short-form clips.",
-          provider: "local",
-          accessible: true,
-        },
-      ],
-    });
-  });
-
   app.get("/api/fonts", async (request, reply) => {
     const query = request.query as { search?: string; category?: string } | undefined;
     const search = query?.search?.trim().toLowerCase() ?? "";
@@ -803,23 +772,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       return categoryMatches && searchMatches;
     });
     return reply.code(200).send({ fonts });
-  });
-
-  app.post("/api/agent/generate-image", async (request, reply) => {
-    const payload = request.body as {
-      prompt?: string;
-    };
-    if (!payload?.prompt?.trim()) {
-      return sendApplicationError(
-        reply,
-        "application_error",
-        "Prompt is required.",
-        400,
-      );
-    }
-
-    const result = store.createGeneratedImage(payload.prompt.trim());
-    return reply.code(200).send(result);
   });
 
   app.post("/api/local-agent/respond", async (request, reply) => {
