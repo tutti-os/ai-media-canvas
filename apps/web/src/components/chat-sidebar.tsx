@@ -1,5 +1,6 @@
 "use client";
 
+import { Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useBreakpoint } from "../hooks/use-breakpoint";
@@ -38,6 +39,7 @@ import {
 import { ChatInput } from "./chat-input";
 import { ChatMessage } from "./chat-message";
 import { ChatTemplates } from "./chat-templates";
+import { SettingsDialog } from "./settings-dialog";
 import { useToast } from "./toast";
 import { ErrorBoundary } from "./error-boundary";
 import { SessionSelector } from "./session-selector";
@@ -152,6 +154,7 @@ export function ChatSidebar({
   const { model: agentModel } = useAgentModel();
   const agentModelRef = useRef(agentModel);
   agentModelRef.current = agentModel;
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const { toast: showToast } = useToast();
 
@@ -879,19 +882,30 @@ export function ChatSidebar({
             />
           )}
         </div>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
-          title="Collapse panel"
-        >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M4 3.25a.75.75 0 0 1 .75.75v16a.75.75 0 0 1-1.5 0V4A.75.75 0 0 1 4 3.25m9.47 2.22a.75.75 0 0 1 1.06 0l6 6a.75.75 0 0 1 0 1.06l-6 6a.75.75 0 1 1-1.06-1.06l4.72-4.72H8a.75.75 0 0 1 0-1.5h10.19l-4.72-4.72a.75.75 0 0 1 0-1.06"
-              fill="currentColor"
-            />
-          </svg>
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Open settings"
+            title="Open settings"
+          >
+            <Settings2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
+            title="Collapse panel"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M4 3.25a.75.75 0 0 1 .75.75v16a.75.75 0 0 1-1.5 0V4A.75.75 0 0 1 4 3.25m9.47 2.22a.75.75 0 0 1 1.06 0l6 6a.75.75 0 0 1 0 1.06l-6 6a.75.75 0 1 1-1.06-1.06l4.72-4.72H8a.75.75 0 0 1 0-1.5h10.19l-4.72-4.72a.75.75 0 0 1 0-1.06"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Disconnected banner */}
@@ -965,6 +979,8 @@ export function ChatSidebar({
           {...(selectedCanvasElements ? { selectedCanvasElements } : {})}
         />
       </div>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </>
   );
 

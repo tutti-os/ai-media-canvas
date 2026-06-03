@@ -8,14 +8,13 @@ import {
   wsRpcResponseSchema,
 } from "@aimc/shared";
 import type { AgentRunService } from "../agent/runtime.js";
-import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type {
   AuthenticatedUser,
   RequestAuthenticator,
-} from "../supabase/user.js";
+} from "../auth/request.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";
 import type { ChatService } from "../features/chat/chat-service.js";
@@ -25,7 +24,6 @@ import type { ServerEnv } from "../config/env.js";
 
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
-  agentRunMetadataService?: AgentRunMetadataService;
   auth?: RequestAuthenticator;
   chatService?: ChatService;
   connectionManager: ConnectionManager;
@@ -274,6 +272,7 @@ async function handleRunCommand(
 
   const response = agentRuns.createRun(payload, {
     accessToken: authenticatedUser.accessToken,
+    connectionId,
     ...(effectiveEnv ? { env: effectiveEnv } : {}),
     userId: authenticatedUser.id,
     ...(resolvedModel ? { model: resolvedModel } : {}),
@@ -281,20 +280,6 @@ async function handleRunCommand(
   });
   const runId = response.runId;
   log.lap("run_created", { runId });
-
-  // Persist run metadata
-  if (threadId && services.agentRunMetadataService) {
-    try {
-      await services.agentRunMetadataService.createAcceptedRun({
-        ...(resolvedModel ? { model: resolvedModel } : {}),
-        runId,
-        sessionId: payload.sessionId,
-        threadId,
-      });
-    } catch {
-      // Non-fatal
-    }
-  }
 
   // Bind this connection to the canvas so events route correctly
   const canvasId = payload.canvasId ?? payload.conversationId;

@@ -61,6 +61,13 @@ describe("createSettingsService", () => {
       service.getWorkspaceSettings(LOCAL_USER, "local-workspace"),
     ).resolves.toEqual({
       defaultModel: "",
+      providerModels: {
+        openai: [],
+        anthropic: [],
+        agnes: [],
+        google: [],
+        vertex: [],
+      },
       openAIApiKey: "",
       openAIApiBase: "",
       anthropicApiKey: "",
@@ -79,6 +86,13 @@ describe("createSettingsService", () => {
 
     await service.updateWorkspaceSettings(LOCAL_USER, "local-workspace", {
       defaultModel: "google:gemini-2.5-flash",
+      providerModels: {
+        openai: ["openai:gpt-4.1"],
+        anthropic: ["anthropic:claude-sonnet-4-5"],
+        agnes: ["agnes:agnes-2.0-flash"],
+        google: ["google:gemini-2.5-flash"],
+        vertex: [],
+      },
       openAIApiKey: "local-openai-key",
       openAIApiBase: "http://127.0.0.1:4000/v1",
       anthropicApiKey: "local-anthropic-key",
@@ -99,6 +113,13 @@ describe("createSettingsService", () => {
       service.getWorkspaceSettings(LOCAL_USER, "local-workspace"),
     ).resolves.toMatchObject({
       defaultModel: "google:gemini-2.5-flash",
+      providerModels: {
+        openai: ["openai:gpt-4.1"],
+        anthropic: ["anthropic:claude-sonnet-4-5"],
+        agnes: ["agnes:agnes-2.0-flash"],
+        google: ["google:gemini-2.5-flash"],
+        vertex: [],
+      },
       openAIApiKey: "local-openai-key",
       openAIApiBase: "http://127.0.0.1:4000/v1",
       anthropicApiKey: "local-anthropic-key",

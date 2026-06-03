@@ -64,6 +64,34 @@ const submitIcon = {
   path: "M11.293 3.293a1 1 0 0 1 1.414 0l8 8a1 1 0 0 1-1.414 1.414L13 6.414V20a1 1 0 1 1-2 0V6.414l-6.293 6.293a1 1 0 0 1-1.414-1.414z",
 };
 
+function buildSeedImageAttachments(
+  selectedSeed: HomeExampleSelection | null | undefined,
+): ReadyAttachment[] {
+  if (!selectedSeed) return [];
+
+  return selectedSeed.inputMentions
+    .filter((mention) => mention.type === "image")
+    .map((mention, index) => ({
+      assetId: `seed-${selectedSeed.categoryKey}-${index}-${mention.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")}`,
+      url: new URL(mention.imgSrc, window.location.origin).href,
+      mimeType: inferImageMimeType(mention.imgSrc),
+      source: "upload" as const,
+      name: mention.name,
+    }));
+}
+
+function inferImageMimeType(src: string): string {
+  const path = src.split("?")[0]?.toLowerCase() ?? "";
+  if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+  if (path.endsWith(".webp")) return "image/webp";
+  if (path.endsWith(".gif")) return "image/gif";
+  if (path.startsWith("data:image/svg+xml")) return "image/svg+xml";
+  return "image/png";
+}
+
 export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
   function HomePrompt(
     {
@@ -117,14 +145,15 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
         return;
       }
 
-      const mergedAttachments =
-        readyAttachments && readyAttachments.length > 0
-          ? [...readyAttachments]
-          : undefined;
+      const seedAttachments = buildSeedImageAttachments(selectedSeed);
+      const mergedAttachments = [
+        ...(readyAttachments ?? []),
+        ...seedAttachments,
+      ];
 
       onSubmit(
         trimmed,
-        mergedAttachments,
+        mergedAttachments.length > 0 ? mergedAttachments : undefined,
         preference.mode === "manual" && preference.models.length > 0
           ? preference
           : undefined,

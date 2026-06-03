@@ -14,6 +14,13 @@ export const LOCAL_WORKSPACE_ID = "local-workspace";
 
 export const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   defaultModel: "",
+  providerModels: {
+    openai: [],
+    anthropic: [],
+    agnes: [],
+    google: [],
+    vertex: [],
+  },
   openAIApiKey: "",
   openAIApiBase: "",
   anthropicApiKey: "",
@@ -29,6 +36,33 @@ export const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   volcesApiKey: "",
   volcesBaseUrl: "",
 };
+
+function normalizeModelList(values: string[] | undefined): string[] {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const value of values) {
+    const nextValue = value.trim();
+    if (!nextValue || seen.has(nextValue)) continue;
+    seen.add(nextValue);
+    normalized.push(nextValue);
+  }
+
+  return normalized;
+}
+
+function normalizeProviderModels(
+  input: Partial<WorkspaceSettings>["providerModels"],
+): WorkspaceSettings["providerModels"] {
+  return {
+    openai: normalizeModelList(input?.openai),
+    anthropic: normalizeModelList(input?.anthropic),
+    agnes: normalizeModelList(input?.agnes),
+    google: normalizeModelList(input?.google),
+    vertex: normalizeModelList(input?.vertex),
+  };
+}
 
 export type SettingsService = {
   getWorkspaceSettings(
@@ -48,6 +82,7 @@ export function normalizeWorkspaceSettings(
 ): WorkspaceSettings {
   return {
     defaultModel: input.defaultModel?.trim() ?? "",
+    providerModels: normalizeProviderModels(input.providerModels),
     openAIApiKey: input.openAIApiKey?.trim() ?? "",
     openAIApiBase: input.openAIApiBase?.trim() ?? "",
     anthropicApiKey: input.anthropicApiKey?.trim() ?? "",
@@ -79,7 +114,9 @@ export function resolveEffectiveServerEnv(
     settings.agnesBaseUrl ||
     baseEnv.agnesBaseUrl ||
     (agnesApiKey ? DEFAULT_AGNES_BASE_URL : undefined);
+  const configuredAgnesDefaultModel = settings.providerModels.agnes[0];
   const agnesDefaultModel =
+    configuredAgnesDefaultModel ||
     settings.agnesDefaultModel ||
     baseEnv.agnesDefaultModel ||
     (agnesApiKey ? DEFAULT_AGNES_AGENT_MODEL : undefined);

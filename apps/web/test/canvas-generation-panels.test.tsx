@@ -99,6 +99,66 @@ describe("canvas generation panels", () => {
     ).toBeInTheDocument();
   });
 
+  it("blocks image generation when no providers are configured", async () => {
+    fetchImageModelsMock.mockResolvedValueOnce({ models: [] });
+
+    render(
+      <ToastProvider>
+        <ImageGeneratorPanel
+          elementId="el-image"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 320 }}
+          data={{
+            type: "image-generator",
+            status: "idle",
+            prompt: "生成一张海报",
+            model: "black-forest-labs/flux-kontext-pro",
+            aspectRatio: "1:1",
+            quality: "hd",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        "未配置可用生图模型，请先在设置中配置 Replicate、Agnes 或 Volces provider。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "生成图片" })).toBeDisabled();
+  });
+
+  it("surfaces a backend-unavailable hint when image models cannot load", async () => {
+    fetchImageModelsMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    render(
+      <ToastProvider>
+        <ImageGeneratorPanel
+          elementId="el-image"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 320 }}
+          data={{
+            type: "image-generator",
+            status: "idle",
+            prompt: "生成一张海报",
+            model: "black-forest-labs/flux-kontext-pro",
+            aspectRatio: "1:1",
+            quality: "hd",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    expect(
+      await screen.findByText("生图服务不可用，请确认本地 3001 服务已启动。"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "生成图片" })).toBeDisabled();
+  });
+
   it("omits the hard-coded storage copy in the video generator", async () => {
     render(
       <ToastProvider>

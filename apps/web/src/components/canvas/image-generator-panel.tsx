@@ -47,6 +47,7 @@ export function ImageGeneratorPanel({
   const [aspectRatio, setAspectRatio] = useState(data.aspectRatio);
   const [loading, setLoading] = useState(data.status === "generating");
   const [error, setError] = useState<string | null>(data.errorMessage ?? null);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [models, setModels] = useState<ImageModelInfo[]>([]);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showRatioDropdown, setShowRatioDropdown] = useState(false);
@@ -60,17 +61,41 @@ export function ImageGeneratorPanel({
     let cancelled = false;
     fetchImageModels()
       .then((response) => {
-        if (!cancelled) {
-          setModels(response.models);
+        if (cancelled) return;
+        setModels(response.models);
+        if (response.models.length === 0) {
+          setAvailabilityError(
+            "未配置可用生图模型，请先在设置中配置 Replicate、Agnes 或 Volces provider。",
+          );
+          return;
         }
+
+        setAvailabilityError(null);
+        setModel((currentModel) => {
+          if (response.models.some((item) => item.id === currentModel)) {
+            return currentModel;
+          }
+          const fallbackModel = response.models[0]?.id ?? currentModel;
+          if (fallbackModel !== currentModel) {
+            updateImageGeneratorElement(excalidrawApi, elementId, {
+              model: fallbackModel,
+            });
+          }
+          return fallbackModel;
+        });
       })
       .catch((err) => {
         console.warn("[image-gen] Failed to fetch models:", err);
+        if (!cancelled) {
+          setAvailabilityError(
+            "生图服务不可用，请确认本地 3001 服务已启动。",
+          );
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [excalidrawApi, elementId]);
 
   // Close dropdowns when clicking outside the panel
   useEffect(() => {
@@ -130,7 +155,7 @@ export function ImageGeneratorPanel({
   );
 
   const handleGenerate = useCallback(async () => {
-    if (!prompt.trim() || loading) return;
+    if (!prompt.trim() || loading || availabilityError) return;
 
     // Cancel any previous in-flight request
     abortRef.current?.abort();
@@ -207,6 +232,7 @@ export function ImageGeneratorPanel({
       });
     }
   }, [
+    availabilityError,
     prompt,
     loading,
     model,
@@ -243,9 +269,9 @@ export function ImageGeneratorPanel({
         className="min-h-[74px] max-h-[140px] w-full resize-none border-none bg-transparent p-1 text-[14px] leading-[18px] text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-scrollbar]:hidden"
       />
 
-      {error && (
+      {(error || availabilityError) && (
         <div className="mb-2 rounded-lg bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
-          {error}
+          {error ?? availabilityError}
         </div>
       )}
 
@@ -256,10 +282,15 @@ export function ImageGeneratorPanel({
             <button
               type="button"
               onClick={() => setShowModelDropdown((value) => !value)}
+              disabled={models.length === 0}
               className="flex h-8 items-center gap-1 rounded-full border-[0.5px] border-border bg-background px-3 text-xs text-foreground transition-colors hover:bg-muted/60"
             >
               <span className="truncate max-w-[180px]">
-                {currentModel ? currentModel.displayName : model}
+                {currentModel
+                  ? currentModel.displayName
+                  : models.length > 0
+                    ? model
+                    : "未配置模型"}
               </span>
               <svg
                 className="h-3 w-3 text-muted-foreground"
@@ -334,7 +365,8 @@ export function ImageGeneratorPanel({
           <button
             type="button"
             onClick={() => void handleGenerate()}
-            disabled={!prompt.trim() || loading}
+            aria-label="生成图片"
+            disabled={!prompt.trim() || loading || Boolean(availabilityError)}
             className="flex h-8 min-w-12 items-center justify-center gap-1 rounded-full bg-primary p-2 text-primary-foreground transition-colors hover:bg-primary/80 hover:accent-glow disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
           >
             {loading ? (

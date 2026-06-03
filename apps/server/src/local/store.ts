@@ -46,6 +46,13 @@ const DEFAULT_EMAIL = "local@aimc.app";
 const DEFAULT_DISPLAY_NAME = "Local User";
 const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   defaultModel: "",
+  providerModels: {
+    openai: [],
+    anthropic: [],
+    agnes: [],
+    google: [],
+    vertex: [],
+  },
   openAIApiKey: "",
   openAIApiBase: "",
   anthropicApiKey: "",
@@ -61,6 +68,20 @@ const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   volcesApiKey: "",
   volcesBaseUrl: "",
 };
+
+function normalizeProviderModelsForStore(
+  providerModels: Partial<WorkspaceSettings["providerModels"]> | undefined,
+): WorkspaceSettings["providerModels"] {
+  return {
+    openai: Array.isArray(providerModels?.openai) ? providerModels.openai : [],
+    anthropic: Array.isArray(providerModels?.anthropic)
+      ? providerModels.anthropic
+      : [],
+    agnes: Array.isArray(providerModels?.agnes) ? providerModels.agnes : [],
+    google: Array.isArray(providerModels?.google) ? providerModels.google : [],
+    vertex: Array.isArray(providerModels?.vertex) ? providerModels.vertex : [],
+  };
+}
 
 type AssetRow = {
   id: string;
@@ -100,6 +121,8 @@ type BackgroundJobRow = {
   locked_at: string | null;
   locked_by: string | null;
 };
+
+type AgentRunStatus = "accepted" | "canceled" | "completed" | "failed" | "running";
 
 function nowIso() {
   return new Date().toISOString();
@@ -190,6 +213,7 @@ export function createLocalStore(options: {
     CREATE TABLE IF NOT EXISTS workspace_settings (
       workspace_id TEXT PRIMARY KEY,
       default_model TEXT NOT NULL DEFAULT '',
+      provider_models_json TEXT NOT NULL DEFAULT '{}',
       openai_api_key TEXT NOT NULL DEFAULT '',
       openai_api_base TEXT NOT NULL DEFAULT '',
       anthropic_api_key TEXT NOT NULL DEFAULT '',
@@ -337,6 +361,24 @@ export function createLocalStore(options: {
     );
     CREATE INDEX IF NOT EXISTS idx_background_jobs_status_next_run
       ON background_jobs(status, next_run_at, created_at);
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      canvas_id TEXT,
+      session_id TEXT NOT NULL,
+      thread_id TEXT,
+      model TEXT,
+      status TEXT NOT NULL,
+      error_code TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      canceled_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_session_created
+      ON agent_runs(session_id, created_at);
   `);
 
   ensureWorkspaceSettingsSchema();
@@ -361,6 +403,7 @@ export function createLocalStore(options: {
         INSERT OR IGNORE INTO workspace_settings (
           workspace_id,
           default_model,
+          provider_models_json,
           openai_api_key,
           openai_api_base,
           anthropic_api_key,
@@ -375,7 +418,7 @@ export function createLocalStore(options: {
           replicate_api_token,
           volces_api_key,
           volces_base_url
-        ) VALUES (?, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '')
+        ) VALUES (?, '', '{}', '', '', '', '', '', '', '', '', '', '', '', '', '', '')
       `,
     ).run(LOCAL_WORKSPACE_ID);
   }
@@ -398,6 +441,7 @@ export function createLocalStore(options: {
     }
 
     const missingColumns: Array<[string, string]> = [
+      ["provider_models_json", "TEXT NOT NULL DEFAULT '{}'"],
       ["openai_api_key", "TEXT NOT NULL DEFAULT ''"],
       ["openai_api_base", "TEXT NOT NULL DEFAULT ''"],
       ["anthropic_api_key", "TEXT NOT NULL DEFAULT ''"],
@@ -577,6 +621,7 @@ export function createLocalStore(options: {
         `
           SELECT
             default_model,
+            provider_models_json,
             openai_api_key,
             openai_api_base,
             anthropic_api_key,
@@ -598,6 +643,7 @@ export function createLocalStore(options: {
       .get(LOCAL_WORKSPACE_ID) as
       | {
           default_model: string;
+          provider_models_json: string;
           openai_api_key: string;
           openai_api_base: string;
           anthropic_api_key: string;
@@ -619,8 +665,37 @@ export function createLocalStore(options: {
       return { ...EMPTY_WORKSPACE_SETTINGS };
     }
 
+    let providerModels = { ...EMPTY_WORKSPACE_SETTINGS.providerModels };
+    try {
+      const parsed = JSON.parse(row.provider_models_json ?? "{}") as Partial<
+        WorkspaceSettings["providerModels"]
+      >;
+      providerModels = {
+        openai: Array.isArray(parsed.openai)
+          ? parsed.openai.filter((value): value is string => typeof value === "string")
+          : [],
+        anthropic: Array.isArray(parsed.anthropic)
+          ? parsed.anthropic.filter(
+              (value): value is string => typeof value === "string",
+            )
+          : [],
+        agnes: Array.isArray(parsed.agnes)
+          ? parsed.agnes.filter((value): value is string => typeof value === "string")
+          : [],
+        google: Array.isArray(parsed.google)
+          ? parsed.google.filter((value): value is string => typeof value === "string")
+          : [],
+        vertex: Array.isArray(parsed.vertex)
+          ? parsed.vertex.filter((value): value is string => typeof value === "string")
+          : [],
+      };
+    } catch {
+      providerModels = { ...EMPTY_WORKSPACE_SETTINGS.providerModels };
+    }
+
     return {
       defaultModel: row.default_model ?? "",
+      providerModels,
       openAIApiKey: row.openai_api_key ?? "",
       openAIApiBase: row.openai_api_base ?? "",
       anthropicApiKey: row.anthropic_api_key ?? "",
@@ -641,6 +716,12 @@ export function createLocalStore(options: {
   function updateWorkspaceSettings(
     settings: WorkspaceSettings,
   ): WorkspaceSettings {
+    const normalizedSettings: WorkspaceSettings = {
+      ...EMPTY_WORKSPACE_SETTINGS,
+      ...settings,
+      providerModels: normalizeProviderModelsForStore(settings.providerModels),
+    };
+
     if (workspaceSettingsHasLegacyIdColumn) {
       db.prepare(
         `
@@ -648,6 +729,7 @@ export function createLocalStore(options: {
             id,
             workspace_id,
             default_model,
+            provider_models_json,
             openai_api_key,
             openai_api_base,
             anthropic_api_key,
@@ -662,10 +744,11 @@ export function createLocalStore(options: {
             replicate_api_token,
             volces_api_key,
             volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             workspace_id = excluded.workspace_id,
             default_model = excluded.default_model,
+            provider_models_json = excluded.provider_models_json,
             openai_api_key = excluded.openai_api_key,
             openai_api_base = excluded.openai_api_base,
             anthropic_api_key = excluded.anthropic_api_key,
@@ -684,21 +767,22 @@ export function createLocalStore(options: {
       ).run(
         1,
         LOCAL_WORKSPACE_ID,
-        settings.defaultModel,
-        settings.openAIApiKey,
-        settings.openAIApiBase,
-        settings.anthropicApiKey,
-        settings.anthropicBaseUrl,
-        settings.agnesApiKey,
-        settings.agnesBaseUrl,
-        settings.agnesDefaultModel,
-        settings.googleApiKey,
-        settings.googleVertexProject,
-        settings.googleVertexLocation,
-        settings.googleVertexVideoLocation,
-        settings.replicateApiToken,
-        settings.volcesApiKey,
-        settings.volcesBaseUrl,
+        normalizedSettings.defaultModel,
+        JSON.stringify(normalizedSettings.providerModels),
+        normalizedSettings.openAIApiKey,
+        normalizedSettings.openAIApiBase,
+        normalizedSettings.anthropicApiKey,
+        normalizedSettings.anthropicBaseUrl,
+        normalizedSettings.agnesApiKey,
+        normalizedSettings.agnesBaseUrl,
+        normalizedSettings.agnesDefaultModel,
+        normalizedSettings.googleApiKey,
+        normalizedSettings.googleVertexProject,
+        normalizedSettings.googleVertexLocation,
+        normalizedSettings.googleVertexVideoLocation,
+        normalizedSettings.replicateApiToken,
+        normalizedSettings.volcesApiKey,
+        normalizedSettings.volcesBaseUrl,
       );
     } else {
       db.prepare(
@@ -706,6 +790,7 @@ export function createLocalStore(options: {
           INSERT INTO workspace_settings (
             workspace_id,
             default_model,
+            provider_models_json,
             openai_api_key,
             openai_api_base,
             anthropic_api_key,
@@ -720,9 +805,10 @@ export function createLocalStore(options: {
             replicate_api_token,
             volces_api_key,
             volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(workspace_id) DO UPDATE SET
             default_model = excluded.default_model,
+            provider_models_json = excluded.provider_models_json,
             openai_api_key = excluded.openai_api_key,
             openai_api_base = excluded.openai_api_base,
             anthropic_api_key = excluded.anthropic_api_key,
@@ -740,21 +826,22 @@ export function createLocalStore(options: {
         `,
       ).run(
         LOCAL_WORKSPACE_ID,
-        settings.defaultModel,
-        settings.openAIApiKey,
-        settings.openAIApiBase,
-        settings.anthropicApiKey,
-        settings.anthropicBaseUrl,
-        settings.agnesApiKey,
-        settings.agnesBaseUrl,
-        settings.agnesDefaultModel,
-        settings.googleApiKey,
-        settings.googleVertexProject,
-        settings.googleVertexLocation,
-        settings.googleVertexVideoLocation,
-        settings.replicateApiToken,
-        settings.volcesApiKey,
-        settings.volcesBaseUrl,
+        normalizedSettings.defaultModel,
+        JSON.stringify(normalizedSettings.providerModels),
+        normalizedSettings.openAIApiKey,
+        normalizedSettings.openAIApiBase,
+        normalizedSettings.anthropicApiKey,
+        normalizedSettings.anthropicBaseUrl,
+        normalizedSettings.agnesApiKey,
+        normalizedSettings.agnesBaseUrl,
+        normalizedSettings.agnesDefaultModel,
+        normalizedSettings.googleApiKey,
+        normalizedSettings.googleVertexProject,
+        normalizedSettings.googleVertexLocation,
+        normalizedSettings.googleVertexVideoLocation,
+        normalizedSettings.replicateApiToken,
+        normalizedSettings.volcesApiKey,
+        normalizedSettings.volcesBaseUrl,
       );
     }
 
@@ -2183,6 +2270,70 @@ export function createLocalStore(options: {
     return rows.map(mapSkillRow);
   }
 
+  function createAgentRun(input: {
+    canvasId?: string;
+    model?: string;
+    runId: string;
+    sessionId: string;
+    threadId?: string;
+  }) {
+    const timestamp = nowIso();
+    db.prepare(
+      `
+        INSERT INTO agent_runs (
+          id, workspace_id, canvas_id, session_id, thread_id, model,
+          status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      input.runId,
+      LOCAL_WORKSPACE_ID,
+      input.canvasId ?? null,
+      input.sessionId,
+      input.threadId ?? null,
+      input.model ?? null,
+      "accepted",
+      timestamp,
+      timestamp,
+    );
+  }
+
+  function updateAgentRun(input: {
+    errorCode?: string;
+    errorMessage?: string;
+    runId: string;
+    status: AgentRunStatus;
+  }) {
+    const timestamp = nowIso();
+    db.prepare(
+      `
+        UPDATE agent_runs
+        SET status = ?,
+            updated_at = ?,
+            started_at = CASE WHEN ? = 'running' AND started_at IS NULL THEN ? ELSE started_at END,
+            completed_at = CASE WHEN ? IN ('completed', 'failed') THEN ? ELSE completed_at END,
+            canceled_at = CASE WHEN ? = 'canceled' THEN ? ELSE canceled_at END,
+            error_code = CASE WHEN ? = 'failed' THEN ? ELSE error_code END,
+            error_message = CASE WHEN ? = 'failed' THEN ? ELSE error_message END
+        WHERE id = ?
+      `,
+    ).run(
+      input.status,
+      timestamp,
+      input.status,
+      timestamp,
+      input.status,
+      timestamp,
+      input.status,
+      timestamp,
+      input.status,
+      input.errorCode ?? "run_failed",
+      input.status,
+      input.errorMessage ?? null,
+      input.runId,
+    );
+  }
+
   function createBackgroundJob(input: {
     jobType: BackgroundJobType;
     queueName: string;
@@ -2598,6 +2749,8 @@ export function createLocalStore(options: {
     toggleSkill,
     uninstallSkill,
     listEnabledSkills,
+    createAgentRun,
+    updateAgentRun,
     createBackgroundJob,
     getBackgroundJob,
     listBackgroundJobs,

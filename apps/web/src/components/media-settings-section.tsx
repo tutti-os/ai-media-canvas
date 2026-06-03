@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { WorkspaceSettings } from "@aimc/shared";
 
+import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -13,6 +14,12 @@ interface MediaSettingsSectionProps {
   onSave: (settings: WorkspaceSettings) => Promise<void>;
 }
 
+type StringSettingsKey = {
+  [Key in keyof WorkspaceSettings]: WorkspaceSettings[Key] extends string
+    ? Key
+    : never;
+}[keyof WorkspaceSettings];
+
 type MediaProviderCard = {
   id: "agnes" | "openai" | "google" | "vertex" | "replicate" | "volces";
   label: string;
@@ -20,7 +27,7 @@ type MediaProviderCard = {
   summary: string;
   models: string[];
   fields: Array<{
-    key: keyof WorkspaceSettings;
+    key: StringSettingsKey;
     label: string;
     placeholder: string;
   }>;
@@ -262,6 +269,11 @@ export function MediaSettingsSection({
                   <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
                     {card.summary}
                   </p>
+                  {card.id === "agnes" ? (
+                    <div className="mt-3">
+                      <AgnesQuickstartHint />
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

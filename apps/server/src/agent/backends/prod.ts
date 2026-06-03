@@ -18,12 +18,12 @@ const DEFAULT_SKILLS_ROOT = "/opt/ai-media-canvas/skills";
  * LocalShellBackend 作为 default backend，deepagents 自动暴露内置 `execute` 工具。
  * 每个 canvasId 对应一个独立的工作目录，用完由 runtime.ts 清理。
  *
- * 文件持久化（/workspace/、/memories/）走 StoreBackend (PostgresStore)，
+ * 文件持久化（/workspace/、/memories/）走 StoreBackend，
  * 与 LocalShellBackend 完全独立互不影响。
  *
  * Routes:
- *   /workspace/        → StoreBackend (PostgresStore, per-project)
- *   /memories/         → StoreBackend (PostgresStore, per-project)
+ *   /workspace/        → StoreBackend (per-project)
+ *   /memories/         → StoreBackend (per-project)
  *   /skills/           → FilesystemBackend (shared, read-only system skills)
  *   /workspace-skills/ → StoreBackend (user-installed workspace skills, optional)
  *   default            → LocalShellBackend (per-run sandbox, provides execute tool)

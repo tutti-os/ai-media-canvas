@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify";
 
-import { modelListResponseSchema, type ModelInfo } from "@aimc/shared";
+import {
+  modelListResponseSchema,
+  type ModelInfo,
+  type WorkspaceSettings,
+} from "@aimc/shared";
 
 import type { ServerEnv } from "../config/env.js";
 import {
@@ -41,6 +45,22 @@ const GOOGLE_MODELS: ModelInfo[] = [
 const AGNES_MODELS: ModelInfo[] = [
   { id: "agnes:agnes-2.0-flash", name: "Agnes 2.0 Flash", provider: "agnes" },
 ];
+
+function buildConfiguredModels(
+  provider: keyof WorkspaceSettings["providerModels"],
+  values: string[],
+): ModelInfo[] {
+  return values.map((value) => {
+    const normalizedId = value.includes(":") ? value : `${provider}:${value}`;
+    const name = normalizedId.replace(`${provider}:`, "");
+
+    return {
+      id: normalizedId,
+      name,
+      provider,
+    };
+  });
+}
 
 const OPENAI_COMPATIBLE_EXCLUDED_MODEL_PATTERNS = [
   /(^|[-_])audio($|[-_])/i,
@@ -161,14 +181,23 @@ export async function registerModelRoutes(
   settingsService?: SettingsService,
 ) {
   app.get("/api/models", async (_request, reply) => {
+    const workspaceSettings = settingsService
+      ? await settingsService.getWorkspaceSettings(null, LOCAL_WORKSPACE_ID)
+      : undefined;
     const effectiveEnv = settingsService
       ? await settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID)
       : env;
     const models: ModelInfo[] = [];
     if (effectiveEnv.openAIApiKey) {
-      let openAIModels = OPENAI_MODELS;
+      let openAIModels =
+        workspaceSettings?.providerModels.openai.length
+          ? buildConfiguredModels("openai", workspaceSettings.providerModels.openai)
+          : OPENAI_MODELS;
 
-      if (effectiveEnv.openAIApiBase) {
+      if (
+        !workspaceSettings?.providerModels.openai.length &&
+        effectiveEnv.openAIApiBase
+      ) {
         try {
           const dynamicModels = await fetchOpenAICompatibleModels(
             effectiveEnv.openAIApiBase,
@@ -187,13 +216,47 @@ export async function registerModelRoutes(
 
       models.push(...openAIModels);
     }
-    if (effectiveEnv.anthropicApiKey) models.push(...ANTHROPIC_MODELS);
-    if (effectiveEnv.agnesApiKey) models.push(...AGNES_MODELS);
+    if (effectiveEnv.anthropicApiKey) {
+      models.push(
+        ...(
+          workspaceSettings?.providerModels.anthropic.length
+            ? buildConfiguredModels(
+                "anthropic",
+                workspaceSettings.providerModels.anthropic,
+              )
+            : ANTHROPIC_MODELS
+        ),
+      );
+    }
+    if (effectiveEnv.agnesApiKey) {
+      models.push(
+        ...(
+          workspaceSettings?.providerModels.agnes.length
+            ? buildConfiguredModels("agnes", workspaceSettings.providerModels.agnes)
+            : AGNES_MODELS
+        ),
+      );
+    }
     if (
       effectiveEnv.googleApiKey ||
       (effectiveEnv.googleVertexProject && effectiveEnv.googleVertexLocation)
     ) {
-      models.push(...GOOGLE_MODELS);
+      models.push(
+        ...(
+          workspaceSettings?.providerModels.google.length
+            ? buildConfiguredModels("google", workspaceSettings.providerModels.google)
+            : GOOGLE_MODELS
+        ),
+      );
+    }
+    if (
+      effectiveEnv.googleVertexProject &&
+      effectiveEnv.googleVertexLocation &&
+      workspaceSettings?.providerModels.vertex.length
+    ) {
+      models.push(
+        ...buildConfiguredModels("vertex", workspaceSettings.providerModels.vertex),
+      );
     }
     return reply.code(200).send(modelListResponseSchema.parse({ models }));
   });

@@ -132,6 +132,17 @@ export class ConnectionManager {
     return undefined;
   }
 
+  /** Get ANY open WebSocket currently bound to a specific canvas. */
+  getByCanvas(canvasId: string): WebSocket | undefined {
+    const ids = this.canvasIndex.get(canvasId);
+    if (!ids) return undefined;
+    for (const cid of ids) {
+      const entry = this.connections.get(cid);
+      if (entry && entry.ws.readyState === 1) return entry.ws;
+    }
+    return undefined;
+  }
+
   // ---------------------------------------------------------------------------
   // Broadcasting (StreamEvent)
   // ---------------------------------------------------------------------------
@@ -233,6 +244,42 @@ export class ConnectionManager {
 
     if (!ws || ws.readyState !== 1) {
       throw new Error(`Connection ${connectionId} not available`);
+    }
+
+    const id = randomUUID();
+
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRPCs.delete(id);
+        reject(new Error(`RPC timeout: ${method} (${timeout}ms)`));
+      }, timeout);
+
+      this.pendingRPCs.set(id, { resolve, reject, timer });
+
+      ws.send(
+        JSON.stringify({
+          type: "rpc.request",
+          id,
+          method,
+          params,
+        }),
+      );
+    });
+  }
+
+  /**
+   * RPC to any open connection currently bound to a canvas.
+   */
+  async rpcToCanvas<T = unknown>(
+    canvasId: string,
+    method: string,
+    params: Record<string, unknown>,
+    timeout = 10_000,
+  ): Promise<T> {
+    const ws = this.getByCanvas(canvasId);
+
+    if (!ws || ws.readyState !== 1) {
+      throw new Error(`Canvas ${canvasId} not available`);
     }
 
     const id = randomUUID();

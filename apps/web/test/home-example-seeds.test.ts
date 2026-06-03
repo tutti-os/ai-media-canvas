@@ -6,6 +6,16 @@ import { describe, expect, it } from "vitest";
 import { homeExampleSeedCategories } from "../src/lib/home-example-seeds";
 
 describe("homeExampleSeedCategories", () => {
+  it("starts with theme-based creative categories instead of model names", () => {
+    expect(
+      homeExampleSeedCategories.slice(0, 3).map((category) => category.label),
+    ).toEqual(["Visual Concepts", "Illustration", "Design"]);
+
+    expect(
+      homeExampleSeedCategories.map((category) => category.label),
+    ).not.toContain("Nano Banana Pro");
+  });
+
   it("uses three distinct static preview images for every example", () => {
     for (const category of homeExampleSeedCategories) {
       for (const example of category.examples) {
@@ -16,9 +26,9 @@ describe("homeExampleSeedCategories", () => {
           expect(image).toMatch(
             /^\/images\/home-seeds\/generated\/.+\.(png|jpg|jpeg|webp)$/,
           );
-          expect(
-            existsSync(resolve(__dirname, `../public${image}`)),
-          ).toBe(true);
+          expect(existsSync(resolve(__dirname, `../public${image}`))).toBe(
+            true,
+          );
         }
       }
     }

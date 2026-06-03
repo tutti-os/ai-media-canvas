@@ -107,7 +107,10 @@ const UserMessage = React.memo(function UserMessage({
       className="flex w-full flex-col items-end gap-2 pl-10"
     >
       {text && (
-        <div className="inline-block rounded-xl bg-muted px-3 py-2.5 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
+        <div
+          data-chat-bubble
+          className="inline-block rounded-xl bg-muted px-3 py-2.5 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground"
+        >
           <span className="cursor-text select-text [word-break:break-word]">
             {text}
           </span>
@@ -145,7 +148,10 @@ const UserMessage = React.memo(function UserMessage({
         </div>
       )}
       {!text && (imageBlocks.length > 0 || mentionBlocks.length > 0) && (
-        <div className="inline-block rounded-xl bg-muted px-3 py-2.5">
+        <div
+          data-chat-bubble
+          className="inline-block rounded-xl bg-muted px-3 py-2.5"
+        >
           {mentionBlocks.map((block, idx) => (
             <MentionPill
               key={`mention-${idx}`}

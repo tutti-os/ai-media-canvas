@@ -37,26 +37,43 @@ export function createScreenshotCanvasTool(deps: {
       "Take a visual screenshot of the canvas to inspect layout, design quality, color harmony, and spatial relationships. Use this to visually verify your changes or understand the current canvas state. Supports full canvas, specific region, or current viewport capture.",
     schema: screenshotCanvasSchema,
     func: async (input, _runManager, config): Promise<string> => {
+      const connectionId = (config as any)?.configurable?.connection_id;
+      const canvasId = (config as any)?.configurable?.canvas_id;
       const userId = (config as any)?.configurable?.user_id;
 
-      if (!userId) {
+      if (!connectionId && !canvasId && !userId) {
         return JSON.stringify({
-          error: "no_user_context",
-          message: "screenshot_canvas requires a user context to communicate with the browser.",
+          error: "no_connection_canvas_or_user_context",
+          message: "screenshot_canvas requires connection, canvas, or user context to communicate with the browser.",
         });
       }
 
       try {
-        const result = await deps.connectionManager.rpc<ScreenshotResult>(
-          userId,
-          "canvas.screenshot",
-          {
-            mode: input.mode,
-            ...(input.region ? { region: input.region } : {}),
-            max_dimension: input.max_dimension,
-          },
-          timeout,
-        );
+        const rpcParams = {
+          mode: input.mode,
+          ...(input.region ? { region: input.region } : {}),
+          max_dimension: input.max_dimension,
+        };
+        const result = connectionId
+          ? await deps.connectionManager.rpc<ScreenshotResult>(
+              connectionId,
+              "canvas.screenshot",
+              rpcParams,
+              timeout,
+            )
+          : canvasId
+          ? await deps.connectionManager.rpcToCanvas<ScreenshotResult>(
+              canvasId,
+              "canvas.screenshot",
+              rpcParams,
+              timeout,
+            )
+          : await deps.connectionManager.rpc<ScreenshotResult>(
+              userId,
+              "canvas.screenshot",
+              rpcParams,
+              timeout,
+            );
 
         // Upload screenshot to storage to get a short HTTPS URL.
         // Returning the raw data: URI (~1-2 MB base64) in the ToolMessage

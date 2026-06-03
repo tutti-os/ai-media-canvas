@@ -52,6 +52,62 @@ describe("createLocalStore", () => {
     ).toBeNull();
   });
 
+  it("persists agent run metadata in the local SQLite database", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const project = store.createProject({ name: "Agent Runs" });
+    const session = store.createSession(project.primaryCanvas.id, "Run session");
+    expect(session).not.toBeNull();
+
+    store.createAgentRun({
+      canvasId: project.primaryCanvas.id,
+      model: "agnes:agnes-2.0-flash",
+      runId: "run-1",
+      sessionId: session!.id,
+      threadId: "thread:run-session",
+    });
+    store.updateAgentRun({
+      runId: "run-1",
+      status: "completed",
+    });
+
+    const db = new DatabaseSync(join(dataRoot, "ai-media-canvas.db"));
+    const row = db
+      .prepare(
+        `SELECT id, canvas_id, session_id, thread_id, model, status, completed_at
+         FROM agent_runs
+         WHERE id = ?`,
+      )
+      .get("run-1") as
+      | {
+          canvas_id: string;
+          completed_at: string | null;
+          id: string;
+          model: string;
+          session_id: string;
+          status: string;
+          thread_id: string;
+        }
+      | undefined;
+    db.close();
+
+    expect(row).toMatchObject({
+      canvas_id: project.primaryCanvas.id,
+      id: "run-1",
+      model: "agnes:agnes-2.0-flash",
+      session_id: session!.id,
+      status: "completed",
+      thread_id: "thread:run-session",
+    });
+    expect(row?.completed_at).toEqual(expect.any(String));
+  });
+
   it("hides archived project canvases and sessions from active access", () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
     tempDirs.push(dataRoot);
@@ -233,6 +289,13 @@ Help the assistant break an idea into storyboard beats.
 
     firstStore.updateWorkspaceSettings({
       defaultModel: "google:gemini-2.5-flash",
+      providerModels: {
+        openai: ["openai:gpt-4.1"],
+        anthropic: ["anthropic:claude-sonnet-4-5"],
+        agnes: ["agnes:agnes-2.0-flash"],
+        google: ["google:gemini-2.5-flash"],
+        vertex: [],
+      },
       openAIApiKey: "sk-local-openai",
       openAIApiBase: "http://127.0.0.1:4000/v1",
       anthropicApiKey: "sk-local-anthropic",
@@ -256,6 +319,13 @@ Help the assistant break an idea into storyboard beats.
 
     expect(reopenedStore.getWorkspaceSettings()).toEqual({
       defaultModel: "google:gemini-2.5-flash",
+      providerModels: {
+        openai: ["openai:gpt-4.1"],
+        anthropic: ["anthropic:claude-sonnet-4-5"],
+        agnes: ["agnes:agnes-2.0-flash"],
+        google: ["google:gemini-2.5-flash"],
+        vertex: [],
+      },
       openAIApiKey: "sk-local-openai",
       openAIApiBase: "http://127.0.0.1:4000/v1",
       anthropicApiKey: "sk-local-anthropic",
@@ -295,6 +365,13 @@ Help the assistant break an idea into storyboard beats.
 
     expect(store.getWorkspaceSettings()).toEqual({
       defaultModel: "openai:gpt-4o",
+      providerModels: {
+        openai: [],
+        anthropic: [],
+        agnes: [],
+        google: [],
+        vertex: [],
+      },
       openAIApiKey: "",
       openAIApiBase: "",
       anthropicApiKey: "",
@@ -335,6 +412,13 @@ Help the assistant break an idea into storyboard beats.
     expect(
       store.updateWorkspaceSettings({
         defaultModel: "agnes:agnes-2.0-flash",
+        providerModels: {
+          openai: [],
+          anthropic: [],
+          agnes: ["agnes:agnes-2.0-flash"],
+          google: [],
+          vertex: [],
+        },
         openAIApiKey: "",
         openAIApiBase: "",
         anthropicApiKey: "",
@@ -352,6 +436,13 @@ Help the assistant break an idea into storyboard beats.
       }),
     ).toEqual({
       defaultModel: "agnes:agnes-2.0-flash",
+      providerModels: {
+        openai: [],
+        anthropic: [],
+        agnes: ["agnes:agnes-2.0-flash"],
+        google: [],
+        vertex: [],
+      },
       openAIApiKey: "",
       openAIApiBase: "",
       anthropicApiKey: "",
