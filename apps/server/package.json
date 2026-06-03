@@ -6,6 +6,7 @@
   "dependencies": {
     "@aimc/shared": "workspace:*",
     "@fastify/multipart": "^9.4.0",
+    "@fastify/websocket": "^11.2.0",
     "@google/genai": "^1.47.0",
     "@langchain/core": "1.1.48",
     "@langchain/google-genai": "^2.1.31",
@@ -23,6 +24,7 @@
   "devDependencies": {
     "@aimc/config": "workspace:*",
     "@types/node": "^22.13.10",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.19.3",
     "vitest": "^3.2.4",
     "ws": "^8.18.1"
