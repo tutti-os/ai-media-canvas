@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import type { WorkspaceSettings } from "@aimc/shared";
+import type { ModelInfo, WorkspaceSettings } from "@aimc/shared";
 
+import { fetchModels } from "@/lib/server-api";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -19,7 +20,6 @@ const AGENT_PROTOCOLS: Array<{
   id: AgentProtocolId;
   label: string;
   description: string;
-  status?: "coming-soon";
 }> = [
   {
     id: "openai",
@@ -44,8 +44,7 @@ const AGENT_PROTOCOLS: Array<{
   {
     id: "anthropic",
     label: "Anthropic",
-    description: "Reserved for a future runtime integration",
-    status: "coming-soon",
+    description: "Claude API route for Anthropic-hosted models",
   },
 ];
 
@@ -67,6 +66,7 @@ export function AgentSettingsSection({
   onSave,
 }: AgentSettingsSectionProps) {
   const [settings, setSettings] = useState(initialSettings);
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [activeProtocol, setActiveProtocol] =
     useState<AgentProtocolId>(() => getInitialProtocol(initialSettings));
   const [saving, setSaving] = useState(false);
@@ -80,12 +80,37 @@ export function AgentSettingsSection({
     setActiveProtocol(getInitialProtocol(initialSettings));
   }, [initialSettings]);
 
+  useEffect(() => {
+    let canceled = false;
+
+    fetchModels()
+      .then((response) => {
+        if (!canceled) {
+          setAvailableModels(response.models);
+        }
+      })
+      .catch(() => {
+        if (!canceled) {
+          setAvailableModels([]);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [initialSettings.openAIApiBase, initialSettings.openAIApiKey]);
+
   const normalizedInitial = useMemo(
     () => JSON.stringify(initialSettings),
     [initialSettings],
   );
   const normalizedCurrent = JSON.stringify(settings);
   const hasChanges = normalizedInitial !== normalizedCurrent;
+  const openAIModelSuggestions = useMemo(
+    () =>
+      availableModels.filter((model) => model.provider === "openai"),
+    [availableModels],
+  );
 
   function updateField<Key extends keyof WorkspaceSettings>(
     key: Key,
@@ -135,6 +160,10 @@ export function AgentSettingsSection({
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 google:gemini-2.5-flash
               </code>
+              {" "}or{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                anthropic:claude-sonnet-4-5
+              </code>
               .
             </p>
           </div>
@@ -142,10 +171,18 @@ export function AgentSettingsSection({
             <Label htmlFor="defaultModel">Default LLM Model</Label>
             <Input
               id="defaultModel"
+              list="defaultModelOptions"
               value={settings.defaultModel}
               onChange={(event) => updateField("defaultModel", event.target.value)}
-              placeholder="openai:gpt-4.1, agnes:agnes-2.0-flash, or google:gemini-2.5-flash"
+              placeholder="openai:gpt-4.1, anthropic:claude-sonnet-4-5, agnes:agnes-2.0-flash, or google:gemini-2.5-flash"
             />
+            <datalist id="defaultModelOptions">
+              {availableModels.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                </option>
+              ))}
+            </datalist>
           </div>
         </section>
 
@@ -162,20 +199,14 @@ export function AgentSettingsSection({
               <button
                 key={protocol.id}
                 type="button"
-                onClick={() => {
-                  if (protocol.status === "coming-soon") return;
-                  setActiveProtocol(protocol.id);
-                }}
+                onClick={() => setActiveProtocol(protocol.id)}
                 className={`rounded-full border px-3 py-2 text-sm transition-colors ${
-                  protocol.status === "coming-soon"
-                    ? "cursor-not-allowed border-dashed border-border bg-muted/50 text-muted-foreground"
-                    : activeProtocol === protocol.id
-                      ? "border-accent/40 bg-accent/10 text-foreground"
-                      : "border-border bg-background text-muted-foreground hover:text-foreground"
+                  activeProtocol === protocol.id
+                    ? "border-accent/40 bg-accent/10 text-foreground"
+                    : "border-border bg-background text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {protocol.label}
-                {protocol.status === "coming-soon" ? " · Soon" : ""}
               </button>
             ))}
           </div>
@@ -219,29 +250,62 @@ export function AgentSettingsSection({
           ) : null}
 
           {activeProtocol === "openai" ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="openAIApiKey">OpenAI API Key</Label>
-                <Input
-                  id="openAIApiKey"
-                  value={settings.openAIApiKey}
-                  onChange={(event) =>
-                    updateField("openAIApiKey", event.target.value)
-                  }
-                  placeholder="sk-..."
-                />
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="openAIApiKey">OpenAI API Key</Label>
+                  <Input
+                    id="openAIApiKey"
+                    value={settings.openAIApiKey}
+                    onChange={(event) =>
+                      updateField("openAIApiKey", event.target.value)
+                    }
+                    placeholder="sk-..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="openAIApiBase">OpenAI Base URL</Label>
+                  <Input
+                    id="openAIApiBase"
+                    value={settings.openAIApiBase}
+                    onChange={(event) =>
+                      updateField("openAIApiBase", event.target.value)
+                    }
+                    placeholder="http://127.0.0.1:4000/v1"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="openAIApiBase">OpenAI Base URL</Label>
-                <Input
-                  id="openAIApiBase"
-                  value={settings.openAIApiBase}
-                  onChange={(event) =>
-                    updateField("openAIApiBase", event.target.value)
-                  }
-                  placeholder="http://127.0.0.1:4000/v1"
-                />
-              </div>
+
+              {openAIModelSuggestions.length > 0 ? (
+                <div className="space-y-2 rounded-xl border bg-muted/20 p-4">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      Detected OpenAI-compatible models
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Pick one to fill the default model, or keep typing any custom
+                      model ID your gateway accepts.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {openAIModelSuggestions.map((model) => (
+                      <button
+                        key={model.id}
+                        type="button"
+                        onClick={() => updateField("defaultModel", model.id)}
+                        className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                          settings.defaultModel === model.id
+                            ? "border-accent/40 bg-accent/10 text-foreground"
+                            : "border-border bg-background text-muted-foreground hover:text-foreground"
+                        }`}
+                        aria-label={`Use ${model.name}`}
+                      >
+                        {model.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -298,11 +362,29 @@ export function AgentSettingsSection({
           ) : null}
 
           {activeProtocol === "anthropic" ? (
-            <div className="rounded-xl border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground">
-              Anthropic will need a real runtime provider before it becomes a
-              live protocol here. This tab is reserved so the structure matches
-              the future protocol layout, but AIMC currently runs only the
-              OpenAI-compatible and Google / Vertex routes.
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="anthropicApiKey">Anthropic API Key</Label>
+                <Input
+                  id="anthropicApiKey"
+                  value={settings.anthropicApiKey}
+                  onChange={(event) =>
+                    updateField("anthropicApiKey", event.target.value)
+                  }
+                  placeholder="sk-ant-..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="anthropicBaseUrl">Anthropic Base URL</Label>
+                <Input
+                  id="anthropicBaseUrl"
+                  value={settings.anthropicBaseUrl}
+                  onChange={(event) =>
+                    updateField("anthropicBaseUrl", event.target.value)
+                  }
+                  placeholder="https://api.anthropic.com"
+                />
+              </div>
             </div>
           ) : null}
         </section>

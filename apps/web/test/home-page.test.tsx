@@ -91,5 +91,8 @@ describe("Home page", () => {
     ).toBeInTheDocument();
     expect(await screen.findByText("Recent Project")).toBeInTheDocument();
     expect(screen.getByText("灵感发现")).toBeInTheDocument();
+    expect(
+      screen.getByText("请基于文化艺术中心这个灵感方向，为我做一套品牌探索，输出品牌关键词、主视觉方向、海报延展和社交媒体视觉提案。"),
+    ).toBeInTheDocument();
   });
 });

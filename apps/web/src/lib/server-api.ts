@@ -182,7 +182,9 @@ export async function updateWorkspaceSettings(
 }
 
 export async function fetchModels(): Promise<ModelListResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/models`);
+  const response = await fetch(`${getServerBaseUrl()}/api/models`, {
+    cache: "no-store",
+  });
   if (!response.ok) {
     throw new Error(`Failed to fetch models: ${response.status}`);
   }

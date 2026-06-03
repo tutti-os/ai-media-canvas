@@ -8,7 +8,7 @@ import type {
 } from "../types.js";
 import { aspectRatioToDimensions, GenerationError } from "../utils.js";
 
-const ICON_AGNES = "https://github.com/jomeswang.png";
+const ICON_AGNES = "https://agnes-cdn.kiwiar.com/logo/agnes-icon-400x400.jpg";
 const DEFAULT_AGNES_MEDIA_TTL = "1h" as const;
 const AGNES_IMAGE_MODEL_IDS = [
   "agnes-image-2.1-flash",

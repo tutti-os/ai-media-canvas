@@ -14,6 +14,24 @@ const OPENAI_MODELS: ModelInfo[] = [
   { id: "openai:gpt-4o-mini", name: "OpenAI GPT-4o Mini", provider: "openai" },
 ];
 
+const ANTHROPIC_MODELS: ModelInfo[] = [
+  {
+    id: "anthropic:claude-sonnet-4-5",
+    name: "Claude Sonnet 4.5",
+    provider: "anthropic",
+  },
+  {
+    id: "anthropic:claude-haiku-4-5",
+    name: "Claude Haiku 4.5",
+    provider: "anthropic",
+  },
+  {
+    id: "anthropic:claude-opus-4-1",
+    name: "Claude Opus 4.1",
+    provider: "anthropic",
+  },
+];
+
 const GOOGLE_MODELS: ModelInfo[] = [
   { id: "google:gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "google" },
   { id: "google:gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "google" },
@@ -23,6 +41,119 @@ const GOOGLE_MODELS: ModelInfo[] = [
 const AGNES_MODELS: ModelInfo[] = [
   { id: "agnes:agnes-2.0-flash", name: "Agnes 2.0 Flash", provider: "agnes" },
 ];
+
+const OPENAI_COMPATIBLE_EXCLUDED_MODEL_PATTERNS = [
+  /(^|[-_])audio($|[-_])/i,
+  /(^|[-_])realtime($|[-_])/i,
+  /(^|[-_])image($|[-_])/i,
+  /(^|[-_])embedding(s)?($|[-_])/i,
+  /(^|[-_])moderation($|[-_])/i,
+  /(^|[-_])transcribe(r|rs|d)?($|[-_])/i,
+  /(^|[-_])transcription(s)?($|[-_])/i,
+  /(^|[-_])tts($|[-_])/i,
+  /(^|[-_])speech($|[-_])/i,
+] as const;
+
+const OPENAI_COMPATIBLE_SNAPSHOT_SUFFIX = /-\d{4}-\d{2}-\d{2}$/;
+
+function buildOpenAICompatibleModelsUrl(baseUrl: string) {
+  const url = new URL(baseUrl);
+  const pathname = url.pathname.replace(/\/+$/, "");
+
+  if (!pathname || pathname === "/") {
+    url.pathname = "/v1/models";
+    return url.toString();
+  }
+
+  if (!pathname.endsWith("/models")) {
+    url.pathname = `${pathname}/models`;
+  }
+
+  return url.toString();
+}
+
+function normalizeOpenAICompatibleModels(payload: unknown): ModelInfo[] {
+  const rawModels = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as { data?: unknown[] } | null)?.data)
+      ? (payload as { data: unknown[] }).data
+      : Array.isArray((payload as { models?: unknown[] } | null)?.models)
+        ? (payload as { models: unknown[] }).models
+        : [];
+
+  const seen = new Set<string>();
+  const models: ModelInfo[] = [];
+  const discoveredIds = new Set<string>();
+
+  for (const entry of rawModels) {
+    const rawId =
+      typeof entry === "string"
+        ? entry
+        : typeof entry === "object" &&
+            entry !== null &&
+            typeof (entry as { id?: unknown }).id === "string"
+          ? (entry as { id: string }).id
+          : null;
+    if (!rawId) continue;
+    const modelId = rawId.startsWith("openai:")
+      ? rawId.slice("openai:".length)
+      : rawId;
+    if (!modelId || seen.has(modelId)) continue;
+    discoveredIds.add(modelId);
+  }
+
+  for (const entry of rawModels) {
+    const rawId =
+      typeof entry === "string"
+        ? entry
+        : typeof entry === "object" &&
+            entry !== null &&
+            typeof (entry as { id?: unknown }).id === "string"
+          ? (entry as { id: string }).id
+          : null;
+    if (!rawId) continue;
+    const modelId = rawId.startsWith("openai:")
+      ? rawId.slice("openai:".length)
+      : rawId;
+    if (!modelId || seen.has(modelId)) continue;
+    if (
+      OPENAI_COMPATIBLE_EXCLUDED_MODEL_PATTERNS.some((pattern) =>
+        pattern.test(modelId),
+      )
+    ) {
+      continue;
+    }
+    const snapshotBaseId = modelId.replace(OPENAI_COMPATIBLE_SNAPSHOT_SUFFIX, "");
+    if (snapshotBaseId !== modelId && discoveredIds.has(snapshotBaseId)) {
+      continue;
+    }
+    seen.add(modelId);
+    models.push({
+      id: `openai:${modelId}`,
+      name: modelId,
+      provider: "openai",
+    });
+  }
+
+  return models;
+}
+
+async function fetchOpenAICompatibleModels(
+  baseUrl: string,
+  apiKey: string,
+): Promise<ModelInfo[]> {
+  const response = await fetch(buildOpenAICompatibleModelsUrl(baseUrl), {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI-compatible model list failed: ${response.status}`);
+  }
+
+  return normalizeOpenAICompatibleModels(await response.json());
+}
 
 export async function registerModelRoutes(
   app: FastifyInstance,
@@ -34,7 +165,29 @@ export async function registerModelRoutes(
       ? await settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID)
       : env;
     const models: ModelInfo[] = [];
-    if (effectiveEnv.openAIApiKey) models.push(...OPENAI_MODELS);
+    if (effectiveEnv.openAIApiKey) {
+      let openAIModels = OPENAI_MODELS;
+
+      if (effectiveEnv.openAIApiBase) {
+        try {
+          const dynamicModels = await fetchOpenAICompatibleModels(
+            effectiveEnv.openAIApiBase,
+            effectiveEnv.openAIApiKey,
+          );
+          if (dynamicModels.length > 0) {
+            openAIModels = dynamicModels;
+          }
+        } catch (error) {
+          app.log.warn(
+            { err: error },
+            "Failed to load OpenAI-compatible models; using fallback list.",
+          );
+        }
+      }
+
+      models.push(...openAIModels);
+    }
+    if (effectiveEnv.anthropicApiKey) models.push(...ANTHROPIC_MODELS);
     if (effectiveEnv.agnesApiKey) models.push(...AGNES_MODELS);
     if (
       effectiveEnv.googleApiKey ||

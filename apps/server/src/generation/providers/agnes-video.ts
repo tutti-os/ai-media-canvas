@@ -8,7 +8,7 @@ import type {
 } from "../types.js";
 import { GenerationError } from "../utils.js";
 
-const ICON_AGNES = "https://github.com/jomeswang.png";
+const ICON_AGNES = "https://agnes-cdn.kiwiar.com/logo/agnes-icon-400x400.jpg";
 const DEFAULT_FRAME_RATE = 24;
 const DEFAULT_AGNES_MEDIA_TTL = "1h" as const;
 const AGNES_VIDEO_MODEL_IDS = ["agnes-video-v2.0"] as const;

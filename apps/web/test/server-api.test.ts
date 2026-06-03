@@ -109,6 +109,8 @@ describe("local server API", () => {
         defaultModel: "openai:gpt-4.1",
         openAIApiKey: "sk-local-openai",
         openAIApiBase: "http://127.0.0.1:4000/v1",
+        anthropicApiKey: "sk-local-anthropic",
+        anthropicBaseUrl: "https://api.anthropic.com",
         agnesApiKey: "sk-local-agnes",
         agnesBaseUrl: "https://agnes.example/v1",
         agnesDefaultModel: "agnes:agnes-2.0-flash",
@@ -136,6 +138,8 @@ describe("local server API", () => {
         defaultModel: "google:gemini-2.5-flash",
         openAIApiKey: "",
         openAIApiBase: "",
+        anthropicApiKey: "sk-local-anthropic",
+        anthropicBaseUrl: "https://api.anthropic.com",
         agnesApiKey: "sk-local-agnes",
         agnesBaseUrl: "https://agnes.example/v1",
         agnesDefaultModel: "agnes:agnes-2.0-flash",
@@ -160,6 +164,7 @@ describe("local server API", () => {
       },
     );
     expect(result.settings.googleApiKey).toBe("google-local-key");
+    expect(result.settings.anthropicApiKey).toBe("sk-local-anthropic");
     expect(result.settings.agnesApiKey).toBe("sk-local-agnes");
   });
 });

@@ -83,9 +83,6 @@ export function HomeDiscoveryGallery({
         <div className="flex items-end justify-between gap-4">
           <div>
             <h2 className="text-lg font-medium text-foreground">灵感发现</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              点击卡片后会按这条创意方向直接新建本地项目，并把 prompt 带入画布侧边对话。
-            </p>
           </div>
         </div>
 
@@ -106,7 +103,7 @@ export function HomeDiscoveryGallery({
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         {visibleCases.map((item) => (
           <button
             key={item.id}
@@ -115,7 +112,7 @@ export function HomeDiscoveryGallery({
             onClick={() => onCaseSelect(item)}
             className="group overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
           >
-            <div className="relative aspect-[4/5] overflow-hidden bg-muted">
+            <div className="relative aspect-[4/4.6] overflow-hidden bg-muted">
               <img
                 src={item.coverImageUrl}
                 alt={item.title}
@@ -144,8 +141,8 @@ export function HomeDiscoveryGallery({
                     {item.authorName}
                   </span>
                 </div>
-                <p className="mt-1 text-left text-xs text-muted-foreground">
-                  点击后直接作为 AI Media Canvas 的起始需求
+                <p className="mt-1 line-clamp-2 text-left text-xs leading-5 text-muted-foreground">
+                  {item.prompt}
                 </p>
               </div>
 

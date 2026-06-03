@@ -116,7 +116,9 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
         top: screenY,
         width: screenW,
         height: screenH,
-        zIndex: 99,
+        // Keep generation shimmer above canvas content, but below app chrome
+        // such as the chat sidebar, top bar, and floating shell UI.
+        zIndex: 10,
       }}
     >
       <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted">
@@ -363,10 +365,12 @@ export function CanvasToolMenu({
             el.customData?.status === "generating",
         );
 
-        // Quick identity check: IDs + positions as a serialized key
+        // Include viewport state as well, because the shimmer overlay is
+        // rendered in screen coordinates and must move when the canvas pans
+        // or zooms even if the scene element itself did not change.
         const genKey = generatingRaw.map((el: any) =>
           `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}`
-        ).join("|");
+        ).join("|") + `@${scrollX}:${scrollY}:${zoom}`;
 
         if (genKey !== prevGeneratingKeyRef.current) {
           prevGeneratingKeyRef.current = genKey;

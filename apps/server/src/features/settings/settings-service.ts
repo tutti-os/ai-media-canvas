@@ -16,6 +16,8 @@ export const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   defaultModel: "",
   openAIApiKey: "",
   openAIApiBase: "",
+  anthropicApiKey: "",
+  anthropicBaseUrl: "",
   agnesApiKey: "",
   agnesBaseUrl: "",
   agnesDefaultModel: "",
@@ -48,6 +50,8 @@ export function normalizeWorkspaceSettings(
     defaultModel: input.defaultModel?.trim() ?? "",
     openAIApiKey: input.openAIApiKey?.trim() ?? "",
     openAIApiBase: input.openAIApiBase?.trim() ?? "",
+    anthropicApiKey: input.anthropicApiKey?.trim() ?? "",
+    anthropicBaseUrl: input.anthropicBaseUrl?.trim() ?? "",
     agnesApiKey: input.agnesApiKey?.trim() ?? "",
     agnesBaseUrl: input.agnesBaseUrl?.trim() ?? "",
     agnesDefaultModel: input.agnesDefaultModel?.trim() ?? "",
@@ -67,6 +71,9 @@ export function resolveEffectiveServerEnv(
 ): ServerEnv {
   const openAIApiKey = settings.openAIApiKey || baseEnv.openAIApiKey;
   const openAIApiBase = settings.openAIApiBase || baseEnv.openAIApiBase;
+  const anthropicApiKey = settings.anthropicApiKey || baseEnv.anthropicApiKey;
+  const anthropicBaseUrl =
+    settings.anthropicBaseUrl || baseEnv.anthropicBaseUrl;
   const agnesApiKey = settings.agnesApiKey || baseEnv.agnesApiKey;
   const agnesBaseUrl =
     settings.agnesBaseUrl ||
@@ -94,6 +101,8 @@ export function resolveEffectiveServerEnv(
       settings.defaultModel ||
       (baseEnv.agentModelConfigured ? undefined : agnesDefaultModel) ||
       baseEnv.agentModel,
+    ...(anthropicApiKey ? { anthropicApiKey } : {}),
+    ...(anthropicBaseUrl ? { anthropicBaseUrl } : {}),
     ...(agnesApiKey ? { agnesApiKey } : {}),
     ...(agnesBaseUrl ? { agnesBaseUrl } : {}),
     ...(agnesDefaultModel ? { agnesDefaultModel } : {}),
@@ -131,6 +140,8 @@ export function applyEffectiveProviderEnv(
     | "agnesApiKey"
     | "agnesBaseUrl"
     | "agnesDefaultModel"
+    | "anthropicApiKey"
+    | "anthropicBaseUrl"
     | "openAIApiBase"
     | "openAIApiKey"
     | "replicateApiToken"
@@ -139,6 +150,11 @@ export function applyEffectiveProviderEnv(
   >,
   target: NodeJS.ProcessEnv = process.env,
 ) {
+  assignEnvValue(target, "AIMC_ANTHROPIC_API_KEY", env.anthropicApiKey);
+  assignEnvValue(target, "ANTHROPIC_API_KEY", env.anthropicApiKey);
+  assignEnvValue(target, "AIMC_ANTHROPIC_BASE_URL", env.anthropicBaseUrl);
+  assignEnvValue(target, "ANTHROPIC_BASE_URL", env.anthropicBaseUrl);
+
   assignEnvValue(target, "AIMC_AGNES_API_KEY", env.agnesApiKey);
   assignEnvValue(target, "AGNES_API_KEY", env.agnesApiKey);
   assignEnvValue(target, "AIMC_AGNES_BASE_URL", env.agnesBaseUrl);

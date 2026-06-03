@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 type VideoPlayerPanelProps = {
@@ -25,16 +25,11 @@ export function VideoPlayerPanel({
   onClose,
 }: VideoPlayerPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [screenX, setScreenX] = useState(0);
-  const [screenY, setScreenY] = useState(0);
-
-  useEffect(() => {
-    const { scrollX, scrollY, zoom } = canvasScrollZoom;
-    const x = (elementBounds.x + scrollX) * zoom;
-    const y = (elementBounds.y + elementBounds.height + scrollY) * zoom + 12;
-    setScreenX(Math.max(8, Math.min(x, window.innerWidth - 520)));
-    setScreenY(Math.max(8, Math.min(y, window.innerHeight - 400)));
-  }, [elementBounds, canvasScrollZoom]);
+  const { scrollX, scrollY, zoom } = canvasScrollZoom;
+  const rawX = (elementBounds.x + scrollX) * zoom;
+  const rawY = (elementBounds.y + elementBounds.height + scrollY) * zoom + 12;
+  const screenX = Math.max(8, Math.min(rawX, window.innerWidth - 520));
+  const screenY = Math.max(8, Math.min(rawY, window.innerHeight - 400));
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
