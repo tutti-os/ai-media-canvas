@@ -26,7 +26,17 @@ import type { ServerEnv } from "../config/env.js";
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
   agentRunPersistence?: {
-    appendEvent: (input: { event: StreamEvent; runId: string }) => void;
+    appendEvent: (input: {
+      canvasId?: string;
+      event: StreamEvent;
+      runId: string;
+    }) => { canvasSeq?: number; eventId: string; seq: number };
+    getLatestCanvasSeq?: (canvasId: string) => number;
+    listCanvasEvents?: (canvasId: string, cursor?: number) => Array<{
+      event: StreamEvent;
+      eventId: string;
+      canvasSeq: number;
+    }>;
   };
   auth?: RequestAuthenticator;
   chatService?: ChatService;
@@ -185,8 +195,13 @@ async function authenticateAndBind(
 
         const missed = p.skipReplay
           ? []
-          : (options.eventBuffer?.getAfter(p.canvasId, p.lastSeq) ?? []);
+          : (options.agentRunPersistence?.listCanvasEvents?.(p.canvasId, p.lastSeq)
+            ?? options.eventBuffer?.getAfter(p.canvasId, p.lastSeq)
+            ?? []);
         const activeRun = connectionManager.getActiveRun(p.canvasId);
+        const latestPersistedSeq =
+          options.agentRunPersistence?.getLatestCanvasSeq?.(p.canvasId) ?? 0;
+        const latestBufferedSeq = options.eventBuffer?.getLatestSeq(p.canvasId) ?? 0;
 
         // IMPORTANT: Send ACK FIRST so client registers event listener
         // BEFORE replay events arrive. Otherwise replayed events have no handler.
@@ -195,7 +210,7 @@ async function authenticateAndBind(
           action: "canvas.resume",
           payload: {
             canvasId: p.canvasId,
-            latestSeq: options.eventBuffer?.getLatestSeq(p.canvasId) ?? 0,
+            latestSeq: Math.max(latestPersistedSeq, latestBufferedSeq),
             activeRunId: activeRun?.runId ?? null,
             assistantMessageId: activeRun?.assistantMessageId ?? null,
             skipReplay: p.skipReplay ?? false,
@@ -208,6 +223,14 @@ async function authenticateAndBind(
           connectionManager.sendTo(connectionId, {
             type: "event",
             event: entry.event,
+            ...("eventId" in entry && typeof entry.eventId === "string"
+              ? { eventId: entry.eventId }
+              : {}),
+            ...("canvasSeq" in entry && typeof entry.canvasSeq === "number"
+              ? { seq: entry.canvasSeq }
+              : "seq" in entry && typeof entry.seq === "number"
+                ? { seq: entry.seq }
+                : {}),
           });
         }
       }
@@ -357,14 +380,21 @@ async function handleRunCommand(
       }
 
       // Buffer for replay on reconnect
-      services.eventBuffer?.push(canvasId, event);
-      services.agentRunPersistence?.appendEvent({
+      const persistedEvent = services.agentRunPersistence?.appendEvent({
+        canvasId,
         event,
         runId,
       });
+      services.eventBuffer?.push(canvasId, event, {
+        ...(persistedEvent?.eventId ? { eventId: persistedEvent.eventId } : {}),
+        ...(persistedEvent?.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
+      });
 
       // Broadcast to all viewers
-      connectionManager.pushToCanvas(canvasId, event);
+      connectionManager.pushToCanvas(canvasId, event, {
+        ...(persistedEvent?.eventId ? { eventId: persistedEvent.eventId } : {}),
+        ...(persistedEvent?.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
+      });
 
       // Accumulate content for server-side persistence
       if (event.type === "message.delta") {
@@ -468,12 +498,19 @@ async function handleRunCommand(
       },
       timestamp: new Date().toISOString(),
     };
-    services.eventBuffer?.push(canvasId, failedEvent);
-    services.agentRunPersistence?.appendEvent({
+    const persistedEvent = services.agentRunPersistence?.appendEvent({
+      canvasId,
       event: failedEvent,
       runId,
     });
-    connectionManager.pushToCanvas(canvasId, failedEvent);
+    services.eventBuffer?.push(canvasId, failedEvent, {
+      ...(persistedEvent?.eventId ? { eventId: persistedEvent.eventId } : {}),
+      ...(persistedEvent?.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
+    });
+    connectionManager.pushToCanvas(canvasId, failedEvent, {
+      ...(persistedEvent?.eventId ? { eventId: persistedEvent.eventId } : {}),
+      ...(persistedEvent?.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
+    });
   } finally {
     clearInterval(keepAlive);
     connectionManager.clearActiveRun(canvasId);

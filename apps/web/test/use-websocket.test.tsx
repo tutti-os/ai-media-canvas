@@ -120,6 +120,7 @@ describe("useWebSocket", () => {
       });
       socket.receive({
         type: "event",
+        seq: 7,
         event: {
           type: "message.delta",
           runId: "run-fixed",
@@ -192,6 +193,7 @@ describe("useWebSocket", () => {
       });
       socket.receive({
         type: "event",
+        seq: 7,
         event: {
           type: "message.delta",
           runId: "run-fixed",
@@ -212,7 +214,7 @@ describe("useWebSocket", () => {
         action: "canvas.resume",
         payload: {
           canvasId: "canvas-1",
-          lastSeq: 3,
+          lastSeq: 7,
           skipReplay: true,
         },
       }),

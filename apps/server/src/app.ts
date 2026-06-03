@@ -737,6 +737,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const store = createLocalStore({
     assetBaseUrl,
   });
+  store.recoverInterruptedAgentRuns();
 
   const app = Fastify({
     logger: { level: "info" },
@@ -803,6 +804,17 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     env: createStandaloneAgentEnv(env),
     loadSessionMessages: (sessionId) =>
       chatService.listMessages(localUser, sessionId),
+    publishCanvasSyncEvent: ({ canvasId, event, runId }) => {
+      const persistedEvent = store.appendAgentRunEvent({
+        canvasId,
+        event,
+        runId,
+      });
+      eventBuffer.push(canvasId, event, {
+        eventId: persistedEvent.eventId,
+        ...(persistedEvent.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
+      });
+    },
     toolGateway: localToolGateway,
     toolGatewayBaseUrl: localToolGatewayBaseUrl,
   });
@@ -818,6 +830,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     runState: LocalAgentRunState;
   }) => {
     void (async () => {
+      const replayCanvasId = options.payload.canvasId ?? options.payload.conversationId;
       const assistantMessageState: AssistantMessageState = {
         blocks: [],
         textParts: [],
@@ -834,6 +847,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       try {
         for await (const event of agentRuns.streamRun(options.runId)) {
           store.appendAgentRunEvent({
+            ...(replayCanvasId ? { canvasId: replayCanvasId } : {}),
             event,
             runId: options.runId,
           });
@@ -860,6 +874,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           timestamp: new Date().toISOString(),
         } satisfies StreamEvent;
         store.appendAgentRunEvent({
+          ...(replayCanvasId ? { canvasId: replayCanvasId } : {}),
           event: failedEvent,
           runId: options.runId,
         });
@@ -907,6 +922,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       agentRuns,
       agentRunPersistence: {
         appendEvent: store.appendAgentRunEvent,
+        getLatestCanvasSeq: store.getLatestCanvasEventSeq,
+        listCanvasEvents: store.listCanvasAgentEvents,
       },
       auth: localAuth,
       chatService,

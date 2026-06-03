@@ -314,6 +314,11 @@ type CreateAgentRuntimeOptions = {
     }): void;
   };
   connectionManager?: ConnectionManager;
+  publishCanvasSyncEvent?: (input: {
+    canvasId: string;
+    event: Extract<StreamEvent, { type: "canvas.sync" }>;
+    runId: string;
+  }) => void;
   createUserClient?: (accessToken: string) => unknown;
   creditService?: CreditService;
   env: ServerEnv;
@@ -635,11 +640,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   elementId = insertResult.elementId;
 
                   // Notify connected frontends to refresh canvas
-                  options.connectionManager?.pushToCanvas(canvasId, {
+                  const event = {
                     type: "canvas.sync" as const,
                     runId,
                     timestamp: new Date().toISOString(),
-                  });
+                  } satisfies StreamEvent;
+                  options.publishCanvasSyncEvent?.({ canvasId, event, runId });
+                  options.connectionManager?.pushToCanvas(canvasId, event);
                   jobLap("canvas_element_inserted", { elementId });
                 } catch (insertErr) {
                   // Graceful degradation: log error but still return result
@@ -830,11 +837,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   elementId = insertResult.elementId;
 
                   // Notify connected frontends to refresh canvas
-                  options.connectionManager?.pushToCanvas(canvasId, {
+                  const event = {
                     type: "canvas.sync" as const,
                     runId,
                     timestamp: new Date().toISOString(),
-                  });
+                  } satisfies StreamEvent;
+                  options.publishCanvasSyncEvent?.({ canvasId, event, runId });
+                  options.connectionManager?.pushToCanvas(canvasId, event);
                   jobLap("canvas_element_inserted", { elementId });
                 } catch (insertErr) {
                   // Graceful degradation: log error but still return result

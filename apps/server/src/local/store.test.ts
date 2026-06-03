@@ -185,6 +185,121 @@ describe("createLocalStore", () => {
     });
   });
 
+  it("persists durable per-canvas replay sequence for agent events", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const project = store.createProject({ name: "Canvas Replay" });
+    const session = store.createSession(project.primaryCanvas.id, "Replay session");
+    expect(session).not.toBeNull();
+
+    store.createAgentRun({
+      canvasId: project.primaryCanvas.id,
+      model: "codex:gpt-5.4",
+      runtimeKind: "local-codex",
+      runId: "run-canvas",
+      sessionId: session!.id,
+    });
+
+    const first = store.appendAgentRunEvent({
+      canvasId: project.primaryCanvas.id,
+      runId: "run-canvas",
+      event: {
+        type: "run.started",
+        runId: "run-canvas",
+        sessionId: session!.id,
+        conversationId: project.primaryCanvas.id,
+        timestamp: "2026-06-04T00:00:00.000Z",
+      },
+    });
+    const second = store.appendAgentRunEvent({
+      canvasId: project.primaryCanvas.id,
+      runId: "run-canvas",
+      event: {
+        type: "canvas.sync",
+        runId: "run-canvas",
+        timestamp: "2026-06-04T00:00:01.000Z",
+      },
+    });
+
+    expect(first.canvasSeq).toBe(1);
+    expect(second.canvasSeq).toBe(2);
+    expect(store.getLatestCanvasEventSeq(project.primaryCanvas.id)).toBe(2);
+    expect(
+      store.listCanvasAgentEvents(project.primaryCanvas.id, 1).map((entry) => ({
+        canvasSeq: entry.canvasSeq,
+        eventId: entry.eventId,
+        type: entry.event.type,
+      })),
+    ).toEqual([
+      {
+        canvasSeq: 2,
+        eventId: "run-canvas:2",
+        type: "canvas.sync",
+      },
+    ]);
+  });
+
+  it("recovers interrupted agent runs on startup and appends a terminal failure event", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const project = store.createProject({ name: "Interrupted Run" });
+    const session = store.createSession(project.primaryCanvas.id, "Interrupted session");
+    expect(session).not.toBeNull();
+
+    store.createAgentRun({
+      canvasId: project.primaryCanvas.id,
+      model: "codex:gpt-5.4",
+      runtimeKind: "local-codex",
+      runId: "run-interrupted",
+      sessionId: session!.id,
+    });
+    store.updateAgentRun({
+      runId: "run-interrupted",
+      status: "running",
+    });
+    store.appendAgentRunEvent({
+      canvasId: project.primaryCanvas.id,
+      runId: "run-interrupted",
+      event: {
+        type: "run.started",
+        runId: "run-interrupted",
+        sessionId: session!.id,
+        conversationId: project.primaryCanvas.id,
+        timestamp: "2026-06-04T00:00:00.000Z",
+      },
+    });
+
+    const reopenedStore = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const recovered = reopenedStore.recoverInterruptedAgentRuns("Recovered interrupted run.");
+    const run = reopenedStore.getAgentRun("run-interrupted");
+    const events = reopenedStore.listAgentRunEvents("run-interrupted");
+
+    expect(recovered).toBe(1);
+    expect(run?.status).toBe("failed");
+    expect(events.at(-1)?.event).toMatchObject({
+      type: "run.failed",
+      error: {
+        code: "run_failed",
+        message: "Recovered interrupted run.",
+      },
+    });
+  });
+
   it("hides archived project canvases and sessions from active access", () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
     tempDirs.push(dataRoot);

@@ -510,6 +510,25 @@ export function createLocalStore(options: {
     if (!columnNames.has("assistant_message_id")) {
       db.exec(`ALTER TABLE agent_runs ADD COLUMN assistant_message_id TEXT`);
     }
+
+    const eventColumns = db
+      .prepare(`PRAGMA table_info(agent_run_events)`)
+      .all() as Array<{ name: string }>;
+    const eventColumnNames = new Set(eventColumns.map((column) => column.name));
+
+    if (!eventColumnNames.has("canvas_id")) {
+      db.exec(`ALTER TABLE agent_run_events ADD COLUMN canvas_id TEXT`);
+    }
+
+    if (!eventColumnNames.has("canvas_seq")) {
+      db.exec(`ALTER TABLE agent_run_events ADD COLUMN canvas_seq INTEGER`);
+    }
+
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_run_events_canvas_seq
+        ON agent_run_events(canvas_id, canvas_seq)
+        WHERE canvas_id IS NOT NULL AND canvas_seq IS NOT NULL;
+    `);
   }
 
   function seedBundledSkills() {
@@ -2460,28 +2479,42 @@ export function createLocalStore(options: {
       | undefined;
   }
 
-  function appendAgentRunEvent(input: { event: StreamEvent; runId: string }) {
+  function appendAgentRunEvent(input: {
+    canvasId?: string;
+    event: StreamEvent;
+    runId: string;
+  }) {
     const current = db
       .prepare(`SELECT COALESCE(MAX(seq), 0) AS max_seq FROM agent_run_events WHERE run_id = ?`)
       .get(input.runId) as { max_seq: number | null };
     const nextSeq = (current.max_seq ?? 0) + 1;
+    const nextCanvasSeq = input.canvasId
+      ? ((db
+          .prepare(
+            `SELECT COALESCE(MAX(canvas_seq), 0) AS max_seq FROM agent_run_events WHERE canvas_id = ?`,
+          )
+          .get(input.canvasId) as { max_seq: number | null }).max_seq ?? 0) + 1
+      : null;
     const timestamp = nowIso();
     const eventId = `${input.runId}:${nextSeq}`;
     db.prepare(
       `
         INSERT INTO agent_run_events (
-          run_id, event_id, seq, type, payload, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          run_id, event_id, seq, canvas_id, canvas_seq, type, payload, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
     ).run(
       input.runId,
       eventId,
       nextSeq,
+      input.canvasId ?? null,
+      nextCanvasSeq,
       input.event.type,
       JSON.stringify(input.event),
       timestamp,
     );
     return {
+      ...(input.canvasId && nextCanvasSeq != null ? { canvasSeq: nextCanvasSeq } : {}),
       eventId,
       seq: nextSeq,
     };
@@ -2513,6 +2546,104 @@ export function createLocalStore(options: {
       seq: row.seq,
       type: row.type,
     }));
+  }
+
+  function getLatestCanvasEventSeq(canvasId: string) {
+    const row = db
+      .prepare(
+        `SELECT COALESCE(MAX(canvas_seq), 0) AS max_seq FROM agent_run_events WHERE canvas_id = ?`,
+      )
+      .get(canvasId) as { max_seq: number | null };
+    return row.max_seq ?? 0;
+  }
+
+  function listCanvasAgentEvents(canvasId: string, cursor = 0) {
+    const rows = db
+      .prepare(
+        `
+          SELECT run_id, event_id, seq, canvas_seq, type, payload, created_at
+          FROM agent_run_events
+          WHERE canvas_id = ? AND canvas_seq > ?
+          ORDER BY canvas_seq ASC
+        `,
+      )
+      .all(canvasId, cursor) as Array<
+        AgentRunEventRow & {
+          canvas_seq: number | null;
+        }
+      >;
+    return rows.map((row) => ({
+      createdAt: row.created_at,
+      event: parseJson<StreamEvent>(row.payload, {
+        type: "run.failed",
+        runId: row.run_id,
+        error: {
+          code: "run_failed",
+          message: "Unable to decode persisted canvas event.",
+        },
+        timestamp: row.created_at,
+      }),
+      eventId: row.event_id,
+      runId: row.run_id,
+      seq: row.seq,
+      canvasSeq: row.canvas_seq ?? 0,
+      type: row.type,
+    }));
+  }
+
+  function recoverInterruptedAgentRuns(message = "Server restarted during an active agent run.") {
+    const interruptedRuns = db
+      .prepare(
+        `
+          SELECT id, canvas_id
+          FROM agent_runs
+          WHERE status IN ('accepted', 'running')
+        `,
+      )
+      .all() as Array<{
+        canvas_id: string | null;
+        id: string;
+      }>;
+
+    for (const run of interruptedRuns) {
+      updateAgentRun({
+        runId: run.id,
+        status: "failed",
+        errorCode: "run_failed",
+        errorMessage: message,
+      });
+
+      const lastEvent = db
+        .prepare(
+          `
+            SELECT type
+            FROM agent_run_events
+            WHERE run_id = ?
+            ORDER BY seq DESC
+            LIMIT 1
+          `,
+        )
+        .get(run.id) as { type: string } | undefined;
+      if (lastEvent && ["run.completed", "run.failed", "run.canceled"].includes(lastEvent.type)) {
+        continue;
+      }
+
+      appendAgentRunEvent({
+        ...(run.canvas_id ? { canvasId: run.canvas_id } : {}),
+        runId: run.id,
+        event: {
+          type: "run.failed",
+          runId: run.id,
+          error: {
+            code: "run_failed",
+            message,
+          },
+          timestamp: nowIso(),
+        },
+      });
+    }
+
+    return interruptedRuns.length;
   }
 
   function createBackgroundJob(input: {
@@ -2936,6 +3067,9 @@ export function createLocalStore(options: {
     getAgentRun,
     appendAgentRunEvent,
     listAgentRunEvents,
+    listCanvasAgentEvents,
+    getLatestCanvasEventSeq,
+    recoverInterruptedAgentRuns,
     createBackgroundJob,
     getBackgroundJob,
     listBackgroundJobs,

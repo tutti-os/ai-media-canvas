@@ -172,8 +172,11 @@ export function useWebSocket(): WebSocketHandle {
         if (serverMessage.data.type === "event") {
           const activeCanvasId = activeCanvasIdRef.current;
           if (activeCanvasId) {
-            const currentSeq = lastSeqByCanvasRef.current.get(activeCanvasId) ?? 0;
-            lastSeqByCanvasRef.current.set(activeCanvasId, currentSeq + 1);
+            const nextSeq =
+              typeof serverMessage.data.seq === "number"
+                ? serverMessage.data.seq
+                : (lastSeqByCanvasRef.current.get(activeCanvasId) ?? 0) + 1;
+            lastSeqByCanvasRef.current.set(activeCanvasId, nextSeq);
           }
           emitEvent(serverMessage.data.event);
           return;
