@@ -68,7 +68,20 @@ export function VideoGeneratorPanel({
     let cancelled = false;
     fetchVideoModels()
       .then((response) => {
-        if (!cancelled) setModels(response.models);
+        if (cancelled) return;
+        setModels(response.models);
+        setModel((currentModel) => {
+          if (response.models.some((item) => item.id === currentModel)) {
+            return currentModel;
+          }
+          const fallbackModel = response.models[0]?.id ?? currentModel;
+          if (fallbackModel !== currentModel) {
+            updateVideoGeneratorElement(excalidrawApi, elementId, {
+              model: fallbackModel,
+            });
+          }
+          return fallbackModel;
+        });
       })
       .catch((err) => {
         console.warn("[video-gen] Failed to fetch models:", err);
@@ -76,7 +89,7 @@ export function VideoGeneratorPanel({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [excalidrawApi, elementId]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

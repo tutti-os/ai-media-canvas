@@ -190,4 +190,44 @@ describe("canvas generation panels", () => {
       screen.queryByText("远端生成，本地落库"),
     ).not.toBeInTheDocument();
   });
+
+  it("falls back to the first available video model when the current model is unavailable", async () => {
+    const excalidrawApi = createExcalidrawApiStub();
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "",
+            model: "google-official/veo-3.1-generate-preview",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={excalidrawApi}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() =>
+      expect(fetchVideoModelsMock).toHaveBeenCalledTimes(1),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /agnes video v2\.0/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(excalidrawApi.updateScene).toHaveBeenCalledWith({
+      elements: [],
+      captureUpdate: "IMMEDIATELY",
+    });
+  });
 });

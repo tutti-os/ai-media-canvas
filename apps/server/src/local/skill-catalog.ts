@@ -79,9 +79,12 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
     installedByDefault: true,
     skillContent: skillTemplate(
       "Canvas Director",
-      "Use this skill when the user is shaping layout, composition, or visual hierarchy on the canvas.",
+      "Use this skill only when the user explicitly wants layout, composition, hierarchy, or layered editing directly on the canvas.",
       [
         "Summarize the current canvas goal before proposing changes.",
+        "Do not use this skill as a reason to fake a final polished image by assembling many canvas elements when a single generate_image call would satisfy the request.",
+        "If the user wants a final polished visual deliverable, prefer generating the full image first instead of building a faux image effect by composing many canvas elements.",
+        "Treat manipulate_canvas as a direct canvas editing tool, mainly for positioning, alignment, and small local edits unless the user explicitly asks for layered canvas construction.",
         "Break recommendations into structure, emphasis, and finishing passes.",
         "When relevant, connect the suggestion back to Brand Kit assets already available locally.",
       ],

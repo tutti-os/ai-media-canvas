@@ -84,13 +84,13 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .number()
       .optional()
       .describe(
-        "Left edge x coordinate on canvas. Use inspect_canvas to determine position.",
+        "Optional left edge x coordinate on canvas. Leave unset for automatic non-overlapping placement. Only set when exact placement is required.",
       ),
     placementY: z
       .number()
       .optional()
       .describe(
-        "Top edge y coordinate on canvas. Use inspect_canvas to determine position.",
+        "Optional top edge y coordinate on canvas. Leave unset for automatic non-overlapping placement. Only set when exact placement is required.",
       ),
     placementWidth: z
       .number()
@@ -346,7 +346,7 @@ export function createImageGenerateTool(deps?: {
     },
     {
       name: "generate_image",
-      description: `Generate an image using AI. Available models: ${modelSummary}. Returns the generated image URL.`,
+      description: `Generate an image using AI. Available models: ${modelSummary}. Returns the generated image URL. When creating multiple exploration images, leave placementX and placementY unset unless exact positioning is necessary so the canvas can auto-place results without overlap.`,
       schema: buildImageGenerateSchema(models),
     },
   );

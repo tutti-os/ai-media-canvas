@@ -51,6 +51,10 @@ const operationSchema = z.object({
 
   // Common: target element ID (move, resize, delete, update_style, reorder)
   element_id: z.string().optional().describe("ID of element to operate on"),
+  user_confirmed: z
+    .boolean()
+    .optional()
+    .describe("For delete only. Set true only when the user explicitly confirmed deletion in the current request."),
 
   // Position / size
   x: z.number().optional().describe("X coordinate"),
@@ -144,6 +148,12 @@ function applyDelete(
   elements: CanvasElement[],
   op: Operation,
 ): HandlerResult {
+  if (op.user_confirmed !== true) {
+    return {
+      description:
+        "[skip] delete requires explicit user confirmation in the current request",
+    };
+  }
   const el = findElement(elements, op.element_id!);
   if (!el) return { description: `[skip] element ${op.element_id} not found` };
   el.isDeleted = true;
