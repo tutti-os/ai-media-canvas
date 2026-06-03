@@ -32,6 +32,8 @@ import { isVideoUrl } from "../lib/canvas-elements";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
 import { VideoPlayerPanel } from "./canvas/video-player-panel";
+import { useImageModelPreference } from "../hooks/use-image-model-preference";
+import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 
 type ToolType =
   | "hand"
@@ -153,6 +155,8 @@ export function CanvasToolMenu({
   leftPanelOpen,
   projectId,
 }: CanvasToolMenuProps) {
+  const { activeImageGenerationPreference } = useImageModelPreference();
+  const { activeVideoGenerationPreference } = useVideoModelPreference();
   const [activeTool, setActiveTool] = useState<string>("selection");
 
   // Image generator state
@@ -391,7 +395,10 @@ export function CanvasToolMenu({
 
   const handleCreateImageGenerator = useCallback(() => {
     if (!excalidrawApi) return;
-    const elementId = createImageGeneratorElement(excalidrawApi);
+    const preferredModel = activeImageGenerationPreference?.models[0];
+    const elementId = createImageGeneratorElement(excalidrawApi, {
+      ...(preferredModel ? { model: preferredModel } : {}),
+    });
     // Select the newly created element so onChange recognises it
     excalidrawApi.updateScene({
       appState: { selectedElementIds: { [elementId]: true } },
@@ -409,7 +416,7 @@ export function CanvasToolMenu({
         height: el.height as number,
       });
     }
-  }, [excalidrawApi]);
+  }, [activeImageGenerationPreference, excalidrawApi]);
 
   const handleCloseGenerator = useCallback(() => {
     setActiveGeneratorId(null);
@@ -419,8 +426,10 @@ export function CanvasToolMenu({
 
   const handleCreateVideoGenerator = useCallback(() => {
     if (!excalidrawApi) return;
+    const preferredModel = activeVideoGenerationPreference?.models[0];
     const elementId = createVideoGeneratorElement(excalidrawApi, {
       aspectRatio: "16:9",
+      ...(preferredModel ? { model: preferredModel } : {}),
     });
     excalidrawApi.updateScene({
       appState: { selectedElementIds: { [elementId]: true } },
@@ -437,7 +446,7 @@ export function CanvasToolMenu({
         height: el.height as number,
       });
     }
-  }, [excalidrawApi]);
+  }, [activeVideoGenerationPreference, excalidrawApi]);
 
   const handleCloseVideoGenerator = useCallback(() => {
     setActiveVideoGenId(null);

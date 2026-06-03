@@ -44,67 +44,96 @@ export function useWebSocket(): WebSocketHandle {
 
   const startRun = useCallback(
     async (payload: RunCreateRequest, onAck?: (ack: WsCommandAck) => void) => {
-      const runId =
+      const fallbackRunId =
         typeof crypto !== "undefined" && crypto.randomUUID
           ? crypto.randomUUID()
           : `local-run-${Date.now()}`;
-      const messageId = `assistant-message-${runId}`;
-      onAck?.({
-        type: "command.ack",
-        action: "agent.run",
-        payload: { runId },
-      });
-
-      emitEvent({
-        type: "run.started",
-        runId,
-        sessionId: payload.sessionId,
-        conversationId: payload.conversationId,
-        timestamp: new Date().toISOString(),
-      });
-
       const controller = new AbortController();
-      runControllers.current.set(runId, controller);
+      let runId = fallbackRunId;
+      let acked = false;
 
       try {
-        const response = await fetch(`${getServerBaseUrl()}/api/local-agent/respond`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
+        const response = await fetch(
+          `${getServerBaseUrl()}/api/local-agent/respond`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
           },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
+        );
 
         if (!response.ok) {
           throw new Error(`local agent failed with status ${response.status}`);
         }
 
-        const data = (await response.json()) as {
-          message?: {
-            content?: string;
-          };
+        const ackPayload = (await response.json()) as {
+          conversationId: string;
+          runId: string;
+          sessionId: string;
+          status: string;
         };
-        const text =
-          data.message?.content?.trim() ||
-          "本地助手没有返回内容。";
-
-        emitEvent({
-          type: "message.delta",
-          runId,
-          messageId,
-          delta: text,
-          timestamp: new Date().toISOString(),
+        runId = ackPayload.runId;
+        acked = true;
+        runControllers.current.set(runId, controller);
+        onAck?.({
+          type: "command.ack",
+          action: "agent.run",
+          payload: ackPayload,
         });
 
-        emitEvent({
-          type: "run.completed",
-          runId,
-          timestamp: new Date().toISOString(),
-        });
+        let cursor = 0;
+        while (!controller.signal.aborted) {
+          const eventsResponse = await fetch(
+            `${getServerBaseUrl()}/api/local-agent/respond/${runId}/events?cursor=${cursor}`,
+            {
+              signal: controller.signal,
+            },
+          );
+          if (!eventsResponse.ok) {
+            throw new Error(
+              `local agent events failed with status ${eventsResponse.status}`,
+            );
+          }
+
+          const data = (await eventsResponse.json()) as {
+            done: boolean;
+            events: StreamEvent[];
+            nextCursor: number;
+          };
+          for (const event of data.events) {
+            emitEvent(event);
+          }
+          cursor = data.nextCursor;
+
+          if (data.done) {
+            break;
+          }
+
+          await new Promise<void>((resolve) => {
+            const timeout = window.setTimeout(resolve, 250);
+            controller.signal.addEventListener(
+              "abort",
+              () => {
+                window.clearTimeout(timeout);
+                resolve();
+              },
+              { once: true },
+            );
+          });
+        }
       } catch (error) {
         if (controller.signal.aborted) {
           return;
+        }
+        if (!acked) {
+          onAck?.({
+            type: "command.ack",
+            action: "agent.run",
+            payload: { runId },
+          });
         }
         emitEvent({
           type: "run.failed",
@@ -128,6 +157,9 @@ export function useWebSocket(): WebSocketHandle {
   const cancelRun = useCallback((runId: string) => {
     runControllers.current.get(runId)?.abort();
     runControllers.current.delete(runId);
+    void fetch(`${getServerBaseUrl()}/api/local-agent/respond/${runId}/cancel`, {
+      method: "POST",
+    }).catch(() => {});
     emitEvent({
       type: "run.canceled",
       runId,

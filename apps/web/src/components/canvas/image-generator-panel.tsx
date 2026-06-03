@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { generateImageDirect } from "../../lib/server-api";
+import type { ImageModelInfo } from "../../lib/server-api";
+import { fetchImageModels, generateImageDirect } from "../../lib/server-api";
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
 import {
   updateImageGeneratorElement,
@@ -14,6 +15,7 @@ import {
   createExcalidrawImageElement,
   fetchAsDataURL,
 } from "../../lib/canvas-elements";
+import { formatProviderLabel } from "../../lib/provider-labels";
 
 type ImageGeneratorPanelProps = {
   elementId: string;
@@ -41,9 +43,12 @@ export function ImageGeneratorPanel({
   onClose,
 }: ImageGeneratorPanelProps) {
   const [prompt, setPrompt] = useState(data.prompt);
+  const [model, setModel] = useState(data.model);
   const [aspectRatio, setAspectRatio] = useState(data.aspectRatio);
   const [loading, setLoading] = useState(data.status === "generating");
   const [error, setError] = useState<string | null>(data.errorMessage ?? null);
+  const [models, setModels] = useState<ImageModelInfo[]>([]);
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showRatioDropdown, setShowRatioDropdown] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -51,10 +56,27 @@ export function ImageGeneratorPanel({
   // AbortController for in-flight generation requests so we can cancel on unmount
   const abortRef = useRef<AbortController | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchImageModels()
+      .then((response) => {
+        if (!cancelled) {
+          setModels(response.models);
+        }
+      })
+      .catch((err) => {
+        console.warn("[image-gen] Failed to fetch models:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Close dropdowns when clicking outside the panel
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setShowModelDropdown(false);
         setShowRatioDropdown(false);
       }
     };
@@ -82,6 +104,18 @@ export function ImageGeneratorPanel({
   const screenX = (elementBounds.x + scrollX) * zoom;
   const screenY =
     (elementBounds.y + elementBounds.height + scrollY) * zoom + 8;
+  const currentModel = models.find((item) => item.id === model);
+
+  const handleModelChange = useCallback(
+    (nextModel: string) => {
+      setModel(nextModel);
+      setShowModelDropdown(false);
+      updateImageGeneratorElement(excalidrawApi, elementId, {
+        model: nextModel,
+      });
+    },
+    [excalidrawApi, elementId],
+  );
 
   const handleAspectRatioChange = useCallback(
     (ratio: string) => {
@@ -113,7 +147,7 @@ export function ImageGeneratorPanel({
 
     try {
       const result = await generateImageDirect(prompt.trim(), {
-        model: data.model,
+        model,
         aspectRatio,
         quality: data.quality,
       });
@@ -175,6 +209,7 @@ export function ImageGeneratorPanel({
   }, [
     prompt,
     loading,
+    model,
     aspectRatio,
     excalidrawApi,
     elementId,
@@ -217,9 +252,50 @@ export function ImageGeneratorPanel({
       {/* Bottom toolbar */}
       <div className="mt-1 flex items-center justify-between">
         <div className="flex items-center">
-          <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">
-            远端生图，本地落库
-          </span>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowModelDropdown((value) => !value)}
+              className="flex h-8 items-center gap-1 rounded-full border-[0.5px] border-border bg-background px-3 text-xs text-foreground transition-colors hover:bg-muted/60"
+            >
+              <span className="truncate max-w-[180px]">
+                {currentModel ? currentModel.displayName : model}
+              </span>
+              <svg
+                className="h-3 w-3 text-muted-foreground"
+                viewBox="0 0 12 24"
+                fill="currentColor"
+              >
+                <path d="M8.546 10.33a.4.4 0 0 1 .566 0l.424.424a.4.4 0 0 1 0 .566l-3.041 3.041a.7.7 0 0 1-.99 0l-3.04-3.04a.4.4 0 0 1 0-.567l.423-.424a.4.4 0 0 1 .567 0L6 12.876z" />
+              </svg>
+            </button>
+            {showModelDropdown && (
+              <div className="absolute bottom-full left-0 z-50 mb-1 w-[280px] overflow-hidden rounded-2xl border-[0.5px] border-border bg-card py-1 shadow-card">
+                <div className="max-h-[240px] overflow-y-auto">
+                  {models.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleModelChange(item.id)}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/60"
+                    >
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-muted-foreground">
+                        {(item.displayName || item.id).slice(0, 1)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-foreground">
+                          {item.displayName}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {formatProviderLabel(item.provider)}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-1">
