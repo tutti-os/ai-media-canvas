@@ -48,6 +48,9 @@ const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   defaultModel: "",
   openAIApiKey: "",
   openAIApiBase: "",
+  agnesApiKey: "",
+  agnesBaseUrl: "",
+  agnesDefaultModel: "",
   googleApiKey: "",
   googleVertexProject: "",
   googleVertexLocation: "",
@@ -160,6 +163,7 @@ export function createLocalStore(options: {
   assetBaseUrl: string;
   dataRoot?: string;
 }) {
+  let workspaceSettingsHasLegacyIdColumn = false;
   const dataRoot =
     options.dataRoot ?? resolve(process.cwd(), "../../local-data");
   const assetsRoot = join(dataRoot, "assets");
@@ -186,6 +190,9 @@ export function createLocalStore(options: {
       default_model TEXT NOT NULL DEFAULT '',
       openai_api_key TEXT NOT NULL DEFAULT '',
       openai_api_base TEXT NOT NULL DEFAULT '',
+      agnes_api_key TEXT NOT NULL DEFAULT '',
+      agnes_base_url TEXT NOT NULL DEFAULT '',
+      agnes_default_model TEXT NOT NULL DEFAULT '',
       google_api_key TEXT NOT NULL DEFAULT '',
       google_vertex_project TEXT NOT NULL DEFAULT '',
       google_vertex_location TEXT NOT NULL DEFAULT '',
@@ -352,6 +359,9 @@ export function createLocalStore(options: {
           default_model,
           openai_api_key,
           openai_api_base,
+          agnes_api_key,
+          agnes_base_url,
+          agnes_default_model,
           google_api_key,
           google_vertex_project,
           google_vertex_location,
@@ -359,7 +369,7 @@ export function createLocalStore(options: {
           replicate_api_token,
           volces_api_key,
           volces_base_url
-        ) VALUES (?, '', '', '', '', '', '', '', '', '', '')
+        ) VALUES (?, '', '', '', '', '', '', '', '', '', '', '', '', '')
       `,
     ).run(LOCAL_WORKSPACE_ID);
   }
@@ -369,6 +379,7 @@ export function createLocalStore(options: {
       .prepare(`PRAGMA table_info(workspace_settings)`)
       .all() as Array<{ name: string }>;
     const columnNames = new Set(columns.map((column) => column.name));
+    workspaceSettingsHasLegacyIdColumn = columnNames.has("id");
 
     if (!columnNames.has("workspace_id")) {
       db.exec(
@@ -383,6 +394,9 @@ export function createLocalStore(options: {
     const missingColumns: Array<[string, string]> = [
       ["openai_api_key", "TEXT NOT NULL DEFAULT ''"],
       ["openai_api_base", "TEXT NOT NULL DEFAULT ''"],
+      ["agnes_api_key", "TEXT NOT NULL DEFAULT ''"],
+      ["agnes_base_url", "TEXT NOT NULL DEFAULT ''"],
+      ["agnes_default_model", "TEXT NOT NULL DEFAULT ''"],
       ["google_api_key", "TEXT NOT NULL DEFAULT ''"],
       ["google_vertex_project", "TEXT NOT NULL DEFAULT ''"],
       ["google_vertex_location", "TEXT NOT NULL DEFAULT ''"],
@@ -557,6 +571,9 @@ export function createLocalStore(options: {
             default_model,
             openai_api_key,
             openai_api_base,
+            agnes_api_key,
+            agnes_base_url,
+            agnes_default_model,
             google_api_key,
             google_vertex_project,
             google_vertex_location,
@@ -573,6 +590,9 @@ export function createLocalStore(options: {
           default_model: string;
           openai_api_key: string;
           openai_api_base: string;
+          agnes_api_key: string;
+          agnes_base_url: string;
+          agnes_default_model: string;
           google_api_key: string;
           google_vertex_project: string;
           google_vertex_location: string;
@@ -591,6 +611,9 @@ export function createLocalStore(options: {
       defaultModel: row.default_model ?? "",
       openAIApiKey: row.openai_api_key ?? "",
       openAIApiBase: row.openai_api_base ?? "",
+      agnesApiKey: row.agnes_api_key ?? "",
+      agnesBaseUrl: row.agnes_base_url ?? "",
+      agnesDefaultModel: row.agnes_default_model ?? "",
       googleApiKey: row.google_api_key ?? "",
       googleVertexProject: row.google_vertex_project ?? "",
       googleVertexLocation: row.google_vertex_location ?? "",
@@ -604,46 +627,110 @@ export function createLocalStore(options: {
   function updateWorkspaceSettings(
     settings: WorkspaceSettings,
   ): WorkspaceSettings {
-    db.prepare(
-      `
-        INSERT INTO workspace_settings (
-          workspace_id,
-          default_model,
-          openai_api_key,
-          openai_api_base,
-          google_api_key,
-          google_vertex_project,
-          google_vertex_location,
-          google_vertex_video_location,
-          replicate_api_token,
-          volces_api_key,
-          volces_base_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(workspace_id) DO UPDATE SET
-          default_model = excluded.default_model,
-          openai_api_key = excluded.openai_api_key,
-          openai_api_base = excluded.openai_api_base,
-          google_api_key = excluded.google_api_key,
-          google_vertex_project = excluded.google_vertex_project,
-          google_vertex_location = excluded.google_vertex_location,
-          google_vertex_video_location = excluded.google_vertex_video_location,
-          replicate_api_token = excluded.replicate_api_token,
-          volces_api_key = excluded.volces_api_key,
-          volces_base_url = excluded.volces_base_url
-      `,
-    ).run(
-      LOCAL_WORKSPACE_ID,
-      settings.defaultModel,
-      settings.openAIApiKey,
-      settings.openAIApiBase,
-      settings.googleApiKey,
-      settings.googleVertexProject,
-      settings.googleVertexLocation,
-      settings.googleVertexVideoLocation,
-      settings.replicateApiToken,
-      settings.volcesApiKey,
-      settings.volcesBaseUrl,
-    );
+    if (workspaceSettingsHasLegacyIdColumn) {
+      db.prepare(
+        `
+          INSERT INTO workspace_settings (
+            id,
+            workspace_id,
+            default_model,
+            openai_api_key,
+            openai_api_base,
+            agnes_api_key,
+            agnes_base_url,
+            agnes_default_model,
+            google_api_key,
+            google_vertex_project,
+            google_vertex_location,
+            google_vertex_video_location,
+            replicate_api_token,
+            volces_api_key,
+            volces_base_url
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            workspace_id = excluded.workspace_id,
+            default_model = excluded.default_model,
+            openai_api_key = excluded.openai_api_key,
+            openai_api_base = excluded.openai_api_base,
+            agnes_api_key = excluded.agnes_api_key,
+            agnes_base_url = excluded.agnes_base_url,
+            agnes_default_model = excluded.agnes_default_model,
+            google_api_key = excluded.google_api_key,
+            google_vertex_project = excluded.google_vertex_project,
+            google_vertex_location = excluded.google_vertex_location,
+            google_vertex_video_location = excluded.google_vertex_video_location,
+            replicate_api_token = excluded.replicate_api_token,
+            volces_api_key = excluded.volces_api_key,
+            volces_base_url = excluded.volces_base_url
+        `,
+      ).run(
+        1,
+        LOCAL_WORKSPACE_ID,
+        settings.defaultModel,
+        settings.openAIApiKey,
+        settings.openAIApiBase,
+        settings.agnesApiKey,
+        settings.agnesBaseUrl,
+        settings.agnesDefaultModel,
+        settings.googleApiKey,
+        settings.googleVertexProject,
+        settings.googleVertexLocation,
+        settings.googleVertexVideoLocation,
+        settings.replicateApiToken,
+        settings.volcesApiKey,
+        settings.volcesBaseUrl,
+      );
+    } else {
+      db.prepare(
+        `
+          INSERT INTO workspace_settings (
+            workspace_id,
+            default_model,
+            openai_api_key,
+            openai_api_base,
+            agnes_api_key,
+            agnes_base_url,
+            agnes_default_model,
+            google_api_key,
+            google_vertex_project,
+            google_vertex_location,
+            google_vertex_video_location,
+            replicate_api_token,
+            volces_api_key,
+            volces_base_url
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(workspace_id) DO UPDATE SET
+            default_model = excluded.default_model,
+            openai_api_key = excluded.openai_api_key,
+            openai_api_base = excluded.openai_api_base,
+            agnes_api_key = excluded.agnes_api_key,
+            agnes_base_url = excluded.agnes_base_url,
+            agnes_default_model = excluded.agnes_default_model,
+            google_api_key = excluded.google_api_key,
+            google_vertex_project = excluded.google_vertex_project,
+            google_vertex_location = excluded.google_vertex_location,
+            google_vertex_video_location = excluded.google_vertex_video_location,
+            replicate_api_token = excluded.replicate_api_token,
+            volces_api_key = excluded.volces_api_key,
+            volces_base_url = excluded.volces_base_url
+        `,
+      ).run(
+        LOCAL_WORKSPACE_ID,
+        settings.defaultModel,
+        settings.openAIApiKey,
+        settings.openAIApiBase,
+        settings.agnesApiKey,
+        settings.agnesBaseUrl,
+        settings.agnesDefaultModel,
+        settings.googleApiKey,
+        settings.googleVertexProject,
+        settings.googleVertexLocation,
+        settings.googleVertexVideoLocation,
+        settings.replicateApiToken,
+        settings.volcesApiKey,
+        settings.volcesBaseUrl,
+      );
+    }
 
     return getWorkspaceSettings();
   }

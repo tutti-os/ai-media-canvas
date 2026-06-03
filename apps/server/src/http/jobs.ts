@@ -42,6 +42,8 @@ export async function registerJobRoutes(
           ...(payload.aspect_ratio ? { aspect_ratio: payload.aspect_ratio } : {}),
           ...(payload.quality ? { quality: payload.quality } : {}),
           ...(payload.input_images ? { input_images: payload.input_images } : {}),
+          ...(payload.size ? { size: payload.size } : {}),
+          ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
         },
       });
       return reply.code(201).send(jobResponseSchema.parse({ job }));
@@ -70,6 +72,17 @@ export async function registerJobRoutes(
           ...(payload.aspect_ratio ? { aspect_ratio: payload.aspect_ratio } : {}),
           ...(payload.input_images ? { input_images: payload.input_images } : {}),
           ...(payload.input_video ? { input_video: payload.input_video } : {}),
+          ...(payload.video_mode ? { video_mode: payload.video_mode } : {}),
+          ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
+          ...(payload.negative_prompt
+            ? { negative_prompt: payload.negative_prompt }
+            : {}),
+          ...(payload.frame_rate !== undefined
+            ? { frame_rate: payload.frame_rate }
+            : {}),
+          ...(payload.num_frames !== undefined
+            ? { num_frames: payload.num_frames }
+            : {}),
           ...(payload.enable_audio !== undefined
             ? { enable_audio: payload.enable_audio }
             : {}),

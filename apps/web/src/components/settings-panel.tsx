@@ -126,7 +126,7 @@ export function SettingsPanel({
     <div
       className={
         surface === "dialog"
-          ? "flex min-h-[64vh] flex-col md:flex-row"
+          ? "flex min-h-0 flex-col md:flex-row"
           : "overflow-hidden rounded-[28px] border bg-card shadow-sm"
       }
     >
@@ -157,7 +157,7 @@ export function SettingsPanel({
       <section
         className={
           surface === "dialog"
-            ? "max-h-[78vh] min-w-0 flex-1 overflow-y-auto p-6 md:min-w-[560px] lg:min-w-[700px]"
+            ? "min-w-0 flex-1 overflow-y-auto p-6 md:min-w-[560px] lg:min-w-[700px]"
             : "min-h-[640px] flex-1 p-6 md:p-8"
         }
       >

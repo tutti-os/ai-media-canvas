@@ -66,6 +66,20 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .describe(
         "Reference image URLs for editing/transformation. Google models accept up to 14, Flux models accept 1. Imagen 4 and Recraft V3 are text-only.",
       ),
+    size: z
+      .string()
+      .regex(/^\d+x\d+$/)
+      .optional()
+      .describe(
+        "Optional provider-specific pixel size override such as 1536x1024. Most useful for Agnes image generation.",
+      ),
+    seed: z
+      .number()
+      .int()
+      .optional()
+      .describe(
+        "Optional deterministic seed for providers that support reproducible generations.",
+      ),
     placementX: z
       .number()
       .optional()
@@ -99,6 +113,8 @@ type ImageGenerateInput = {
   quality?: string;
   outputFormat?: string;
   inputImages?: string[];
+  size?: string;
+  seed?: number;
   placementX?: number;
   placementY?: number;
   placementWidth?: number;
@@ -140,6 +156,8 @@ export type SubmitImageJobFn = (input: {
   aspectRatio: string;
   inputImages?: string[];
   quality?: string;
+  size?: string;
+  seed?: number;
 }) => Promise<{
   jobId: string;
   elementId?: string;
@@ -202,6 +220,9 @@ export async function runImageGenerate(
         model: input.model,
         aspectRatio: input.aspectRatio ?? "1:1",
         ...(input.inputImages ? { inputImages: input.inputImages } : {}),
+        ...(input.quality ? { quality: input.quality } : {}),
+        ...(input.size ? { size: input.size } : {}),
+        ...(input.seed !== undefined ? { seed: input.seed } : {}),
       });
 
       if (jobResult.error) {
@@ -258,6 +279,8 @@ export async function runImageGenerate(
       ...(input.quality ? { quality: input.quality as any } : {}),
       ...(input.outputFormat ? { outputFormat: input.outputFormat as any } : {}),
       ...(input.inputImages?.length ? { inputImages: input.inputImages } : {}),
+      ...(input.size ? { size: input.size } : {}),
+      ...(input.seed !== undefined ? { seed: input.seed } : {}),
     });
     lap("direct_generate_done", { width: result.width, height: result.height });
 

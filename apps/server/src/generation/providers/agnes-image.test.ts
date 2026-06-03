@@ -1,0 +1,130 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { imageGenerateMock, createAgnesClientMock } = vi.hoisted(() => {
+  const imageGenerateMock = vi.fn();
+  const createAgnesClientMock = vi.fn(() => ({
+    image: {
+      generate: imageGenerateMock,
+    },
+  }));
+  return { imageGenerateMock, createAgnesClientMock };
+});
+
+vi.mock("agnes-ai-cli", () => ({
+  createAgnesClient: createAgnesClientMock,
+}));
+
+import { AgnesImageProvider } from "./agnes-image.js";
+
+describe("AgnesImageProvider", () => {
+  beforeEach(() => {
+    imageGenerateMock.mockReset();
+    createAgnesClientMock.mockClear();
+    imageGenerateMock.mockResolvedValue({
+      ok: true,
+      model: "agnes-image-2.1-flash",
+      url: "https://cdn.agnes.example/generated.png",
+      raw: {},
+    });
+  });
+
+  it("maps prompt-only generation to Agnes text2img mode", async () => {
+    const provider = new AgnesImageProvider(
+      "agnes-test-key",
+      "https://agnes.example/v1",
+    );
+
+    const result = await provider.generate({
+      prompt: "A product hero shot",
+      model: "agnes-image/agnes-image-2.1-flash",
+      aspectRatio: "1:1",
+    });
+
+    expect(createAgnesClientMock).toHaveBeenCalledWith({
+      apiKey: "agnes-test-key",
+      baseUrl: "https://agnes.example/v1",
+    });
+    expect(imageGenerateMock).toHaveBeenCalledWith({
+      mode: "text2img",
+      model: "agnes-image-2.1-flash",
+      prompt: "A product hero shot",
+      size: "1024x1024",
+    });
+    expect(result).toMatchObject({
+      url: "https://cdn.agnes.example/generated.png",
+      mimeType: "image/png",
+      width: 1024,
+      height: 1024,
+    });
+  });
+
+  it("forwards Agnes phase-2 image controls", async () => {
+    const provider = new AgnesImageProvider("agnes-test-key");
+
+    const result = await provider.generate({
+      prompt: "Generate a poster variant",
+      model: "agnes-image/agnes-image-2.1-flash",
+      aspectRatio: "1:1",
+      size: "1536x1024",
+      seed: 42,
+    });
+
+    expect(imageGenerateMock).toHaveBeenCalledWith({
+      mode: "text2img",
+      model: "agnes-image-2.1-flash",
+      prompt: "Generate a poster variant",
+      size: "1536x1024",
+      seed: 42,
+    });
+    expect(result).toMatchObject({
+      width: 1536,
+      height: 1024,
+    });
+  });
+
+  it("maps one input image to Agnes img2img mode", async () => {
+    const provider = new AgnesImageProvider("agnes-test-key");
+
+    await provider.generate({
+      prompt: "Turn this into a poster",
+      model: "agnes-image/agnes-image-2.0-flash",
+      aspectRatio: "4:3",
+      inputImages: ["data:image/png;base64,AAAA"],
+    });
+
+    expect(imageGenerateMock).toHaveBeenCalledWith({
+      mode: "img2img",
+      model: "agnes-image-2.0-flash",
+      image: "data:image/png;base64,AAAA",
+      prompt: "Turn this into a poster",
+      size: "1024x768",
+      ttl: "1h",
+    });
+  });
+
+  it("maps multiple input images to Agnes compose mode", async () => {
+    const provider = new AgnesImageProvider("agnes-test-key");
+
+    await provider.generate({
+      prompt: "Compose a campaign visual",
+      model: "agnes-image/agnes-image-2.1-flash",
+      aspectRatio: "16:9",
+      inputImages: [
+        "data:image/png;base64,AAAA",
+        "data:image/png;base64,BBBB",
+      ],
+    });
+
+    expect(imageGenerateMock).toHaveBeenCalledWith({
+      mode: "compose",
+      model: "agnes-image-2.1-flash",
+      images: [
+        "data:image/png;base64,AAAA",
+        "data:image/png;base64,BBBB",
+      ],
+      prompt: "Compose a campaign visual",
+      size: "1024x576",
+      ttl: "1h",
+    });
+  });
+});

@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, Plus, Zap } from "lucide-react";
+import { Plus, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -182,6 +182,8 @@ export function VideoGeneratorPanel({
       const inputImages: string[] = [];
       if (firstFrame) inputImages.push(firstFrame.dataUrl);
       if (lastFrame) inputImages.push(lastFrame.dataUrl);
+      const videoMode =
+        firstFrame && lastFrame ? ("keyframes" as const) : undefined;
 
       const result = await generateVideoDirect(prompt.trim(), {
         model,
@@ -189,6 +191,7 @@ export function VideoGeneratorPanel({
         resolution,
         aspectRatio,
         ...(inputImages.length ? { inputImages } : {}),
+        ...(videoMode ? { videoMode } : {}),
         projectId,
         canvasId,
       });
@@ -333,8 +336,8 @@ export function VideoGeneratorPanel({
                               {formatProviderLabel(item.provider)}
                             </span>
                           </div>
-                          <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                            {item.description}
+                          <div className="mt-0.5 text-xs text-muted-foreground">
+                            {formatProviderLabel(item.provider)}
                           </div>
                         </div>
                       </button>
@@ -473,10 +476,6 @@ export function VideoGeneratorPanel({
             <Plus className="h-3.5 w-3.5" />
             尾帧
           </button>
-          <div className="ml-auto inline-flex h-8 items-center gap-1 rounded-full bg-muted px-3 text-[11px] text-muted-foreground">
-            <Lock className="h-3 w-3" />
-            远端生成，本地落库
-          </div>
         </div>
       </div>
     </div>,

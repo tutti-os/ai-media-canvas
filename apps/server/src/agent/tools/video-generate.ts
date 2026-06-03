@@ -9,6 +9,67 @@ import {
 } from "../../generation/providers/registry.js";
 
 const DEFAULT_MODEL = "google-official/veo-3.1-generate-preview";
+const AGNES_VIDEO_MODEL_PREFIX = "agnes-video/";
+
+function validateAgnesVideoInput(input: {
+  model: string;
+  aspectRatio?: string;
+  frameRate?: number;
+  numFrames?: number;
+  resolution?: string;
+}) {
+  if (!input.model.startsWith(AGNES_VIDEO_MODEL_PREFIX)) {
+    return;
+  }
+
+  if (
+    input.aspectRatio &&
+    input.aspectRatio !== "16:9" &&
+    input.aspectRatio !== "9:16"
+  ) {
+    throw new Error(
+      "Agnes video currently supports only 16:9 or 9:16 aspect ratios.",
+    );
+  }
+
+  if (
+    input.resolution &&
+    input.resolution !== "480p" &&
+    input.resolution !== "720p" &&
+    input.resolution !== "1080p"
+  ) {
+    throw new Error(
+      "Agnes video currently supports only 480p, 720p, or 1080p output.",
+    );
+  }
+
+  if (
+    input.frameRate !== undefined &&
+    (!Number.isInteger(input.frameRate) ||
+      input.frameRate < 1 ||
+      input.frameRate > 60)
+  ) {
+    throw new Error(
+      "Agnes video frameRate must be an integer between 1 and 60.",
+    );
+  }
+
+  if (input.numFrames !== undefined) {
+    if (!Number.isInteger(input.numFrames) || input.numFrames <= 0) {
+      throw new Error("Agnes video numFrames must be a positive integer.");
+    }
+    if (input.numFrames > 441) {
+      throw new Error(
+        "Agnes video numFrames cannot exceed 441.",
+      );
+    }
+    if ((input.numFrames - 1) % 8 !== 0) {
+      throw new Error(
+        "Agnes video numFrames must follow the 8n + 1 rule.",
+      );
+    }
+  }
+}
 
 // ── Submit function type ───────────────────────────────────────────────────
 
@@ -20,6 +81,11 @@ export type SubmitVideoJobFn = (input: {
   aspectRatio?: string;
   inputImages?: string[];
   inputVideo?: string;
+  videoMode?: "multivideo" | "keyframes";
+  seed?: number;
+  negativePrompt?: string;
+  frameRate?: number;
+  numFrames?: number;
   enableAudio?: boolean;
 }) => Promise<{
   jobId: string;
@@ -97,6 +163,42 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
       .string()
       .optional()
       .describe("Source video URL for video-to-video editing. Only for Kling O1."),
+    videoMode: z
+      .enum(["multivideo", "keyframes"])
+      .optional()
+      .describe(
+        "When using multiple reference images, decide whether to blend them as multivideo or treat them as explicit keyframes.",
+      ),
+    seed: z
+      .number()
+      .int()
+      .optional()
+      .describe(
+        "Optional deterministic seed for providers that support reproducible video generations.",
+      ),
+    negativePrompt: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Optional negative prompt for suppressing unwanted motion, objects, or styles.",
+      ),
+    frameRate: z
+      .number()
+      .int()
+      .positive()
+      .max(60)
+      .optional()
+      .describe("Optional explicit frame rate for Agnes phase-2 style controls."),
+    numFrames: z
+      .number()
+      .int()
+      .positive()
+      .max(441)
+      .optional()
+      .describe(
+        "Optional explicit frame count for Agnes phase-2 style controls. Agnes expects 8n + 1.",
+      ),
     enableAudio: z
       .boolean()
       .optional()
@@ -167,6 +269,8 @@ export async function runVideoGenerate(
     input = { ...input, inputImages: validImages.length > 0 ? validImages : undefined };
   }
 
+  validateAgnesVideoInput(input);
+
   // Job mode: submit to PGMQ and wait for worker
   if (submitVideoJob) {
     try {
@@ -179,6 +283,17 @@ export async function runVideoGenerate(
         aspectRatio: input.aspectRatio,
         ...(input.inputImages ? { inputImages: input.inputImages } : {}),
         ...(input.inputVideo ? { inputVideo: input.inputVideo } : {}),
+        ...(input.videoMode ? { videoMode: input.videoMode } : {}),
+        ...(input.seed !== undefined ? { seed: input.seed } : {}),
+        ...(input.negativePrompt
+          ? { negativePrompt: input.negativePrompt }
+          : {}),
+        ...(input.frameRate !== undefined
+          ? { frameRate: input.frameRate }
+          : {}),
+        ...(input.numFrames !== undefined
+          ? { numFrames: input.numFrames }
+          : {}),
         enableAudio: input.enableAudio,
       });
 
@@ -239,6 +354,15 @@ export async function runVideoGenerate(
       ...(input.resolution ? { resolution: input.resolution as "480p" | "720p" | "1080p" } : {}),
       ...(input.inputImages ? { inputImages: input.inputImages } : {}),
       ...(input.inputVideo ? { inputVideo: input.inputVideo } : {}),
+      ...(input.videoMode ? { videoMode: input.videoMode } : {}),
+      ...(input.seed !== undefined ? { seed: input.seed } : {}),
+      ...(input.negativePrompt
+        ? { negativePrompt: input.negativePrompt }
+        : {}),
+      ...(input.frameRate !== undefined
+        ? { frameRate: input.frameRate }
+        : {}),
+      ...(input.numFrames !== undefined ? { numFrames: input.numFrames } : {}),
       ...(input.enableAudio != null ? { enableAudio: input.enableAudio } : {}),
     });
     lap("direct_generate_done");

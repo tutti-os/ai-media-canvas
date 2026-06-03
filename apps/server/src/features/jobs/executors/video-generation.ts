@@ -31,9 +31,18 @@ export async function executeVideoGenerationJob(
     ...(payload.aspect_ratio ? { aspectRatio: payload.aspect_ratio } : {}),
     ...(payload.input_images ? { inputImages: payload.input_images } : {}),
     ...(payload.input_video ? { inputVideo: payload.input_video } : {}),
+    ...(payload.video_mode ? { videoMode: payload.video_mode } : {}),
+    ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
+    ...(payload.negative_prompt
+      ? { negativePrompt: payload.negative_prompt }
+      : {}),
+    ...(payload.frame_rate !== undefined
+      ? { frameRate: payload.frame_rate }
+      : {}),
+    ...(payload.num_frames !== undefined ? { numFrames: payload.num_frames } : {}),
     ...(payload.enable_audio !== undefined
       ? { enableAudio: payload.enable_audio }
-        : {}),
+      : {}),
   });
 
   const { buffer, mimeType } = await loadGeneratedAsset(

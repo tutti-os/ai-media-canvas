@@ -109,6 +109,9 @@ describe("local server API", () => {
         defaultModel: "openai:gpt-4.1",
         openAIApiKey: "sk-local-openai",
         openAIApiBase: "http://127.0.0.1:4000/v1",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://agnes.example/v1",
+        agnesDefaultModel: "agnes:agnes-2.0-flash",
         googleApiKey: "",
         googleVertexProject: "",
         googleVertexLocation: "",
@@ -133,6 +136,9 @@ describe("local server API", () => {
         defaultModel: "google:gemini-2.5-flash",
         openAIApiKey: "",
         openAIApiBase: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://agnes.example/v1",
+        agnesDefaultModel: "agnes:agnes-2.0-flash",
         googleApiKey: "google-local-key",
         googleVertexProject: "vertex-project",
         googleVertexLocation: "global",
@@ -154,5 +160,6 @@ describe("local server API", () => {
       },
     );
     expect(result.settings.googleApiKey).toBe("google-local-key");
+    expect(result.settings.agnesApiKey).toBe("sk-local-agnes");
   });
 });

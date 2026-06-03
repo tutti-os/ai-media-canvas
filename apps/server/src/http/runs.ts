@@ -18,6 +18,7 @@ import {
   ThreadServiceError,
   type ThreadService,
 } from "../features/chat/thread-service.js";
+import type { ServerEnv } from "../config/env.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
 
@@ -57,6 +58,7 @@ export async function registerRunRoutes(
 
       // Resolve per-workspace model if auth context is available
       let model: string | undefined;
+      let runEnv: ServerEnv | undefined;
       if (
         authenticatedUser &&
         options.settingsService &&
@@ -65,11 +67,12 @@ export async function registerRunRoutes(
         try {
           const viewer =
             await options.viewerService.ensureViewer(authenticatedUser);
-          const settings = await options.settingsService.getWorkspaceSettings(
-            authenticatedUser,
-            viewer.workspace.id,
-          );
-          model = settings.defaultModel;
+          const effectiveEnv =
+            await options.settingsService.getEffectiveServerEnv(
+              viewer.workspace.id,
+            );
+          runEnv = effectiveEnv;
+          model = effectiveEnv.agentModel;
         } catch {
           // Fall through to server default model if settings lookup fails
         }
@@ -78,6 +81,7 @@ export async function registerRunRoutes(
       const response = runCreateResponseSchema.parse(
         agentRuns.createRun(payload, {
           ...(authenticatedUser ? { accessToken: authenticatedUser.accessToken, userId: authenticatedUser.id } : {}),
+          ...(runEnv ? { env: runEnv } : {}),
           ...(model ? { model } : {}),
           ...(sessionThread ? { threadId: sessionThread.threadId } : {}),
         }),

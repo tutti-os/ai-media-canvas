@@ -235,6 +235,9 @@ Help the assistant break an idea into storyboard beats.
       defaultModel: "google:gemini-2.5-flash",
       openAIApiKey: "sk-local-openai",
       openAIApiBase: "http://127.0.0.1:4000/v1",
+      agnesApiKey: "sk-local-agnes",
+      agnesBaseUrl: "https://local.agnes.example/v1",
+      agnesDefaultModel: "agnes:agnes-2.0-flash",
       googleApiKey: "google-local-key",
       googleVertexProject: "vertex-project",
       googleVertexLocation: "global",
@@ -253,6 +256,9 @@ Help the assistant break an idea into storyboard beats.
       defaultModel: "google:gemini-2.5-flash",
       openAIApiKey: "sk-local-openai",
       openAIApiBase: "http://127.0.0.1:4000/v1",
+      agnesApiKey: "sk-local-agnes",
+      agnesBaseUrl: "https://local.agnes.example/v1",
+      agnesDefaultModel: "agnes:agnes-2.0-flash",
       googleApiKey: "google-local-key",
       googleVertexProject: "vertex-project",
       googleVertexLocation: "global",
@@ -287,6 +293,62 @@ Help the assistant break an idea into storyboard beats.
       defaultModel: "openai:gpt-4o",
       openAIApiKey: "",
       openAIApiBase: "",
+      agnesApiKey: "",
+      agnesBaseUrl: "",
+      agnesDefaultModel: "",
+      googleApiKey: "",
+      googleVertexProject: "",
+      googleVertexLocation: "",
+      googleVertexVideoLocation: "",
+      replicateApiToken: "",
+      volcesApiKey: "",
+      volcesBaseUrl: "",
+    });
+  });
+
+  it("updates migrated legacy workspace settings rows without inserting a second record", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const db = new DatabaseSync(join(dataRoot, "ai-media-canvas.db"));
+    db.exec(`
+      CREATE TABLE workspace_settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        default_model TEXT NOT NULL
+      );
+      INSERT INTO workspace_settings (id, default_model)
+      VALUES (1, 'openai:gpt-4o');
+    `);
+    db.close();
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    expect(
+      store.updateWorkspaceSettings({
+        defaultModel: "agnes:agnes-2.0-flash",
+        openAIApiKey: "",
+        openAIApiBase: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "agnes:agnes-2.0-flash",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      }),
+    ).toEqual({
+      defaultModel: "agnes:agnes-2.0-flash",
+      openAIApiKey: "",
+      openAIApiBase: "",
+      agnesApiKey: "sk-local-agnes",
+      agnesBaseUrl: "",
+      agnesDefaultModel: "agnes:agnes-2.0-flash",
       googleApiKey: "",
       googleVertexProject: "",
       googleVertexLocation: "",

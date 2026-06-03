@@ -4,11 +4,17 @@ export const DEFAULT_SERVER_PORT = 3001;
 export const DEFAULT_WEB_ORIGIN = "http://localhost:3000";
 export const DEFAULT_AGENT_MODEL = "openai:gpt-5-mini";
 export const DEFAULT_GOOGLE_AGENT_MODEL = "gemini-2.5-flash";
+export const DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
+export const DEFAULT_AGNES_AGENT_MODEL = "agnes:agnes-2.0-flash";
 
 export type ServerEnv = {
   agentBackendMode: "state" | "filesystem";
   agentFilesRoot?: string;
+  agentModelConfigured?: boolean;
   agentModel: string;
+  agnesApiKey?: string;
+  agnesBaseUrl?: string;
+  agnesDefaultModel?: string;
   googleApiKey?: string;
   googleApplicationCredentials?: string;
   googleVertexLocation?: string;
@@ -45,9 +51,31 @@ export function loadServerEnv(
     normalizeOptionalString(
       source.AIMC_AGENT_FILES_ROOT ?? source.AGENT_FILES_ROOT,
     );
-  const agentModel =
+  const configuredAgentModel =
     overrides.agentModel ??
-    normalizeOptionalString(source.AIMC_AGENT_MODEL ?? source.AGENT_MODEL) ??
+    normalizeOptionalString(source.AIMC_AGENT_MODEL ?? source.AGENT_MODEL);
+  const agnesApiKey =
+    overrides.agnesApiKey ??
+    normalizeOptionalString(source.AIMC_AGNES_API_KEY ?? source.AGNES_API_KEY);
+  const agnesBaseUrlSource =
+    overrides.agnesBaseUrl ??
+    normalizeOptionalString(
+      source.AIMC_AGNES_BASE_URL ?? source.AGNES_BASE_URL,
+    );
+  const agnesDefaultModelSource =
+    overrides.agnesDefaultModel ??
+    normalizeOptionalString(
+      source.AIMC_AGNES_MODEL ?? source.AGNES_DEFAULT_MODEL,
+    );
+  const agnesBaseUrl =
+    agnesBaseUrlSource ??
+    (agnesApiKey ? DEFAULT_AGNES_BASE_URL : undefined);
+  const agnesDefaultModel =
+    agnesDefaultModelSource ??
+    (agnesApiKey ? DEFAULT_AGNES_AGENT_MODEL : undefined);
+  const agentModel =
+    configuredAgentModel ??
+    agnesDefaultModel ??
     DEFAULT_AGENT_MODEL;
   const openAIApiBase =
     overrides.openAIApiBase ??
@@ -110,6 +138,7 @@ export function loadServerEnv(
 
   return {
     agentBackendMode,
+    agentModelConfigured: configuredAgentModel !== undefined,
     agentModel,
     port: overrides.port ?? parsePort(source.AIMC_SERVER_PORT ?? source.PORT),
     version: overrides.version ?? readServerVersion(),
@@ -117,6 +146,9 @@ export function loadServerEnv(
       overrides.webOrigin ?? source.AIMC_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(webDistDir ? { webDistDir } : {}),
+    ...(agnesApiKey ? { agnesApiKey } : {}),
+    ...(agnesBaseUrl ? { agnesBaseUrl } : {}),
+    ...(agnesDefaultModel ? { agnesDefaultModel } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
     ...(openAIApiKey ? { openAIApiKey } : {}),
     ...(googleApiKey ? { googleApiKey } : {}),

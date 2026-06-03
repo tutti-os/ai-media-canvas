@@ -23,6 +23,19 @@ const LOCAL_USER: AuthenticatedUser = {
 };
 
 describe("createSettingsService", () => {
+  it("uses Agnes built-in defaults when only Agnes API key is configured", async () => {
+    const env = loadServerEnv({}, {
+      AGNES_API_KEY: "env-agnes-key",
+    });
+
+    expect(env).toMatchObject({
+      agnesApiKey: "env-agnes-key",
+      agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+      agnesDefaultModel: "agnes:agnes-2.0-flash",
+      agentModel: "agnes:agnes-2.0-flash",
+    });
+  });
+
   it("keeps persisted settings separate from env fallback and resolves an effective env", async () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-settings-"));
     tempDirs.push(dataRoot);
@@ -34,6 +47,9 @@ describe("createSettingsService", () => {
     const env = loadServerEnv({
       agentModel: "openai:gpt-4o-mini",
       openAIApiKey: "env-openai-key",
+      agnesApiKey: "env-agnes-key",
+      agnesBaseUrl: "https://env.agnes.example/v1",
+      agnesDefaultModel: "agnes:agnes-2.0-flash",
       googleApiKey: "env-google-key",
       googleVertexProject: "env-vertex-project",
       googleVertexLocation: "global",
@@ -47,6 +63,9 @@ describe("createSettingsService", () => {
       defaultModel: "",
       openAIApiKey: "",
       openAIApiBase: "",
+      agnesApiKey: "",
+      agnesBaseUrl: "",
+      agnesDefaultModel: "",
       googleApiKey: "",
       googleVertexProject: "",
       googleVertexLocation: "",
@@ -60,6 +79,9 @@ describe("createSettingsService", () => {
       defaultModel: "google:gemini-2.5-flash",
       openAIApiKey: "local-openai-key",
       openAIApiBase: "http://127.0.0.1:4000/v1",
+      agnesApiKey: "local-agnes-key",
+      agnesBaseUrl: "https://local.agnes.example/v1",
+      agnesDefaultModel: "agnes:agnes-2.0-flash",
       googleApiKey: "",
       googleVertexProject: "local-vertex-project",
       googleVertexLocation: "asia-east1",
@@ -75,6 +97,9 @@ describe("createSettingsService", () => {
       defaultModel: "google:gemini-2.5-flash",
       openAIApiKey: "local-openai-key",
       openAIApiBase: "http://127.0.0.1:4000/v1",
+      agnesApiKey: "local-agnes-key",
+      agnesBaseUrl: "https://local.agnes.example/v1",
+      agnesDefaultModel: "agnes:agnes-2.0-flash",
       googleVertexProject: "local-vertex-project",
       googleVertexLocation: "asia-east1",
       googleVertexVideoLocation: "us-central1",
@@ -87,11 +112,71 @@ describe("createSettingsService", () => {
       agentModel: "google:gemini-2.5-flash",
       openAIApiKey: "local-openai-key",
       openAIApiBase: "http://127.0.0.1:4000/v1",
+      agnesApiKey: "local-agnes-key",
+      agnesBaseUrl: "https://local.agnes.example/v1",
+      agnesDefaultModel: "agnes:agnes-2.0-flash",
       googleApiKey: "env-google-key",
       googleVertexProject: "local-vertex-project",
       googleVertexLocation: "asia-east1",
       googleVertexVideoLocation: "us-central1",
       replicateApiToken: "local-replicate-token",
     });
+  });
+
+  it("uses Agnes workspace default model when defaultModel is empty", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-settings-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const env = loadServerEnv({}, {});
+    const service = createSettingsService(store, env);
+
+    await service.updateWorkspaceSettings(LOCAL_USER, "local-workspace", {
+      defaultModel: "",
+      openAIApiKey: "",
+      openAIApiBase: "",
+      agnesApiKey: "local-agnes-key",
+      agnesBaseUrl: "",
+      agnesDefaultModel: "agnes:agnes-2.0-flash",
+      googleApiKey: "",
+      googleVertexProject: "",
+      googleVertexLocation: "",
+      googleVertexVideoLocation: "",
+      replicateApiToken: "",
+      volcesApiKey: "",
+      volcesBaseUrl: "",
+    });
+
+    await expect(
+      service.getEffectiveServerEnv("local-workspace"),
+    ).resolves.toMatchObject({
+      agentModel: "agnes:agnes-2.0-flash",
+      agnesApiKey: "local-agnes-key",
+      agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+      agnesDefaultModel: "agnes:agnes-2.0-flash",
+    });
+  });
+
+  it("preserves explicit env agentModel ahead of Agnes built-in fallback", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-settings-"));
+    tempDirs.push(dataRoot);
+    const env = loadServerEnv({
+      agentModel: "openai:gpt-4.1",
+      agnesApiKey: "env-agnes-key",
+    });
+
+    const effectiveEnv = await createSettingsService(
+      createLocalStore({
+        assetBaseUrl: "http://127.0.0.1:3001",
+        dataRoot,
+      }),
+      env,
+    ).getEffectiveServerEnv("local-workspace");
+
+    expect(effectiveEnv.agentModel).toBe("openai:gpt-4.1");
+    expect(effectiveEnv.agnesDefaultModel).toBe("agnes:agnes-2.0-flash");
   });
 });

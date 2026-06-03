@@ -24,6 +24,8 @@ const generateImageRequestSchema = z.object({
   aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
   inputImages: z.array(z.string()).max(4).optional(),
+  size: z.string().regex(/^\d+x\d+$/).optional(),
+  seed: z.number().int().optional(),
   projectId: z.string().optional(),
 });
 
@@ -35,6 +37,11 @@ const generateVideoRequestSchema = z.object({
   aspectRatio: z.enum(["16:9", "9:16"]).optional(),
   inputImages: z.array(z.string()).max(3).optional(),
   inputVideo: z.string().optional(),
+  videoMode: z.enum(["multivideo", "keyframes"]).optional(),
+  seed: z.number().int().optional(),
+  negativePrompt: z.string().min(1).optional(),
+  frameRate: z.number().int().positive().max(60).optional(),
+  numFrames: z.number().int().positive().max(441).optional(),
   enableAudio: z.boolean().optional(),
   projectId: z.string().optional(),
   canvasId: z.string().optional(),
@@ -80,6 +87,8 @@ export async function registerGenerateRoutes(
         model,
         ...(payload.aspectRatio ? { aspectRatio: payload.aspectRatio } : {}),
         ...(payload.quality ? { quality: payload.quality } : {}),
+        ...(payload.size ? { size: payload.size } : {}),
+        ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
         ...(payload.inputImages?.length
           ? { inputImages: payload.inputImages }
           : {}),
@@ -142,6 +151,17 @@ export async function registerGenerateRoutes(
           ...(payload.aspectRatio ? { aspect_ratio: payload.aspectRatio } : {}),
           ...(payload.inputImages ? { input_images: payload.inputImages } : {}),
           ...(payload.inputVideo ? { input_video: payload.inputVideo } : {}),
+          ...(payload.videoMode ? { video_mode: payload.videoMode } : {}),
+          ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
+          ...(payload.negativePrompt
+            ? { negative_prompt: payload.negativePrompt }
+            : {}),
+          ...(payload.frameRate !== undefined
+            ? { frame_rate: payload.frameRate }
+            : {}),
+          ...(payload.numFrames !== undefined
+            ? { num_frames: payload.numFrames }
+            : {}),
           ...(payload.enableAudio !== undefined
             ? { enable_audio: payload.enableAudio }
             : {}),

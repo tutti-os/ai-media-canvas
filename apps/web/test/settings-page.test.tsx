@@ -43,6 +43,9 @@ describe("SettingsPage", () => {
           defaultModel: "",
           openAIApiKey: "",
           openAIApiBase: "",
+          agnesApiKey: "",
+          agnesBaseUrl: "",
+          agnesDefaultModel: "",
           googleApiKey: "",
           googleVertexProject: "",
           googleVertexLocation: "",
@@ -70,6 +73,9 @@ describe("SettingsPage", () => {
         defaultModel: "openai:gpt-4.1",
         openAIApiKey: "sk-local-openai",
         openAIApiBase: "http://127.0.0.1:4000/v1",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://agnes.example/v1",
+        agnesDefaultModel: "agnes:agnes-2.0-flash",
         googleApiKey: "google-local-key",
         googleVertexProject: "vertex-project",
         googleVertexLocation: "global",
@@ -84,6 +90,9 @@ describe("SettingsPage", () => {
         defaultModel: "google:gemini-2.5-flash",
         openAIApiKey: "sk-local-openai",
         openAIApiBase: "http://127.0.0.1:4000/v1",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://agnes.example/v1",
+        agnesDefaultModel: "agnes:agnes-2.0-flash",
         googleApiKey: "google-local-key",
         googleVertexProject: "vertex-project",
         googleVertexLocation: "global",
@@ -100,6 +109,17 @@ describe("SettingsPage", () => {
     expect(defaultModelInput).toHaveValue("openai:gpt-4.1");
     expect(screen.getByLabelText("OpenAI API Key")).toHaveValue("sk-local-openai");
 
+    await userEvent.click(screen.getByRole("button", { name: /Agnes/i }));
+    expect(await screen.findByLabelText("Agnes API Key")).toHaveValue(
+      "sk-local-agnes",
+    );
+    expect(screen.getByLabelText("Agnes Base URL")).toHaveValue(
+      "https://agnes.example/v1",
+    );
+    expect(screen.getByLabelText("Agnes Default Model")).toHaveValue(
+      "agnes:agnes-2.0-flash",
+    );
+
     await userEvent.clear(defaultModelInput);
     await userEvent.type(defaultModelInput, "google:gemini-2.5-flash");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -109,6 +129,9 @@ describe("SettingsPage", () => {
         defaultModel: "google:gemini-2.5-flash",
         openAIApiKey: "sk-local-openai",
         openAIApiBase: "http://127.0.0.1:4000/v1",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://agnes.example/v1",
+        agnesDefaultModel: "agnes:agnes-2.0-flash",
         googleApiKey: "google-local-key",
         googleVertexProject: "vertex-project",
         googleVertexLocation: "global",
@@ -126,6 +149,9 @@ describe("SettingsPage", () => {
         defaultModel: "openai:gpt-4.1",
         openAIApiKey: "",
         openAIApiBase: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://agnes.example/v1",
+        agnesDefaultModel: "agnes:agnes-2.0-flash",
         googleApiKey: "",
         googleVertexProject: "",
         googleVertexLocation: "",
@@ -148,8 +174,13 @@ describe("SettingsPage", () => {
     expect(
       screen.getByRole("heading", { name: "Volces" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Agnes" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Seedance 1.5 Pro")).toBeInTheDocument();
+    expect(screen.getByText("Agnes Video v2.0")).toBeInTheDocument();
     expect(screen.getByDisplayValue("replicate-local-token")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("sk-local-agnes")).toBeInTheDocument();
     expect(
       screen.getByDisplayValue("https://ark.cn-beijing.volces.com/api/v3"),
     ).toBeInTheDocument();

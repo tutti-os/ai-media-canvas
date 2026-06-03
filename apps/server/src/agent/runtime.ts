@@ -43,6 +43,10 @@ import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import { loadWorkspaceSkills, type WorkspaceSkillEntry } from "./workspace-skills.js";
 import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
 import { insertImageElement, insertVideoElement } from "../features/canvas/canvas-element-writer.js";
+import {
+  buildAgentImageJobPayload,
+  buildAgentVideoJobPayload,
+} from "./job-payloads.js";
 
 /**
  * Build the text portion of a user message, appending <input_images> XML
@@ -239,6 +243,7 @@ type RuntimeRunRecord = RunCreateRequest & {
   accessToken?: string;
   consumed: boolean;
   controller: AbortController;
+  envOverride?: ServerEnv;
   modelOverride?: string;
   runId: string;
   status: RuntimeRunStatus;
@@ -334,7 +339,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
     createRun(
       input: RunCreateRequest,
-      runOptions?: { accessToken?: string; model?: string; threadId?: string; userId?: string },
+      runOptions?: {
+        accessToken?: string;
+        env?: ServerEnv;
+        model?: string;
+        threadId?: string;
+        userId?: string;
+      },
     ): RunCreateResponse {
       const runId = runIdFactory();
       const { accessToken: _ignoredAccessToken, ...runInput } = input;
@@ -344,6 +355,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         ...(runOptions?.accessToken ? { accessToken: runOptions.accessToken } : {}),
         consumed: false,
         controller: new AbortController(),
+        ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
         ...(runOptions?.model ? { modelOverride: runOptions.model } : {}),
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
         ...(runOptions?.userId ? { userId: runOptions.userId } : {}),
@@ -506,13 +518,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "image_generation",
-            payload: {
-              prompt: input.prompt,
-              title: input.title,
-              model: input.model,
-              aspect_ratio: input.aspectRatio,
-              ...(input.inputImages ? { input_images: input.inputImages } : {}),
-            },
+            payload: buildAgentImageJobPayload(input),
           });
 
           // Deduct credits after job creation
@@ -704,16 +710,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "video_generation",
-            payload: {
-              prompt: input.prompt,
-              model: input.model,
-              ...(input.duration != null ? { duration: input.duration } : {}),
-              ...(input.resolution ? { resolution: input.resolution } : {}),
-              ...(input.aspectRatio ? { aspect_ratio: input.aspectRatio } : {}),
-              ...(input.inputImages ? { input_images: input.inputImages } : {}),
-              ...(input.inputVideo ? { input_video: input.inputVideo } : {}),
-              ...(input.enableAudio != null ? { enable_audio: input.enableAudio } : {}),
-            },
+            payload: buildAgentVideoJobPayload(input),
           });
 
           // Deduct credits after job creation
@@ -857,9 +854,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         }
       }
 
+      const runtimeEnv = run.envOverride ?? options.env;
+
       // Create backend — production uses StateBackend (no local shell).
       const backendResult = createAgentBackend(
-        options.env,
+        runtimeEnv,
         run.canvasId,
         { hasWorkspaceSkills: workspaceSkills.length > 0 },
       );
@@ -990,7 +989,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           ...(run.canvasId ? { canvasId: run.canvasId } : {}),
           ...(persistence ? { checkpointer: persistence.checkpointer } : {}),
           ...(options.connectionManager ? { connectionManager: options.connectionManager } : {}),
-          env: options.env,
+          env: runtimeEnv,
           ...(resolvedModel ? { model: resolvedModel } : {}),
           ...(persistImage ? { persistImage } : {}),
           // execute 工具由 LocalShellBackend 自动提供，无需手动传递

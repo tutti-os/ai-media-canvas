@@ -152,4 +152,87 @@ describe("generation executors", () => {
     expect(asset?.mimeType).toBe("video/mp4");
     expect(readFileSync(asset!.filePath)).toEqual(videoBytes);
   });
+
+  it("forwards Agnes phase-2 video controls through the video executor", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-job-agnes-video-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const captured: Array<Record<string, unknown>> = [];
+    const videoProvider: VideoProvider = {
+      name: "agnes-video",
+      models: [
+        {
+          id: "agnes-video/agnes-video-v2.0",
+          displayName: "Agnes Video",
+          description: "Agnes video provider",
+          capabilities: {
+            textToVideo: true,
+            imageToVideo: true,
+            videoToVideo: false,
+            audio: false,
+          },
+          limits: {
+            maxDuration: 16,
+            maxResolution: "1080p",
+            maxInputImages: 8,
+          },
+        },
+      ],
+      async generate(params) {
+        captured.push(params as unknown as Record<string, unknown>);
+        return {
+          url: "data:video/mp4;base64,ZmFrZS12aWRlbw==",
+          mimeType: "video/mp4",
+          width: 1280,
+          height: 720,
+          durationSeconds: 4,
+        };
+      },
+    };
+
+    registerVideoProvider(videoProvider);
+
+    const project = store.createProject({ name: "Executor Agnes Video Project" });
+    const job = store.createBackgroundJob({
+      jobType: "video_generation",
+      queueName: "video_generation_jobs",
+      projectId: project.id,
+      payload: {
+        prompt: "Morph between two scenes",
+        model: "agnes-video/agnes-video-v2.0",
+        duration: 4,
+        aspect_ratio: "16:9",
+        input_images: [
+          "data:image/png;base64,AAAA",
+          "data:image/png;base64,BBBB",
+        ],
+        video_mode: "keyframes",
+        seed: 11,
+        negative_prompt: "shake, blur",
+        frame_rate: 12,
+        num_frames: 97,
+      },
+    });
+
+    await executeVideoGenerationJob(store, job);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toMatchObject({
+      model: "agnes-video/agnes-video-v2.0",
+      videoMode: "keyframes",
+      seed: 11,
+      negativePrompt: "shake, blur",
+      frameRate: 12,
+      numFrames: 97,
+      inputImages: [
+        "data:image/png;base64,AAAA",
+        "data:image/png;base64,BBBB",
+      ],
+    });
+  });
 });

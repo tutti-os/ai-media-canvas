@@ -1,0 +1,286 @@
+import { createAgnesClient } from "agnes-ai-cli";
+
+import type {
+  GeneratedVideo,
+  VideoGenerateParams,
+  VideoModelInfo,
+  VideoProvider,
+} from "../types.js";
+import { GenerationError } from "../utils.js";
+
+const ICON_AGNES = "https://github.com/jomeswang.png";
+const DEFAULT_FRAME_RATE = 24;
+const DEFAULT_AGNES_MEDIA_TTL = "1h" as const;
+const AGNES_VIDEO_MODEL_IDS = ["agnes-video-v2.0"] as const;
+const AGNES_VIDEO_ASPECT_RATIOS = ["16:9", "9:16"] as const;
+const MAX_AGNES_NUM_FRAMES = 441;
+type AgnesVideoModelId = (typeof AGNES_VIDEO_MODEL_IDS)[number];
+type AgnesVideoAspectRatio = (typeof AGNES_VIDEO_ASPECT_RATIOS)[number];
+type AgnesVideoResolution = "480p" | "720p" | "1080p";
+
+const AGNES_VIDEO_MODELS: readonly VideoModelInfo[] = [
+  {
+    id: "agnes-video/agnes-video-v2.0",
+    displayName: "Agnes Video v2.0",
+    description:
+      "Agnes text, image, multi-image, and keyframe-guided video generation.",
+    iconUrl: ICON_AGNES,
+    capabilities: {
+      textToVideo: true,
+      imageToVideo: true,
+      videoToVideo: false,
+      audio: false,
+    },
+    limits: {
+      maxDuration: 18,
+      maxResolution: "1080p",
+      maxInputImages: 8,
+    },
+  },
+];
+
+function getVideoDimensions(
+  resolution: AgnesVideoResolution | undefined,
+  aspectRatio: AgnesVideoAspectRatio,
+) {
+  const landscapeBase =
+    resolution === "1080p"
+      ? { width: 1920, height: 1080 }
+      : resolution === "480p"
+        ? { width: 854, height: 480 }
+        : { width: 1280, height: 720 };
+
+  if (aspectRatio === "9:16") {
+    return { width: landscapeBase.height, height: landscapeBase.width };
+  }
+  return landscapeBase;
+}
+
+function resolveAgnesResolution(
+  resolution: VideoGenerateParams["resolution"] | "4k" | undefined,
+): AgnesVideoResolution | undefined {
+  if (
+    resolution === undefined ||
+    resolution === "480p" ||
+    resolution === "720p" ||
+    resolution === "1080p"
+  ) {
+    return resolution;
+  }
+  throw new GenerationError(
+    "agnes-video",
+    "invalid_input",
+    `Unsupported Agnes video resolution: ${resolution}. Use 480p, 720p, or 1080p.`,
+  );
+}
+
+function resolveAgnesAspectRatio(
+  aspectRatio: string | undefined,
+): AgnesVideoAspectRatio {
+  const resolvedAspectRatio = aspectRatio ?? "16:9";
+  if (
+    AGNES_VIDEO_ASPECT_RATIOS.includes(
+      resolvedAspectRatio as AgnesVideoAspectRatio,
+    )
+  ) {
+    return resolvedAspectRatio as AgnesVideoAspectRatio;
+  }
+  throw new GenerationError(
+    "agnes-video",
+    "invalid_input",
+    `Unsupported Agnes video aspect ratio: ${resolvedAspectRatio}. Use 16:9 or 9:16.`,
+  );
+}
+
+function resolveAgnesFrameRate(frameRate: number | undefined) {
+  const resolvedFrameRate = frameRate ?? DEFAULT_FRAME_RATE;
+  if (
+    !Number.isInteger(resolvedFrameRate) ||
+    resolvedFrameRate < 1 ||
+    resolvedFrameRate > 60
+  ) {
+    throw new GenerationError(
+      "agnes-video",
+      "invalid_input",
+      `Invalid Agnes frameRate: ${resolvedFrameRate}. Use an integer between 1 and 60.`,
+    );
+  }
+  return resolvedFrameRate;
+}
+
+function alignAgnesNumFrames(durationSeconds: number, frameRate: number) {
+  const targetFrameCount = durationSeconds * frameRate;
+  const alignedSteps = Math.max(1, Math.round(targetFrameCount / 8));
+  return alignedSteps * 8 + 1;
+}
+
+function resolveAgnesNumFrames(
+  durationSeconds: number,
+  frameRate: number,
+  numFrames: number | undefined,
+) {
+  if (numFrames !== undefined) {
+    if (!Number.isInteger(numFrames) || numFrames <= 0) {
+      throw new GenerationError(
+        "agnes-video",
+        "invalid_input",
+        `Invalid Agnes numFrames: ${numFrames}. Use a positive integer.`,
+      );
+    }
+    if (numFrames > MAX_AGNES_NUM_FRAMES) {
+      throw new GenerationError(
+        "agnes-video",
+        "invalid_input",
+        `Invalid Agnes numFrames: ${numFrames}. Maximum supported value is ${MAX_AGNES_NUM_FRAMES}.`,
+      );
+    }
+    if ((numFrames - 1) % 8 !== 0) {
+      throw new GenerationError(
+        "agnes-video",
+        "invalid_input",
+        `Invalid Agnes numFrames: ${numFrames}. Agnes requires 8n + 1 frames.`,
+      );
+    }
+    return numFrames;
+  }
+
+  const derivedNumFrames = alignAgnesNumFrames(durationSeconds, frameRate);
+  if (derivedNumFrames > MAX_AGNES_NUM_FRAMES) {
+    throw new GenerationError(
+      "agnes-video",
+      "invalid_input",
+      `Requested duration (${durationSeconds}s) and frameRate (${frameRate}) exceed Agnes limits. Reduce frameRate or duration.`,
+    );
+  }
+  return derivedNumFrames;
+}
+
+function resolveAgnesVideoModel(modelId: string): AgnesVideoModelId {
+  const normalized = modelId.includes("/")
+    ? modelId.split("/").pop() ?? modelId
+    : modelId;
+  if (
+    AGNES_VIDEO_MODEL_IDS.includes(normalized as AgnesVideoModelId)
+  ) {
+    return normalized as AgnesVideoModelId;
+  }
+  throw new GenerationError(
+    "agnes-video",
+    "model_not_found",
+    `Unsupported Agnes video model: ${modelId}`,
+  );
+}
+
+function resolveAgnesVideoMode(params: VideoGenerateParams) {
+  const inputImages = params.inputImages ?? [];
+  if (inputImages.length === 0) return "text2video" as const;
+  if (inputImages.length === 1) return "img2video" as const;
+  if (params.videoMode === "keyframes") return "keyframes" as const;
+  return "multivideo" as const;
+}
+
+export class AgnesVideoProvider implements VideoProvider {
+  readonly name = "agnes-video";
+  readonly models = AGNES_VIDEO_MODELS;
+  private client: ReturnType<typeof createAgnesClient>;
+
+  constructor(apiKey: string, baseUrl?: string) {
+    this.client = createAgnesClient({
+      apiKey,
+      ...(baseUrl ? { baseUrl } : {}),
+    });
+  }
+
+  async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {
+    if (params.inputVideo) {
+      throw new GenerationError(
+        this.name,
+        "invalid_input",
+        "Agnes video does not support inputVideo in AIMC yet.",
+      );
+    }
+
+    const aspectRatio = resolveAgnesAspectRatio(params.aspectRatio);
+    const resolution = resolveAgnesResolution(
+      params.resolution as VideoGenerateParams["resolution"] | "4k" | undefined,
+    );
+    const { width, height } = getVideoDimensions(resolution, aspectRatio);
+    const frameRate = resolveAgnesFrameRate(params.frameRate);
+    const durationSeconds = params.duration ?? 5;
+    const numFrames = resolveAgnesNumFrames(
+      durationSeconds,
+      frameRate,
+      params.numFrames,
+    );
+    const inputImages = params.inputImages ?? [];
+    const mode = resolveAgnesVideoMode(params);
+    resolveAgnesVideoModel(params.model);
+
+    try {
+      const task =
+        mode === "text2video"
+          ? await this.client.video.generate({
+              mode,
+              prompt: params.prompt,
+              width,
+              height,
+              numFrames,
+              frameRate,
+              ...(params.seed !== undefined ? { seed: params.seed } : {}),
+              ...(params.negativePrompt
+                ? { negativePrompt: params.negativePrompt }
+                : {}),
+            })
+          : mode === "img2video"
+            ? await this.client.video.generate({
+                mode,
+                image: inputImages[0]!,
+                prompt: params.prompt,
+                width,
+                height,
+                numFrames,
+                frameRate,
+                ttl: DEFAULT_AGNES_MEDIA_TTL,
+                ...(params.seed !== undefined ? { seed: params.seed } : {}),
+                ...(params.negativePrompt
+                  ? { negativePrompt: params.negativePrompt }
+                  : {}),
+              })
+            : await this.client.video.generate({
+                mode,
+                images: inputImages,
+                prompt: params.prompt,
+                width,
+                height,
+                numFrames,
+                frameRate,
+                ttl: DEFAULT_AGNES_MEDIA_TTL,
+                ...(params.seed !== undefined ? { seed: params.seed } : {}),
+                ...(params.negativePrompt
+                  ? { negativePrompt: params.negativePrompt }
+                  : {}),
+              });
+
+      const result = await this.client.video.poll(task.taskId, {
+        intervalSeconds: 3,
+        timeoutSeconds: 600,
+      });
+
+      return {
+        url: result.videoUrl,
+        mimeType: "video/mp4",
+        width,
+        height,
+        durationSeconds:
+          result.seconds ?? durationSeconds ?? Math.round((numFrames - 1) / frameRate),
+      };
+    } catch (error) {
+      if (error instanceof GenerationError) throw error;
+      throw new GenerationError(
+        this.name,
+        "api_error",
+        error instanceof Error ? error.message : "Unknown Agnes video error",
+      );
+    }
+  }
+}

@@ -21,6 +21,7 @@ import type { CanvasEventBuffer } from "./event-buffer.js";
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ContentBlock, ToolBlock } from "@aimc/shared";
 import { createPipelineLogger } from "./logger.js";
+import type { ServerEnv } from "../config/env.js";
 
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
@@ -235,7 +236,7 @@ async function handleRunCommand(
   log.info("started", { prompt: payload.prompt.slice(0, 80) });
 
   // Resolve thread + model in parallel
-  const [threadId, model] = await Promise.all([
+  const [threadId, effectiveEnv] = await Promise.all([
     (async (): Promise<string | undefined> => {
       if (!services.threadService) return undefined;
       try {
@@ -251,15 +252,13 @@ async function handleRunCommand(
         return undefined;
       }
     })(),
-    (async (): Promise<string | undefined> => {
+    (async (): Promise<ServerEnv | undefined> => {
       if (!services.settingsService || !services.viewerService) return undefined;
       try {
         const viewer = await services.viewerService.ensureViewer(authenticatedUser);
-        const settings = await services.settingsService.getWorkspaceSettings(
-          authenticatedUser,
+        return await services.settingsService.getEffectiveServerEnv(
           viewer.workspace.id,
         );
-        return settings.defaultModel;
       } catch (error) {
         log.warn("model_resolve_failed", {
           error: error instanceof Error ? error.message : String(error),
@@ -268,12 +267,14 @@ async function handleRunCommand(
       }
     })(),
   ]);
+  const model = effectiveEnv?.agentModel;
   // Client-provided model takes priority over workspace default
   const resolvedModel = payload.model ?? model;
   log.lap("resolve", { threadId: !!threadId, model: resolvedModel });
 
   const response = agentRuns.createRun(payload, {
     accessToken: authenticatedUser.accessToken,
+    ...(effectiveEnv ? { env: effectiveEnv } : {}),
     userId: authenticatedUser.id,
     ...(resolvedModel ? { model: resolvedModel } : {}),
     ...(threadId ? { threadId } : {}),

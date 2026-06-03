@@ -1,7 +1,11 @@
 import type { WorkspaceSettings } from "@aimc/shared";
 
 import type { AuthenticatedUser } from "../../auth/types.js";
-import type { ServerEnv } from "../../config/env.js";
+import {
+  DEFAULT_AGNES_AGENT_MODEL,
+  DEFAULT_AGNES_BASE_URL,
+  type ServerEnv,
+} from "../../config/env.js";
 import { clearProviders } from "../../generation/providers/registry.js";
 import { registerAllProviders } from "../../generation/providers/register-all.js";
 import type { LocalStore } from "../../local/store.js";
@@ -12,6 +16,9 @@ export const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   defaultModel: "",
   openAIApiKey: "",
   openAIApiBase: "",
+  agnesApiKey: "",
+  agnesBaseUrl: "",
+  agnesDefaultModel: "",
   googleApiKey: "",
   googleVertexProject: "",
   googleVertexLocation: "",
@@ -41,6 +48,9 @@ export function normalizeWorkspaceSettings(
     defaultModel: input.defaultModel?.trim() ?? "",
     openAIApiKey: input.openAIApiKey?.trim() ?? "",
     openAIApiBase: input.openAIApiBase?.trim() ?? "",
+    agnesApiKey: input.agnesApiKey?.trim() ?? "",
+    agnesBaseUrl: input.agnesBaseUrl?.trim() ?? "",
+    agnesDefaultModel: input.agnesDefaultModel?.trim() ?? "",
     googleApiKey: input.googleApiKey?.trim() ?? "",
     googleVertexProject: input.googleVertexProject?.trim() ?? "",
     googleVertexLocation: input.googleVertexLocation?.trim() ?? "",
@@ -57,6 +67,15 @@ export function resolveEffectiveServerEnv(
 ): ServerEnv {
   const openAIApiKey = settings.openAIApiKey || baseEnv.openAIApiKey;
   const openAIApiBase = settings.openAIApiBase || baseEnv.openAIApiBase;
+  const agnesApiKey = settings.agnesApiKey || baseEnv.agnesApiKey;
+  const agnesBaseUrl =
+    settings.agnesBaseUrl ||
+    baseEnv.agnesBaseUrl ||
+    (agnesApiKey ? DEFAULT_AGNES_BASE_URL : undefined);
+  const agnesDefaultModel =
+    settings.agnesDefaultModel ||
+    baseEnv.agnesDefaultModel ||
+    (agnesApiKey ? DEFAULT_AGNES_AGENT_MODEL : undefined);
   const googleApiKey = settings.googleApiKey || baseEnv.googleApiKey;
   const googleVertexProject =
     settings.googleVertexProject || baseEnv.googleVertexProject;
@@ -71,7 +90,13 @@ export function resolveEffectiveServerEnv(
 
   return {
     ...baseEnv,
-    agentModel: settings.defaultModel || baseEnv.agentModel,
+    agentModel:
+      settings.defaultModel ||
+      (baseEnv.agentModelConfigured ? undefined : agnesDefaultModel) ||
+      baseEnv.agentModel,
+    ...(agnesApiKey ? { agnesApiKey } : {}),
+    ...(agnesBaseUrl ? { agnesBaseUrl } : {}),
+    ...(agnesDefaultModel ? { agnesDefaultModel } : {}),
     ...(openAIApiKey ? { openAIApiKey } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
     ...(googleApiKey ? { googleApiKey } : {}),
@@ -103,6 +128,9 @@ export function applyEffectiveProviderEnv(
     | "googleVertexLocation"
     | "googleVertexProject"
     | "googleVertexVideoLocation"
+    | "agnesApiKey"
+    | "agnesBaseUrl"
+    | "agnesDefaultModel"
     | "openAIApiBase"
     | "openAIApiKey"
     | "replicateApiToken"
@@ -111,6 +139,13 @@ export function applyEffectiveProviderEnv(
   >,
   target: NodeJS.ProcessEnv = process.env,
 ) {
+  assignEnvValue(target, "AIMC_AGNES_API_KEY", env.agnesApiKey);
+  assignEnvValue(target, "AGNES_API_KEY", env.agnesApiKey);
+  assignEnvValue(target, "AIMC_AGNES_BASE_URL", env.agnesBaseUrl);
+  assignEnvValue(target, "AGNES_BASE_URL", env.agnesBaseUrl);
+  assignEnvValue(target, "AIMC_AGNES_MODEL", env.agnesDefaultModel);
+  assignEnvValue(target, "AGNES_DEFAULT_MODEL", env.agnesDefaultModel);
+
   assignEnvValue(target, "AIMC_OPENAI_API_KEY", env.openAIApiKey);
   assignEnvValue(target, "OPENAI_API_KEY", env.openAIApiKey);
   assignEnvValue(target, "AIMC_OPENAI_API_BASE", env.openAIApiBase);
