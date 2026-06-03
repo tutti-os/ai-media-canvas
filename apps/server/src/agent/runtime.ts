@@ -37,7 +37,6 @@ import {
   createDefaultModelSpecifier,
   createAimcDeepAgent,
 } from "./deep-agent.js";
-import { adaptDeepAgentStream } from "./stream-adapter.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import { loadWorkspaceSkills, type WorkspaceSkillEntry } from "./workspace-skills.js";
 import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
@@ -46,9 +45,15 @@ import {
   buildAgentImageJobPayload,
   buildAgentVideoJobPayload,
 } from "./job-payloads.js";
-import { streamCodexLocalRun } from "./local-runtime/codex-runtime.js";
 import type { createLocalToolGatewayService } from "./local-runtime/tool-gateway.js";
-import { createRuntimeControlPlane } from "./runtime-control-plane.js";
+import {
+  createRuntimeControlPlane,
+  type RuntimeKindSelectorInput,
+} from "./runtime-control-plane.js";
+import { createLocalCodexRuntimeProvider } from "./runtime-adapters/local-codex.js";
+import { createServerDeepAgentRuntimeProvider } from "./runtime-adapters/server-deepagent.js";
+import type { RuntimeExecutionContext } from "./runtime-adapters/types.js";
+import { adaptDeepAgentStream } from "./stream-adapter.js";
 
 /**
  * Build the text portion of a user message, appending <input_images> XML
@@ -386,18 +391,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     }
   }
 
-  type RuntimeExecutionContext = {
-    backendResult: ReturnType<typeof createAgentBackend>;
-    brandKitId: string | null;
-    resolvedModel: BaseLanguageModel | string | undefined;
-    rlog: ReturnType<typeof createPipelineLogger>;
-    run: RuntimeRunRecord;
-    runtimeEnv: ServerEnv;
-    submitImageJob?: SubmitImageJobFn;
-    submitVideoJob?: SubmitVideoJobFn;
-    workspaceSkills: WorkspaceSkillEntry[];
-  };
-
   async function loadCanvasSummaryForRuntime(context: RuntimeExecutionContext) {
     const { run } = context;
     if (!run.canvasId || !run.accessToken || !options.createUserClient) {
@@ -422,302 +415,20 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     }
   }
 
-  async function* streamLocalCodexProvider(
-    context: RuntimeExecutionContext,
-  ): AsyncGenerator<StreamEvent> {
-    const { resolvedModel, run, runtimeEnv, submitImageJob, submitVideoJob, workspaceSkills, rlog } =
-      context;
-
-    if (
-      typeof resolvedModel !== "string" ||
-      !options.toolGateway ||
-      !options.toolGatewayBaseUrl
-    ) {
-      throw new Error("Local Codex runtime requires string model and tool gateway.");
-    }
-
-    const canvasSummary = await loadCanvasSummaryForRuntime(context);
-
-    let attachmentDataMap: Record<string, string> = {};
-    if (run.attachments?.length) {
-      const downloaded: Array<{
-        assetId: string;
-        base64: string;
-        mimeType: string;
-      }> = [];
-
-      await Promise.all(
-        run.attachments.map(async (attachment) => {
-          try {
-            const dataUriMatch = attachment.url.match(
-              /^data:([^;]+);base64,(.+)$/,
-            );
-            if (dataUriMatch) {
-              downloaded.push({
-                assetId: attachment.assetId,
-                mimeType: dataUriMatch[1] ?? attachment.mimeType,
-                base64: dataUriMatch[2] ?? "",
-              });
-              return;
-            }
-
-            const response = await fetch(attachment.url);
-            const buffer = Buffer.from(await response.arrayBuffer());
-            downloaded.push({
-              assetId: attachment.assetId,
-              mimeType:
-                attachment.mimeType ||
-                response.headers.get("content-type") ||
-                "image/png",
-              base64: buffer.toString("base64"),
-            });
-          } catch {
-            // Leave unresolved references as-is; the tool can still use raw URLs.
-          }
-        }),
-      );
-
-      attachmentDataMap = buildAttachmentDataMap(downloaded);
-    }
-
-    const { text: enrichedPrompt } = buildUserMessage(
-      run.prompt,
-      run.attachments ?? [],
-      run.imageGenerationPreference,
-      run.mentions,
-      run.videoGenerationPreference,
-      canvasSummary,
-    );
-
-    const gatewaySession = options.toolGateway.createSession({
-      ...(run.accessToken ? { accessToken: run.accessToken } : {}),
-      ...(Object.keys(attachmentDataMap).length > 0
-        ? { attachmentDataMap }
-        : {}),
-      ...(context.brandKitId ? { brandKitId: context.brandKitId } : {}),
-      ...(run.canvasId ? { canvasId: run.canvasId } : {}),
-      ...(run.connectionId ? { connectionId: run.connectionId } : {}),
-      runId: run.runId,
-      runtimeEnv,
-      ...(submitImageJob ? { submitImageJob } : {}),
-      ...(submitVideoJob ? { submitVideoJob } : {}),
-      ...(run.userId ? { userId: run.userId } : {}),
-    });
-
-    rlog.lap("codex_local_runtime_start");
-
-    yield* streamCodexLocalRun({
-      attachmentsSummaryPrompt: enrichedPrompt,
-      conversationId: run.conversationId,
-      gatewayBaseUrl: options.toolGatewayBaseUrl,
-      gatewaySession: {
-        token: gatewaySession.token,
-        revoke: () => options.toolGateway?.revokeSession(gatewaySession.token),
-      },
-      ...(options.loadSessionMessages
-        ? { loadSessionMessages: options.loadSessionMessages }
-        : {}),
-      model: resolvedModel,
-      now,
-      runId: run.runId,
-      runtimeEnv,
-      sessionId: run.sessionId,
-      signal: run.controller.signal,
-      workspaceSkills,
-    });
-  }
-
-  async function* streamServerDeepAgentProvider(
-    context: RuntimeExecutionContext,
-  ): AsyncGenerator<StreamEvent> {
-    const { backendResult, brandKitId, resolvedModel, run, runtimeEnv, submitImageJob, submitVideoJob, workspaceSkills, rlog } =
-      context;
-
-    if (workspaceSkills.length > 0) {
-      rlog.lap("workspace_skills_loaded_without_store", {
-        count: workspaceSkills.length,
-      });
-    }
-
-    let persistImage:
-      | ((url: string, mime: string, prompt: string) => Promise<string>)
-      | undefined;
-    if (options.createUserClient && run.accessToken) {
-      const createClient = options.createUserClient;
-      const accessToken = run.accessToken;
-      persistImage = async (sourceUrl, mimeType, prompt) => {
-        const client = createClient(accessToken) as UserDataClient;
-        const response = await fetch(sourceUrl);
-        if (!response.ok) throw new Error(`Download failed: ${response.status}`);
-        const buffer = Buffer.from(await response.arrayBuffer());
-        const ext = mimeType === "image/webp" ? "webp" : "png";
-        const slug = prompt
-          .slice(0, 40)
-          .replace(/[^a-zA-Z0-9]+/g, "-")
-          .replace(/^-|-$/g, "");
-        const fileName = `gen-${slug}-${Date.now()}.${ext}`;
-
-        const { data: ws } = await client
-          .from("workspaces")
-          .select("id")
-          .eq("type", "personal")
-          .limit(1)
-          .single();
-        const workspaceId = ws?.id ?? "default";
-        const objectPath = `${workspaceId}/${Date.now()}-${fileName}`;
-
-        const { error: uploadError } = await client.storage
-          .from("project-assets")
-          .upload(objectPath, buffer, { contentType: mimeType, upsert: false });
-        if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
-
-        const { data: urlData } = client.storage
-          .from("project-assets")
-          .getPublicUrl(objectPath);
-
-        return urlData.publicUrl;
-      };
-    }
-
-    const canvasSummary = await loadCanvasSummaryForRuntime(context);
-
-    const agent = resolvedAgentFactory({
-      backendResult,
-      ...(brandKitId ? { brandKitId } : {}),
-      ...(run.canvasId ? { canvasId: run.canvasId } : {}),
-      ...(options.connectionManager ? { connectionManager: options.connectionManager } : {}),
-      env: runtimeEnv,
-      ...(resolvedModel ? { model: resolvedModel } : {}),
-      ...(persistImage ? { persistImage } : {}),
-      ...(submitImageJob ? { submitImageJob } : {}),
-      ...(submitVideoJob ? { submitVideoJob } : {}),
-      ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
-    });
-    rlog.lap("agent_factory_done");
-
-    const hasAttachments = run.attachments && run.attachments.length > 0;
-    let userMessage: HumanMessage;
-    let attachmentDataMap: Record<string, string> = {};
-
-    if (hasAttachments) {
-      const downloaded: Array<{ assetId: string; mimeType: string; base64: string }> = [];
-      const imageBlocks = await Promise.all(
-        run.attachments!.map(async (attachment) => {
-          try {
-            let base64: string;
-            let mimeType: string;
-            const dataUriMatch = attachment.url.match(/^data:([^;]+);base64,(.+)$/);
-            if (dataUriMatch) {
-              mimeType = dataUriMatch[1]!;
-              base64 = dataUriMatch[2]!;
-            } else {
-              const response = await fetch(attachment.url);
-              const buffer = Buffer.from(await response.arrayBuffer());
-              mimeType =
-                attachment.mimeType ||
-                response.headers.get("content-type") ||
-                "image/png";
-              base64 = buffer.toString("base64");
-            }
-
-            downloaded.push({
-              assetId: attachment.assetId,
-              mimeType,
-              base64,
-            });
-
-            return {
-              type: "image_url" as const,
-              image_url: `data:${mimeType};base64,${base64}`,
-            };
-          } catch {
-            return {
-              type: "image_url" as const,
-              image_url: attachment.url,
-            };
-          }
-        }),
-      );
-
-      const { text: enrichedPrompt } = buildUserMessage(
-        run.prompt,
-        run.attachments!,
-        run.imageGenerationPreference,
-        run.mentions,
-        run.videoGenerationPreference,
-        canvasSummary,
-      );
-
-      attachmentDataMap = buildAttachmentDataMap(downloaded);
-      userMessage = new HumanMessage({
-        content: [{ type: "text" as const, text: enrichedPrompt }, ...imageBlocks],
-      });
-    } else {
-      const { text: enrichedPrompt } = buildUserMessage(
-        run.prompt,
-        [],
-        run.imageGenerationPreference,
-        run.mentions,
-        run.videoGenerationPreference,
-        canvasSummary,
-      );
-      userMessage = new HumanMessage(enrichedPrompt);
-    }
-
-    const messages = [
-      ...(await buildSessionHistoryMessages(
-        run.sessionId,
-        run.prompt,
-        options.loadSessionMessages,
-      )),
-      userMessage,
-    ];
-
-    rlog.lap("stream_call_start", { messageCount: messages.length });
-    const stream = agent.streamEvents(
-      {
-        messages,
-      },
-      {
-        ...(run.canvasId ||
-        run.accessToken ||
-        run.userId ||
-        Object.keys(attachmentDataMap).length > 0
-          ? {
-              configurable: {
-                ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
-                ...(run.accessToken ? { access_token: run.accessToken } : {}),
-                ...(run.connectionId ? { connection_id: run.connectionId } : {}),
-                ...(run.userId ? { user_id: run.userId } : {}),
-                ...(Object.keys(attachmentDataMap).length > 0
-                  ? { user_attachment_map: attachmentDataMap }
-                  : {}),
-              },
-            }
-          : {}),
-        signal: run.controller.signal,
-        version: "v2",
-      },
-    );
-    rlog.lap("stream_call_returned");
-
-    yield* adaptDeepAgentStream({
-      conversationId: run.conversationId,
-      now,
-      runId: run.runId,
-      sessionId: run.sessionId,
-      signal: run.controller.signal,
-      stream,
-    });
-  }
-
   const runtimeProviders = [
     ...(options.toolGateway && options.toolGatewayBaseUrl
       ? ([
-          {
-            kind: "local-codex" as const,
-            streamRun: streamLocalCodexProvider,
-          },
+          createLocalCodexRuntimeProvider({
+            buildAttachmentDataMap,
+            buildUserMessage,
+            loadCanvasSummaryForRuntime,
+            ...(options.loadSessionMessages
+              ? { loadSessionMessages: options.loadSessionMessages }
+              : {}),
+            now,
+            toolGateway: options.toolGateway,
+            toolGatewayBaseUrl: options.toolGatewayBaseUrl,
+          }),
         ] satisfies Array<{
           kind: RuntimeKind;
           streamRun: (
@@ -725,14 +436,52 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           ) => AsyncGenerator<StreamEvent>;
         }>)
       : []),
-    {
-      kind: "server-deepagent" as const,
-      streamRun: streamServerDeepAgentProvider,
-    },
+    createServerDeepAgentRuntimeProvider({
+      adaptDeepAgentStream,
+      buildAttachmentDataMap,
+      buildSessionHistoryMessages,
+      buildUserMessage,
+      ...(options.connectionManager
+        ? { connectionManager: options.connectionManager }
+        : {}),
+      ...(options.createUserClient
+        ? { createUserClient: options.createUserClient }
+        : {}),
+      loadCanvasSummaryForRuntime,
+      ...(options.loadSessionMessages
+        ? { loadSessionMessages: options.loadSessionMessages }
+        : {}),
+      now,
+      resolvedAgentFactory,
+    }),
   ];
 
-  const runtimeControlPlane =
-    createRuntimeControlPlane<RuntimeExecutionContext>(runtimeProviders);
+  function inferAimcRuntimeKind(input: RuntimeKindSelectorInput): RuntimeKind {
+    if (input.requestedRuntimeKind) {
+      return input.requestedRuntimeKind;
+    }
+
+    if (
+      typeof input.model === "string" &&
+      input.model.startsWith("codex:") &&
+      input.availableRuntimeKinds.includes("local-codex")
+    ) {
+      return "local-codex";
+    }
+
+    if (input.availableRuntimeKinds.includes("server-deepagent")) {
+      return "server-deepagent";
+    }
+
+    return input.availableRuntimeKinds[0]!;
+  }
+
+  const runtimeControlPlane = createRuntimeControlPlane<RuntimeExecutionContext>(
+    runtimeProviders,
+    {
+      selectRuntimeKind: inferAimcRuntimeKind,
+    },
+  );
 
   return {
     cancelRun(runId: string): RunCancelResponse | null {

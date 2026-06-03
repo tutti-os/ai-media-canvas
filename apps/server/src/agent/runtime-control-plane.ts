@@ -6,28 +6,35 @@ export type RuntimeProvider<TContext> = {
   streamRun(context: TContext): AsyncGenerator<StreamEvent>;
 };
 
-export function inferRuntimeKind(input: {
+export type RuntimeKindSelectorInput = {
   availableRuntimeKinds: RuntimeKind[];
   model: BaseLanguageModel | string | undefined;
   requestedRuntimeKind: RuntimeKind | undefined;
-}): RuntimeKind {
+};
+
+export type RuntimeKindSelector = (
+  input: RuntimeKindSelectorInput,
+) => RuntimeKind;
+
+export function inferRuntimeKind(input: RuntimeKindSelectorInput): RuntimeKind {
   if (input.requestedRuntimeKind) {
     return input.requestedRuntimeKind;
   }
 
-  if (
-    typeof input.model === "string" &&
-    input.model.startsWith("codex:") &&
-    input.availableRuntimeKinds.includes("local-codex")
-  ) {
-    return "local-codex";
+  if (input.availableRuntimeKinds.length === 1) {
+    return input.availableRuntimeKinds[0]!;
   }
 
-  return "server-deepagent";
+  throw new Error(
+    "No runtime kind requested and no selector configured for multiple runtime providers",
+  );
 }
 
 export function createRuntimeControlPlane<TContext>(
   providers: RuntimeProvider<TContext>[],
+  options?: {
+    selectRuntimeKind?: RuntimeKindSelector;
+  },
 ) {
   const providerMap = new Map<RuntimeKind, RuntimeProvider<TContext>>(
     providers.map((provider) => [provider.kind, provider]),
@@ -51,7 +58,8 @@ export function createRuntimeControlPlane<TContext>(
         );
       }
 
-      const kind = inferRuntimeKind({
+      const selectRuntimeKind = options?.selectRuntimeKind ?? inferRuntimeKind;
+      const kind = selectRuntimeKind({
         availableRuntimeKinds: [...providerMap.keys()],
         model: input.model,
         requestedRuntimeKind: input.requestedRuntimeKind,
