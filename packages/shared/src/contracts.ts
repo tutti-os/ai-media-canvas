@@ -123,6 +123,8 @@ export const workspaceSettingsSchema = z.object({
   defaultModel: z.string(),
   openAIApiKey: z.string(),
   openAIApiBase: z.string(),
+  anthropicApiKey: z.string(),
+  anthropicBaseUrl: z.string(),
   agnesApiKey: z.string(),
   agnesBaseUrl: z.string(),
   agnesDefaultModel: z.string(),

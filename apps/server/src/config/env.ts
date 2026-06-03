@@ -15,6 +15,8 @@ export type ServerEnv = {
   agnesApiKey?: string;
   agnesBaseUrl?: string;
   agnesDefaultModel?: string;
+  anthropicApiKey?: string;
+  anthropicBaseUrl?: string;
   googleApiKey?: string;
   googleApplicationCredentials?: string;
   googleVertexLocation?: string;
@@ -73,6 +75,16 @@ export function loadServerEnv(
   const agnesDefaultModel =
     agnesDefaultModelSource ??
     (agnesApiKey ? DEFAULT_AGNES_AGENT_MODEL : undefined);
+  const anthropicApiKey =
+    overrides.anthropicApiKey ??
+    normalizeOptionalString(
+      source.AIMC_ANTHROPIC_API_KEY ?? source.ANTHROPIC_API_KEY,
+    );
+  const anthropicBaseUrl =
+    overrides.anthropicBaseUrl ??
+    normalizeOptionalString(
+      source.AIMC_ANTHROPIC_BASE_URL ?? source.ANTHROPIC_BASE_URL,
+    );
   const agentModel =
     configuredAgentModel ??
     agnesDefaultModel ??
@@ -149,6 +161,8 @@ export function loadServerEnv(
     ...(agnesApiKey ? { agnesApiKey } : {}),
     ...(agnesBaseUrl ? { agnesBaseUrl } : {}),
     ...(agnesDefaultModel ? { agnesDefaultModel } : {}),
+    ...(anthropicApiKey ? { anthropicApiKey } : {}),
+    ...(anthropicBaseUrl ? { anthropicBaseUrl } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
     ...(openAIApiKey ? { openAIApiKey } : {}),
     ...(googleApiKey ? { googleApiKey } : {}),

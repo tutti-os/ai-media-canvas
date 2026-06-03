@@ -9,9 +9,11 @@ import SettingsPage from "../src/app/(workspace)/settings/page";
 
 const {
   fetchWorkspaceSettingsMock,
+  fetchModelsMock,
   updateWorkspaceSettingsMock,
 } = vi.hoisted(() => ({
   fetchWorkspaceSettingsMock: vi.fn(),
+  fetchModelsMock: vi.fn(),
   updateWorkspaceSettingsMock: vi.fn(),
 }));
 
@@ -20,6 +22,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("../src/lib/server-api", () => ({
+  fetchModels: fetchModelsMock,
   fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
   updateWorkspaceSettings: updateWorkspaceSettingsMock,
 }));
@@ -27,7 +30,9 @@ vi.mock("../src/lib/server-api", () => ({
 describe("SettingsPage", () => {
   beforeEach(() => {
     fetchWorkspaceSettingsMock.mockReset();
+    fetchModelsMock.mockReset();
     updateWorkspaceSettingsMock.mockReset();
+    fetchModelsMock.mockResolvedValue({ models: [] });
   });
 
   afterEach(() => {
@@ -43,6 +48,8 @@ describe("SettingsPage", () => {
           defaultModel: "",
           openAIApiKey: "",
           openAIApiBase: "",
+          anthropicApiKey: "",
+          anthropicBaseUrl: "",
           agnesApiKey: "",
           agnesBaseUrl: "",
           agnesDefaultModel: "",
@@ -73,6 +80,8 @@ describe("SettingsPage", () => {
         defaultModel: "openai:gpt-4.1",
         openAIApiKey: "sk-local-openai",
         openAIApiBase: "http://127.0.0.1:4000/v1",
+        anthropicApiKey: "sk-local-anthropic",
+        anthropicBaseUrl: "https://api.anthropic.com",
         agnesApiKey: "sk-local-agnes",
         agnesBaseUrl: "https://agnes.example/v1",
         agnesDefaultModel: "agnes:agnes-2.0-flash",
@@ -90,6 +99,8 @@ describe("SettingsPage", () => {
         defaultModel: "google:gemini-2.5-flash",
         openAIApiKey: "sk-local-openai",
         openAIApiBase: "http://127.0.0.1:4000/v1",
+        anthropicApiKey: "sk-local-anthropic",
+        anthropicBaseUrl: "https://api.anthropic.com",
         agnesApiKey: "sk-local-agnes",
         agnesBaseUrl: "https://agnes.example/v1",
         agnesDefaultModel: "agnes:agnes-2.0-flash",
@@ -120,6 +131,14 @@ describe("SettingsPage", () => {
       "agnes:agnes-2.0-flash",
     );
 
+    await userEvent.click(screen.getByRole("button", { name: /Anthropic/i }));
+    expect(await screen.findByLabelText("Anthropic API Key")).toHaveValue(
+      "sk-local-anthropic",
+    );
+    expect(screen.getByLabelText("Anthropic Base URL")).toHaveValue(
+      "https://api.anthropic.com",
+    );
+
     await userEvent.clear(defaultModelInput);
     await userEvent.type(defaultModelInput, "google:gemini-2.5-flash");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -129,6 +148,8 @@ describe("SettingsPage", () => {
         defaultModel: "google:gemini-2.5-flash",
         openAIApiKey: "sk-local-openai",
         openAIApiBase: "http://127.0.0.1:4000/v1",
+        anthropicApiKey: "sk-local-anthropic",
+        anthropicBaseUrl: "https://api.anthropic.com",
         agnesApiKey: "sk-local-agnes",
         agnesBaseUrl: "https://agnes.example/v1",
         agnesDefaultModel: "agnes:agnes-2.0-flash",
@@ -143,12 +164,83 @@ describe("SettingsPage", () => {
     );
   });
 
+  it("shows OpenAI-compatible model suggestions and still allows a custom model ID", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "openai:deepseek-chat",
+        openAIApiKey: "sk-local-openai",
+        openAIApiBase: "https://gateway.example/v1",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        { id: "openai:deepseek-chat", name: "deepseek-chat", provider: "openai" },
+        { id: "openai:qwen-plus", name: "qwen-plus", provider: "openai" },
+      ],
+    });
+    updateWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "openai:custom-gateway-model",
+        openAIApiKey: "sk-local-openai",
+        openAIApiBase: "https://gateway.example/v1",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    const defaultModelInput = await screen.findByLabelText("Default LLM Model");
+    expect(await screen.findByText("Detected OpenAI-compatible models")).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Use qwen-plus" }),
+    );
+    expect(defaultModelInput).toHaveValue("openai:qwen-plus");
+
+    await userEvent.clear(defaultModelInput);
+    await userEvent.type(defaultModelInput, "openai:custom-gateway-model");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaultModel: "openai:custom-gateway-model",
+        }),
+      ),
+    );
+  });
+
   it("shows the Media tab with Replicate and Volces provider cards", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "openai:gpt-4.1",
         openAIApiKey: "",
         openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
         agnesApiKey: "sk-local-agnes",
         agnesBaseUrl: "https://agnes.example/v1",
         agnesDefaultModel: "agnes:agnes-2.0-flash",

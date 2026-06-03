@@ -145,7 +145,12 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
           break;
 
         case "run.failed":
-          console.error("[chat-stream] run.failed:", event.error);
+          console.warn("[chat-stream] run.failed:", event.error.message);
+          const failureMessage =
+            event.error.message
+              .split("\n")
+              .map((line) => line.trim())
+              .find(Boolean) ?? "抱歉，处理过程中遇到问题，请重试。";
           update((prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
@@ -164,7 +169,7 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
                       ...blocks,
                       {
                         type: "text" as const,
-                        text: "\u62b1\u6b49\uff0c\u5904\u7406\u8fc7\u7a0b\u4e2d\u9047\u5230\u95ee\u9898\uff0c\u8bf7\u91cd\u8bd5\u3002",
+                        text: `抱歉，处理过程中遇到问题：${failureMessage}`,
                       },
                     ],
               };

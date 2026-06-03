@@ -1,4 +1,5 @@
 import type { BaseCheckpointSaver, BaseStore } from "@langchain/langgraph-checkpoint";
+import { ChatAnthropic } from "@langchain/anthropic";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatVertexAI } from "@langchain/google-vertexai";
@@ -133,6 +134,7 @@ export function createAimcDeepAgent(options: {
  * Supported providers:
  * - `openai` (default) — uses ChatOpenAI with `streamUsage: false` to work
  *   around the one-api proxy stripping `delta.role` from chunks.
+ * - `anthropic` — uses ChatAnthropic for Claude models hosted on Anthropic.
  * - `google` — uses ChatGoogleGenerativeAI (Google AI Studio, API Key) or
  *   ChatVertexAI (Vertex AI, service account) depending on available config.
  */
@@ -142,6 +144,8 @@ function createStreamingChatModel(
     ServerEnv,
     | "agnesApiKey"
     | "agnesBaseUrl"
+    | "anthropicApiKey"
+    | "anthropicBaseUrl"
     | "googleApiKey"
     | "googleVertexLocation"
     | "googleVertexProject"
@@ -158,6 +162,10 @@ function createStreamingChatModel(
     env?.agnesBaseUrl ??
     process.env.AGNES_BASE_URL ??
     DEFAULT_AGNES_BASE_URL;
+  const resolvedAnthropicApiKey =
+    env?.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY;
+  const resolvedAnthropicBaseUrl =
+    env?.anthropicBaseUrl ?? process.env.ANTHROPIC_BASE_URL;
   const resolvedOpenAIApiKey = env?.openAIApiKey ?? process.env.OPENAI_API_KEY;
   const resolvedOpenAIBaseUrl =
     env?.openAIApiBase ?? process.env.OPENAI_BASE_URL;
@@ -182,6 +190,24 @@ function createStreamingChatModel(
   }
 
   switch (provider) {
+    case "anthropic":
+      if (!resolvedAnthropicApiKey) {
+        throw new Error(
+          `Anthropic model selected without Anthropic API key: ${specifier}`,
+        );
+      }
+      return new ChatAnthropic({
+        model: modelName,
+        anthropicApiKey: resolvedAnthropicApiKey,
+        ...(resolvedAnthropicBaseUrl
+          ? {
+              clientOptions: {
+                baseURL: resolvedAnthropicBaseUrl,
+              },
+            }
+          : {}),
+        streaming: true,
+      });
     case "agnes":
       if (!hasAgnes) {
         throw new Error(
@@ -241,6 +267,7 @@ function createStreamingChatModel(
 
 /** Known model-name prefixes that map to Google Gemini. */
 const GOOGLE_MODEL_PREFIXES = ["gemini-"];
+const ANTHROPIC_MODEL_PREFIXES = ["claude-"];
 const AGNES_MODEL_PREFIXES = ["agnes-"];
 
 export function createDefaultModelSpecifier(
@@ -252,6 +279,8 @@ export function createDefaultModelSpecifier(
   // Auto-detect Google models by name prefix.
   if (GOOGLE_MODEL_PREFIXES.some((p) => model.startsWith(p)))
     return `google:${model}`;
+  if (ANTHROPIC_MODEL_PREFIXES.some((p) => model.startsWith(p)))
+    return `anthropic:${model}`;
   if (AGNES_MODEL_PREFIXES.some((p) => model.startsWith(p)))
     return `agnes:${model}`;
   return `openai:${model}`;

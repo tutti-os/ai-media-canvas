@@ -85,7 +85,6 @@ export function SkillCard({
 
   return (
     <motion.div
-      layout
       whileHover={{ y: -2, boxShadow: "0 4px 12px rgba(0,0,0,0.06)" }}
       transition={{ type: "spring", stiffness: 400, damping: 25 }}
       onClick={() => onClick(skill)}

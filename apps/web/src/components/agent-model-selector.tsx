@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAgentModel } from "@/hooks/use-agent-model";
 import { fetchModels } from "@/lib/server-api";
@@ -32,12 +32,22 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  // Fetch available models
-  useEffect(() => {
+  const loadModels = useCallback(() => {
     fetchModels()
       .then((data) => setModels(data.models))
       .catch(() => {});
   }, []);
+
+  // Fetch available models on mount and whenever the picker opens so the
+  // homepage selector stays in sync with recent settings changes.
+  useEffect(() => {
+    loadModels();
+  }, [loadModels]);
+
+  useEffect(() => {
+    if (!open) return;
+    loadModels();
+  }, [loadModels, open]);
 
   // Close on outside click
   useEffect(() => {
@@ -131,7 +141,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
           <div
             ref={popoverRef}
             style={popoverStyle}
-            className="w-56 rounded-xl border border-border bg-popover p-2 shadow-lg"
+            className="max-h-[min(28rem,calc(100vh-2rem))] w-56 overflow-y-auto rounded-xl border border-border bg-popover p-2 shadow-lg"
           >
             <div className="mb-2 px-2 text-xs font-medium text-muted-foreground">
               Assistant Mode

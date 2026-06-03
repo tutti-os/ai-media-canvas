@@ -868,9 +868,7 @@ export function ChatSidebar({
       {/* Header */}
       <div className="flex min-h-[48px] items-center justify-between pl-4 pr-2">
         <div className="flex items-center gap-1 min-w-0">
-          <h2 className="text-sm font-semibold text-foreground shrink-0">
-            AI Media Canvas Assistant
-          </h2>
+          <h2 className="sr-only">AI Media Canvas Assistant</h2>
           {!sessionsLoading && (
             <SessionSelector
               sessions={sessions}
@@ -998,7 +996,7 @@ export function ChatSidebar({
   // ── Desktop: inline side-by-side with resize handle ──
   return (
     <div
-      className="flex h-full shrink-0"
+      className="relative z-[120] flex h-full shrink-0"
       style={{ width: sidebarWidth }}
       {...eventIsolationProps}
     >

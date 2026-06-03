@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { ListFilter, Plus, Search, ShieldCheck } from "lucide-react";
 import type {
   SkillCategory,
@@ -64,6 +64,43 @@ const emptyVariants = {
   hidden: { opacity: 0, y: 8 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 };
+
+function upsertSkill(
+  skills: SkillListItem[],
+  nextSkill: SkillListItem,
+): SkillListItem[] {
+  const index = skills.findIndex((skill) => skill.id === nextSkill.id);
+  if (index === -1) {
+    return [...skills, nextSkill];
+  }
+  return skills.map((skill) => (skill.id === nextSkill.id ? nextSkill : skill));
+}
+
+function compareInstalledSkills(
+  left: SkillListItem,
+  right: SkillListItem,
+): number {
+  const leftTime = Date.parse(left.updatedAt);
+  const rightTime = Date.parse(right.updatedAt);
+  if (leftTime !== rightTime) {
+    return rightTime - leftTime;
+  }
+  return left.name.localeCompare(right.name, "zh-CN");
+}
+
+function upsertAndSortInstalledSkills(
+  skills: SkillListItem[],
+  nextSkill: SkillListItem,
+): SkillListItem[] {
+  return upsertSkill(skills, nextSkill).sort(compareInstalledSkills);
+}
+
+function removeSkill(
+  skills: SkillListItem[],
+  skillId: string,
+): SkillListItem[] {
+  return skills.filter((skill) => skill.id !== skillId);
+}
 
 export default function SkillsPage() {
   const { success, error: toastError } = useToast();
@@ -185,7 +222,10 @@ export default function SkillsPage() {
     try {
       const result = await installSkill(skillId);
       success(`技能 "${result.skill.name}" 已安装到本地`);
-      await loadSkills();
+      setInstalledSkills((prev) =>
+        upsertAndSortInstalledSkills(prev, result.skill),
+      );
+      setCatalogSkills((prev) => upsertSkill(prev, result.skill));
       if (detailSkill?.id === skillId) {
         setDetailSkill(result.skill);
       }
@@ -193,21 +233,31 @@ export default function SkillsPage() {
       console.error("Failed to install skill:", error);
       toastError("技能安装失败");
     }
-  }, [detailSkill?.id, loadSkills, success, toastError]);
+  }, [detailSkill?.id, success, toastError]);
 
   const handleUninstall = useCallback(async (skillId: string) => {
     try {
+      const targetSkill = installedSkills.find((skill) => skill.id === skillId) ?? null;
       await uninstallSkill(skillId);
       success("技能已卸载");
+      setInstalledSkills((prev) => removeSkill(prev, skillId));
+      setCatalogSkills((prev) =>
+        targetSkill?.source === "system"
+          ? prev.map((skill) =>
+              skill.id === skillId
+                ? { ...skill, installed: false, enabled: false }
+                : skill,
+            )
+          : prev,
+      );
       if (detailSkill?.id === skillId) {
         setDetailOpen(false);
       }
-      await loadSkills();
     } catch (error) {
       console.error("Failed to uninstall skill:", error);
       toastError("技能卸载失败");
     }
-  }, [detailSkill?.id, loadSkills, success, toastError]);
+  }, [detailSkill?.id, installedSkills, success, toastError]);
 
   const handleCreate = useCallback(async (data: {
     name: string;
@@ -218,14 +268,18 @@ export default function SkillsPage() {
   }) => {
     const result = await createSkill(data);
     success(`技能 "${result.skill.name}" 已创建`);
-    await loadSkills();
-  }, [loadSkills, success]);
+    setInstalledSkills((prev) =>
+      upsertAndSortInstalledSkills(prev, result.skill),
+    );
+  }, [success]);
 
   const handleImport = useCallback(async (payload: SkillImportRequest) => {
     const result = await importSkill(payload);
-    await loadSkills();
+    setInstalledSkills((prev) =>
+      upsertAndSortInstalledSkills(prev, result.skill),
+    );
     return { skillName: result.skill.name };
-  }, [loadSkills]);
+  }, []);
 
   const hasActiveFilters =
     searchQuery.trim().length > 0 ||
@@ -382,17 +436,15 @@ export default function SkillsPage() {
               animate="visible"
               className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2"
             >
-              <AnimatePresence mode="popLayout">
-                {filteredSkills.map((skill) => (
-                  <SkillCard
-                    key={skill.id}
-                    skill={skill}
-                    onToggle={handleToggle}
-                    onClick={handleCardClick}
-                    onUninstall={handleUninstall}
-                  />
-                ))}
-              </AnimatePresence>
+              {filteredSkills.map((skill) => (
+                <SkillCard
+                  key={skill.id}
+                  skill={skill}
+                  onToggle={handleToggle}
+                  onClick={handleCardClick}
+                  onUninstall={handleUninstall}
+                />
+              ))}
             </motion.div>
           )}
         </>

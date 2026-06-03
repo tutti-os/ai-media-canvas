@@ -48,6 +48,8 @@ const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   defaultModel: "",
   openAIApiKey: "",
   openAIApiBase: "",
+  anthropicApiKey: "",
+  anthropicBaseUrl: "",
   agnesApiKey: "",
   agnesBaseUrl: "",
   agnesDefaultModel: "",
@@ -190,6 +192,8 @@ export function createLocalStore(options: {
       default_model TEXT NOT NULL DEFAULT '',
       openai_api_key TEXT NOT NULL DEFAULT '',
       openai_api_base TEXT NOT NULL DEFAULT '',
+      anthropic_api_key TEXT NOT NULL DEFAULT '',
+      anthropic_base_url TEXT NOT NULL DEFAULT '',
       agnes_api_key TEXT NOT NULL DEFAULT '',
       agnes_base_url TEXT NOT NULL DEFAULT '',
       agnes_default_model TEXT NOT NULL DEFAULT '',
@@ -359,6 +363,8 @@ export function createLocalStore(options: {
           default_model,
           openai_api_key,
           openai_api_base,
+          anthropic_api_key,
+          anthropic_base_url,
           agnes_api_key,
           agnes_base_url,
           agnes_default_model,
@@ -369,7 +375,7 @@ export function createLocalStore(options: {
           replicate_api_token,
           volces_api_key,
           volces_base_url
-        ) VALUES (?, '', '', '', '', '', '', '', '', '', '', '', '', '')
+        ) VALUES (?, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '')
       `,
     ).run(LOCAL_WORKSPACE_ID);
   }
@@ -394,6 +400,8 @@ export function createLocalStore(options: {
     const missingColumns: Array<[string, string]> = [
       ["openai_api_key", "TEXT NOT NULL DEFAULT ''"],
       ["openai_api_base", "TEXT NOT NULL DEFAULT ''"],
+      ["anthropic_api_key", "TEXT NOT NULL DEFAULT ''"],
+      ["anthropic_base_url", "TEXT NOT NULL DEFAULT ''"],
       ["agnes_api_key", "TEXT NOT NULL DEFAULT ''"],
       ["agnes_base_url", "TEXT NOT NULL DEFAULT ''"],
       ["agnes_default_model", "TEXT NOT NULL DEFAULT ''"],
@@ -571,6 +579,8 @@ export function createLocalStore(options: {
             default_model,
             openai_api_key,
             openai_api_base,
+            anthropic_api_key,
+            anthropic_base_url,
             agnes_api_key,
             agnes_base_url,
             agnes_default_model,
@@ -590,6 +600,8 @@ export function createLocalStore(options: {
           default_model: string;
           openai_api_key: string;
           openai_api_base: string;
+          anthropic_api_key: string;
+          anthropic_base_url: string;
           agnes_api_key: string;
           agnes_base_url: string;
           agnes_default_model: string;
@@ -611,6 +623,8 @@ export function createLocalStore(options: {
       defaultModel: row.default_model ?? "",
       openAIApiKey: row.openai_api_key ?? "",
       openAIApiBase: row.openai_api_base ?? "",
+      anthropicApiKey: row.anthropic_api_key ?? "",
+      anthropicBaseUrl: row.anthropic_base_url ?? "",
       agnesApiKey: row.agnes_api_key ?? "",
       agnesBaseUrl: row.agnes_base_url ?? "",
       agnesDefaultModel: row.agnes_default_model ?? "",
@@ -636,6 +650,8 @@ export function createLocalStore(options: {
             default_model,
             openai_api_key,
             openai_api_base,
+            anthropic_api_key,
+            anthropic_base_url,
             agnes_api_key,
             agnes_base_url,
             agnes_default_model,
@@ -646,12 +662,14 @@ export function createLocalStore(options: {
             replicate_api_token,
             volces_api_key,
             volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             workspace_id = excluded.workspace_id,
             default_model = excluded.default_model,
             openai_api_key = excluded.openai_api_key,
             openai_api_base = excluded.openai_api_base,
+            anthropic_api_key = excluded.anthropic_api_key,
+            anthropic_base_url = excluded.anthropic_base_url,
             agnes_api_key = excluded.agnes_api_key,
             agnes_base_url = excluded.agnes_base_url,
             agnes_default_model = excluded.agnes_default_model,
@@ -669,6 +687,8 @@ export function createLocalStore(options: {
         settings.defaultModel,
         settings.openAIApiKey,
         settings.openAIApiBase,
+        settings.anthropicApiKey,
+        settings.anthropicBaseUrl,
         settings.agnesApiKey,
         settings.agnesBaseUrl,
         settings.agnesDefaultModel,
@@ -688,6 +708,8 @@ export function createLocalStore(options: {
             default_model,
             openai_api_key,
             openai_api_base,
+            anthropic_api_key,
+            anthropic_base_url,
             agnes_api_key,
             agnes_base_url,
             agnes_default_model,
@@ -698,11 +720,13 @@ export function createLocalStore(options: {
             replicate_api_token,
             volces_api_key,
             volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(workspace_id) DO UPDATE SET
             default_model = excluded.default_model,
             openai_api_key = excluded.openai_api_key,
             openai_api_base = excluded.openai_api_base,
+            anthropic_api_key = excluded.anthropic_api_key,
+            anthropic_base_url = excluded.anthropic_base_url,
             agnes_api_key = excluded.agnes_api_key,
             agnes_base_url = excluded.agnes_base_url,
             agnes_default_model = excluded.agnes_default_model,
@@ -719,6 +743,8 @@ export function createLocalStore(options: {
         settings.defaultModel,
         settings.openAIApiKey,
         settings.openAIApiBase,
+        settings.anthropicApiKey,
+        settings.anthropicBaseUrl,
         settings.agnesApiKey,
         settings.agnesBaseUrl,
         settings.agnesDefaultModel,
