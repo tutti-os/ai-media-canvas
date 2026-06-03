@@ -62,6 +62,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<string | null>(null);
+  const [customModelDraft, setCustomModelDraft] = useState("");
   const btnRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -85,6 +86,11 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
     if (!open) return;
     loadModels();
   }, [loadModels, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setCustomModelDraft(model ?? workspaceDefaultModel ?? "");
+  }, [model, open, workspaceDefaultModel]);
 
   // Close on outside click
   useEffect(() => {
@@ -115,8 +121,11 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
 
   const isActive = model !== null;
   const selectedModel = models.find((m) => m.id === model);
-  const displayLabel = selectedModel ? selectedModel.name : "Agent";
+  const displayLabel =
+    (selectedModel ? selectedModel.name : formatDefaultModelLabel(model, models)) ??
+    "Agent";
   const defaultModelLabel = formatDefaultModelLabel(workspaceDefaultModel, models);
+  const trimmedCustomModelDraft = customModelDraft.trim();
 
   // Auto-positioning popover (above or below based on available space)
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
@@ -157,6 +166,12 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
 
     return formatProviderLabel(left).localeCompare(formatProviderLabel(right));
   });
+
+  function applyCustomModel() {
+    if (!trimmedCustomModelDraft) return;
+    setModel(trimmedCustomModelDraft);
+    setOpen(false);
+  }
 
   return (
     <>
@@ -281,6 +296,36 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
                 </div>
               );
             })}
+            <form
+              className="mt-3 border-t border-border pt-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applyCustomModel();
+              }}
+            >
+              <label
+                htmlFor="customModelId"
+                className="px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60"
+              >
+                Custom model ID
+              </label>
+              <div className="mt-2 space-y-2 px-2">
+                <input
+                  id="customModelId"
+                  value={customModelDraft}
+                  onChange={(event) => setCustomModelDraft(event.target.value)}
+                  placeholder="anthropic:minimax-m2.5"
+                  className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-accent"
+                />
+                <button
+                  type="submit"
+                  disabled={!trimmedCustomModelDraft}
+                  className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Use custom model
+                </button>
+              </div>
+            </form>
           </div>,
           document.body,
         )}

@@ -131,4 +131,24 @@ describe("AgentModelSelector", () => {
     expect(popover).toHaveClass("max-h-[min(28rem,calc(100vh-2rem))]");
     expect(popover).toHaveClass("overflow-y-auto");
   });
+
+  it("lets people enter and apply a custom model id from the picker", async () => {
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
+
+    const input = await screen.findByLabelText("Custom model ID");
+    await userEvent.clear(input);
+    await userEvent.type(input, "anthropic:minimax-m2.5");
+    await userEvent.click(screen.getByRole("button", { name: "Use custom model" }));
+
+    expect(setModelMock).toHaveBeenCalledWith("anthropic:minimax-m2.5");
+  });
 });

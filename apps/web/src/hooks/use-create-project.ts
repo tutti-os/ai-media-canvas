@@ -103,10 +103,6 @@ export function useCreateProject() {
       }
 
       const newTab = window.open("/loading-preview", "_blank");
-      const loadingPreviewUrl = new URL(
-        "/loading-preview",
-        window.location.origin,
-      ).href;
 
       setCreating(true);
       try {
@@ -120,25 +116,6 @@ export function useCreateProject() {
         if (newTab) {
           try {
             newTab.location.href = url;
-            // Some browser shells keep a truthy popup handle but fail to
-            // surface the newly opened tab. If the loading-preview popup
-            // never advances, close it and fall back to in-page navigation.
-            window.setTimeout(() => {
-              try {
-                const popupHref = newTab.location.href;
-                if (
-                  newTab.closed ||
-                  popupHref === "about:blank" ||
-                  popupHref === loadingPreviewUrl
-                ) {
-                  newTab.close();
-                  routerRef.current.push(url);
-                }
-              } catch {
-                newTab.close();
-                routerRef.current.push(url);
-              }
-            }, 400);
           } catch {
             newTab.close();
             routerRef.current.push(url);

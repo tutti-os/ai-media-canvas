@@ -346,10 +346,26 @@ export const ImagePill = React.memo(function ImagePill({
   const handleMouseEnter = useCallback(() => {
     if (!pillRef.current) return;
     const rect = pillRef.current.getBoundingClientRect();
-    const above = rect.top > 260;
+    const bubbleRect =
+      pillRef.current.closest("[data-chat-bubble]")?.getBoundingClientRect() ??
+      rect;
+    const previewSize = 240;
+    const margin = 12;
+    const gap = 8;
+    const spaceBelow = window.innerHeight - bubbleRect.bottom - margin;
+    const spaceAbove = bubbleRect.top - margin;
+    const above = spaceBelow < previewSize && spaceAbove > spaceBelow;
+    const minX = margin + previewSize / 2;
+    const maxX = window.innerWidth - margin - previewSize / 2;
+    const centeredX = rect.left + rect.width / 2;
+    const clampedX =
+      maxX > minX
+        ? Math.min(Math.max(centeredX, minX), maxX)
+        : window.innerWidth / 2;
+
     setPreview({
-      x: rect.left + rect.width / 2,
-      y: above ? rect.top - 8 : rect.bottom + 8,
+      x: clampedX,
+      y: above ? bubbleRect.top - gap : bubbleRect.bottom + gap,
       above,
     });
   }, []);
@@ -393,10 +409,7 @@ export const ImagePill = React.memo(function ImagePill({
             className="pointer-events-none fixed z-[1500]"
             style={{
               left: preview.x,
-              top: preview.above ? preview.y : undefined,
-              bottom: preview.above
-                ? undefined
-                : `${window.innerHeight - preview.y}px`,
+              top: preview.y,
               transform: preview.above
                 ? "translate(-50%, -100%)"
                 : "translate(-50%, 0)",

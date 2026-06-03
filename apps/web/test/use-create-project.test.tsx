@@ -80,20 +80,16 @@ describe("useCreateProject", () => {
     vi.restoreAllMocks();
   });
 
-  it("falls back to in-page navigation when the popup stays on loading-preview", async () => {
-    const loadingPreviewUrl = new URL(
-      "/loading-preview",
-      window.location.origin,
-    ).href;
-    let popupHref = loadingPreviewUrl;
+  it("navigates the opened tab without later changing the original page", async () => {
+    let popupHref = "";
     const popup = {
       closed: false,
       location: Object.defineProperty({}, "href", {
         get() {
           return popupHref;
         },
-        set(_value: string) {
-          popupHref = loadingPreviewUrl;
+        set(value: string) {
+          popupHref = value;
         },
       }),
       close: vi.fn(),
@@ -112,10 +108,12 @@ describe("useCreateProject", () => {
     await Promise.resolve();
 
     expect(createProjectMock).toHaveBeenCalledWith({ name: "Untitled" });
+    expect(popupHref).toBe("/canvas?id=canvas-1");
 
     await vi.advanceTimersByTimeAsync(450);
 
-    expect(pushMock).toHaveBeenCalledWith("/canvas?id=canvas-1");
+    expect(pushMock).not.toHaveBeenCalled();
+    expect(popup.close).not.toHaveBeenCalled();
   });
 
   it("ignores rapid duplicate create clicks while the first request is still pending", async () => {
@@ -198,25 +196,8 @@ describe("useCreateProject", () => {
     expect(popup.close).toHaveBeenCalled();
   });
 
-  it("closes a stuck popup before falling back to in-page navigation", async () => {
-    const loadingPreviewUrl = new URL(
-      "/loading-preview",
-      window.location.origin,
-    ).href;
-    let popupHref = loadingPreviewUrl;
-    const popup = {
-      closed: false,
-      location: Object.defineProperty({}, "href", {
-        get() {
-          return popupHref;
-        },
-        set(_value: string) {
-          popupHref = loadingPreviewUrl;
-        },
-      }),
-      close: vi.fn(),
-    };
-    vi.spyOn(window, "open").mockImplementation(() => popup as unknown as Window);
+  it("falls back to in-page navigation when the popup is blocked", async () => {
+    vi.spyOn(window, "open").mockImplementation(() => null);
 
     render(
       <ToastProvider>
@@ -227,9 +208,7 @@ describe("useCreateProject", () => {
     screen.getByRole("button", { name: "create" }).click();
     await Promise.resolve();
     await Promise.resolve();
-    await vi.advanceTimersByTimeAsync(450);
 
-    expect(popup.close).toHaveBeenCalledTimes(1);
     expect(pushMock).toHaveBeenCalledWith("/canvas?id=canvas-1");
   });
 });

@@ -121,6 +121,13 @@ export const profileUpdateRequestSchema = z.object({
 
 export const workspaceSettingsSchema = z.object({
   defaultModel: z.string(),
+  providerModels: z.object({
+    openai: z.array(z.string().min(1)),
+    anthropic: z.array(z.string().min(1)),
+    agnes: z.array(z.string().min(1)),
+    google: z.array(z.string().min(1)),
+    vertex: z.array(z.string().min(1)),
+  }),
   openAIApiKey: z.string(),
   openAIApiBase: z.string(),
   anthropicApiKey: z.string(),

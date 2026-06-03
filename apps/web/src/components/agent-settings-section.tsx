@@ -7,6 +7,19 @@ import type { ModelInfo, WorkspaceSettings } from "@aimc/shared";
 import { fetchModels } from "@/lib/server-api";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { Button } from "./ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
@@ -16,6 +29,8 @@ interface AgentSettingsSectionProps {
 }
 
 type AgentProtocolId = "agnes" | "openai" | "google" | "vertex" | "anthropic";
+
+type ProviderModels = WorkspaceSettings["providerModels"];
 
 const AGENT_PROTOCOLS: Array<{
   id: AgentProtocolId;
@@ -62,11 +77,185 @@ function getInitialProtocol(settings: WorkspaceSettings): AgentProtocolId {
   return "openai";
 }
 
+function buildModelId(provider: AgentProtocolId, value: string): string {
+  return value.includes(":") ? value : `${provider}:${value}`;
+}
+
+function getProviderModelIds(
+  settings: WorkspaceSettings,
+  provider: AgentProtocolId,
+): string[] {
+  return settings.providerModels?.[provider] ?? [];
+}
+
+function updateProviderModelList(
+  current: ProviderModels,
+  provider: AgentProtocolId,
+  nextValues: string[],
+): ProviderModels {
+  return {
+    ...current,
+    [provider]: nextValues,
+  };
+}
+
+function getProviderLabel(provider: AgentProtocolId): string {
+  return (
+    AGENT_PROTOCOLS.find((protocol) => protocol.id === provider)?.label ?? provider
+  );
+}
+
+function getFirstConfiguredModel(providerModels: ProviderModels): string {
+  for (const protocol of AGENT_PROTOCOLS) {
+    const firstModel = providerModels[protocol.id]?.[0];
+    if (firstModel) return firstModel;
+  }
+  return "";
+}
+
+function applyProviderModelUpdate(
+  current: WorkspaceSettings,
+  provider: AgentProtocolId,
+  nextValues: string[],
+): WorkspaceSettings {
+  const normalizedValues = Array.from(
+    new Set(
+      nextValues
+        .map((value) => buildModelId(provider, value.trim()))
+        .filter(Boolean),
+    ),
+  );
+  const providerModels = updateProviderModelList(
+    current.providerModels,
+    provider,
+    normalizedValues,
+  );
+  const allConfiguredModels = AGENT_PROTOCOLS.flatMap(
+    (protocol) => providerModels[protocol.id],
+  );
+
+  return {
+    ...current,
+    providerModels,
+    defaultModel: allConfiguredModels.includes(current.defaultModel)
+      ? current.defaultModel
+      : getFirstConfiguredModel(providerModels),
+  };
+}
+
+function ProviderModelListEditor({
+  provider,
+  settings,
+  availableModels,
+  onChange,
+}: {
+  provider: AgentProtocolId;
+  settings: WorkspaceSettings;
+  availableModels: ModelInfo[];
+  onChange: (nextValues: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const configuredModels = settings.providerModels[provider];
+  const detectedModels = availableModels
+    .filter((model) => model.provider === provider)
+    .map((model) => model.id);
+
+  function addModel() {
+    const nextValue = buildModelId(provider, draft.trim());
+    if (!draft.trim() || configuredModels.includes(nextValue)) return;
+    onChange([...configuredModels, nextValue]);
+    setDraft("");
+  }
+
+  return (
+    <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-foreground">
+            {getProviderLabel(provider)} models
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Add, edit, or remove the model IDs you want this provider to expose.
+          </p>
+        </div>
+        {configuredModels.length === 0 && detectedModels.length > 0 ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => onChange(detectedModels)}
+          >
+            Import detected
+          </Button>
+        ) : null}
+      </div>
+
+      {configuredModels.length > 0 ? (
+        <div className="space-y-2">
+          {configuredModels.map((modelId, index) => (
+            <div key={`${provider}-${index}`} className="flex items-center gap-2">
+              <Input
+                aria-label={`${getProviderLabel(provider)} model ${index + 1}`}
+                value={modelId}
+                onChange={(event) => {
+                  const nextValues = [...configuredModels];
+                  nextValues[index] = buildModelId(provider, event.target.value.trim());
+                  onChange(nextValues.filter(Boolean));
+                }}
+                placeholder={`${provider}:model-id`}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  onChange(
+                    configuredModels.filter(
+                      (_, currentIndex) => currentIndex !== index,
+                    ),
+                  )
+                }
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          No models configured yet for {getProviderLabel(provider)}.
+        </p>
+      )}
+
+      <div className="flex items-center gap-2">
+        <Input
+          aria-label={`Add ${getProviderLabel(provider)} model`}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder={`${provider}:model-id`}
+        />
+        <Button type="button" size="sm" onClick={addModel}>
+          Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function AgentSettingsSection({
   settings: initialSettings,
   onSave,
 }: AgentSettingsSectionProps) {
-  const [settings, setSettings] = useState(initialSettings);
+  const [settings, setSettings] = useState<WorkspaceSettings>({
+    ...initialSettings,
+    providerModels: {
+      openai: initialSettings.providerModels?.openai ?? [],
+      anthropic: initialSettings.providerModels?.anthropic ?? [],
+      agnes: initialSettings.providerModels?.agnes ?? [],
+      google: initialSettings.providerModels?.google ?? [],
+      vertex: initialSettings.providerModels?.vertex ?? [],
+    },
+  });
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [activeProtocol, setActiveProtocol] =
     useState<AgentProtocolId>(() => getInitialProtocol(initialSettings));
@@ -77,7 +266,16 @@ export function AgentSettingsSection({
   } | null>(null);
 
   useEffect(() => {
-    setSettings(initialSettings);
+    setSettings({
+      ...initialSettings,
+      providerModels: {
+        openai: initialSettings.providerModels?.openai ?? [],
+        anthropic: initialSettings.providerModels?.anthropic ?? [],
+        agnes: initialSettings.providerModels?.agnes ?? [],
+        google: initialSettings.providerModels?.google ?? [],
+        vertex: initialSettings.providerModels?.vertex ?? [],
+      },
+    });
     setActiveProtocol(getInitialProtocol(initialSettings));
   }, [initialSettings]);
 
@@ -99,7 +297,16 @@ export function AgentSettingsSection({
     return () => {
       canceled = true;
     };
-  }, [initialSettings.openAIApiBase, initialSettings.openAIApiKey]);
+  }, [
+    initialSettings.openAIApiBase,
+    initialSettings.openAIApiKey,
+    initialSettings.anthropicApiKey,
+    initialSettings.anthropicBaseUrl,
+    initialSettings.agnesApiKey,
+    initialSettings.googleApiKey,
+    initialSettings.googleVertexProject,
+    initialSettings.googleVertexLocation,
+  ]);
 
   const normalizedInitial = useMemo(
     () => JSON.stringify(initialSettings),
@@ -107,10 +314,25 @@ export function AgentSettingsSection({
   );
   const normalizedCurrent = JSON.stringify(settings);
   const hasChanges = normalizedInitial !== normalizedCurrent;
-  const openAIModelSuggestions = useMemo(
+  const modelPickerGroups = useMemo(
     () =>
-      availableModels.filter((model) => model.provider === "openai"),
-    [availableModels],
+      AGENT_PROTOCOLS.map((protocol) => ({
+        ...protocol,
+        models: getProviderModelIds(settings, protocol.id).map((modelId) => ({
+          id: modelId,
+          name:
+            availableModels.find((model) => model.id === modelId)?.name ??
+            modelId.replace(`${protocol.id}:`, ""),
+          provider: protocol.id,
+        })),
+      })).filter((protocol) => protocol.models.length > 0),
+    [availableModels, settings],
+  );
+  const selectedModelName = useMemo(
+    () =>
+      availableModels.find((model) => model.id === settings.defaultModel)?.name ??
+      settings.defaultModel,
+    [availableModels, settings.defaultModel],
   );
 
   function updateField<Key extends keyof WorkspaceSettings>(
@@ -126,7 +348,11 @@ export function AgentSettingsSection({
     setFeedback(null);
 
     try {
-      await onSave(settings);
+      await onSave({
+        ...settings,
+        agnesDefaultModel:
+          settings.providerModels.agnes[0] || settings.agnesDefaultModel,
+      });
       setFeedback({ type: "success", message: "Local agent settings updated." });
     } catch {
       setFeedback({
@@ -149,41 +375,85 @@ export function AgentSettingsSection({
           <div className="mb-4">
             <h3 className="text-base font-semibold">Default model</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Use a provider-scoped model ID like{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                openai:gpt-4.1
-              </code>{" "}
-              or{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                agnes:agnes-2.0-flash
-              </code>{" "}
-              or{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                google:gemini-2.5-flash
-              </code>
-              {" "}or{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                anthropic:claude-sonnet-4-5
-              </code>
-              .
+              Pick the workspace default from the model lists configured below.
             </p>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="defaultModel">Default LLM Model</Label>
-            <Input
-              id="defaultModel"
-              list="defaultModelOptions"
-              value={settings.defaultModel}
-              onChange={(event) => updateField("defaultModel", event.target.value)}
-              placeholder="openai:gpt-4.1, anthropic:claude-sonnet-4-5, agnes:agnes-2.0-flash, or google:gemini-2.5-flash"
-            />
-            <datalist id="defaultModelOptions">
-              {availableModels.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.name}
-                </option>
-              ))}
-            </datalist>
+          <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">
+                Default LLM Model
+              </p>
+              <p className="mt-2 truncate text-sm text-foreground">
+                {selectedModelName || "No default model selected"}
+              </p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">
+                {settings.defaultModel || "Configure models below, then pick one here."}
+              </p>
+            </div>
+            {modelPickerGroups.length > 0 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button variant="outline" size="sm" className="shrink-0" />
+                  }
+                  aria-label="Browse available models"
+                >
+                  Choose model
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" sideOffset={6} className="w-72">
+                  <div className="px-2 py-1.5">
+                    <p className="text-sm font-medium text-foreground">
+                      Workspace models
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Choose from the model lists configured under each provider.
+                    </p>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    {modelPickerGroups.map((protocol) => (
+                      <DropdownMenuSub key={protocol.id}>
+                        <DropdownMenuSubTrigger>
+                          {protocol.label}
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="w-80">
+                          <DropdownMenuLabel>
+                            {protocol.label} models
+                          </DropdownMenuLabel>
+                          <DropdownMenuRadioGroup
+                            value={settings.defaultModel}
+                            onValueChange={(value) =>
+                              updateField("defaultModel", value as string)
+                            }
+                          >
+                            {protocol.models.map((model) => (
+                              <DropdownMenuRadioItem
+                                key={model.id}
+                                value={model.id}
+                                aria-label={`Use ${model.name}`}
+                              >
+                                <div className="min-w-0">
+                                  <div className="truncate font-medium">
+                                    {model.name}
+                                  </div>
+                                  <div className="truncate text-xs text-muted-foreground">
+                                    {model.id}
+                                  </div>
+                                </div>
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    ))}
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Button type="button" size="sm" variant="outline" disabled>
+                No models yet
+              </Button>
+            )}
           </div>
         </section>
 
@@ -215,7 +485,7 @@ export function AgentSettingsSection({
           {activeProtocol === "agnes" ? (
             <div className="space-y-4">
               <AgnesQuickstartHint />
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="agnesApiKey">Agnes API Key</Label>
                   <Input
@@ -238,18 +508,17 @@ export function AgentSettingsSection({
                     placeholder="https://apihub.agnes-ai.com/v1"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="agnesDefaultModel">Agnes Default Model</Label>
-                  <Input
-                    id="agnesDefaultModel"
-                    value={settings.agnesDefaultModel}
-                    onChange={(event) =>
-                      updateField("agnesDefaultModel", event.target.value)
-                    }
-                    placeholder="agnes:agnes-2.0-flash"
-                  />
-                </div>
               </div>
+              <ProviderModelListEditor
+                provider="agnes"
+                settings={settings}
+                availableModels={availableModels}
+                onChange={(nextValues) =>
+                  setSettings((current) =>
+                    applyProviderModelUpdate(current, "agnes", nextValues),
+                  )
+                }
+              />
             </div>
           ) : null}
 
@@ -279,116 +548,131 @@ export function AgentSettingsSection({
                   />
                 </div>
               </div>
-
-              {openAIModelSuggestions.length > 0 ? (
-                <div className="space-y-2 rounded-xl border bg-muted/20 p-4">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      Detected OpenAI-compatible models
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Pick one to fill the default model, or keep typing any custom
-                      model ID your gateway accepts.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {openAIModelSuggestions.map((model) => (
-                      <button
-                        key={model.id}
-                        type="button"
-                        onClick={() => updateField("defaultModel", model.id)}
-                        className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                          settings.defaultModel === model.id
-                            ? "border-accent/40 bg-accent/10 text-foreground"
-                            : "border-border bg-background text-muted-foreground hover:text-foreground"
-                        }`}
-                        aria-label={`Use ${model.name}`}
-                      >
-                        {model.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
+              <ProviderModelListEditor
+                provider="openai"
+                settings={settings}
+                availableModels={availableModels}
+                onChange={(nextValues) =>
+                  setSettings((current) =>
+                    applyProviderModelUpdate(current, "openai", nextValues),
+                  )
+                }
+              />
             </div>
           ) : null}
 
           {activeProtocol === "google" ? (
-            <div className="space-y-2">
-              <Label htmlFor="googleApiKey">Google API Key</Label>
-              <Input
-                id="googleApiKey"
-                value={settings.googleApiKey}
-                onChange={(event) => updateField("googleApiKey", event.target.value)}
-                placeholder="AIza..."
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="googleApiKey">Google API Key</Label>
+                <Input
+                  id="googleApiKey"
+                  value={settings.googleApiKey}
+                  onChange={(event) => updateField("googleApiKey", event.target.value)}
+                  placeholder="AIza..."
+                />
+              </div>
+              <ProviderModelListEditor
+                provider="google"
+                settings={settings}
+                availableModels={availableModels}
+                onChange={(nextValues) =>
+                  setSettings((current) =>
+                    applyProviderModelUpdate(current, "google", nextValues),
+                  )
+                }
               />
             </div>
           ) : null}
 
           {activeProtocol === "vertex" ? (
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label htmlFor="googleVertexProject">Vertex Project</Label>
-                <Input
-                  id="googleVertexProject"
-                  value={settings.googleVertexProject}
-                  onChange={(event) =>
-                    updateField("googleVertexProject", event.target.value)
-                  }
-                  placeholder="my-gcp-project"
-                />
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="googleVertexProject">Vertex Project</Label>
+                  <Input
+                    id="googleVertexProject"
+                    value={settings.googleVertexProject}
+                    onChange={(event) =>
+                      updateField("googleVertexProject", event.target.value)
+                    }
+                    placeholder="my-gcp-project"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="googleVertexLocation">Vertex Location</Label>
+                  <Input
+                    id="googleVertexLocation"
+                    value={settings.googleVertexLocation}
+                    onChange={(event) =>
+                      updateField("googleVertexLocation", event.target.value)
+                    }
+                    placeholder="global"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="googleVertexVideoLocation">
+                    Vertex Video Location
+                  </Label>
+                  <Input
+                    id="googleVertexVideoLocation"
+                    value={settings.googleVertexVideoLocation}
+                    onChange={(event) =>
+                      updateField("googleVertexVideoLocation", event.target.value)
+                    }
+                    placeholder="us-central1"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="googleVertexLocation">Vertex Location</Label>
-                <Input
-                  id="googleVertexLocation"
-                  value={settings.googleVertexLocation}
-                  onChange={(event) =>
-                    updateField("googleVertexLocation", event.target.value)
-                  }
-                  placeholder="global"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="googleVertexVideoLocation">
-                  Vertex Video Location
-                </Label>
-                <Input
-                  id="googleVertexVideoLocation"
-                  value={settings.googleVertexVideoLocation}
-                  onChange={(event) =>
-                    updateField("googleVertexVideoLocation", event.target.value)
-                  }
-                  placeholder="us-central1"
-                />
-              </div>
+              <ProviderModelListEditor
+                provider="vertex"
+                settings={settings}
+                availableModels={availableModels}
+                onChange={(nextValues) =>
+                  setSettings((current) =>
+                    applyProviderModelUpdate(current, "vertex", nextValues),
+                  )
+                }
+              />
             </div>
           ) : null}
 
           {activeProtocol === "anthropic" ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="anthropicApiKey">Anthropic API Key</Label>
-                <Input
-                  id="anthropicApiKey"
-                  value={settings.anthropicApiKey}
-                  onChange={(event) =>
-                    updateField("anthropicApiKey", event.target.value)
-                  }
-                  placeholder="sk-ant-..."
-                />
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="anthropicApiKey">Anthropic API Key</Label>
+                  <Input
+                    id="anthropicApiKey"
+                    value={settings.anthropicApiKey}
+                    onChange={(event) =>
+                      updateField("anthropicApiKey", event.target.value)
+                    }
+                    placeholder="sk-ant-..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="anthropicBaseUrl">Anthropic Base URL</Label>
+                  <Input
+                    id="anthropicBaseUrl"
+                    value={settings.anthropicBaseUrl}
+                    onChange={(event) =>
+                      updateField("anthropicBaseUrl", event.target.value)
+                    }
+                    placeholder="https://api.anthropic.com"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="anthropicBaseUrl">Anthropic Base URL</Label>
-                <Input
-                  id="anthropicBaseUrl"
-                  value={settings.anthropicBaseUrl}
-                  onChange={(event) =>
-                    updateField("anthropicBaseUrl", event.target.value)
-                  }
-                  placeholder="https://api.anthropic.com"
-                />
-              </div>
+              <ProviderModelListEditor
+                provider="anthropic"
+                settings={settings}
+                availableModels={availableModels}
+                onChange={(nextValues) =>
+                  setSettings((current) =>
+                    applyProviderModelUpdate(current, "anthropic", nextValues),
+                  )
+                }
+              />
             </div>
           ) : null}
         </section>

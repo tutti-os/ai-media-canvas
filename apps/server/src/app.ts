@@ -72,7 +72,7 @@ import {
   type LocalStore,
 } from "./local/store.js";
 import { createLocalUserClient } from "./local/user-client.js";
-import type { RequestAuthenticator } from "./supabase/user.js";
+import type { RequestAuthenticator } from "./auth/request.js";
 import { ConnectionManager } from "./ws/connection-manager.js";
 import { CanvasEventBuffer } from "./ws/event-buffer.js";
 import { registerWsRoute } from "./ws/handler.js";
@@ -731,9 +731,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     },
   };
   const agentRuns = createAgentRunService({
+    agentRunStore: {
+      createRun: store.createAgentRun,
+      updateRun: store.updateAgentRun,
+    },
     connectionManager,
     createUserClient,
     env: createStandaloneAgentEnv(env),
+    loadSessionMessages: (sessionId) =>
+      chatService.listMessages(localUser, sessionId),
   });
   const localAgentRuns = new Map<string, LocalAgentRunState>();
 

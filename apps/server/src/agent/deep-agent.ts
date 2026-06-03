@@ -1,4 +1,3 @@
-import type { BaseCheckpointSaver, BaseStore } from "@langchain/langgraph-checkpoint";
 import { ChatAnthropic } from "@langchain/anthropic";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
@@ -30,7 +29,6 @@ export type AimcAgentFactory = (options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
   canvasId?: string;
-  checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => any;
   env: ServerEnv;
@@ -39,7 +37,6 @@ export type AimcAgentFactory = (options: {
 
   submitImageJob?: SubmitImageJobFn;
   submitVideoJob?: SubmitVideoJobFn;
-  store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
 }) => AimcAgent;
 
@@ -47,7 +44,6 @@ export function createAimcDeepAgent(options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
   canvasId?: string;
-  checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => any;
   env: ServerEnv;
@@ -56,7 +52,6 @@ export function createAimcDeepAgent(options: {
 
   submitImageJob?: SubmitImageJobFn;
   submitVideoJob?: SubmitVideoJobFn;
-  store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
 }): AimcAgent {
   const backendResult =
@@ -109,10 +104,8 @@ export function createAimcDeepAgent(options: {
 
   return createDeepAgent({
     backend: backendResult.factory,
-    ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
     model: resolvedModel,
     name: "ai-media-canvas",
-    ...(options.store ? { store: options.store } : {}),
     subagents: [createVideoSubAgent()],
     systemPrompt,
     tools: createMainAgentTools(backendResult.factory, {

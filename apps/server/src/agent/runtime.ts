@@ -4,8 +4,9 @@ import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import { HumanMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type {
+  ChatMessage,
   ImageAttachment,
   ImageGenerationPreference,
   MessageMention,
@@ -18,10 +19,9 @@ import type {
 
 import type { ServerEnv } from "../config/env.js";
 import { createPipelineLogger } from "../ws/logger.js";
-import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
-import type { AuthenticatedUser, UserSupabaseClient } from "../supabase/user.js";
+import type { AuthenticatedUser, UserDataClient } from "../auth/request.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
@@ -37,7 +37,6 @@ import {
   createDefaultModelSpecifier,
   createAimcDeepAgent,
 } from "./deep-agent.js";
-import type { AgentPersistenceService } from "./persistence/index.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import { loadWorkspaceSkills, type WorkspaceSkillEntry } from "./workspace-skills.js";
@@ -232,6 +231,44 @@ export function buildAttachmentDataMap(
   return map;
 }
 
+async function buildSessionHistoryMessages(
+  sessionId: string,
+  currentPrompt: string,
+  loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>,
+): Promise<Array<HumanMessage | AIMessage>> {
+  if (!loadSessionMessages) return [];
+
+  let savedMessages: ChatMessage[];
+  try {
+    savedMessages = await loadSessionMessages(sessionId);
+  } catch (error) {
+    console.warn(
+      "[runtime] Failed to load local chat history:",
+      error instanceof Error ? error.message : error,
+    );
+    return [];
+  }
+
+  const history =
+    savedMessages.at(-1)?.role === "user" &&
+    normalizeText(savedMessages.at(-1)?.content ?? "") ===
+      normalizeText(currentPrompt)
+      ? savedMessages.slice(0, -1)
+      : savedMessages;
+
+  return history
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .map((message) =>
+      message.role === "assistant"
+        ? new AIMessage(message.content)
+        : new HumanMessage(message.content),
+    );
+}
+
+function normalizeText(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
 type RuntimeRunStatus =
   | "accepted"
   | "canceled"
@@ -252,15 +289,29 @@ type RuntimeRunRecord = RunCreateRequest & {
 };
 
 type CreateAgentRuntimeOptions = {
-  agentPersistenceService?: AgentPersistenceService;
   agentFactory?: AimcAgentFactory;
-  agentRunMetadataService?: AgentRunMetadataService;
+  agentRunStore?: {
+    createRun(input: {
+      canvasId?: string;
+      model?: string;
+      runId: string;
+      sessionId: string;
+      threadId?: string;
+    }): void;
+    updateRun(input: {
+      errorCode?: string;
+      errorMessage?: string;
+      runId: string;
+      status: RuntimeRunStatus;
+    }): void;
+  };
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => unknown;
   creditService?: CreditService;
   env: ServerEnv;
   eventDelayMs?: number;
   jobService?: JobService;
+  loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
   model?: BaseLanguageModel | string;
   now?: () => string;
   runIdFactory?: () => string;
@@ -331,6 +382,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
 
       run.status = "canceled";
+      options.agentRunStore?.updateRun({
+        runId,
+        status: "canceled",
+      });
       return {
         runId,
         status: "canceled",
@@ -363,6 +418,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         status: "accepted",
       });
 
+      options.agentRunStore?.createRun({
+        ...(runInput.canvasId ? { canvasId: runInput.canvasId } : {}),
+        ...(runOptions?.model ? { model: runOptions.model } : {}),
+        runId,
+        sessionId: runInput.sessionId,
+        ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
+      });
+
       return {
         conversationId: input.conversationId,
         runId,
@@ -387,60 +450,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       run.consumed = true;
       run.status = "running";
+      options.agentRunStore?.updateRun({
+        runId,
+        status: "running",
+      });
 
       const rlog = createPipelineLogger("runtime", { runId });
 
-      try {
-        await updatePersistedRunStatus(
-          options.agentRunMetadataService,
-          run,
-          "running",
-        );
-      } catch (error) {
-        const failedEvent = toFailedEvent(runId, now, error);
-        run.status = "failed";
-        yield failedEvent;
-        return;
-      }
-
-      let persistence: Awaited<
-        ReturnType<NonNullable<AgentPersistenceService["getPersistence"]>>
-      > | null = null;
-      try {
-        persistence =
-          run.threadId && options.agentPersistenceService
-            ? await options.agentPersistenceService.getPersistence()
-            : null;
-        rlog.lap("persistence_init");
-      } catch (error) {
-        const failedEvent = toFailedEvent(runId, now, error);
-        run.status = "failed";
-        await updatePersistedRunFailure(
-          options.agentRunMetadataService,
-          run,
-          now,
-          error,
-        );
-        yield failedEvent;
-        return;
-      }
-
-      if (run.threadId && !persistence) {
-        const failedEvent = toFailedEvent(
-          runId,
-          now,
-          new Error("SUPABASE_DB_URL is required for persisted agent threads."),
-        );
-        run.status = "failed";
-        await updatePersistedRunFailure(
-          options.agentRunMetadataService,
-          run,
-          now,
-          new Error("SUPABASE_DB_URL is required for persisted agent threads."),
-        );
-        yield failedEvent;
-        return;
-      }
+      rlog.lap("local_history_mode");
 
       // Build submitImageJob / submitVideoJob closures for async jobs via PGMQ
       let submitImageJob: SubmitImageJobFn | undefined;
@@ -463,7 +480,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // Look up personal workspace directly — the viewer is already
           // bootstrapped from the normal auth flow, so we skip ensureViewer
           // to avoid its strict email validation on the profile schema.
-          const client = createClient(accessToken) as UserSupabaseClient;
+          const client = createClient(accessToken) as UserDataClient;
           const { data: ws } = await client
             .from("workspaces")
             .select("id")
@@ -567,7 +584,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               let elementId: string | undefined;
               if (canvasId && result.object_path) {
                 try {
-                  const writerClient = createClient(accessToken) as UserSupabaseClient;
+                  const writerClient = createClient(accessToken) as UserDataClient;
                   const explicitPlacement = (input as any).placementX != null && (input as any).placementY != null
                     ? {
                         x: (input as any).placementX,
@@ -648,7 +665,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             console.log(`[submitVideoJob] ${label} +${Date.now() - jobT0}ms`, extra ? JSON.stringify(extra) : "");
           };
 
-          const client = createClient(accessToken) as UserSupabaseClient;
+          const client = createClient(accessToken) as UserDataClient;
           const { data: ws } = await client
             .from("workspaces")
             .select("id")
@@ -760,7 +777,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               let elementId: string | undefined;
               if (canvasId && result.signed_url) {
                 try {
-                  const writerClient = createClient(accessToken) as UserSupabaseClient;
+                  const writerClient = createClient(accessToken) as UserDataClient;
                   const explicitPlacement = (input as any).placementX != null && (input as any).placementY != null
                     ? {
                         x: (input as any).placementX,
@@ -845,7 +862,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       let workspaceSkills: WorkspaceSkillEntry[] = [];
       if (run.canvasId && run.accessToken && options.createUserClient) {
         try {
-          const wsClient = options.createUserClient(run.accessToken) as UserSupabaseClient;
+          const wsClient = options.createUserClient(run.accessToken) as UserDataClient;
           workspaceSkills = await loadWorkspaceSkills(wsClient, run.canvasId);
           rlog.lap("workspace_skills_loaded", { count: workspaceSkills.length });
         } catch (err) {
@@ -872,16 +889,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             : createDefaultModelSpecifier({ agentModel: run.modelOverride }))
           : options.model;
 
-        // Build persistImage closure using the user's Supabase client.
+        // Build persistImage closure using the local user data client.
         // Client creation is deferred into the closure so it only runs
         // when an image is actually generated (avoids throwing in tests
-        // that don't configure Supabase env vars).
+        // that don't configure provider env vars).
         let persistImage: ((url: string, mime: string, prompt: string) => Promise<string>) | undefined;
         if (options.createUserClient && run.accessToken) {
           const createClient = options.createUserClient;
           const accessToken = run.accessToken;
           persistImage = async (sourceUrl, mimeType, prompt) => {
-            const client = createClient(accessToken) as UserSupabaseClient;
+            const client = createClient(accessToken) as UserDataClient;
             const response = await fetch(sourceUrl);
             if (!response.ok) throw new Error(`Download failed: ${response.status}`);
             const buffer = Buffer.from(await response.arrayBuffer());
@@ -948,46 +965,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
         rlog.lap("brand_kit_resolved");
 
-        // Pre-write workspace skill SKILL.md files AND associated files
-        // (scripts/, references/, assets/) into the Store so the agent can
-        // read_file them via the /workspace-skills/ route.
-        const store = persistence?.store;
-        if (workspaceSkills.length > 0 && store && run.canvasId) {
-          const storeNamespace = ["projects", run.canvasId, "workspace-skills"];
-          const now_ = new Date().toISOString();
-
-          const writeOps: Promise<void>[] = [];
-          for (const skill of workspaceSkills) {
-            // Write SKILL.md
-            writeOps.push(
-              store.put(storeNamespace, `/${skill.name}/SKILL.md`, {
-                content: skill.content.split("\n"),
-                created_at: now_,
-                modified_at: now_,
-              }),
-            );
-            // Write associated files (scripts/, references/, assets/)
-            for (const file of skill.files) {
-              writeOps.push(
-                store.put(storeNamespace, `/${skill.name}/${file.path}`, {
-                  content: file.content.split("\n"),
-                  created_at: now_,
-                  modified_at: now_,
-                }),
-              );
-            }
-          }
-
-          await Promise.all(writeOps);
-          const totalFiles = workspaceSkills.reduce((sum, s) => sum + s.files.length, 0);
-          rlog.lap("workspace_skills_stored", { count: workspaceSkills.length, files: totalFiles });
+        if (workspaceSkills.length > 0) {
+          rlog.lap("workspace_skills_loaded_without_store", {
+            count: workspaceSkills.length,
+          });
         }
 
         agent = resolvedAgentFactory({
           backendResult,
           ...(brandKitId ? { brandKitId } : {}),
           ...(run.canvasId ? { canvasId: run.canvasId } : {}),
-          ...(persistence ? { checkpointer: persistence.checkpointer } : {}),
           ...(options.connectionManager ? { connectionManager: options.connectionManager } : {}),
           env: runtimeEnv,
           ...(resolvedModel ? { model: resolvedModel } : {}),
@@ -995,14 +982,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // execute 工具由 LocalShellBackend 自动提供，无需手动传递
           ...(submitImageJob ? { submitImageJob } : {}),
           ...(submitVideoJob ? { submitVideoJob } : {}),
-          ...(persistence ? { store: persistence.store } : {}),
           ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
         });
         rlog.lap("agent_factory_done");
       } catch (error) {
         const failedEvent = toFailedEvent(runId, now, error);
         run.status = "failed";
-        await updatePersistedRunFailure(options.agentRunMetadataService, run, now, error);
+        options.agentRunStore?.updateRun({
+          errorCode: failedEvent.error.code,
+          errorMessage: failedEvent.error.message,
+          runId,
+          status: "failed",
+        });
         yield failedEvent;
         return;
       }
@@ -1107,16 +1098,24 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           userMessage = new HumanMessage(enrichedPrompt);
         }
 
-        rlog.lap("stream_call_start");
+        const messages = [
+          ...(await buildSessionHistoryMessages(
+            run.sessionId,
+            run.prompt,
+            options.loadSessionMessages,
+          )),
+          userMessage,
+        ];
+
+        rlog.lap("stream_call_start", { messageCount: messages.length });
         stream = agent.streamEvents(
           {
-            messages: [userMessage],
+            messages,
           },
           {
-            ...(run.threadId || run.canvasId || run.accessToken || run.userId || Object.keys(attachmentDataMap).length > 0
+            ...(run.canvasId || run.accessToken || run.userId || Object.keys(attachmentDataMap).length > 0
               ? {
                   configurable: {
-                    ...(run.threadId ? { thread_id: run.threadId } : {}),
                     ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
                     ...(run.accessToken ? { access_token: run.accessToken } : {}),
                     ...(run.userId ? { user_id: run.userId } : {}),
@@ -1134,7 +1133,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       } catch (error) {
         const failedEvent = toFailedEvent(runId, now, error);
         run.status = "failed";
-        await updatePersistedRunFailure(options.agentRunMetadataService, run, now, error);
+        options.agentRunStore?.updateRun({
+          errorCode: failedEvent.error.code,
+          errorMessage: failedEvent.error.message,
+          runId,
+          status: "failed",
+        });
         yield failedEvent;
         return;
       }
@@ -1149,18 +1153,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         stream,
       })) {
         run.status = mapEventToStatus(event);
-        try {
-          await syncPersistedRunFromEvent(
-            options.agentRunMetadataService,
-            run,
-            event,
-            now,
-          );
-        } catch (error) {
-          const failedEvent = toFailedEvent(runId, now, error);
-          run.status = "failed";
-          yield failedEvent;
-          return;
+        if (isTerminalEvent(event)) {
+          options.agentRunStore?.updateRun({
+            ...(event.type === "run.failed"
+              ? {
+                  errorCode: event.error.code,
+                  errorMessage: event.error.message,
+                }
+              : {}),
+            runId,
+            status: run.status,
+          });
         }
         yield event;
 
@@ -1171,6 +1174,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             });
           } catch {
             run.status = "canceled";
+            options.agentRunStore?.updateRun({
+              runId,
+              status: "canceled",
+            });
             yield {
               runId,
               timestamp: now(),
@@ -1181,15 +1188,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         }
       }
       } catch (streamError) {
-        // Catch DB / checkpoint errors that bubble up from the LangGraph stream
-        // (e.g. Supabase circuit-breaker, connection pool exhaustion).
-        // Instead of crashing the process, yield a clean failure event.
         console.error("[agent-runtime] Stream iteration failed:", streamError);
         const failedEvent = toFailedEvent(runId, now, streamError);
         run.status = "failed";
-        await updatePersistedRunFailure(options.agentRunMetadataService, run, now, streamError).catch(
-          (persistErr) => console.error("[agent-runtime] Failed to persist run failure:", persistErr),
-        );
+        options.agentRunStore?.updateRun({
+          errorCode: failedEvent.error.code,
+          errorMessage: failedEvent.error.message,
+          runId,
+          status: "failed",
+        });
         yield failedEvent;
         return;
       }
@@ -1243,66 +1250,4 @@ function toFailedEvent(
     timestamp: now(),
     type: "run.failed",
   };
-}
-
-async function updatePersistedRunStatus(
-  agentRunMetadataService: AgentRunMetadataService | undefined,
-  run: RuntimeRunRecord,
-  status: "running" | "completed",
-  options?: {
-    completedAt?: string;
-  },
-) {
-  if (!agentRunMetadataService || !run.threadId) {
-    return;
-  }
-
-  await agentRunMetadataService.updateRun({
-    ...(options?.completedAt ? { completedAt: options.completedAt } : {}),
-    runId: run.runId,
-    status,
-  });
-}
-
-async function updatePersistedRunFailure(
-  agentRunMetadataService: AgentRunMetadataService | undefined,
-  run: RuntimeRunRecord,
-  now: () => string,
-  error: unknown,
-) {
-  if (!agentRunMetadataService || !run.threadId) {
-    return;
-  }
-
-  await agentRunMetadataService.updateRun({
-    completedAt: now(),
-    errorCode: "run_failed",
-    errorMessage:
-      error instanceof Error ? error.message : "Deep agent runtime failed.",
-    runId: run.runId,
-    status: "failed",
-  });
-}
-
-async function syncPersistedRunFromEvent(
-  agentRunMetadataService: AgentRunMetadataService | undefined,
-  run: RuntimeRunRecord,
-  event: StreamEvent,
-  now: () => string,
-) {
-  if (event.type === "run.completed") {
-    await updatePersistedRunStatus(agentRunMetadataService, run, "completed", {
-      completedAt: now(),
-    });
-    return;
-  }
-
-  if (event.type === "run.failed") {
-    await updatePersistedRunFailure(
-      agentRunMetadataService,
-      run,
-      now,
-      new Error(event.error.message),
-    );
-  }
 }

@@ -45,8 +45,8 @@ export { createManipulateCanvasTool } from "./manipulate-canvas.js";
 // 代码执行无需额外自定义工具。
 //
 // CompositeBackend 路由互不干扰：
-//   /workspace/  → StoreBackend (PostgresStore) — 文件持久化
-//   /memories/   → StoreBackend (PostgresStore) — agent 记忆
+//   /workspace/  → StoreBackend — 文件持久化
+//   /memories/   → StoreBackend — agent 记忆
 //   /skills/     → FilesystemBackend            — 系统 skills
 //   default      → LocalShellBackend            — execute + 临时文件
 // ---------------------------------------------------------------------------

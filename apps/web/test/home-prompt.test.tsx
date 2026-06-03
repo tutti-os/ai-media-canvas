@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { HomePrompt } from "../src/components/home-prompt";
+import type { HomeExampleSelection } from "../src/lib/home-example-seeds";
 import { homeExampleSeedCategories } from "../src/lib/home-example-seeds";
+import { HomePrompt } from "../src/components/home-prompt";
 
 vi.mock("../src/components/agent-model-selector", () => ({
-  AgentModelSelector: () => <div>AgentModelSelector</div>,
+  AgentModelSelector: () => <div data-testid="agent-model-selector" />,
 }));
 
 vi.mock("../src/components/image-model-preference", () => ({
@@ -16,9 +18,7 @@ vi.mock("../src/components/image-model-preference", () => ({
 }));
 
 vi.mock("../src/hooks/use-agent-model", () => ({
-  useAgentModel: () => ({
-    model: "agnes:agnes-2.0-flash",
-  }),
+  useAgentModel: () => ({ model: "local:assistant" }),
 }));
 
 vi.mock("../src/hooks/use-image-model-preference", () => ({
@@ -34,38 +34,60 @@ vi.mock("../src/hooks/use-video-model-preference", () => ({
 }));
 
 describe("HomePrompt", () => {
-  it("does not send seed reference images as real attachments", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("sends selected example image mentions as initial attachments", async () => {
+    const user = userEvent.setup();
     const onSubmit = vi.fn();
-    const storyboardSeed = homeExampleSeedCategories
-      .find((category) => category.key === "storyboard-video")!
-      .examples[0]!;
+    const selectedSeed: HomeExampleSelection = {
+      categoryKey: "visual-concepts",
+      categoryLabel: "Visual Concepts",
+      title: "Turn a selfie into a magazine cover",
+      prompt: "Make this editorial",
+      previewImages: [],
+      inputMentions: [
+        {
+          type: "image",
+          name: "Selfie",
+          imgSrc: "/images/home-seeds/generated/input-selfie-source.png",
+        },
+      ],
+    };
 
     render(
       <HomePrompt
         onSubmit={onSubmit}
-        selectedSeed={{
-          categoryKey: "storyboard-video",
-          categoryLabel: "Storyboard",
-          title: storyboardSeed.title,
-          prompt: storyboardSeed.prompt,
-          previewImages: storyboardSeed.previewImages,
-          inputMentions: storyboardSeed.inputMentions,
-        }}
+        attachments={[]}
+        readyAttachments={[]}
+        selectedSeed={selectedSeed}
       />,
     );
 
-    fireEvent.change(
+    await user.type(
       screen.getByPlaceholderText("让 AI Media Canvas 帮你设计..."),
-      { target: { value: storyboardSeed.prompt } },
+      "请把这张自拍扩展成时尚杂志封面方案",
     );
-    fireEvent.click(screen.getByRole("button", { name: "提交 prompt" }));
+    await user.click(screen.getByRole("button", { name: "提交 prompt" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      storyboardSeed.prompt,
+      "请把这张自拍扩展成时尚杂志封面方案",
+      [
+        expect.objectContaining({
+          assetId: "seed-visual-concepts-0-selfie",
+          mimeType: "image/png",
+          name: "Selfie",
+          source: "upload",
+          url: expect.stringMatching(
+            /\/images\/home-seeds\/generated\/input-selfie-source\.png$/,
+          ),
+        }),
+      ],
       undefined,
       undefined,
-      undefined,
-      "agnes:agnes-2.0-flash",
+      "local:assistant",
     );
   });
 

@@ -14,6 +14,12 @@ interface MediaSettingsSectionProps {
   onSave: (settings: WorkspaceSettings) => Promise<void>;
 }
 
+type StringSettingsKey = {
+  [Key in keyof WorkspaceSettings]: WorkspaceSettings[Key] extends string
+    ? Key
+    : never;
+}[keyof WorkspaceSettings];
+
 type MediaProviderCard = {
   id: "agnes" | "openai" | "google" | "vertex" | "replicate" | "volces";
   label: string;
@@ -21,7 +27,7 @@ type MediaProviderCard = {
   summary: string;
   models: string[];
   fields: Array<{
-    key: keyof WorkspaceSettings;
+    key: StringSettingsKey;
     label: string;
     placeholder: string;
   }>;

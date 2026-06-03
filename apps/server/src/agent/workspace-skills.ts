@@ -1,4 +1,4 @@
-import type { UserSupabaseClient } from "../supabase/user.js";
+import type { UserDataClient } from "../auth/request.js";
 
 /**
  * A file bundled with a skill (scripts/, references/, assets/).
@@ -35,7 +35,7 @@ export interface WorkspaceSkillEntry {
  * non-empty `skill_content` are returned.
  */
 export async function loadWorkspaceSkills(
-  userClient: UserSupabaseClient,
+  userClient: UserDataClient,
   canvasId: string,
 ): Promise<WorkspaceSkillEntry[]> {
   // Step 1: Resolve canvas → project → workspace
@@ -43,8 +43,8 @@ export async function loadWorkspaceSkills(
   if (!workspaceId) return [];
 
   // Step 2: Query enabled workspace skills with full skill data
-  // NOTE: workspace_skills / skills tables may not yet be in the generated
-  // Supabase types — use `as any` to bypass PostgREST type checking.
+  // NOTE: the local data client is intentionally loosely typed here because
+  // skills table shapes are shared with the app's storage layer.
   const { data: rows, error } = await (userClient as any)
     .from("workspace_skills")
     .select(
@@ -104,7 +104,7 @@ export async function loadWorkspaceSkills(
  * Resolve canvas ID → workspace ID via the canvas → project join.
  */
 async function resolveWorkspaceId(
-  client: UserSupabaseClient,
+  client: UserDataClient,
   canvasId: string,
 ): Promise<string | null> {
   // Try joined query first (single round-trip)

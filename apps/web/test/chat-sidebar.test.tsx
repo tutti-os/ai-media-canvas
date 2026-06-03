@@ -15,6 +15,8 @@ import type { WebSocketHandle } from "../src/hooks/use-websocket";
 import { ChatSidebar } from "../src/components/chat-sidebar";
 import { ToastProvider } from "../src/components/toast";
 
+const settingsDialogSpy = vi.fn();
+
 const {
   createSessionMock,
   deleteSessionMock,
@@ -47,6 +49,19 @@ vi.mock("../src/lib/server-api", () => ({
   fetchSessions: fetchSessionsMock,
   saveMessage: saveMessageMock,
   updateSessionTitle: updateSessionTitleMock,
+}));
+
+vi.mock("../src/components/settings-dialog", () => ({
+  SettingsDialog: ({
+    open,
+    onOpenChange,
+  }: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+  }) => {
+    settingsDialogSpy({ open, onOpenChange });
+    return open ? <div>Mock Settings Dialog</div> : null;
+  },
 }));
 
 function createMockWs(): WebSocketHandle {
@@ -139,6 +154,7 @@ describe("ChatSidebar", () => {
 
   afterEach(() => {
     cleanup();
+    settingsDialogSpy.mockClear();
     vi.clearAllMocks();
     vi.restoreAllMocks();
   });
@@ -209,5 +225,29 @@ describe("ChatSidebar", () => {
 
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
     expect(saveMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the settings dialog from the chat header action", async () => {
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const settingsButton = await screen.findByRole("button", {
+      name: /open settings/i,
+    });
+    await userEvent.click(settingsButton);
+
+    expect(await screen.findByText("Mock Settings Dialog")).toBeInTheDocument();
+    expect(settingsDialogSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ open: true }),
+    );
   });
 });

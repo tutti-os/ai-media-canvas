@@ -2,7 +2,6 @@ import { realpathSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { basename, extname } from "node:path";
 import { tool } from "@langchain/core/tools";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 const MIME_MAP: Record<string, string> = {
@@ -30,7 +29,7 @@ const persistSandboxFileSchema = z.object({
 });
 
 export type PersistSandboxFileDeps = {
-  createUserClient: (accessToken: string) => SupabaseClient;
+  createUserClient: (accessToken: string) => any;
   sandboxDir?: string;
 };
 
