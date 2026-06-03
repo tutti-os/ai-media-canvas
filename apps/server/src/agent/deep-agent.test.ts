@@ -106,4 +106,22 @@ describe("createAimcDeepAgent", () => {
     expect(chatOpenAIMock).not.toHaveBeenCalled();
     expect(createDeepAgentMock).toHaveBeenCalledOnce();
   });
+
+  it("teaches the agent to avoid deletes without confirmation and prefer single-shot image editing for reference-image cover requests", () => {
+    createAimcDeepAgent({
+      canvasId: "canvas-1",
+      env: {
+        agentBackendMode: "state",
+        agentModel: "openai:gpt-4.1",
+        openAIApiKey: "openai-test-key",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+    });
+
+    const config = createDeepAgentMock.mock.calls.at(-1)?.[0];
+    expect(config?.systemPrompt).toContain("删除元素属于危险操作");
+    expect(config?.systemPrompt).toContain("优先单次调用 generate_image");
+  });
 });

@@ -1,6 +1,9 @@
 import type { ImageArtifact, VideoArtifact } from "@aimc/shared";
 
 const VIDEO_EXTENSIONS = [".mp4", ".webm", ".ogg", ".mov"];
+const AUTO_PLACEMENT_GAP = 40;
+
+type Rect = { x: number; y: number; width: number; height: number };
 
 export function isVideoUrl(url: string | null | undefined): boolean {
   if (!url) return false;
@@ -45,6 +48,86 @@ export function getViewportCenter(appState: {
   return {
     x: -appState.scrollX + appState.width / (2 * zoom),
     y: -appState.scrollY + appState.height / (2 * zoom),
+  };
+}
+
+function rectsOverlap(a: Rect, b: Rect, gap = 0): boolean {
+  return !(
+    a.x + a.width + gap <= b.x ||
+    b.x + b.width + gap <= a.x ||
+    a.y + a.height + gap <= b.y ||
+    b.y + b.height + gap <= a.y
+  );
+}
+
+function elementToRect(el: {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+}): Rect {
+  return {
+    x: el.x ?? 0,
+    y: el.y ?? 0,
+    width: el.width ?? 0,
+    height: el.height ?? 0,
+  };
+}
+
+function firstOpenPlacement(
+  existingElements: readonly any[],
+  desired: Rect,
+): Rect {
+  const existingRects = existingElements
+    .filter((el: any) => !el.isDeleted)
+    .map((el: any) => elementToRect(el));
+
+  if (!existingRects.some((rect) => rectsOverlap(desired, rect))) {
+    return desired;
+  }
+
+  const candidates: Rect[] = [desired];
+  for (const rect of existingRects) {
+    candidates.push(
+      {
+        x: rect.x + rect.width + AUTO_PLACEMENT_GAP,
+        y: rect.y,
+        width: desired.width,
+        height: desired.height,
+      },
+      {
+        x: rect.x,
+        y: rect.y + rect.height + AUTO_PLACEMENT_GAP,
+        width: desired.width,
+        height: desired.height,
+      },
+      {
+        x: rect.x - desired.width - AUTO_PLACEMENT_GAP,
+        y: rect.y,
+        width: desired.width,
+        height: desired.height,
+      },
+      {
+        x: rect.x,
+        y: rect.y - desired.height - AUTO_PLACEMENT_GAP,
+        width: desired.width,
+        height: desired.height,
+      },
+    );
+  }
+
+  for (const candidate of candidates) {
+    if (!existingRects.some((rect) => rectsOverlap(candidate, rect))) {
+      return candidate;
+    }
+  }
+
+  const maxRight = Math.max(...existingRects.map((rect) => rect.x + rect.width));
+  return {
+    x: maxRight + AUTO_PLACEMENT_GAP,
+    y: desired.y,
+    width: desired.width,
+    height: desired.height,
   };
 }
 
@@ -155,29 +238,29 @@ export async function insertImageOnCanvas(
   let y: number;
   let width: number;
   let height: number;
+  const elements = api.getSceneElements().filter((el: any) => !el.isDeleted);
 
   if (artifact.placement) {
-    // Agent-controlled placement
-    x = artifact.placement.x;
-    y = artifact.placement.y;
     width = artifact.placement.width;
     height = artifact.placement.height;
+    const placement = firstOpenPlacement(elements, {
+      x: artifact.placement.x,
+      y: artifact.placement.y,
+      width,
+      height,
+    });
+    x = placement.x;
+    y = placement.y;
   } else {
-    // Smart auto-placement: viewport center if empty, next to elements if not
     const scaled = scaleToFit(artifact.width, artifact.height, 600);
     width = scaled.width;
     height = scaled.height;
 
-    const elements = api.getSceneElements().filter((el: any) => !el.isDeleted);
-
     if (elements.length === 0) {
-      // Empty canvas → viewport center
       const center = getViewportCenter(api.getAppState());
       x = center.x - width / 2;
       y = center.y - height / 2;
     } else {
-      // Has elements → place to the right of the rightmost element with gap
-      const GAP = 40;
       let maxRight = -Infinity;
       let rightEdgeY = 0;
 
@@ -190,8 +273,14 @@ export async function insertImageOnCanvas(
         }
       }
 
-      x = maxRight + GAP;
-      y = rightEdgeY - height / 2;
+      const placement = firstOpenPlacement(elements, {
+        x: maxRight + AUTO_PLACEMENT_GAP,
+        y: rightEdgeY - height / 2,
+        width,
+        height,
+      });
+      x = placement.x;
+      y = placement.y;
     }
   }
 
@@ -225,21 +314,26 @@ export async function insertVideoOnCanvas(
 ): Promise<void> {
   const width = artifact.placement?.width ?? scaleToFit(artifact.width, artifact.height, 640).width;
   const height = artifact.placement?.height ?? scaleToFit(artifact.width, artifact.height, 640).height;
+  const elements = api.getSceneElements().filter((el: any) => !el.isDeleted);
 
   let x: number;
   let y: number;
 
   if (artifact.placement) {
-    x = artifact.placement.x;
-    y = artifact.placement.y;
+    const placement = firstOpenPlacement(elements, {
+      x: artifact.placement.x,
+      y: artifact.placement.y,
+      width,
+      height,
+    });
+    x = placement.x;
+    y = placement.y;
   } else {
-    const elements = api.getSceneElements().filter((el: any) => !el.isDeleted);
     if (elements.length === 0) {
       const center = getViewportCenter(api.getAppState());
       x = center.x - width / 2;
       y = center.y - height / 2;
     } else {
-      const GAP = 40;
       let maxRight = -Infinity;
       let rightEdgeY = 0;
       for (const el of elements) {
@@ -249,8 +343,14 @@ export async function insertVideoOnCanvas(
           rightEdgeY = (el.y ?? 0) + (el.height ?? 0) / 2;
         }
       }
-      x = maxRight + GAP;
-      y = rightEdgeY - height / 2;
+      const placement = firstOpenPlacement(elements, {
+        x: maxRight + AUTO_PLACEMENT_GAP,
+        y: rightEdgeY - height / 2,
+        width,
+        height,
+      });
+      x = placement.x;
+      y = placement.y;
     }
   }
 
