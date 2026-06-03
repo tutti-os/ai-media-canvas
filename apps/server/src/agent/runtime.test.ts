@@ -210,4 +210,149 @@ describe("createAgentRunService", () => {
     expect(agentFactory).toHaveBeenCalled();
     expect(streamCodexLocalRunMock).not.toHaveBeenCalled();
   });
+
+  it("persists inferred local runtime kind when the model prefix selects Codex", async () => {
+    streamCodexLocalRunMock.mockClear();
+    const updateRun = vi.fn();
+
+    const runs = createAgentRunService({
+      agentRunStore: {
+        createRun: vi.fn(),
+        updateRun,
+      },
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "继续",
+        sessionId: "session-1",
+      },
+      {
+        model: "codex:gpt-5.4",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the provider invocation.
+    }
+
+    expect(streamCodexLocalRunMock).toHaveBeenCalled();
+    expect(updateRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: run.runId,
+        runtimeKind: "local-codex",
+        status: "running",
+      }),
+    );
+  });
+
+  it("falls back to the server runtime when Codex is inferred but no local gateway is registered", async () => {
+    streamCodexLocalRunMock.mockClear();
+
+    const agentFactory = vi.fn(() => ({
+      stream: vi.fn(),
+      streamEvents: vi.fn(() =>
+        (async function* () {
+          yield {
+            type: "run.completed" as const,
+            runId: "run-server-fallback",
+            timestamp: "2026-06-04T00:00:00.000Z",
+          };
+        })(),
+      ),
+    }));
+
+    const runs = createAgentRunService({
+      agentFactory,
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      loadSessionMessages: async () => [],
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "继续",
+        sessionId: "session-1",
+      },
+      {
+        model: "codex:gpt-5.4",
+      },
+    );
+
+    const events = [];
+    for await (const event of runs.streamRun(run.runId)) {
+      events.push(event);
+    }
+
+    expect(streamCodexLocalRunMock).not.toHaveBeenCalled();
+    expect(agentFactory).toHaveBeenCalled();
+    expect(events.some((event) => event.type === "run.failed")).toBe(false);
+  });
+
+  it("fails fast when local Codex is explicitly requested without a registered gateway", async () => {
+    streamCodexLocalRunMock.mockClear();
+
+    const runs = createAgentRunService({
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      loadSessionMessages: async () => [],
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "继续",
+        sessionId: "session-1",
+      },
+      {
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-codex",
+      },
+    );
+
+    const events = [];
+    for await (const event of runs.streamRun(run.runId)) {
+      events.push(event);
+    }
+
+    expect(streamCodexLocalRunMock).not.toHaveBeenCalled();
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "run.failed",
+        error: expect.objectContaining({
+          message: expect.stringContaining(
+            "No runtime provider registered for local-codex",
+          ),
+        }),
+      }),
+    );
+  });
 });

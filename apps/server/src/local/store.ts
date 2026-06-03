@@ -2422,6 +2422,7 @@ export function createLocalStore(options: {
     errorCode?: string;
     errorMessage?: string;
     runId: string;
+    runtimeKind?: RuntimeKind;
     status: AgentRunStatus;
   }) {
     const timestamp = nowIso();
@@ -2430,6 +2431,7 @@ export function createLocalStore(options: {
         UPDATE agent_runs
         SET status = ?,
             updated_at = ?,
+            runtime_kind = COALESCE(?, runtime_kind),
             assistant_message_id = COALESCE(?, assistant_message_id),
             started_at = CASE WHEN ? = 'running' AND started_at IS NULL THEN ? ELSE started_at END,
             completed_at = CASE WHEN ? IN ('completed', 'failed') THEN ? ELSE completed_at END,
@@ -2441,6 +2443,7 @@ export function createLocalStore(options: {
     ).run(
       input.status,
       timestamp,
+      input.runtimeKind ?? null,
       input.assistantMessageId ?? null,
       input.status,
       timestamp,

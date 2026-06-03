@@ -33,7 +33,6 @@ import { TierGuardError, type TierGuard } from "../features/credits/tier-guard.j
 import { getPlanConfig, type BillingErrorCode, type ImageQualityLevel } from "@aimc/shared";
 import { createAgentBackend } from "./backends/index.js";
 import {
-  type AimcAgent,
   type AimcAgentFactory,
   createDefaultModelSpecifier,
   createAimcDeepAgent,
@@ -49,6 +48,7 @@ import {
 } from "./job-payloads.js";
 import { streamCodexLocalRun } from "./local-runtime/codex-runtime.js";
 import type { createLocalToolGatewayService } from "./local-runtime/tool-gateway.js";
+import { createRuntimeControlPlane } from "./runtime-control-plane.js";
 
 /**
  * Build the text portion of a user message, appending <input_images> XML
@@ -310,6 +310,7 @@ type CreateAgentRuntimeOptions = {
       errorCode?: string;
       errorMessage?: string;
       runId: string;
+      runtimeKind?: RuntimeKind;
       status: RuntimeRunStatus;
     }): void;
   };
@@ -384,6 +385,354 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       run.controller.abort();
     }
   }
+
+  type RuntimeExecutionContext = {
+    backendResult: ReturnType<typeof createAgentBackend>;
+    brandKitId: string | null;
+    resolvedModel: BaseLanguageModel | string | undefined;
+    rlog: ReturnType<typeof createPipelineLogger>;
+    run: RuntimeRunRecord;
+    runtimeEnv: ServerEnv;
+    submitImageJob?: SubmitImageJobFn;
+    submitVideoJob?: SubmitVideoJobFn;
+    workspaceSkills: WorkspaceSkillEntry[];
+  };
+
+  async function loadCanvasSummaryForRuntime(context: RuntimeExecutionContext) {
+    const { run } = context;
+    if (!run.canvasId || !run.accessToken || !options.createUserClient) {
+      return null;
+    }
+
+    try {
+      const canvasClient = options.createUserClient(run.accessToken) as any;
+      const { data: canvasData } = await canvasClient
+        .from("canvases")
+        .select("content")
+        .eq("id", run.canvasId)
+        .single();
+      if (!canvasData?.content?.elements) {
+        return null;
+      }
+      return buildCanvasSummaryForContext(
+        canvasData.content.elements as Array<Record<string, unknown>>,
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  async function* streamLocalCodexProvider(
+    context: RuntimeExecutionContext,
+  ): AsyncGenerator<StreamEvent> {
+    const { resolvedModel, run, runtimeEnv, submitImageJob, submitVideoJob, workspaceSkills, rlog } =
+      context;
+
+    if (
+      typeof resolvedModel !== "string" ||
+      !options.toolGateway ||
+      !options.toolGatewayBaseUrl
+    ) {
+      throw new Error("Local Codex runtime requires string model and tool gateway.");
+    }
+
+    const canvasSummary = await loadCanvasSummaryForRuntime(context);
+
+    let attachmentDataMap: Record<string, string> = {};
+    if (run.attachments?.length) {
+      const downloaded: Array<{
+        assetId: string;
+        base64: string;
+        mimeType: string;
+      }> = [];
+
+      await Promise.all(
+        run.attachments.map(async (attachment) => {
+          try {
+            const dataUriMatch = attachment.url.match(
+              /^data:([^;]+);base64,(.+)$/,
+            );
+            if (dataUriMatch) {
+              downloaded.push({
+                assetId: attachment.assetId,
+                mimeType: dataUriMatch[1] ?? attachment.mimeType,
+                base64: dataUriMatch[2] ?? "",
+              });
+              return;
+            }
+
+            const response = await fetch(attachment.url);
+            const buffer = Buffer.from(await response.arrayBuffer());
+            downloaded.push({
+              assetId: attachment.assetId,
+              mimeType:
+                attachment.mimeType ||
+                response.headers.get("content-type") ||
+                "image/png",
+              base64: buffer.toString("base64"),
+            });
+          } catch {
+            // Leave unresolved references as-is; the tool can still use raw URLs.
+          }
+        }),
+      );
+
+      attachmentDataMap = buildAttachmentDataMap(downloaded);
+    }
+
+    const { text: enrichedPrompt } = buildUserMessage(
+      run.prompt,
+      run.attachments ?? [],
+      run.imageGenerationPreference,
+      run.mentions,
+      run.videoGenerationPreference,
+      canvasSummary,
+    );
+
+    const gatewaySession = options.toolGateway.createSession({
+      ...(run.accessToken ? { accessToken: run.accessToken } : {}),
+      ...(Object.keys(attachmentDataMap).length > 0
+        ? { attachmentDataMap }
+        : {}),
+      ...(context.brandKitId ? { brandKitId: context.brandKitId } : {}),
+      ...(run.canvasId ? { canvasId: run.canvasId } : {}),
+      ...(run.connectionId ? { connectionId: run.connectionId } : {}),
+      runId: run.runId,
+      runtimeEnv,
+      ...(submitImageJob ? { submitImageJob } : {}),
+      ...(submitVideoJob ? { submitVideoJob } : {}),
+      ...(run.userId ? { userId: run.userId } : {}),
+    });
+
+    rlog.lap("codex_local_runtime_start");
+
+    yield* streamCodexLocalRun({
+      attachmentsSummaryPrompt: enrichedPrompt,
+      conversationId: run.conversationId,
+      gatewayBaseUrl: options.toolGatewayBaseUrl,
+      gatewaySession: {
+        token: gatewaySession.token,
+        revoke: () => options.toolGateway?.revokeSession(gatewaySession.token),
+      },
+      ...(options.loadSessionMessages
+        ? { loadSessionMessages: options.loadSessionMessages }
+        : {}),
+      model: resolvedModel,
+      now,
+      runId: run.runId,
+      runtimeEnv,
+      sessionId: run.sessionId,
+      signal: run.controller.signal,
+      workspaceSkills,
+    });
+  }
+
+  async function* streamServerDeepAgentProvider(
+    context: RuntimeExecutionContext,
+  ): AsyncGenerator<StreamEvent> {
+    const { backendResult, brandKitId, resolvedModel, run, runtimeEnv, submitImageJob, submitVideoJob, workspaceSkills, rlog } =
+      context;
+
+    if (workspaceSkills.length > 0) {
+      rlog.lap("workspace_skills_loaded_without_store", {
+        count: workspaceSkills.length,
+      });
+    }
+
+    let persistImage:
+      | ((url: string, mime: string, prompt: string) => Promise<string>)
+      | undefined;
+    if (options.createUserClient && run.accessToken) {
+      const createClient = options.createUserClient;
+      const accessToken = run.accessToken;
+      persistImage = async (sourceUrl, mimeType, prompt) => {
+        const client = createClient(accessToken) as UserDataClient;
+        const response = await fetch(sourceUrl);
+        if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+        const buffer = Buffer.from(await response.arrayBuffer());
+        const ext = mimeType === "image/webp" ? "webp" : "png";
+        const slug = prompt
+          .slice(0, 40)
+          .replace(/[^a-zA-Z0-9]+/g, "-")
+          .replace(/^-|-$/g, "");
+        const fileName = `gen-${slug}-${Date.now()}.${ext}`;
+
+        const { data: ws } = await client
+          .from("workspaces")
+          .select("id")
+          .eq("type", "personal")
+          .limit(1)
+          .single();
+        const workspaceId = ws?.id ?? "default";
+        const objectPath = `${workspaceId}/${Date.now()}-${fileName}`;
+
+        const { error: uploadError } = await client.storage
+          .from("project-assets")
+          .upload(objectPath, buffer, { contentType: mimeType, upsert: false });
+        if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+
+        const { data: urlData } = client.storage
+          .from("project-assets")
+          .getPublicUrl(objectPath);
+
+        return urlData.publicUrl;
+      };
+    }
+
+    const canvasSummary = await loadCanvasSummaryForRuntime(context);
+
+    const agent = resolvedAgentFactory({
+      backendResult,
+      ...(brandKitId ? { brandKitId } : {}),
+      ...(run.canvasId ? { canvasId: run.canvasId } : {}),
+      ...(options.connectionManager ? { connectionManager: options.connectionManager } : {}),
+      env: runtimeEnv,
+      ...(resolvedModel ? { model: resolvedModel } : {}),
+      ...(persistImage ? { persistImage } : {}),
+      ...(submitImageJob ? { submitImageJob } : {}),
+      ...(submitVideoJob ? { submitVideoJob } : {}),
+      ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
+    });
+    rlog.lap("agent_factory_done");
+
+    const hasAttachments = run.attachments && run.attachments.length > 0;
+    let userMessage: HumanMessage;
+    let attachmentDataMap: Record<string, string> = {};
+
+    if (hasAttachments) {
+      const downloaded: Array<{ assetId: string; mimeType: string; base64: string }> = [];
+      const imageBlocks = await Promise.all(
+        run.attachments!.map(async (attachment) => {
+          try {
+            let base64: string;
+            let mimeType: string;
+            const dataUriMatch = attachment.url.match(/^data:([^;]+);base64,(.+)$/);
+            if (dataUriMatch) {
+              mimeType = dataUriMatch[1]!;
+              base64 = dataUriMatch[2]!;
+            } else {
+              const response = await fetch(attachment.url);
+              const buffer = Buffer.from(await response.arrayBuffer());
+              mimeType =
+                attachment.mimeType ||
+                response.headers.get("content-type") ||
+                "image/png";
+              base64 = buffer.toString("base64");
+            }
+
+            downloaded.push({
+              assetId: attachment.assetId,
+              mimeType,
+              base64,
+            });
+
+            return {
+              type: "image_url" as const,
+              image_url: `data:${mimeType};base64,${base64}`,
+            };
+          } catch {
+            return {
+              type: "image_url" as const,
+              image_url: attachment.url,
+            };
+          }
+        }),
+      );
+
+      const { text: enrichedPrompt } = buildUserMessage(
+        run.prompt,
+        run.attachments!,
+        run.imageGenerationPreference,
+        run.mentions,
+        run.videoGenerationPreference,
+        canvasSummary,
+      );
+
+      attachmentDataMap = buildAttachmentDataMap(downloaded);
+      userMessage = new HumanMessage({
+        content: [{ type: "text" as const, text: enrichedPrompt }, ...imageBlocks],
+      });
+    } else {
+      const { text: enrichedPrompt } = buildUserMessage(
+        run.prompt,
+        [],
+        run.imageGenerationPreference,
+        run.mentions,
+        run.videoGenerationPreference,
+        canvasSummary,
+      );
+      userMessage = new HumanMessage(enrichedPrompt);
+    }
+
+    const messages = [
+      ...(await buildSessionHistoryMessages(
+        run.sessionId,
+        run.prompt,
+        options.loadSessionMessages,
+      )),
+      userMessage,
+    ];
+
+    rlog.lap("stream_call_start", { messageCount: messages.length });
+    const stream = agent.streamEvents(
+      {
+        messages,
+      },
+      {
+        ...(run.canvasId ||
+        run.accessToken ||
+        run.userId ||
+        Object.keys(attachmentDataMap).length > 0
+          ? {
+              configurable: {
+                ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
+                ...(run.accessToken ? { access_token: run.accessToken } : {}),
+                ...(run.connectionId ? { connection_id: run.connectionId } : {}),
+                ...(run.userId ? { user_id: run.userId } : {}),
+                ...(Object.keys(attachmentDataMap).length > 0
+                  ? { user_attachment_map: attachmentDataMap }
+                  : {}),
+              },
+            }
+          : {}),
+        signal: run.controller.signal,
+        version: "v2",
+      },
+    );
+    rlog.lap("stream_call_returned");
+
+    yield* adaptDeepAgentStream({
+      conversationId: run.conversationId,
+      now,
+      runId: run.runId,
+      sessionId: run.sessionId,
+      signal: run.controller.signal,
+      stream,
+    });
+  }
+
+  const runtimeProviders = [
+    ...(options.toolGateway && options.toolGatewayBaseUrl
+      ? ([
+          {
+            kind: "local-codex" as const,
+            streamRun: streamLocalCodexProvider,
+          },
+        ] satisfies Array<{
+          kind: RuntimeKind;
+          streamRun: (
+            context: RuntimeExecutionContext,
+          ) => AsyncGenerator<StreamEvent>;
+        }>)
+      : []),
+    {
+      kind: "server-deepagent" as const,
+      streamRun: streamServerDeepAgentProvider,
+    },
+  ];
+
+  const runtimeControlPlane =
+    createRuntimeControlPlane<RuntimeExecutionContext>(runtimeProviders);
 
   return {
     cancelRun(runId: string): RunCancelResponse | null {
@@ -916,57 +1265,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       );
 
       try {
-      let agent: AimcAgent;
-      try {
         const resolvedModel = run.modelOverride
           ? (run.modelOverride.includes(":")
             ? run.modelOverride
             : createDefaultModelSpecifier({ agentModel: run.modelOverride }))
           : options.model;
-        const resolvedRuntimeKind =
-          run.runtimeKind ??
-          (typeof resolvedModel === "string" && resolvedModel.startsWith("codex:")
-            ? "local-codex"
-            : "server-deepagent");
-
-        // Build persistImage closure using the local user data client.
-        // Client creation is deferred into the closure so it only runs
-        // when an image is actually generated (avoids throwing in tests
-        // that don't configure provider env vars).
-        let persistImage: ((url: string, mime: string, prompt: string) => Promise<string>) | undefined;
-        if (options.createUserClient && run.accessToken) {
-          const createClient = options.createUserClient;
-          const accessToken = run.accessToken;
-          persistImage = async (sourceUrl, mimeType, prompt) => {
-            const client = createClient(accessToken) as UserDataClient;
-            const response = await fetch(sourceUrl);
-            if (!response.ok) throw new Error(`Download failed: ${response.status}`);
-            const buffer = Buffer.from(await response.arrayBuffer());
-            const ext = mimeType === "image/webp" ? "webp" : "png";
-            const slug = prompt.slice(0, 40).replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
-            const fileName = `gen-${slug}-${Date.now()}.${ext}`;
-
-            const { data: ws } = await client
-              .from("workspaces")
-              .select("id")
-              .eq("type", "personal")
-              .limit(1)
-              .single();
-            const workspaceId = ws?.id ?? "default";
-            const objectPath = `${workspaceId}/${Date.now()}-${fileName}`;
-
-            const { error: uploadError } = await client.storage
-              .from("project-assets")
-              .upload(objectPath, buffer, { contentType: mimeType, upsert: false });
-            if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
-
-            const { data: urlData } = client.storage
-              .from("project-assets")
-              .getPublicUrl(objectPath);
-
-            return urlData.publicUrl;
-          };
-        }
+        const resolvedRuntimeKind = runtimeControlPlane.resolveRuntimeKind({
+          model: resolvedModel,
+          requestedRuntimeKind: run.runtimeKind,
+        });
+        run.runtimeKind = resolvedRuntimeKind;
 
         // Resolve brand kit ID from canvas → project in a single joined query
         let brandKitId: string | null = null;
@@ -1005,354 +1313,41 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
         rlog.lap("brand_kit_resolved");
 
-        if (
-          resolvedRuntimeKind === "local-codex" &&
-          typeof resolvedModel === "string" &&
-          options.toolGateway &&
-          options.toolGatewayBaseUrl
-        ) {
-          let canvasSummary: string | null = null;
-          if (run.canvasId && run.accessToken && options.createUserClient) {
-            try {
-              const canvasClient = options.createUserClient(run.accessToken) as any;
-              const { data: canvasData } = await canvasClient
-                .from("canvases")
-                .select("content")
-                .eq("id", run.canvasId)
-                .single();
-              if (canvasData?.content?.elements) {
-                canvasSummary = buildCanvasSummaryForContext(
-                  canvasData.content.elements as Array<Record<string, unknown>>,
-                );
-              }
-            } catch {
-              // Non-critical — Codex can still use inspect_canvas explicitly.
-            }
-          }
+        options.agentRunStore?.updateRun({
+          runId,
+          runtimeKind: resolvedRuntimeKind,
+          status: run.status,
+        });
 
-          let attachmentDataMap: Record<string, string> = {};
-          if (run.attachments?.length) {
-            const downloaded: Array<{
-              assetId: string;
-              base64: string;
-              mimeType: string;
-            }> = [];
-
-            await Promise.all(
-              run.attachments.map(async (attachment) => {
-                try {
-                  const dataUriMatch = attachment.url.match(
-                    /^data:([^;]+);base64,(.+)$/,
-                  );
-                  if (dataUriMatch) {
-                    downloaded.push({
-                      assetId: attachment.assetId,
-                      mimeType: dataUriMatch[1] ?? attachment.mimeType,
-                      base64: dataUriMatch[2] ?? "",
-                    });
-                    return;
-                  }
-
-                  const response = await fetch(attachment.url);
-                  const buffer = Buffer.from(await response.arrayBuffer());
-                  downloaded.push({
-                    assetId: attachment.assetId,
-                    mimeType:
-                      attachment.mimeType ||
-                      response.headers.get("content-type") ||
-                      "image/png",
-                    base64: buffer.toString("base64"),
-                  });
-                } catch {
-                  // Leave unresolved references as-is; the tool can still use raw URLs.
-                }
-              }),
-            );
-
-            attachmentDataMap = buildAttachmentDataMap(downloaded);
-          }
-
-          const { text: enrichedPrompt } = buildUserMessage(
-            run.prompt,
-            run.attachments ?? [],
-            run.imageGenerationPreference,
-            run.mentions,
-            run.videoGenerationPreference,
-            canvasSummary,
-          );
-
-          const gatewaySession = options.toolGateway.createSession({
-            ...(run.accessToken ? { accessToken: run.accessToken } : {}),
-            ...(Object.keys(attachmentDataMap).length > 0
-              ? { attachmentDataMap }
-              : {}),
-            ...(brandKitId ? { brandKitId } : {}),
-            ...(run.canvasId ? { canvasId: run.canvasId } : {}),
-            ...(run.connectionId ? { connectionId: run.connectionId } : {}),
-            runId,
+        for await (const event of runtimeControlPlane.streamRun(
+          resolvedRuntimeKind,
+          {
+            backendResult,
+            brandKitId,
+            resolvedModel,
+            rlog,
+            run,
             runtimeEnv,
             ...(submitImageJob ? { submitImageJob } : {}),
             ...(submitVideoJob ? { submitVideoJob } : {}),
-            ...(run.userId ? { userId: run.userId } : {}),
-          });
-
-          rlog.lap("codex_local_runtime_start");
-
-          for await (const event of streamCodexLocalRun({
-            attachmentsSummaryPrompt: enrichedPrompt,
-            conversationId: run.conversationId,
-            gatewayBaseUrl: options.toolGatewayBaseUrl,
-            gatewaySession: {
-              token: gatewaySession.token,
-              revoke: () => options.toolGateway?.revokeSession(gatewaySession.token),
-            },
-            loadSessionMessages: options.loadSessionMessages,
-            model: resolvedModel,
-            now,
-            runId,
-            runtimeEnv,
-            sessionId: run.sessionId,
-            signal: run.controller.signal,
             workspaceSkills,
-          })) {
-            run.status = mapEventToStatus(event);
-            if (isTerminalEvent(event)) {
-              options.agentRunStore?.updateRun({
-                ...(event.type === "run.failed"
-                  ? {
-                      errorCode: event.error.code,
-                      errorMessage: event.error.message,
-                    }
-                  : {}),
-                runId,
-                status: run.status,
-              });
-            }
-            yield event;
-
-            if (!isTerminalEvent(event) && options.eventDelayMs) {
-              try {
-                await delay(options.eventDelayMs, undefined, {
-                  signal: run.controller.signal,
-                });
-              } catch {
-                run.status = "canceled";
-                options.agentRunStore?.updateRun({
-                  runId,
-                  status: "canceled",
-                });
-                yield {
-                  runId,
-                  timestamp: now(),
-                  type: "run.canceled",
-                };
-                return;
-              }
-            }
-          }
-          return;
-        }
-
-        if (workspaceSkills.length > 0) {
-          rlog.lap("workspace_skills_loaded_without_store", {
-            count: workspaceSkills.length,
-          });
-        }
-
-        agent = resolvedAgentFactory({
-          backendResult,
-          ...(brandKitId ? { brandKitId } : {}),
-          ...(run.canvasId ? { canvasId: run.canvasId } : {}),
-          ...(options.connectionManager ? { connectionManager: options.connectionManager } : {}),
-          env: runtimeEnv,
-          ...(resolvedModel ? { model: resolvedModel } : {}),
-          ...(persistImage ? { persistImage } : {}),
-          // execute 工具由 LocalShellBackend 自动提供，无需手动传递
-          ...(submitImageJob ? { submitImageJob } : {}),
-          ...(submitVideoJob ? { submitVideoJob } : {}),
-          ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
-        });
-        rlog.lap("agent_factory_done");
-      } catch (error) {
-        const failedEvent = toFailedEvent(runId, now, error);
-        run.status = "failed";
-        options.agentRunStore?.updateRun({
-          errorCode: failedEvent.error.code,
-          errorMessage: failedEvent.error.message,
-          runId,
-          status: "failed",
-        });
-        yield failedEvent;
-        return;
-      }
-
-      let stream: AsyncIterable<unknown>;
-      try {
-        // Auto-inject canvas state summary so the agent has immediate awareness
-        // of what's on the canvas without needing to call inspect_canvas first.
-        let canvasSummary: string | null = null;
-        if (run.canvasId && run.accessToken && options.createUserClient) {
-          try {
-            const canvasClient = options.createUserClient(run.accessToken) as any;
-            const { data: canvasData } = await canvasClient
-              .from("canvases")
-              .select("content")
-              .eq("id", run.canvasId)
-              .single();
-            if (canvasData?.content?.elements) {
-              canvasSummary = buildCanvasSummaryForContext(
-                canvasData.content.elements as Array<Record<string, unknown>>,
-              );
-            }
-          } catch {
-            // Non-critical — agent can still call inspect_canvas manually
-          }
-        }
-
-        const hasAttachments = run.attachments && run.attachments.length > 0;
-        let userMessage: HumanMessage;
-        let attachmentDataMap: Record<string, string> = {};
-
-        if (hasAttachments) {
-          // Download images and build parallel data structures:
-          // 1. imageBlocks: base64 content parts for LLM vision
-          // 2. downloaded: assetId → base64 mapping for tool resolution
-          const downloaded: Array<{ assetId: string; mimeType: string; base64: string }> = [];
-          const imageBlocks = await Promise.all(
-            run.attachments!.map(async (a) => {
-              try {
-                let b64: string;
-                let mime: string;
-
-                // Handle data URIs directly (canvas-ref images) — no fetch needed
-                const dataUriMatch = a.url.match(/^data:([^;]+);base64,(.+)$/);
-                if (dataUriMatch) {
-                  mime = dataUriMatch[1]!;
-                  b64 = dataUriMatch[2]!;
-                } else {
-                  const res = await fetch(a.url);
-                  const buf = Buffer.from(await res.arrayBuffer());
-                  mime = a.mimeType || res.headers.get("content-type") || "image/png";
-                  b64 = buf.toString("base64");
-                }
-
-                downloaded.push({ assetId: a.assetId, mimeType: mime, base64: b64 });
-                // Use standard LangChain image_url format — works with both
-                // Google Gemini and OpenAI adapters. The Anthropic-style
-                // { type: "image", source_type: "base64" } format is NOT
-                // recognized by @langchain/google-genai and gets serialized
-                // as raw text, blowing past the token limit.
-                return {
-                  type: "image_url" as const,
-                  image_url: `data:${mime};base64,${b64}`,
-                };
-              } catch {
-                return {
-                  type: "image_url" as const,
-                  image_url: a.url,
-                };
-              }
-            }),
-          );
-
-          // Build XML text tags for LLM to reference by assetId
-          const { text: enrichedPrompt } = buildUserMessage(
-            run.prompt,
-            run.attachments!,
-            run.imageGenerationPreference,
-            run.mentions,
-            run.videoGenerationPreference,
-            canvasSummary,
-          );
-
-          // Build assetId → data URI map for tool-level resolution
-          attachmentDataMap = buildAttachmentDataMap(downloaded);
-
-          userMessage = new HumanMessage({
-            content: [
-              { type: "text" as const, text: enrichedPrompt },
-              ...imageBlocks,
-            ],
-          });
-        } else {
-          const { text: enrichedPrompt } = buildUserMessage(
-            run.prompt,
-            [],
-            run.imageGenerationPreference,
-            run.mentions,
-            run.videoGenerationPreference,
-            canvasSummary,
-          );
-          userMessage = new HumanMessage(enrichedPrompt);
-        }
-
-        const messages = [
-          ...(await buildSessionHistoryMessages(
-            run.sessionId,
-            run.prompt,
-            options.loadSessionMessages,
-          )),
-          userMessage,
-        ];
-
-        rlog.lap("stream_call_start", { messageCount: messages.length });
-        stream = agent.streamEvents(
-          {
-            messages,
           },
-          {
-            ...(run.canvasId || run.accessToken || run.userId || Object.keys(attachmentDataMap).length > 0
-              ? {
-                  configurable: {
-                    ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
-                    ...(run.accessToken ? { access_token: run.accessToken } : {}),
-                    ...(run.connectionId ? { connection_id: run.connectionId } : {}),
-                    ...(run.userId ? { user_id: run.userId } : {}),
-                    ...(Object.keys(attachmentDataMap).length > 0
-                      ? { user_attachment_map: attachmentDataMap }
-                      : {}),
-                  },
-                }
-              : {}),
-            signal: run.controller.signal,
-            version: "v2",
-          },
-        );
-        rlog.lap("stream_call_returned");
-      } catch (error) {
-        const failedEvent = toFailedEvent(runId, now, error);
-        run.status = "failed";
-        options.agentRunStore?.updateRun({
-          errorCode: failedEvent.error.code,
-          errorMessage: failedEvent.error.message,
-          runId,
-          status: "failed",
-        });
-        yield failedEvent;
-        return;
-      }
-
-      try {
-      for await (const event of adaptDeepAgentStream({
-        conversationId: run.conversationId,
-        now,
-        runId,
-        sessionId: run.sessionId,
-        signal: run.controller.signal,
-        stream,
-      })) {
+        )) {
         run.status = mapEventToStatus(event);
         if (isTerminalEvent(event)) {
-          options.agentRunStore?.updateRun({
-            ...(event.type === "run.failed"
-              ? {
-                  errorCode: event.error.code,
-                  errorMessage: event.error.message,
-                }
-              : {}),
-            runId,
-            status: run.status,
-          });
+          if (event.type === "run.failed") {
+            options.agentRunStore?.updateRun({
+              errorCode: event.error.code,
+              errorMessage: event.error.message,
+              runId,
+              status: run.status,
+            });
+          } else {
+            options.agentRunStore?.updateRun({
+              runId,
+              status: run.status,
+            });
+          }
         }
         yield event;
 
@@ -1389,7 +1384,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         yield failedEvent;
         return;
       }
-      } finally {
+      finally {
         if (backendResult.sandboxDir) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(
             (err) => console.warn("[sandbox] cleanup failed:", err.message),
@@ -1426,7 +1421,7 @@ function toFailedEvent(
   runId: string,
   now: () => string,
   error: unknown,
-): StreamEvent {
+): Extract<StreamEvent, { type: "run.failed" }> {
   // Log full error detail server-side
   console.error(`[runtime] Agent run failed for run ${runId}:`, error);
 
