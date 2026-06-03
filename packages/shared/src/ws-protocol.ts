@@ -8,6 +8,7 @@ export const wsServerEventSchema = z.object({
   type: z.literal("event"),
   event: streamEventSchema,
   eventId: z.string().min(1).optional(),
+  replayed: z.boolean().optional(),
   seq: z.number().int().min(0).optional(),
 });
 

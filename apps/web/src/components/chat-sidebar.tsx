@@ -14,7 +14,10 @@ import type {
 } from "@aimc/shared";
 import { useAgentModel } from "../hooks/use-agent-model";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
-import { useChatStream } from "../hooks/use-chat-stream";
+import {
+  materializeAssistantBlocksFromEvents,
+  useChatStream,
+} from "../hooks/use-chat-stream";
 import {
   INITIAL_AGENT_MODEL_KEY,
   INITIAL_ATTACHMENTS_KEY,
@@ -132,23 +135,22 @@ export function ChatSidebar({
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
   selectedCanvasElementsRef.current = selectedCanvasElements;
   const prevConnectedRef = useRef(false);
-  const runReplayCursorRef = useRef<Map<string, number>>(new Map());
   const replayedArtifactKeysRef = useRef<Set<string>>(new Set());
 
-  const recoverPersistedMediaArtifacts = useCallback(
-    (sessionMessages: Array<{ contentBlocks: ContentBlock[]; role: "user" | "assistant" }>) => {
-      const latestAssistantMessage = [...sessionMessages]
-        .reverse()
-        .find((message) => message.role === "assistant");
-      if (!latestAssistantMessage) return;
+  const artifactReplayKey = useCallback(
+    (toolCallId: string, url: string) => `${toolCallId}:${url}`,
+    [],
+  );
 
+  const recoverMediaArtifactsFromBlocks = useCallback(
+    (contentBlocks: ContentBlock[]) => {
       const canvasUrls = new Set(
         (onRequestCanvasImages ? onRequestCanvasImages() : [])
           .map((item) => item.url)
           .filter((url): url is string => typeof url === "string" && url.length > 0),
       );
 
-      for (const block of latestAssistantMessage.contentBlocks) {
+      for (const block of contentBlocks) {
         if (
           block.type !== "tool" ||
           block.status !== "completed" ||
@@ -159,7 +161,7 @@ export function ChatSidebar({
         }
 
         for (const artifact of block.artifacts) {
-          const replayKey = `persisted:${block.toolCallId}:${artifact.url}`;
+          const replayKey = artifactReplayKey(block.toolCallId, artifact.url);
           if (replayedArtifactKeysRef.current.has(replayKey)) continue;
           if (canvasUrls.has(artifact.url)) {
             replayedArtifactKeysRef.current.add(replayKey);
@@ -170,7 +172,18 @@ export function ChatSidebar({
         }
       }
     },
-    [onImageGenerated, onRequestCanvasImages],
+    [artifactReplayKey, onImageGenerated, onRequestCanvasImages],
+  );
+
+  const recoverPersistedMediaArtifacts = useCallback(
+    (sessionMessages: Array<{ contentBlocks: ContentBlock[]; role: "user" | "assistant" }>) => {
+      const latestAssistantMessage = [...sessionMessages]
+        .reverse()
+        .find((message) => message.role === "assistant");
+      if (!latestAssistantMessage) return;
+      recoverMediaArtifactsFromBlocks(latestAssistantMessage.contentBlocks);
+    },
+    [recoverMediaArtifactsFromBlocks],
   );
 
   const {
@@ -493,7 +506,8 @@ export function ChatSidebar({
         });
         const runIdRef = { current: "" };
 
-        const cleanup = ws.onEvent((event) => {
+        const cleanup = ws.onEvent((entry) => {
+          const event = entry.event;
           if (!runIdRef.current || event.runId !== runIdRef.current) return;
           if (abortRef.current) {
             resolveStream();
@@ -815,10 +829,93 @@ export function ChatSidebar({
     // Skip if initialPrompt effect will handle binding
     if (initialPrompt && !initialPromptSent.current) return;
 
+    let canceled = false;
+    let resumeUnsub: (() => void) | null = null;
+
     void (async () => {
       // Reload messages from DB (server may have persisted while disconnected)
       const reloadedMessages = await reloadMessages(sessionId);
+      if (canceled) return;
       recoverPersistedMediaArtifacts(reloadedMessages);
+      const latestReloadedAssistantId =
+        [...reloadedMessages].reverse().find((message) => message.role === "assistant")?.id ??
+        null;
+
+      let resumedRunId: string | null = null;
+      let resumedAssistantId: string | null = null;
+      let hydratingActiveRun = false;
+      let hydratedRunSeq = 0;
+      const queuedResumeEvents: Array<{
+        event: StreamEvent;
+        eventId?: string;
+        replayed?: boolean;
+        seq?: number;
+      }> = [];
+
+      const processResumedEntry = (
+        entry: {
+          event: StreamEvent;
+          replayed?: boolean;
+          seq?: number;
+        },
+        assistantId: string,
+      ) => {
+        const evt = entry.event;
+        applyStreamEvent(evt, assistantId, sessionId);
+        if (!entry.replayed) {
+          onStreamEvent?.(evt);
+        }
+
+        const backendInserted =
+          evt.type === "tool.completed" &&
+          evt.output &&
+          typeof (evt.output as Record<string, unknown>).elementId === "string";
+        if (
+          evt.type === "tool.completed" &&
+          evt.artifacts &&
+          evt.toolName !== "screenshot_canvas" &&
+          !backendInserted
+        ) {
+          for (const artifact of evt.artifacts) {
+            const replayKey = artifactReplayKey(evt.toolCallId, artifact.url);
+            if (replayedArtifactKeysRef.current.has(replayKey)) continue;
+            replayedArtifactKeysRef.current.add(replayKey);
+            onImageGenerated?.(artifact);
+          }
+        }
+
+        if (
+          evt.type === "run.completed" ||
+          evt.type === "run.failed" ||
+          evt.type === "run.canceled"
+        ) {
+          sendingRef.current = false;
+          setStreaming(false);
+        }
+      };
+
+      resumeUnsub = ws.onEvent((entry) => {
+        const evt = entry.event;
+
+        if (evt.type === "canvas.sync") {
+          onCanvasSync?.();
+        }
+
+        if (!resumedRunId || evt.runId !== resumedRunId || !resumedAssistantId) {
+          return;
+        }
+
+        if (hydratingActiveRun) {
+          queuedResumeEvents.push(entry);
+          return;
+        }
+
+        if (typeof entry.seq === "number" && entry.seq <= hydratedRunSeq) {
+          return;
+        }
+
+        processResumedEntry(entry, resumedAssistantId);
+      });
 
       // Resume canvas binding (after DB messages are set)
       ws.resumeCanvas(canvasId, (ack) => {
@@ -830,10 +927,19 @@ export function ChatSidebar({
           sendingRef.current = true;
           setStreaming(true);
 
-          const assistantId =
+          resumedRunId = activeRunId;
+          resumedAssistantId =
             typeof assistantMessageId === "string" && assistantMessageId.length > 0
               ? assistantMessageId
-              : `resumed_${activeRunId}`;
+              : latestReloadedAssistantId;
+          const assistantId = resumedAssistantId
+            ?? `resumed_${activeRunId}`;
+          resumedAssistantId = assistantId;
+
+          hydratingActiveRun = true;
+          hydratedRunSeq = 0;
+          queuedResumeEvents.length = 0;
+
           // Must use updateSessionMessages (not setMessages) so the placeholder
           // lands in msgCacheRef as well as React state. applyStreamEvent reads
           // from the cache — if the placeholder only lives in React state, stream
@@ -853,115 +959,53 @@ export function ChatSidebar({
 
           void (async () => {
             try {
-              const replayCursor = runReplayCursorRef.current.get(activeRunId) ?? 0;
-              const replay = await fetchRunEvents(activeRunId, replayCursor);
-              runReplayCursorRef.current.set(activeRunId, replay.nextCursor);
-
-              for (const evt of replay.events) {
-                if (evt.runId !== activeRunId) continue;
-
-                if (
-                  evt.type === "tool.started" ||
-                  evt.type === "tool.completed" ||
-                  evt.type === "tool.failed" ||
-                  evt.type === "run.failed" ||
-                  evt.type === "run.canceled"
-                ) {
-                  applyStreamEvent(evt, assistantId, sessionId);
-                }
-
-                const backendInserted =
-                  evt.type === "tool.completed" &&
-                  evt.output &&
-                  typeof (evt.output as Record<string, unknown>).elementId === "string";
-
-                if (
-                  evt.type === "tool.completed" &&
-                  evt.artifacts &&
-                  evt.toolName !== "screenshot_canvas" &&
-                  !backendInserted
-                ) {
-                  const canvasUrls = new Set(
-                    (onRequestCanvasImages ? onRequestCanvasImages() : [])
-                      .map((item) => item.url)
-                      .filter((url): url is string => typeof url === "string" && url.length > 0),
-                  );
-
-                  for (const artifact of evt.artifacts) {
-                    const replayKey = `${evt.runId}:${evt.toolCallId}:${artifact.url}`;
-                    if (replayedArtifactKeysRef.current.has(replayKey)) continue;
-                    if (canvasUrls.has(artifact.url)) {
-                      replayedArtifactKeysRef.current.add(replayKey);
-                      continue;
-                    }
-                    replayedArtifactKeysRef.current.add(replayKey);
-                    onImageGenerated?.(artifact);
-                  }
-                }
-
-                if (evt.type === "canvas.sync") {
-                  onCanvasSync?.();
-                }
-
-                if (
-                  evt.type === "run.completed" ||
-                  evt.type === "run.failed" ||
-                  evt.type === "run.canceled"
-                ) {
-                  sendingRef.current = false;
-                  setStreaming(false);
-                }
+              let cursor = 0;
+              const entries: Awaited<ReturnType<typeof fetchRunEvents>>["events"] = [];
+              while (true) {
+                const response = await fetchRunEvents(activeRunId, cursor);
+                entries.push(...response.events);
+                if (response.done || response.nextCursor <= cursor) break;
+                cursor = response.nextCursor;
               }
+              if (canceled || resumedRunId !== activeRunId) return;
+
+              hydratedRunSeq = entries[entries.length - 1]?.seq ?? 0;
+              const hydratedBlocks = materializeAssistantBlocksFromEvents(
+                entries.map((item) => item.event),
+              );
+              updateSessionMessages(sessionId, (prev) =>
+                prev.map((message) =>
+                  message.id === assistantId
+                    ? { ...message, contentBlocks: hydratedBlocks }
+                    : message,
+                ),
+              );
+              recoverMediaArtifactsFromBlocks(hydratedBlocks);
             } catch (error) {
-              console.warn("[chat] Failed to replay durable run events:", error);
+              console.warn("[chat] Failed to hydrate active run from durable events:", error);
+            } finally {
+              hydratingActiveRun = false;
+              const pending = [...queuedResumeEvents].sort(
+                (a, b) => (a.seq ?? Number.MAX_SAFE_INTEGER) - (b.seq ?? Number.MAX_SAFE_INTEGER),
+              );
+              queuedResumeEvents.length = 0;
+              for (const queuedEntry of pending) {
+                if (typeof queuedEntry.seq === "number" && queuedEntry.seq <= hydratedRunSeq) {
+                  continue;
+                }
+                processResumedEntry(queuedEntry, assistantId);
+              }
             }
           })();
-
-          // Reuse the shared stream event handler — eliminates ~70 lines of duplication
-          const unsub = ws.onEvent((evt) => {
-            if (evt.runId !== activeRunId) return;
-
-            applyStreamEvent(evt, assistantId, sessionId);
-            onStreamEvent?.(evt);
-
-            // Fire canvas insertion callbacks for artifacts arriving after reconnect.
-            // Skip if the backend already inserted the element (elementId in output).
-            const wsBackendInserted = evt.type === "tool.completed"
-              && evt.output
-              && typeof (evt.output as Record<string, unknown>).elementId === "string";
-            if (
-              evt.type === "tool.completed" &&
-              evt.artifacts &&
-              evt.toolName !== "screenshot_canvas" &&
-              !wsBackendInserted
-            ) {
-              for (const artifact of evt.artifacts) {
-                if (onImageGenerated) {
-                  replayedArtifactKeysRef.current.add(
-                    `${evt.runId}:${evt.toolCallId}:${artifact.url}`,
-                  );
-                  onImageGenerated(artifact);
-                }
-              }
-            }
-
-            if (evt.type === "canvas.sync" && onCanvasSync) {
-              onCanvasSync();
-            }
-
-            if (
-              evt.type === "run.completed" ||
-              evt.type === "run.failed" ||
-              evt.type === "run.canceled"
-            ) {
-              sendingRef.current = false;
-              setStreaming(false);
-              unsub();
-            }
-          });
         }
       });
+
     })();
+
+    return () => {
+      canceled = true;
+      resumeUnsub?.();
+    };
   }, [
     ws.connected,
     ws,

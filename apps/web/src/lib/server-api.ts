@@ -275,7 +275,11 @@ export async function saveMessage(
 
 export type RunEventsResponse = {
   done: boolean;
-  events: StreamEvent[];
+  events: Array<{
+    event: StreamEvent;
+    eventId: string;
+    seq: number;
+  }>;
   nextCursor: number;
 };
 

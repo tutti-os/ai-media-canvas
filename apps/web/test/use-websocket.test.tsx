@@ -81,7 +81,7 @@ describe("useWebSocket", () => {
 
     const seen: StreamEvent[] = [];
     result.current.onEvent((event) => {
-      seen.push(event);
+      seen.push(event.event);
     });
 
     act(() => {
@@ -153,7 +153,7 @@ describe("useWebSocket", () => {
     );
   });
 
-  it("resumes canvases with skipReplay and the latest known sequence", async () => {
+  it("resumes canvases from the latest consumed sequence instead of the ack watermark", async () => {
     const { result } = renderHook(() => useWebSocket());
     const socket = MockWebSocket.instances[0];
 
@@ -174,7 +174,7 @@ describe("useWebSocket", () => {
         payload: {
           canvasId: "canvas-1",
           lastSeq: 0,
-          skipReplay: true,
+          skipReplay: false,
         },
       }),
     );
@@ -188,9 +188,28 @@ describe("useWebSocket", () => {
           latestSeq: 2,
           activeRunId: "run-fixed",
           replayed: 0,
-          skipReplay: true,
+          skipReplay: false,
         },
       });
+    });
+
+    act(() => {
+      result.current.resumeCanvas("canvas-1", () => {});
+    });
+
+    expect(socket.sent).toContain(
+      JSON.stringify({
+        type: "command",
+        action: "canvas.resume",
+        payload: {
+          canvasId: "canvas-1",
+          lastSeq: 0,
+          skipReplay: false,
+        },
+      }),
+    );
+
+    act(() => {
       socket.receive({
         type: "event",
         seq: 7,
@@ -215,7 +234,7 @@ describe("useWebSocket", () => {
         payload: {
           canvasId: "canvas-1",
           lastSeq: 7,
-          skipReplay: true,
+          skipReplay: false,
         },
       }),
     );

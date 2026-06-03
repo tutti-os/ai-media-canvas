@@ -226,6 +226,7 @@ async function authenticateAndBind(
             ...("eventId" in entry && typeof entry.eventId === "string"
               ? { eventId: entry.eventId }
               : {}),
+            replayed: true,
             ...("canvasSeq" in entry && typeof entry.canvasSeq === "number"
               ? { seq: entry.canvasSeq }
               : "seq" in entry && typeof entry.seq === "number"

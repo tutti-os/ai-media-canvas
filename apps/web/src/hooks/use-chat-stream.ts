@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 
-import type { StreamEvent, ToolBlock } from "@aimc/shared";
+import type { ContentBlock, StreamEvent, ToolBlock } from "@aimc/shared";
 import type { Message } from "./use-chat-sessions";
 
 type MessageUpdater = (
@@ -10,27 +10,27 @@ type MessageUpdater = (
   updater: (prev: Message[]) => Message[],
 ) => void;
 
+const upsertToolBlock = (
+  existingBlocks: ContentBlock[],
+  block: ToolBlock,
+): ContentBlock[] => {
+  const existingIndex = existingBlocks.findIndex(
+    (item) => item.type === "tool" && item.toolCallId === block.toolCallId,
+  );
+  if (existingIndex < 0) {
+    return [...existingBlocks, block];
+  }
+  return existingBlocks.map((item, index) =>
+    index === existingIndex ? block : item,
+  );
+};
+
 /**
  * Extracts the stream event handling logic into a reusable hook.
  * Used by both the main send flow and the reconnection resume flow,
  * eliminating the ~70 lines of duplicated event-handling code.
  */
 export function useChatStream(updateSessionMessages: MessageUpdater) {
-  const upsertToolBlock = (
-    existingBlocks: Message["contentBlocks"],
-    block: ToolBlock,
-  ): Message["contentBlocks"] => {
-    const existingIndex = existingBlocks.findIndex(
-      (item) => item.type === "tool" && item.toolCallId === block.toolCallId,
-    );
-    if (existingIndex < 0) {
-      return [...existingBlocks, block];
-    }
-    return existingBlocks.map((item, index) =>
-      index === existingIndex ? block : item,
-    );
-  };
-
   /**
    * Apply a single StreamEvent to the assistant message identified by assistantId
    * in the given session. This is the single source of truth for how events
@@ -244,4 +244,161 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
   );
 
   return { applyStreamEvent };
+}
+
+export function materializeAssistantBlocksFromEvents(
+  events: StreamEvent[],
+): ContentBlock[] {
+  let blocks: ContentBlock[] = [];
+
+  const updateBlocks = (updater: (prev: ContentBlock[]) => ContentBlock[]) => {
+    blocks = updater(blocks);
+  };
+
+  const applyMaterializedEvent = (event: StreamEvent) => {
+    switch (event.type) {
+      case "message.delta": {
+        const delta = event.delta;
+        if (delta === undefined || delta === null) break;
+
+        updateBlocks((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last && last.type === "text") {
+            next[next.length - 1] = {
+              ...last,
+              text: last.text + delta,
+            };
+          } else {
+            next.push({ type: "text", text: delta });
+          }
+          return next;
+        });
+        break;
+      }
+
+      case "thinking.delta": {
+        const delta = event.delta;
+        if (delta === undefined || delta === null) break;
+
+        updateBlocks((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last && last.type === "thinking") {
+            next[next.length - 1] = {
+              ...last,
+              thinking: last.thinking + delta,
+            };
+          } else {
+            next.push({ type: "thinking", thinking: delta });
+          }
+          return next;
+        });
+        break;
+      }
+
+      case "tool.started": {
+        updateBlocks((prev) =>
+          upsertToolBlock(prev, {
+            type: "tool",
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            status: "running",
+            ...(event.input ? { input: event.input } : {}),
+          }),
+        );
+        break;
+      }
+
+      case "tool.completed": {
+        const existingBlock = blocks.find(
+          (block) =>
+            block.type === "tool" && block.toolCallId === event.toolCallId,
+        ) as ToolBlock | undefined;
+        updateBlocks((prev) =>
+          upsertToolBlock(prev, {
+            type: "tool",
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            status: "completed",
+            ...(existingBlock?.input ? { input: existingBlock.input } : {}),
+            ...(event.output ? { output: event.output } : {}),
+            ...(event.outputSummary
+              ? { outputSummary: event.outputSummary }
+              : {}),
+            ...(event.artifacts ? { artifacts: event.artifacts } : {}),
+          }),
+        );
+        break;
+      }
+
+      case "tool.failed": {
+        const existingBlock = blocks.find(
+          (block) =>
+            block.type === "tool" && block.toolCallId === event.toolCallId,
+        ) as ToolBlock | undefined;
+        updateBlocks((prev) =>
+          upsertToolBlock(prev, {
+            type: "tool",
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            status: "failed",
+            ...(existingBlock?.input ? { input: existingBlock.input } : {}),
+            ...(event.output ? { output: event.output } : {}),
+            outputSummary:
+              event.outputSummary ??
+              event.error.message ??
+              existingBlock?.outputSummary,
+            ...(event.artifacts ? { artifacts: event.artifacts } : {}),
+          }),
+        );
+        break;
+      }
+
+      case "run.failed": {
+        updateBlocks((prev) => {
+          const next = prev.map((block) =>
+            block.type === "tool" && block.status === "running"
+              ? { ...block, status: "failed" as const, outputSummary: "\u5904\u7406\u5931\u8d25" }
+              : block,
+          );
+          const hasText = next.some((block) => block.type === "text");
+          if (hasText) return next;
+          return [
+            ...next,
+            {
+              type: "text" as const,
+              text: `抱歉，处理过程中遇到问题：${
+                event.error.message
+                  .split("\n")
+                  .map((line) => line.trim())
+                  .find(Boolean) ?? "抱歉，处理过程中遇到问题，请重试。"
+              }`,
+            },
+          ];
+        });
+        break;
+      }
+
+      case "run.canceled": {
+        updateBlocks((prev) =>
+          prev.map((block) =>
+            block.type === "tool" && block.status === "running"
+              ? { ...block, status: "canceled" as const, outputSummary: "\u5df2\u53d6\u6d88" }
+              : block,
+          ),
+        );
+        break;
+      }
+
+      default:
+        break;
+    }
+  };
+
+  for (const event of events) {
+    applyMaterializedEvent(event);
+  }
+
+  return blocks;
 }

@@ -32,9 +32,9 @@ const {
   createSessionMock: vi.fn(),
   deleteSessionMock: vi.fn(),
   fetchMessagesMock: vi.fn(),
+  fetchRunEventsMock: vi.fn(),
   fetchImageModelsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
-  fetchRunEventsMock: vi.fn(),
   fetchWorkspaceSettingsMock: vi.fn(),
   fetchSessionsMock: vi.fn(),
   saveMessageMock: vi.fn(),
@@ -266,8 +266,55 @@ describe("ChatSidebar", () => {
 
   it("replays durable run events on reconnect to recover missed media insertions", async () => {
     const imageGeneratedSpy = vi.fn();
+    let replayListener:
+      | ((entry: { event: Record<string, unknown>; replayed?: boolean; eventId?: string; seq?: number }) => void)
+      | null = null;
+    fetchRunEventsMock.mockResolvedValue({
+      done: true,
+      nextCursor: 8,
+      events: [
+        {
+          eventId: "run-reconnect:7",
+          seq: 7,
+          event: {
+            type: "message.delta",
+            runId: "run-reconnect",
+            messageId: "assistant-reconnect",
+            delta: "Recovered transcript",
+            timestamp: "2026-06-04T00:00:00.000Z",
+          },
+        },
+        {
+          eventId: "run-reconnect:8",
+          seq: 8,
+          event: {
+            type: "tool.completed",
+            runId: "run-reconnect",
+            toolCallId: "tool-1",
+            toolName: "generate_image",
+            artifacts: [
+              {
+                type: "image",
+                title: "Recovered image",
+                url: "https://example.com/recovered.png",
+                mimeType: "image/png",
+                width: 1024,
+                height: 1024,
+              },
+            ],
+            timestamp: "2026-06-04T00:00:00.000Z",
+          },
+        },
+      ],
+    });
     mockWs = {
       ...mockWs,
+      onEvent: vi.fn((listener) => {
+        replayListener = listener as typeof replayListener;
+        return () => {
+          replayListener = null;
+        };
+      }),
       resumeCanvas: vi.fn((_canvasId, onAck) => {
         onAck?.({
           type: "command.ack",
@@ -282,29 +329,6 @@ describe("ChatSidebar", () => {
         });
       }),
     };
-    fetchRunEventsMock.mockResolvedValue({
-      done: false,
-      nextCursor: 2,
-      events: [
-        {
-          type: "tool.completed",
-          runId: "run-reconnect",
-          toolCallId: "tool-1",
-          toolName: "generate_image",
-          artifacts: [
-            {
-              type: "image",
-              title: "Recovered image",
-              url: "https://example.com/recovered.png",
-              mimeType: "image/png",
-              width: 1024,
-              height: 1024,
-            },
-          ],
-          timestamp: "2026-06-04T00:00:00.000Z",
-        },
-      ],
-    });
 
     render(
       <ToastProvider>
@@ -321,6 +345,30 @@ describe("ChatSidebar", () => {
 
     await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
     await waitFor(() => expect(fetchRunEventsMock).toHaveBeenCalledWith("run-reconnect", 0));
+    expect(await screen.findByText("Recovered transcript")).toBeInTheDocument();
+    await waitFor(() => expect(imageGeneratedSpy).toHaveBeenCalledTimes(1));
+    replayListener?.({
+      replayed: true,
+      eventId: "run-reconnect:8",
+      seq: 8,
+      event: {
+        type: "tool.completed",
+        runId: "run-reconnect",
+        toolCallId: "tool-1",
+        toolName: "generate_image",
+        artifacts: [
+          {
+            type: "image",
+            title: "Recovered image",
+            url: "https://example.com/recovered.png",
+            mimeType: "image/png",
+            width: 1024,
+            height: 1024,
+          },
+        ],
+        timestamp: "2026-06-04T00:00:00.000Z",
+      },
+    });
     await waitFor(() => expect(imageGeneratedSpy).toHaveBeenCalledTimes(1));
     expect(imageGeneratedSpy).toHaveBeenCalledWith(
       expect.objectContaining({

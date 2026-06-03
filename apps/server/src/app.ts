@@ -1041,7 +1041,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         run.status === "completed" ||
         run.status === "failed" ||
         run.status === "canceled",
-      events: events.map((entry) => entry.event),
+      events: events.map((entry) => ({
+        event: entry.event,
+        eventId: entry.eventId,
+        seq: entry.seq,
+      })),
       nextCursor,
     });
   });

@@ -11,7 +11,14 @@ import type {
 import { wsRpcRequestSchema, wsServerMessageSchema } from "@aimc/shared";
 import { getServerBaseUrl } from "../lib/env";
 
-type EventCallback = (event: StreamEvent) => void;
+export type StreamEventEnvelope = {
+  event: StreamEvent;
+  eventId?: string;
+  replayed?: boolean;
+  seq?: number;
+};
+
+type EventCallback = (event: StreamEventEnvelope) => void;
 type RPCHandler = (
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
@@ -53,13 +60,14 @@ export function useWebSocket(): WebSocketHandle {
   const shouldReconnectRef = useRef(true);
   const activeCanvasIdRef = useRef<string | null>(null);
   const lastSeqByCanvasRef = useRef<Map<string, number>>(new Map());
+  const seenEventIdsRef = useRef<Map<string, Set<string>>>(new Map());
   const eventListeners = useRef<Set<EventCallback>>(new Set());
   const rpcHandlers = useRef<Map<string, RPCHandler>>(new Map());
   const ackListeners = useRef<Map<string, Array<(ack: WsCommandAck) => void>>>(
     new Map(),
   );
 
-  const emitEvent = useCallback((event: StreamEvent) => {
+  const emitEvent = useCallback((event: StreamEventEnvelope) => {
     for (const listener of eventListeners.current) {
       listener(event);
     }
@@ -171,14 +179,39 @@ export function useWebSocket(): WebSocketHandle {
 
         if (serverMessage.data.type === "event") {
           const activeCanvasId = activeCanvasIdRef.current;
+          if (activeCanvasId && typeof serverMessage.data.eventId === "string") {
+            const seenForCanvas =
+              seenEventIdsRef.current.get(activeCanvasId) ?? new Set<string>();
+            if (seenForCanvas.has(serverMessage.data.eventId)) {
+              return;
+            }
+            seenForCanvas.add(serverMessage.data.eventId);
+            seenEventIdsRef.current.set(activeCanvasId, seenForCanvas);
+          }
           if (activeCanvasId) {
             const nextSeq =
               typeof serverMessage.data.seq === "number"
-                ? serverMessage.data.seq
+                ? Math.max(
+                    serverMessage.data.seq,
+                    lastSeqByCanvasRef.current.get(activeCanvasId) ?? 0,
+                  )
                 : (lastSeqByCanvasRef.current.get(activeCanvasId) ?? 0) + 1;
             lastSeqByCanvasRef.current.set(activeCanvasId, nextSeq);
           }
-          emitEvent(serverMessage.data.event);
+          emitEvent({
+            event: serverMessage.data.event,
+            ...(typeof serverMessage.data.eventId === "string"
+              ? { eventId: serverMessage.data.eventId }
+              : {}),
+            ...(
+              (serverMessage.data as { replayed?: boolean }).replayed === true
+                ? { replayed: true }
+                : {}
+            ),
+            ...(typeof serverMessage.data.seq === "number"
+              ? { seq: serverMessage.data.seq }
+              : {}),
+          });
           return;
         }
 
@@ -187,13 +220,8 @@ export function useWebSocket(): WebSocketHandle {
             const payload = serverMessage.data.payload as Record<string, unknown>;
             const canvasId =
               typeof payload.canvasId === "string" ? payload.canvasId : null;
-            const latestSeq =
-              typeof payload.latestSeq === "number" ? payload.latestSeq : null;
             if (canvasId) {
               activeCanvasIdRef.current = canvasId;
-              if (latestSeq !== null) {
-                lastSeqByCanvasRef.current.set(canvasId, latestSeq);
-              }
             }
           }
           resolveAck(serverMessage.data);
@@ -285,16 +313,18 @@ export function useWebSocket(): WebSocketHandle {
       if (!sent) {
         removeAck();
         emitEvent({
-          type: "run.failed",
-          runId:
-            typeof crypto !== "undefined" && crypto.randomUUID
-              ? crypto.randomUUID()
-              : `run-failed-${Date.now()}`,
-          error: {
-            code: "run_failed",
-            message: "WebSocket connection is not ready.",
+          event: {
+            type: "run.failed",
+            runId:
+              typeof crypto !== "undefined" && crypto.randomUUID
+                ? crypto.randomUUID()
+                : `run-failed-${Date.now()}`,
+            error: {
+              code: "run_failed",
+              message: "WebSocket connection is not ready.",
+            },
+            timestamp: new Date().toISOString(),
           },
-          timestamp: new Date().toISOString(),
         });
       }
     },
@@ -322,7 +352,7 @@ export function useWebSocket(): WebSocketHandle {
         payload: {
           canvasId,
           lastSeq: lastSeqByCanvasRef.current.get(canvasId) ?? 0,
-          skipReplay: true,
+          skipReplay: false,
         },
       });
       if (!sent) {
