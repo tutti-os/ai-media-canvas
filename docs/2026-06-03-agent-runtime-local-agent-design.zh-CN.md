@@ -306,6 +306,67 @@ local-agent 只应该在本地 daemon / desktop / trusted local server 模式可
 
 UI 可以继续按现有事件展示；新字段用于 replay 和 local-agent richer output。
 
+### 3.1 UI 渲染兼容性分析
+
+现有 Web UI 的核心渲染入口是 `StreamEvent -> assistant contentBlocks`。如果 local-agent adapter 能把输出归一化成当前事件子集，UI 基本可以兼容：
+
+| Local agent 输出 | 映射后事件 | 当前 UI 兼容性 |
+|---|---|---|
+| 普通文本 token | `message.delta` | 兼容，追加到 text block |
+| thinking / reasoning | `thinking.delta` | 兼容，追加到 thinking block |
+| tool call start | `tool.started` | 兼容，生成 running tool block |
+| tool success | `tool.completed` | 兼容，更新 tool block、展示 summary/artifacts |
+| canvas 修改 | `canvas.sync` | 兼容，触发 canvas refresh |
+| run success | `run.completed` | 兼容，停止 streaming |
+| run failed | `run.failed` | 基本兼容，但会把 running tool 伪装成 completed |
+| run canceled | `run.canceled` | 基本兼容，但 running tool 也会被伪装成 completed |
+
+因此 local-agent 不需要重写 UI 渲染体系，但要补以下缺口，否则会出现“事件能到 UI，但语义不准确”的问题：
+
+1. `tool.failed` 缺失。当前 shared `StreamEvent` 没有 `tool.failed`，`ToolBlock.status` 也只有 `running | completed`。local gateway 单个工具失败时不能只能发 `run.failed` 或伪装成 `tool.completed`。
+2. reducer 需要支持 tool result upsert。local CLI / ACP 有时可能先吐 tool result 或恢复后只补 result；当前 `tool.completed` 找不到已有 tool block 会直接忽略。
+3. assistant message id 需要服务端 anchor 化。当前前端发送时用 `assistant-${Date.now()}` 本地 placeholder，reconnect 时用 `resumed_${runId}`；local-agent durable replay 更适合从 ack 或 run record 返回 `assistantMessageId`，UI 直接绑定这个真实 message id。
+4. replay 需要 event id / seq 去重。当前 WebSocket resume 主要依赖 canvas ring buffer 和 `lastSeq`；local-agent 长任务要用 `agent_run_events.eventId`，前端 reducer 需要能避免重复应用同一事件。
+5. adapter status 不应混成正文。CLI detect、spawn、stderr warning、permission pending、provider auth required 这类状态更适合 `run.adapter.status` 或 toast/subtle status line，不应写成 assistant 正文。
+6. file/artifact 事件需要产品化表达。local CLI 可能产出文件、截图、HTML、patch 等非 media artifact。P0 可以先放进 tool output summary；P1 再加 `artifact.created` / `file.changed` 渲染。
+7. media artifact 仍应走 `tool.completed.artifacts`。当前 UI 已能在 image/video tool completed 后触发 inline preview 和 canvas insertion callback，local-agent 不应直接发 assistant image block。
+8. `run.failed` / `run.canceled` 时 running tool block 应转成 `failed` / `canceled` 视觉状态，而不是 completed checkmark。
+
+建议 UI schema 补强：
+
+```ts
+type ToolBlockStatus = "running" | "completed" | "failed" | "canceled";
+
+type ToolFailedEvent = {
+  type: "tool.failed";
+  runId: string;
+  toolCallId: string;
+  toolName: string;
+  error: { code: string; message: string };
+  outputSummary?: string;
+  timestamp: string;
+};
+
+type AdapterStatusEvent = {
+  type: "run.adapter.status";
+  runId: string;
+  provider: string;
+  status: "detecting" | "spawning" | "running" | "warning" | "permission_pending";
+  message?: string;
+  timestamp: string;
+};
+```
+
+UI 最小改造建议：
+
+- `use-chat-stream.ts` 增加 `tool.failed` 分支，并让 `tool.completed/tool.failed` 都支持 upsert。
+- `ToolBlockView` 增加 failed / canceled icon、颜色、错误摘要和 detail panel。
+- `chat-sidebar.tsx` 使用后端返回的 `assistantMessageId` 创建 placeholder，避免 local placeholder 与 durable message anchor 不一致。
+- `use-websocket.ts` / replay 逻辑支持 `eventId` 去重，防止 reconnect 后重复追加 delta 或重复插入 tool block。
+- 对 `run.adapter.status` 只做轻量状态提示，不进入最终 assistant contentBlocks，除非是 terminal error。
+
+兼容结论：local-agent UI 不需要另起一套，但必须以 `StreamEvent` contract 为唯一入口。只要 adapter 层把 Codex / Claude / ACP 输出先归一化成 AIMC 事件，UI 可以继续复用现有 chat、tool block、media artifact、canvas sync 渲染；缺口集中在 failed 状态、durable message anchor、event replay 去重和 local file/artifact 表达。
+
 ### 4. Message 与 run 存储
 
 建议把 assistant message 从“结束后创建”改成“run 创建时创建，过程中更新”。
@@ -691,6 +752,7 @@ local-agent / ACP / deepagent 双 runtime 的测试目标不是只验证 CLI 能
 | Tool gateway | token 绑定 `runId/userId/canvasId/allowedTools`、TTL fake clock、allowlist、revoke、wrong canvas/user、schema validation、permission recheck |
 | Skills isolation | per-run sandbox、slug/path sanitize、symlink escape reject、cleanup、per-run `CODEX_HOME`、不写 `~/.codex` 或项目根 `AGENTS.md` |
 | 双 runtime 回归 | 同一 run request 在 deepagent/local fake 下产生兼容 UI 事件，默认仍走 deepagent，local-agent 只在 trusted local mode 可选 |
+| UI 兼容性 | `tool.failed`、tool result upsert、eventId 去重、assistantMessageId anchor、adapter status 不进入正文、media artifacts 仍走 tool block |
 
 P0 测试顺序：
 
@@ -759,6 +821,7 @@ ACP 在这个设计里的边界应保持清晰：ACP 是 `@aimc/local-agent-tran
 10. local-agent package 要按 public contracts 设计，不要只有一个大 `LocalAgentRuntime`。至少要拆 `ProviderAdapter`、`Transport`、`ProcessSupervisor`、`SkillDelivery`、`PermissionPolicy`、`CapabilityModel` 和 error taxonomy。
 11. 对外发包建议拆 `core + process + transport-acp + provider adapters + runtime bundle`，避免 Codex/Claude/ACP/Hermes/Kimi/Kiro 差异污染 core。
 12. 测试必须先覆盖 fake adapter、durable event replay、tool gateway security、ACP fake peer、skills isolation，再接真实 Codex/Claude/ACP provider。
+13. UI 渲染不需要另起一套，但必须补 `tool.failed`、failed/canceled tool block、eventId 去重、server assistant message anchor、tool result upsert 和 adapter status 展示策略。
 
 ## 是否有更优替代方案
 

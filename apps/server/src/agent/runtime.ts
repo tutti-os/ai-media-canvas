@@ -278,6 +278,7 @@ type RuntimeRunStatus =
 
 type RuntimeRunRecord = RunCreateRequest & {
   accessToken?: string;
+  connectionId?: string;
   consumed: boolean;
   controller: AbortController;
   envOverride?: ServerEnv;
@@ -396,6 +397,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       input: RunCreateRequest,
       runOptions?: {
         accessToken?: string;
+        connectionId?: string;
         env?: ServerEnv;
         model?: string;
         threadId?: string;
@@ -408,6 +410,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       runs.set(runId, {
         ...runInput,
         ...(runOptions?.accessToken ? { accessToken: runOptions.accessToken } : {}),
+        ...(runOptions?.connectionId ? { connectionId: runOptions.connectionId } : {}),
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
@@ -1118,6 +1121,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   configurable: {
                     ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
                     ...(run.accessToken ? { access_token: run.accessToken } : {}),
+                    ...(run.connectionId ? { connection_id: run.connectionId } : {}),
                     ...(run.userId ? { user_id: run.userId } : {}),
                     ...(Object.keys(attachmentDataMap).length > 0
                       ? { user_attachment_map: attachmentDataMap }

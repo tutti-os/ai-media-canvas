@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -155,7 +155,7 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("Agnes Base URL")).toHaveValue(
       "https://agnes.example/v1",
     );
-    expect(screen.getByDisplayValue("agnes:agnes-2.0-flash")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("agnes-2.0-flash")).toBeInTheDocument();
     expect(screen.getByText("Agnes models")).toBeInTheDocument();
     expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
     expect(
@@ -175,10 +175,6 @@ describe("SettingsPage", () => {
 
     await userEvent.click(
       screen.getByRole("button", { name: "Browse available models" }),
-    );
-    const menu = await screen.findByRole("menu");
-    await userEvent.hover(
-      within(menu).getByRole("menuitem", { name: /Google Gemini/i }),
     );
     await userEvent.click(
       await screen.findByRole("menuitemradio", { name: /Use gemini-2.5-flash/i }),
@@ -210,6 +206,9 @@ describe("SettingsPage", () => {
         volcesApiKey: "",
         volcesBaseUrl: "",
       }),
+    );
+    expect(screen.getByLabelText("Anthropic API Key")).toHaveValue(
+      "sk-local-anthropic",
     );
   });
 
@@ -291,6 +290,7 @@ describe("SettingsPage", () => {
         }),
       ),
     );
+    expect(screen.getByLabelText("OpenAI API Key")).toHaveValue("sk-local-openai");
   });
 
   it("lets the default model picker switch to Anthropic and choose a model", async () => {
@@ -362,10 +362,6 @@ describe("SettingsPage", () => {
     await screen.findByText("Default LLM Model");
     await userEvent.click(
       await screen.findByRole("button", { name: "Browse available models" }),
-    );
-    const menu = await screen.findByRole("menu");
-    await userEvent.hover(
-      within(menu).getByRole("menuitem", { name: /^Anthropic$/i }),
     );
     await userEvent.click(
       await screen.findByRole("menuitemradio", { name: /Use minimax-m2.5/i }),

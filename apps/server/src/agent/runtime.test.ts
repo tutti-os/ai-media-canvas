@@ -80,10 +80,12 @@ describe("createAgentRunService", () => {
 
   it("uses saved session messages when a local thread id is present without persistence", async () => {
     let capturedInput: unknown;
+    let capturedConfig: unknown;
     const agentFactory = vi.fn(() => ({
       stream: vi.fn(),
-      streamEvents: vi.fn((input: unknown) => {
+      streamEvents: vi.fn((input: unknown, config: unknown) => {
         capturedInput = input;
+        capturedConfig = config;
         return (async function* () {})();
       }),
     }));
@@ -116,7 +118,11 @@ describe("createAgentRunService", () => {
         prompt: "继续",
         sessionId: "session-1",
       },
-      { threadId: "thread:session-1" },
+      {
+        connectionId: "conn-1",
+        threadId: "thread:session-1",
+        userId: "user-1",
+      },
     );
 
     const events = [];
@@ -127,6 +133,13 @@ describe("createAgentRunService", () => {
     expect(events.some((event) => event.type === "run.failed")).toBe(false);
     expect(capturedInput).toMatchObject({
       messages: [{ content: "上一句" }, { content: "继续" }],
+    });
+    expect(capturedConfig).toMatchObject({
+      configurable: {
+        canvas_id: "canvas-1",
+        connection_id: "conn-1",
+        user_id: "user-1",
+      },
     });
   });
 });

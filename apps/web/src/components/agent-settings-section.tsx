@@ -15,9 +15,6 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
@@ -79,6 +76,11 @@ function getInitialProtocol(settings: WorkspaceSettings): AgentProtocolId {
 
 function buildModelId(provider: AgentProtocolId, value: string): string {
   return value.includes(":") ? value : `${provider}:${value}`;
+}
+
+function getModelName(provider: AgentProtocolId, value: string): string {
+  const prefix = `${provider}:`;
+  return value.startsWith(prefix) ? value.slice(prefix.length) : value;
 }
 
 function getProviderModelIds(
@@ -194,16 +196,22 @@ function ProviderModelListEditor({
         <div className="space-y-2">
           {configuredModels.map((modelId, index) => (
             <div key={`${provider}-${index}`} className="flex items-center gap-2">
-              <Input
-                aria-label={`${getProviderLabel(provider)} model ${index + 1}`}
-                value={modelId}
-                onChange={(event) => {
-                  const nextValues = [...configuredModels];
-                  nextValues[index] = buildModelId(provider, event.target.value.trim());
-                  onChange(nextValues.filter(Boolean));
-                }}
-                placeholder={`${provider}:model-id`}
-              />
+              <div className="flex min-w-0 flex-1 items-center rounded-lg border border-input bg-transparent focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+                <span className="border-r border-input px-2.5 text-sm text-muted-foreground">
+                  {provider}:
+                </span>
+                <Input
+                  aria-label={`${getProviderLabel(provider)} model ${index + 1}`}
+                  value={getModelName(provider, modelId)}
+                  onChange={(event) => {
+                    const nextValues = [...configuredModels];
+                    nextValues[index] = buildModelId(provider, event.target.value.trim());
+                    onChange(nextValues.filter(Boolean));
+                  }}
+                  placeholder="model-id"
+                  className="border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0"
+                />
+              </div>
               <Button
                 type="button"
                 size="sm"
@@ -228,12 +236,18 @@ function ProviderModelListEditor({
       )}
 
       <div className="flex items-center gap-2">
-        <Input
-          aria-label={`Add ${getProviderLabel(provider)} model`}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={`${provider}:model-id`}
-        />
+        <div className="flex min-w-0 flex-1 items-center rounded-lg border border-input bg-transparent focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+          <span className="border-r border-input px-2.5 text-sm text-muted-foreground">
+            {provider}:
+          </span>
+          <Input
+            aria-label={`Add ${getProviderLabel(provider)} model`}
+            value={getModelName(provider, draft)}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="model-id"
+            className="border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0"
+          />
+        </div>
         <Button type="button" size="sm" onClick={addModel}>
           Add
         </Button>
@@ -276,7 +290,6 @@ export function AgentSettingsSection({
         vertex: initialSettings.providerModels?.vertex ?? [],
       },
     });
-    setActiveProtocol(getInitialProtocol(initialSettings));
   }, [initialSettings]);
 
   useEffect(() => {
@@ -411,41 +424,37 @@ export function AgentSettingsSection({
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
-                    {modelPickerGroups.map((protocol) => (
-                      <DropdownMenuSub key={protocol.id}>
-                        <DropdownMenuSubTrigger>
-                          {protocol.label}
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="w-80">
-                          <DropdownMenuLabel>
-                            {protocol.label} models
-                          </DropdownMenuLabel>
-                          <DropdownMenuRadioGroup
-                            value={settings.defaultModel}
-                            onValueChange={(value) =>
-                              updateField("defaultModel", value as string)
-                            }
-                          >
-                            {protocol.models.map((model) => (
-                              <DropdownMenuRadioItem
-                                key={model.id}
-                                value={model.id}
-                                aria-label={`Use ${model.name}`}
-                              >
-                                <div className="min-w-0">
-                                  <div className="truncate font-medium">
-                                    {model.name}
-                                  </div>
-                                  <div className="truncate text-xs text-muted-foreground">
-                                    {model.id}
-                                  </div>
+                    <DropdownMenuRadioGroup
+                      value={settings.defaultModel}
+                      onValueChange={(value) =>
+                        updateField("defaultModel", value as string)
+                      }
+                    >
+                      {modelPickerGroups.map((protocol, groupIndex) => (
+                        <div key={protocol.id}>
+                          <DropdownMenuLabel>{protocol.label}</DropdownMenuLabel>
+                          {protocol.models.map((model) => (
+                            <DropdownMenuRadioItem
+                              key={model.id}
+                              value={model.id}
+                              aria-label={`Use ${model.name}`}
+                            >
+                              <div className="min-w-0">
+                                <div className="truncate font-medium">
+                                  {model.name}
                                 </div>
-                              </DropdownMenuRadioItem>
-                            ))}
-                          </DropdownMenuRadioGroup>
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    ))}
+                                <div className="truncate text-xs text-muted-foreground">
+                                  {model.id}
+                                </div>
+                              </div>
+                            </DropdownMenuRadioItem>
+                          ))}
+                          {groupIndex < modelPickerGroups.length - 1 ? (
+                            <DropdownMenuSeparator />
+                          ) : null}
+                        </div>
+                      ))}
+                    </DropdownMenuRadioGroup>
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>

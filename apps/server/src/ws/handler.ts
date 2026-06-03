@@ -272,6 +272,7 @@ async function handleRunCommand(
 
   const response = agentRuns.createRun(payload, {
     accessToken: authenticatedUser.accessToken,
+    connectionId,
     ...(effectiveEnv ? { env: effectiveEnv } : {}),
     userId: authenticatedUser.id,
     ...(resolvedModel ? { model: resolvedModel } : {}),
