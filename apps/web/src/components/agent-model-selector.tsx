@@ -1,9 +1,11 @@
 "use client";
 
+import { Settings2 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAgentModel } from "@/hooks/use-agent-model";
-import { fetchModels } from "@/lib/server-api";
+import { fetchModels, fetchWorkspaceSettings } from "@/lib/server-api";
+import { SettingsDialog } from "./settings-dialog";
 
 type ModelOption = { id: string; name: string; provider: string };
 
@@ -13,6 +15,35 @@ const SPARKLE_ICON_PATH =
 
 const CHECK_PATH =
   "M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 1 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0";
+
+const PROVIDER_PRIORITY = ["agnes", "openai", "anthropic", "google", "vertex", "local"];
+
+function formatProviderLabel(provider: string) {
+  switch (provider) {
+    case "openai":
+      return "OpenAI";
+    case "agnes":
+      return "Agnes";
+    case "anthropic":
+      return "Anthropic";
+    case "google":
+      return "Google";
+    case "vertex":
+      return "Vertex";
+    case "local":
+      return "Local";
+    default:
+      return provider.charAt(0).toUpperCase() + provider.slice(1);
+  }
+}
+
+function formatDefaultModelLabel(modelId: string | null, models: ModelOption[]) {
+  if (!modelId) return null;
+  const matchingModel = models.find((model) => model.id === modelId);
+  if (matchingModel) return matchingModel.name;
+  const [, scopedId = modelId] = modelId.split(":");
+  return scopedId;
+}
 
 function ProviderLogo({ provider }: { provider: string }) {
   if (provider === "local") {
@@ -28,13 +59,19 @@ function ProviderLogo({ provider }: { provider: string }) {
 export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
   const { model, setModel } = useAgentModel();
   const [open, setOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
+  const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<string | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const loadModels = useCallback(() => {
     fetchModels()
       .then((data) => setModels(data.models))
+      .catch(() => {});
+
+    fetchWorkspaceSettings()
+      .then((data) => setWorkspaceDefaultModel(data.settings.defaultModel || null))
       .catch(() => {});
   }, []);
 
@@ -79,6 +116,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
   const isActive = model !== null;
   const selectedModel = models.find((m) => m.id === model);
   const displayLabel = selectedModel ? selectedModel.name : "Agent";
+  const defaultModelLabel = formatDefaultModelLabel(workspaceDefaultModel, models);
 
   // Auto-positioning popover (above or below based on available space)
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
@@ -107,7 +145,18 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
   }, [open]);
 
   // Deduplicate provider list from actual models
-  const providers = [...new Set(models.map((m) => m.provider))];
+  const providers = [...new Set(models.map((m) => m.provider))].sort((left, right) => {
+    const leftIndex = PROVIDER_PRIORITY.indexOf(left);
+    const rightIndex = PROVIDER_PRIORITY.indexOf(right);
+    const normalizedLeft = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
+    const normalizedRight = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
+
+    if (normalizedLeft !== normalizedRight) {
+      return normalizedLeft - normalizedRight;
+    }
+
+    return formatProviderLabel(left).localeCompare(formatProviderLabel(right));
+  });
 
   return (
     <>
@@ -143,8 +192,22 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
             style={popoverStyle}
             className="max-h-[min(28rem,calc(100vh-2rem))] w-56 overflow-y-auto rounded-xl border border-border bg-popover p-2 shadow-lg"
           >
-            <div className="mb-2 px-2 text-xs font-medium text-muted-foreground">
-              Assistant Mode
+            <div className="mb-2 flex items-center justify-between gap-2 px-2">
+              <div className="text-xs font-medium text-muted-foreground">
+                Assistant Mode
+              </div>
+              <button
+                type="button"
+                aria-label="Open agent settings"
+                onClick={() => {
+                  setOpen(false);
+                  setSettingsOpen(true);
+                }}
+                className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Settings2 className="h-3 w-3" />
+                Settings
+              </button>
             </div>
             {/* Auto option */}
             <button
@@ -159,7 +222,14 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
                   : "hover:bg-muted"
               }`}
             >
-              <span className="flex-1 text-left">Local Assistant (recommended)</span>
+              <span className="flex-1 text-left">
+                <span className="block">Local Assistant</span>
+                <span className="block text-xs text-muted-foreground">
+                  {defaultModelLabel
+                    ? `Uses default model: ${defaultModelLabel}`
+                    : "Uses your configured default route"}
+                </span>
+              </span>
               {!isActive && (
                 <svg
                   className="h-3 w-3 text-accent-foreground"
@@ -180,9 +250,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
                 <div key={provider} className="mt-2">
                   <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
                     <ProviderLogo provider={provider} />
-                    {provider === "local"
-                      ? "Local"
-                      : provider.charAt(0).toUpperCase() + provider.slice(1)}
+                    {formatProviderLabel(provider)}
                   </div>
                   {providerModels.map((m) => (
                     <button
@@ -216,6 +284,11 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
           </div>,
           document.body,
         )}
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        initialTab="agent"
+      />
     </>
   );
 }

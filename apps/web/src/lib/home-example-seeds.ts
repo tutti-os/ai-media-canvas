@@ -40,7 +40,11 @@ function example(
 }
 
 function generatedImage(name: string, file: string): InputMention {
-  return { type: "image", name, imgSrc: `/images/home-seeds/generated/${file}` };
+  return {
+    type: "image",
+    name,
+    imgSrc: `/images/home-seeds/generated/${file}`,
+  };
 }
 
 function tool(name: string, accent = "#1d4ed8"): InputMention {
@@ -53,8 +57,8 @@ function previews(...files: [string, string, string]) {
 
 export const homeExampleSeedCategories: HomeExampleCategory[] = [
   {
-    key: "nano-banana-pro",
-    label: "Nano Banana Pro",
+    key: "visual-concepts",
+    label: "Visual Concepts",
     dataType: "Image",
     accent: "special",
     examples: [
@@ -66,7 +70,10 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
           "nano-magazine-cover-2.png",
           "nano-magazine-cover-3.png",
         ),
-        [tool("Prompt Polisher", "#ec4899"), generatedImage("Selfie", "input-selfie-source.png")],
+        [
+          tool("Prompt Polisher", "#ec4899"),
+          generatedImage("Selfie", "input-selfie-source.png"),
+        ],
       ),
       example(
         "Make a classic superhero comic strip",
@@ -86,7 +93,47 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
           "nano-engineering-blueprint-2.png",
           "nano-engineering-blueprint-3.png",
         ),
-        [tool("Canvas Design", "#0ea5e9"), generatedImage("Object", "input-object-source.png")],
+        [
+          tool("Canvas Design", "#0ea5e9"),
+          generatedImage("Object", "input-object-source.png"),
+        ],
+      ),
+    ],
+  },
+  {
+    key: "illustration",
+    label: "Illustration",
+    dataType: "Illustration",
+    examples: [
+      example(
+        "Expand a cat tarot card series",
+        "请围绕猫咪塔罗牌扩展一套插画系列，补齐角色设定、牌面视觉语言、边框系统和周边延展建议。",
+        previews(
+          "illustration-cat-tarot.png",
+          "illustration-cat-tarot-2.png",
+          "illustration-cat-tarot-3.png",
+        ),
+        [tool("Prompt Polisher", "#8b5cf6")],
+      ),
+      example(
+        "Illustrate a dreamy seaside story",
+        "请把一个海边奇遇故事画成梦幻插画，强调色彩氛围、光影层次和封面标题位置。",
+        previews(
+          "illustration-seaside-story.png",
+          "illustration-seaside-story-2.png",
+          "illustration-seaside-story-3.png",
+        ),
+        [tool("Canvas Design", "#0ea5e9")],
+      ),
+      example(
+        "Create a playful character poster",
+        "请做一张角色海报，把人物设定、色彩性格和辅助道具统一起来，适合潮流玩具品牌介绍页。",
+        previews(
+          "illustration-playful-character.png",
+          "illustration-playful-character-2.png",
+          "illustration-playful-character-3.png",
+        ),
+        [tool("Canvas Director", "#ec4899")],
       ),
     ],
   },
@@ -150,7 +197,10 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
           "branding-coffee-merch-2.png",
           "branding-coffee-merch-3.png",
         ),
-        [tool("Brand Keeper", "#a16207"), generatedImage("Logo", "input-logo-coffee.png")],
+        [
+          tool("Brand Keeper", "#a16207"),
+          generatedImage("Logo", "input-logo-coffee.png"),
+        ],
       ),
       example(
         "Put your logo on a cap",
@@ -160,7 +210,10 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
           "branding-cap-logo-2.png",
           "branding-cap-logo-3.png",
         ),
-        [tool("Brand Keeper", "#2563eb"), generatedImage("Logo", "input-logo-cap.png")],
+        [
+          tool("Brand Keeper", "#2563eb"),
+          generatedImage("Logo", "input-logo-cap.png"),
+        ],
       ),
     ],
   },
@@ -202,43 +255,6 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
     ],
   },
   {
-    key: "illustration",
-    label: "Illustration",
-    dataType: "Illustration",
-    examples: [
-      example(
-        "Expand a cat tarot card series",
-        "请围绕猫咪塔罗牌扩展一套插画系列，补齐角色设定、牌面视觉语言、边框系统和周边延展建议。",
-        previews(
-          "illustration-cat-tarot.png",
-          "illustration-cat-tarot-2.png",
-          "illustration-cat-tarot-3.png",
-        ),
-        [tool("Prompt Polisher", "#8b5cf6")],
-      ),
-      example(
-        "Illustrate a dreamy seaside story",
-        "请把一个海边奇遇故事画成梦幻插画，强调色彩氛围、光影层次和封面标题位置。",
-        previews(
-          "illustration-seaside-story.png",
-          "illustration-seaside-story-2.png",
-          "illustration-seaside-story-3.png",
-        ),
-        [tool("Canvas Design", "#0ea5e9")],
-      ),
-      example(
-        "Create a playful character poster",
-        "请做一张角色海报，把人物设定、色彩性格和辅助道具统一起来，适合潮流玩具品牌介绍页。",
-        previews(
-          "illustration-playful-character.png",
-          "illustration-playful-character-2.png",
-          "illustration-playful-character-3.png",
-        ),
-        [tool("Canvas Director", "#ec4899")],
-      ),
-    ],
-  },
-  {
     key: "storyboard-video",
     label: "Storyboard",
     dataType: "Video",
@@ -251,7 +267,10 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
           "storyboard-product-teaser-2.png",
           "storyboard-product-teaser-3.png",
         ),
-        [tool("Storyboard Motion", "#14b8a6"), generatedImage("Reference", "storyboard-product-teaser.png")],
+        [
+          tool("Storyboard Motion", "#14b8a6"),
+          generatedImage("Reference", "storyboard-product-teaser.png"),
+        ],
       ),
       example(
         "Build a music teaser sequence",
@@ -271,7 +290,10 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
           "storyboard-comic-sequence-2.png",
           "storyboard-comic-sequence-3.png",
         ),
-        [tool("Storyboard Motion", "#2563eb"), tool("Canvas Director", "#22c55e")],
+        [
+          tool("Storyboard Motion", "#2563eb"),
+          tool("Canvas Director", "#22c55e"),
+        ],
       ),
     ],
   },

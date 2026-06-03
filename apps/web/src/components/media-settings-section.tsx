@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { WorkspaceSettings } from "@aimc/shared";
 
+import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -262,6 +263,11 @@ export function MediaSettingsSection({
                   <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
                     {card.summary}
                   </p>
+                  {card.id === "agnes" ? (
+                    <div className="mt-3">
+                      <AgnesQuickstartHint />
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

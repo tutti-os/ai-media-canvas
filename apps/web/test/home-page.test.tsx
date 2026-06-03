@@ -49,6 +49,11 @@ vi.mock("../src/lib/server-api", () => ({
   fetchModels: vi.fn().mockResolvedValue({
     models: [{ id: "local:assistant", name: "Local Assistant", provider: "local" }],
   }),
+  fetchWorkspaceSettings: vi.fn().mockResolvedValue({
+    settings: {
+      defaultModel: "",
+    },
+  }),
   fetchImageModels: vi.fn().mockResolvedValue({
     models: [{ id: "local:placeholder-image", displayName: "Local Placeholder Image" }],
   }),

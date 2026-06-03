@@ -24,12 +24,14 @@ const {
   updateSessionTitleMock,
   fetchImageModelsMock,
   fetchModelsMock,
+  fetchWorkspaceSettingsMock,
 } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
   deleteSessionMock: vi.fn(),
   fetchMessagesMock: vi.fn(),
   fetchImageModelsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
+  fetchWorkspaceSettingsMock: vi.fn(),
   fetchSessionsMock: vi.fn(),
   saveMessageMock: vi.fn(),
   updateSessionTitleMock: vi.fn(),
@@ -40,6 +42,7 @@ vi.mock("../src/lib/server-api", () => ({
   deleteSession: deleteSessionMock,
   fetchImageModels: fetchImageModelsMock,
   fetchModels: fetchModelsMock,
+  fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
   fetchMessages: fetchMessagesMock,
   fetchSessions: fetchSessionsMock,
   saveMessage: saveMessageMock,
@@ -109,6 +112,12 @@ describe("ChatSidebar", () => {
     fetchModelsMock.mockReset();
     fetchModelsMock.mockResolvedValue({
       models: [{ id: "local:assistant", name: "Local Assistant", provider: "local" }],
+    });
+    fetchWorkspaceSettingsMock.mockReset();
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+      },
     });
     fetchMessagesMock.mockReset();
     fetchMessagesMock.mockResolvedValue({ messages: [] });

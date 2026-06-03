@@ -119,8 +119,14 @@ describe("SettingsPage", () => {
     const defaultModelInput = await screen.findByLabelText("Default LLM Model");
     expect(defaultModelInput).toHaveValue("openai:gpt-4.1");
     expect(screen.getByLabelText("OpenAI API Key")).toHaveValue("sk-local-openai");
+    const agnesButton = screen.getByRole("button", { name: "Agnes" });
+    const openAIButton = screen.getByRole("button", { name: "OpenAI-compatible" });
+    expect(
+      agnesButton.compareDocumentPosition(openAIButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
 
-    await userEvent.click(screen.getByRole("button", { name: /Agnes/i }));
+    await userEvent.click(agnesButton);
     expect(await screen.findByLabelText("Agnes API Key")).toHaveValue(
       "sk-local-agnes",
     );
@@ -130,6 +136,13 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("Agnes Default Model")).toHaveValue(
       "agnes:agnes-2.0-flash",
     );
+    expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("link", { name: "Get Agnes API Key" }),
+    ).toHaveAttribute("href", "https://platform.agnes-ai.com/settings/apiKeys");
+    expect(
+      screen.getByRole("link", { name: "Quick Start Docs" }),
+    ).toHaveAttribute("href", "https://agnes-ai.com/doc/quick-start");
 
     await userEvent.click(screen.getByRole("button", { name: /Anthropic/i }));
     expect(await screen.findByLabelText("Anthropic API Key")).toHaveValue(
@@ -269,6 +282,13 @@ describe("SettingsPage", () => {
     expect(
       screen.getByRole("heading", { name: "Agnes" }),
     ).toBeInTheDocument();
+    expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole("link", { name: "Get Agnes API Key" })[0],
+    ).toHaveAttribute("href", "https://platform.agnes-ai.com/settings/apiKeys");
+    expect(
+      screen.getAllByRole("link", { name: "Quick Start Docs" })[0],
+    ).toHaveAttribute("href", "https://agnes-ai.com/doc/quick-start");
     expect(screen.getByText("Seedance 1.5 Pro")).toBeInTheDocument();
     expect(screen.getByText("Agnes Video v2.0")).toBeInTheDocument();
     expect(screen.getByDisplayValue("replicate-local-token")).toBeInTheDocument();

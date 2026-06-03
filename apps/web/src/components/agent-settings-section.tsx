@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ModelInfo, WorkspaceSettings } from "@aimc/shared";
 
 import { fetchModels } from "@/lib/server-api";
+import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -22,14 +23,14 @@ const AGENT_PROTOCOLS: Array<{
   description: string;
 }> = [
   {
-    id: "openai",
-    label: "OpenAI-compatible",
-    description: "OpenAI and OpenAI-compatible gateways",
-  },
-  {
     id: "agnes",
     label: "Agnes",
     description: "Agnes OpenAI-compatible chat route",
+  },
+  {
+    id: "openai",
+    label: "OpenAI-compatible",
+    description: "OpenAI and OpenAI-compatible gateways",
   },
   {
     id: "google",
@@ -212,39 +213,42 @@ export function AgentSettingsSection({
           </div>
 
           {activeProtocol === "agnes" ? (
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label htmlFor="agnesApiKey">Agnes API Key</Label>
-                <Input
-                  id="agnesApiKey"
-                  value={settings.agnesApiKey}
-                  onChange={(event) =>
-                    updateField("agnesApiKey", event.target.value)
-                  }
-                  placeholder="sk-..."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="agnesBaseUrl">Agnes Base URL</Label>
-                <Input
-                  id="agnesBaseUrl"
-                  value={settings.agnesBaseUrl}
-                  onChange={(event) =>
-                    updateField("agnesBaseUrl", event.target.value)
-                  }
-                  placeholder="https://apihub.agnes-ai.com/v1"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="agnesDefaultModel">Agnes Default Model</Label>
-                <Input
-                  id="agnesDefaultModel"
-                  value={settings.agnesDefaultModel}
-                  onChange={(event) =>
-                    updateField("agnesDefaultModel", event.target.value)
-                  }
-                  placeholder="agnes:agnes-2.0-flash"
-                />
+            <div className="space-y-4">
+              <AgnesQuickstartHint />
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="agnesApiKey">Agnes API Key</Label>
+                  <Input
+                    id="agnesApiKey"
+                    value={settings.agnesApiKey}
+                    onChange={(event) =>
+                      updateField("agnesApiKey", event.target.value)
+                    }
+                    placeholder="sk-..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="agnesBaseUrl">Agnes Base URL</Label>
+                  <Input
+                    id="agnesBaseUrl"
+                    value={settings.agnesBaseUrl}
+                    onChange={(event) =>
+                      updateField("agnesBaseUrl", event.target.value)
+                    }
+                    placeholder="https://apihub.agnes-ai.com/v1"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="agnesDefaultModel">Agnes Default Model</Label>
+                  <Input
+                    id="agnesDefaultModel"
+                    value={settings.agnesDefaultModel}
+                    onChange={(event) =>
+                      updateField("agnesDefaultModel", event.target.value)
+                    }
+                    placeholder="agnes:agnes-2.0-flash"
+                  />
+                </div>
               </div>
             </div>
           ) : null}
