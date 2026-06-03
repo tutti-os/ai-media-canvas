@@ -108,6 +108,78 @@ describe("createLocalStore", () => {
     expect(row?.completed_at).toEqual(expect.any(String));
   });
 
+  it("updates assistant anchors and persists agent run events", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const project = store.createProject({ name: "Agent Transcript" });
+    const session = store.createSession(project.primaryCanvas.id, "Transcript session");
+    expect(session).not.toBeNull();
+
+    const assistantMessage = store.createMessage(session!.id, {
+      role: "assistant",
+      content: "",
+      contentBlocks: [],
+    });
+    expect(assistantMessage).not.toBeNull();
+
+    store.createAgentRun({
+      assistantMessageId: assistantMessage!.id,
+      canvasId: project.primaryCanvas.id,
+      model: "codex:gpt-5.4",
+      runId: "run-anchor",
+      sessionId: session!.id,
+    });
+    store.appendAgentRunEvent({
+      runId: "run-anchor",
+      event: {
+        type: "run.started",
+        runId: "run-anchor",
+        sessionId: session!.id,
+        conversationId: project.primaryCanvas.id,
+        timestamp: "2026-06-04T00:00:00.000Z",
+      },
+    });
+    store.appendAgentRunEvent({
+      runId: "run-anchor",
+      event: {
+        type: "message.delta",
+        runId: "run-anchor",
+        messageId: assistantMessage!.id,
+        delta: "hello",
+        timestamp: "2026-06-04T00:00:01.000Z",
+      },
+    });
+    store.updateMessage(assistantMessage!.id, {
+      role: "assistant",
+      content: "hello",
+      contentBlocks: [{ type: "text", text: "hello" }],
+    });
+
+    const updatedMessage = store
+      .listMessages(session!.id)
+      ?.find((message) => message.id === assistantMessage!.id);
+    const persistedEvents = store.listAgentRunEvents("run-anchor");
+    const persistedRun = store.getAgentRun("run-anchor");
+
+    expect(updatedMessage).toMatchObject({
+      id: assistantMessage!.id,
+      content: "hello",
+      contentBlocks: [{ type: "text", text: "hello" }],
+    });
+    expect(persistedEvents.map((entry) => entry.seq)).toEqual([1, 2]);
+    expect(persistedRun).toMatchObject({
+      id: "run-anchor",
+      assistant_message_id: assistantMessage!.id,
+      status: "accepted",
+    });
+  });
+
   it("hides archived project canvases and sessions from active access", () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
     tempDirs.push(dataRoot);

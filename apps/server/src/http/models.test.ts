@@ -11,11 +11,13 @@ describe("registerModelRoutes", () => {
   beforeEach(() => {
     fetchMock.mockReset();
     vi.stubGlobal("fetch", fetchMock);
+    process.env.AIMC_CODEX_CLI_AVAILABLE = "0";
   });
 
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
     vi.unstubAllGlobals();
+    delete process.env.AIMC_CODEX_CLI_AVAILABLE;
   });
 
   it("includes Agnes models only when Agnes credentials are configured", async () => {
@@ -206,5 +208,39 @@ describe("registerModelRoutes", () => {
         provider: "openai",
       },
     ]);
+  });
+
+  it("includes Codex models when the local Codex CLI is available", async () => {
+    process.env.AIMC_CODEX_CLI_AVAILABLE = "1";
+
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv({
+        agentModel: "openai:gpt-4.1",
+      }, {}),
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/models",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().models).toEqual(
+      expect.arrayContaining([
+        {
+          id: "codex:gpt-5.4",
+          name: "Codex GPT-5.4",
+          provider: "codex",
+        },
+        {
+          id: "codex:gpt-5.4-mini",
+          name: "Codex GPT-5.4 Mini",
+          provider: "codex",
+        },
+      ]),
+    );
   });
 });

@@ -39,9 +39,15 @@ type AdaptDeepAgentStreamOptions = {
  * Sub-agent parent tool names whose inner tools should have their
  * artifacts suppressed (the parent re-emits them with placement).
  */
-const SUB_AGENT_PARENT_TOOLS = new Set(["video_generate"]);
+const SUB_AGENT_PARENT_TOOLS = new Set(["generate_video"]);
 /** Inner tools that may be suppressed when running inside a sub-agent. */
 const INNER_SUB_AGENT_TOOLS = new Set(["generate_video"]);
+
+function normalizeToolName(name: string) {
+  if (name === "image_generate") return "generate_image";
+  if (name === "video_generate") return "generate_video";
+  return name;
+}
 
 export async function* adaptDeepAgentStream(
   options: AdaptDeepAgentStreamOptions,
@@ -189,7 +195,7 @@ export async function* adaptDeepAgentStream(
 
       // Tool execution started
       if (evt.event === "on_tool_start") {
-        const toolName = evt.name ?? "unknown_tool";
+        const toolName = normalizeToolName(evt.name ?? "unknown_tool");
         // Use run_id as the tool call identifier for consistent start/end pairing
         const toolCallId = readString(evt.run_id) ?? `tool_${Date.now()}`;
 
@@ -221,7 +227,7 @@ export async function* adaptDeepAgentStream(
 
       // Tool execution completed
       if (evt.event === "on_tool_end") {
-        const toolName = evt.name ?? "unknown_tool";
+        const toolName = normalizeToolName(evt.name ?? "unknown_tool");
         // Use run_id for consistent pairing with on_tool_start
         const toolCallId = readString(evt.run_id) ?? `tool_${Date.now()}`;
 

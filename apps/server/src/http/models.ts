@@ -1,3 +1,4 @@
+import * as childProcess from "node:child_process";
 import type { FastifyInstance } from "fastify";
 
 import {
@@ -44,6 +45,11 @@ const GOOGLE_MODELS: ModelInfo[] = [
 
 const AGNES_MODELS: ModelInfo[] = [
   { id: "agnes:agnes-2.0-flash", name: "Agnes 2.0 Flash", provider: "agnes" },
+];
+
+const CODEX_MODELS: ModelInfo[] = [
+  { id: "codex:gpt-5.4", name: "Codex GPT-5.4", provider: "codex" },
+  { id: "codex:gpt-5.4-mini", name: "Codex GPT-5.4 Mini", provider: "codex" },
 ];
 
 function buildConfiguredModels(
@@ -175,6 +181,16 @@ async function fetchOpenAICompatibleModels(
   return normalizeOpenAICompatibleModels(await response.json());
 }
 
+function isCliAvailable(command: string) {
+  const override = process.env.AIMC_CODEX_CLI_AVAILABLE;
+  if (override === "1") return true;
+  if (override === "0") return false;
+  const result = childProcess.spawnSync(command, ["--version"], {
+    stdio: "ignore",
+  });
+  return !result.error && result.status === 0;
+}
+
 export async function registerModelRoutes(
   app: FastifyInstance,
   env: ServerEnv,
@@ -257,6 +273,9 @@ export async function registerModelRoutes(
       models.push(
         ...buildConfiguredModels("vertex", workspaceSettings.providerModels.vertex),
       );
+    }
+    if (isCliAvailable("codex")) {
+      models.push(...CODEX_MODELS);
     }
     return reply.code(200).send(modelListResponseSchema.parse({ models }));
   });

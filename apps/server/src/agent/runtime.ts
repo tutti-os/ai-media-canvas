@@ -46,6 +46,8 @@ import {
   buildAgentImageJobPayload,
   buildAgentVideoJobPayload,
 } from "./job-payloads.js";
+import { streamCodexLocalRun } from "./local-runtime/codex-runtime.js";
+import type { createLocalToolGatewayService } from "./local-runtime/tool-gateway.js";
 
 /**
  * Build the text portion of a user message, appending <input_images> XML
@@ -278,6 +280,7 @@ type RuntimeRunStatus =
 
 type RuntimeRunRecord = RunCreateRequest & {
   accessToken?: string;
+  assistantMessageId?: string;
   connectionId?: string;
   consumed: boolean;
   controller: AbortController;
@@ -293,6 +296,7 @@ type CreateAgentRuntimeOptions = {
   agentFactory?: AimcAgentFactory;
   agentRunStore?: {
     createRun(input: {
+      assistantMessageId?: string;
       canvasId?: string;
       model?: string;
       runId: string;
@@ -300,6 +304,7 @@ type CreateAgentRuntimeOptions = {
       threadId?: string;
     }): void;
     updateRun(input: {
+      assistantMessageId?: string;
       errorCode?: string;
       errorMessage?: string;
       runId: string;
@@ -317,6 +322,8 @@ type CreateAgentRuntimeOptions = {
   now?: () => string;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
+  toolGateway?: ReturnType<typeof createLocalToolGatewayService>;
+  toolGatewayBaseUrl?: string;
   viewerService?: ViewerService;
 };
 
@@ -397,6 +404,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       input: RunCreateRequest,
       runOptions?: {
         accessToken?: string;
+        assistantMessageId?: string;
         connectionId?: string;
         env?: ServerEnv;
         model?: string;
@@ -410,6 +418,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       runs.set(runId, {
         ...runInput,
         ...(runOptions?.accessToken ? { accessToken: runOptions.accessToken } : {}),
+        ...(runOptions?.assistantMessageId
+          ? { assistantMessageId: runOptions.assistantMessageId }
+          : {}),
         ...(runOptions?.connectionId ? { connectionId: runOptions.connectionId } : {}),
         consumed: false,
         controller: new AbortController(),
@@ -422,6 +433,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       });
 
       options.agentRunStore?.createRun({
+        ...(runOptions?.assistantMessageId
+          ? { assistantMessageId: runOptions.assistantMessageId }
+          : {}),
         ...(runInput.canvasId ? { canvasId: runInput.canvasId } : {}),
         ...(runOptions?.model ? { model: runOptions.model } : {}),
         runId,
@@ -430,6 +444,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       });
 
       return {
+        ...(runOptions?.assistantMessageId
+          ? { assistantMessageId: runOptions.assistantMessageId }
+          : {}),
         conversationId: input.conversationId,
         runId,
         sessionId: input.sessionId,
@@ -967,6 +984,154 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         }
 
         rlog.lap("brand_kit_resolved");
+
+        if (
+          typeof resolvedModel === "string" &&
+          resolvedModel.startsWith("codex:") &&
+          options.toolGateway &&
+          options.toolGatewayBaseUrl
+        ) {
+          let canvasSummary: string | null = null;
+          if (run.canvasId && run.accessToken && options.createUserClient) {
+            try {
+              const canvasClient = options.createUserClient(run.accessToken) as any;
+              const { data: canvasData } = await canvasClient
+                .from("canvases")
+                .select("content")
+                .eq("id", run.canvasId)
+                .single();
+              if (canvasData?.content?.elements) {
+                canvasSummary = buildCanvasSummaryForContext(
+                  canvasData.content.elements as Array<Record<string, unknown>>,
+                );
+              }
+            } catch {
+              // Non-critical — Codex can still use inspect_canvas explicitly.
+            }
+          }
+
+          let attachmentDataMap: Record<string, string> = {};
+          if (run.attachments?.length) {
+            const downloaded: Array<{
+              assetId: string;
+              base64: string;
+              mimeType: string;
+            }> = [];
+
+            await Promise.all(
+              run.attachments.map(async (attachment) => {
+                try {
+                  const dataUriMatch = attachment.url.match(
+                    /^data:([^;]+);base64,(.+)$/,
+                  );
+                  if (dataUriMatch) {
+                    downloaded.push({
+                      assetId: attachment.assetId,
+                      mimeType: dataUriMatch[1] ?? attachment.mimeType,
+                      base64: dataUriMatch[2] ?? "",
+                    });
+                    return;
+                  }
+
+                  const response = await fetch(attachment.url);
+                  const buffer = Buffer.from(await response.arrayBuffer());
+                  downloaded.push({
+                    assetId: attachment.assetId,
+                    mimeType:
+                      attachment.mimeType ||
+                      response.headers.get("content-type") ||
+                      "image/png",
+                    base64: buffer.toString("base64"),
+                  });
+                } catch {
+                  // Leave unresolved references as-is; the tool can still use raw URLs.
+                }
+              }),
+            );
+
+            attachmentDataMap = buildAttachmentDataMap(downloaded);
+          }
+
+          const { text: enrichedPrompt } = buildUserMessage(
+            run.prompt,
+            run.attachments ?? [],
+            run.imageGenerationPreference,
+            run.mentions,
+            run.videoGenerationPreference,
+            canvasSummary,
+          );
+
+          const gatewaySession = options.toolGateway.createSession({
+            ...(run.accessToken ? { accessToken: run.accessToken } : {}),
+            ...(Object.keys(attachmentDataMap).length > 0
+              ? { attachmentDataMap }
+              : {}),
+            ...(brandKitId ? { brandKitId } : {}),
+            ...(run.canvasId ? { canvasId: run.canvasId } : {}),
+            ...(run.connectionId ? { connectionId: run.connectionId } : {}),
+            runId,
+            runtimeEnv,
+            ...(submitImageJob ? { submitImageJob } : {}),
+            ...(submitVideoJob ? { submitVideoJob } : {}),
+            ...(run.userId ? { userId: run.userId } : {}),
+          });
+
+          rlog.lap("codex_local_runtime_start");
+
+          for await (const event of streamCodexLocalRun({
+            attachmentsSummaryPrompt: enrichedPrompt,
+            conversationId: run.conversationId,
+            gatewayBaseUrl: options.toolGatewayBaseUrl,
+            gatewaySession: {
+              token: gatewaySession.token,
+              revoke: () => options.toolGateway?.revokeSession(gatewaySession.token),
+            },
+            loadSessionMessages: options.loadSessionMessages,
+            model: resolvedModel,
+            now,
+            runId,
+            runtimeEnv,
+            sessionId: run.sessionId,
+            signal: run.controller.signal,
+            workspaceSkills,
+          })) {
+            run.status = mapEventToStatus(event);
+            if (isTerminalEvent(event)) {
+              options.agentRunStore?.updateRun({
+                ...(event.type === "run.failed"
+                  ? {
+                      errorCode: event.error.code,
+                      errorMessage: event.error.message,
+                    }
+                  : {}),
+                runId,
+                status: run.status,
+              });
+            }
+            yield event;
+
+            if (!isTerminalEvent(event) && options.eventDelayMs) {
+              try {
+                await delay(options.eventDelayMs, undefined, {
+                  signal: run.controller.signal,
+                });
+              } catch {
+                run.status = "canceled";
+                options.agentRunStore?.updateRun({
+                  runId,
+                  status: "canceled",
+                });
+                yield {
+                  runId,
+                  timestamp: now(),
+                  type: "run.canceled",
+                };
+                return;
+              }
+            }
+          }
+          return;
+        }
 
         if (workspaceSkills.length > 0) {
           rlog.lap("workspace_skills_loaded_without_store", {

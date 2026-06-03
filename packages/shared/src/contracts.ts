@@ -20,6 +20,7 @@ export const runStatusSchema = z.enum([
   "running",
   "completed",
   "failed",
+  "canceled",
 ]);
 
 export const imageAttachmentSchema = z.object({
@@ -44,9 +45,17 @@ export const brandKitAssetMentionSchema = z.object({
   fileUrl: z.string().url().nullable().optional(),
 });
 
+export const skillMentionSchema = z.object({
+  mentionType: z.literal("skill"),
+  id: z.string().min(1),
+  label: z.string().min(1),
+  slug: z.string().min(1),
+});
+
 export const messageMentionSchema = z.discriminatedUnion("mentionType", [
   imageModelMentionSchema,
   brandKitAssetMentionSchema,
+  skillMentionSchema,
 ]);
 
 export const imageGenerationPreferenceSchema = z.object({
@@ -76,6 +85,7 @@ export const runCreateResponseSchema = z.object({
   sessionId: sessionIdSchema,
   conversationId: conversationIdSchema,
   status: z.literal("accepted"),
+  assistantMessageId: identifierSchema.optional(),
 });
 
 export const viewerProfileSchema = z.object({
@@ -150,12 +160,19 @@ export const modelInfoSchema = z.object({
   provider: z.string().min(1),
 });
 
+export const toolStatusSchema = z.enum([
+  "running",
+  "completed",
+  "failed",
+  "canceled",
+]);
+
 export const chatSessionIdSchema = identifierSchema;
 
 export const chatToolActivitySchema = z.object({
   toolCallId: z.string().min(1),
   toolName: z.string().min(1),
-  status: z.enum(["running", "completed"]),
+  status: toolStatusSchema,
   input: z.record(z.unknown()).optional(),
   output: z.record(z.unknown()).optional(),
   outputSummary: z.string().optional(),
@@ -182,7 +199,7 @@ export const toolBlockSchema = z.object({
   type: z.literal("tool"),
   toolCallId: z.string().min(1),
   toolName: z.string().min(1),
-  status: z.enum(["running", "completed"]),
+  status: toolStatusSchema,
   input: z.record(z.unknown()).optional(),
   output: z.record(z.unknown()).optional(),
   outputSummary: z.string().optional(),
@@ -215,9 +232,18 @@ export const brandKitAssetMentionBlockSchema = z.object({
   fileUrl: z.string().url().nullable().optional(),
 });
 
+export const skillMentionBlockSchema = z.object({
+  type: z.literal("mention"),
+  mentionType: z.literal("skill"),
+  id: z.string().min(1),
+  label: z.string().min(1),
+  slug: z.string().min(1),
+});
+
 export const mentionBlockSchema = z.union([
   imageModelMentionBlockSchema,
   brandKitAssetMentionBlockSchema,
+  skillMentionBlockSchema,
 ]);
 
 export const contentBlockSchema = z.union([

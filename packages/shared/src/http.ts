@@ -83,6 +83,7 @@ export const applicationErrorCodeSchema = z.enum([
   "project_not_found",
   "project_slug_taken",
   "project_update_failed",
+  "run_not_found",
   "session_not_found",
   "upload_failed",
   "asset_in_use",

@@ -4,7 +4,7 @@ import { createVideoGenerateTool } from "./tools/video-generate.js";
 
 export function createVideoSubAgent(): SubAgent {
   return {
-    name: "video_generate",
+    name: "generate_video",
     description:
       "Generate a video based on a creative description. Video generation availability depends on provider configuration.",
     systemPrompt: `You are a video generation specialist. Given a description, generate a video using the generate_video tool and return the result.

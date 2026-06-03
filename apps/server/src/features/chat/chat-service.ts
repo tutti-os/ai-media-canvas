@@ -49,4 +49,9 @@ export type ChatService = {
     sessionId: string,
     input: ChatMessageCreateRequest,
   ): Promise<ChatMessage>;
+  updateMessage(
+    user: AuthenticatedUser,
+    messageId: string,
+    input: ChatMessageCreateRequest,
+  ): Promise<ChatMessage>;
 };

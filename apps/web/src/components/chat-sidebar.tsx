@@ -375,6 +375,16 @@ export function ChatSidebar({
           };
         }
 
+        if (mention.mentionType === "skill") {
+          return {
+            type: "mention" as const,
+            mentionType: "skill" as const,
+            id: mention.id,
+            label: mention.label,
+            slug: mention.slug,
+          };
+        }
+
         return {
           type: "mention" as const,
           mentionType: "brand-kit-asset" as const,
@@ -417,10 +427,10 @@ export function ChatSidebar({
       autoTitleSession(text);
 
       // Create assistant placeholder
-      const assistantId = `assistant-${Date.now()}`;
+      const assistantIdRef = { current: `assistant-${Date.now()}` };
       updateSessionMessages(currentSessionId, (prev) => [
         ...prev,
-        { id: assistantId, role: "assistant" as const, contentBlocks: [] },
+        { id: assistantIdRef.current, role: "assistant" as const, contentBlocks: [] },
       ]);
       setStreaming(true);
       abortRef.current = false;
@@ -457,7 +467,7 @@ export function ChatSidebar({
           }
 
           // Apply event to messages (single source of truth — shared with reconnect)
-          applyStreamEvent(event, assistantId, currentSessionId);
+          applyStreamEvent(event, assistantIdRef.current, currentSessionId);
 
           // Forward event to parent for fallback job polling (timed-out generation recovery)
           onStreamEvent?.(event);
@@ -543,7 +553,23 @@ export function ChatSidebar({
               console.log(
                 `[perf] send → ack: ${(perf.tAck - perf.t0Send).toFixed(0)}ms`,
               );
-              const id = ack.payload.runId as string;
+              const payloadRecord = ack.payload as Record<string, unknown>;
+              const id = payloadRecord.runId as string;
+              const assistantMessageId =
+                typeof payloadRecord.assistantMessageId === "string"
+                  ? payloadRecord.assistantMessageId
+                  : null;
+              if (assistantMessageId && assistantMessageId !== assistantIdRef.current) {
+                const previousAssistantId = assistantIdRef.current;
+                assistantIdRef.current = assistantMessageId;
+                updateSessionMessages(currentSessionId, (prev) =>
+                  prev.map((message) =>
+                    message.id === previousAssistantId
+                      ? { ...message, id: assistantMessageId }
+                      : message,
+                  ),
+                );
+              }
               runIdRef.current = id;
               resolve(id);
             },
@@ -557,7 +583,7 @@ export function ChatSidebar({
       } catch {
         updateSessionMessages(currentSessionId, (prev) =>
           prev.map((m) => {
-            if (m.id !== assistantId) return m;
+            if (m.id !== assistantIdRef.current) return m;
             const hasText = m.contentBlocks.some((b) => b.type === "text");
             if (hasText) return m;
             return {
@@ -750,11 +776,16 @@ export function ChatSidebar({
       ws.resumeCanvas(canvasId, (ack) => {
         const activeRunId = (ack.payload as Record<string, unknown>)
           .activeRunId;
+        const assistantMessageId = (ack.payload as Record<string, unknown>)
+          .assistantMessageId;
         if (activeRunId && typeof activeRunId === "string") {
           sendingRef.current = true;
           setStreaming(true);
 
-          const assistantId = `resumed_${activeRunId}`;
+          const assistantId =
+            typeof assistantMessageId === "string" && assistantMessageId.length > 0
+              ? assistantMessageId
+              : `resumed_${activeRunId}`;
           // Must use updateSessionMessages (not setMessages) so the placeholder
           // lands in msgCacheRef as well as React state. applyStreamEvent reads
           // from the cache — if the placeholder only lives in React state, stream

@@ -16,6 +16,21 @@ type MessageUpdater = (
  * eliminating the ~70 lines of duplicated event-handling code.
  */
 export function useChatStream(updateSessionMessages: MessageUpdater) {
+  const upsertToolBlock = (
+    existingBlocks: Message["contentBlocks"],
+    block: ToolBlock,
+  ): Message["contentBlocks"] => {
+    const existingIndex = existingBlocks.findIndex(
+      (item) => item.type === "tool" && item.toolCallId === block.toolCallId,
+    );
+    if (existingIndex < 0) {
+      return [...existingBlocks, block];
+    }
+    return existingBlocks.map((item, index) =>
+      index === existingIndex ? block : item,
+    );
+  };
+
   /**
    * Apply a single StreamEvent to the assistant message identified by assistantId
    * in the given session. This is the single source of truth for how events
@@ -93,14 +108,6 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
           update((prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
-              // Guard against duplicate tool.started events for the same toolCallId
-              const alreadyExists = m.contentBlocks.some(
-                (b) => b.type === "tool" && b.toolCallId === event.toolCallId,
-              );
-              if (alreadyExists) {
-                console.warn("[chat-stream] duplicate tool.started for:", event.toolCallId);
-                return m;
-              }
               const newBlock: ToolBlock = {
                 type: "tool",
                 toolCallId: event.toolCallId,
@@ -110,7 +117,7 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
               };
               return {
                 ...m,
-                contentBlocks: [...m.contentBlocks, newBlock],
+                contentBlocks: upsertToolBlock(m.contentBlocks, newBlock),
               };
             }),
           );
@@ -120,25 +127,54 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
           update((prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
+              const existingBlock = m.contentBlocks.find(
+                (block) =>
+                  block.type === "tool" && block.toolCallId === event.toolCallId,
+              ) as ToolBlock | undefined;
+              const completedBlock: ToolBlock = {
+                type: "tool",
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                status: "completed",
+                ...(existingBlock?.input ? { input: existingBlock.input } : {}),
+                ...(event.output ? { output: event.output } : {}),
+                ...(event.outputSummary
+                  ? { outputSummary: event.outputSummary }
+                  : {}),
+                ...(event.artifacts ? { artifacts: event.artifacts } : {}),
+              };
               return {
                 ...m,
-                contentBlocks: m.contentBlocks.map((block) => {
-                  if (
-                    block.type === "tool" &&
-                    block.toolCallId === event.toolCallId
-                  ) {
-                    return {
-                      ...block,
-                      status: "completed" as const,
-                      output: event.output,
-                      outputSummary: event.outputSummary,
-                      ...(event.artifacts
-                        ? { artifacts: event.artifacts }
-                        : {}),
-                    };
-                  }
-                  return block;
-                }),
+                contentBlocks: upsertToolBlock(m.contentBlocks, completedBlock),
+              };
+            }),
+          );
+          break;
+
+        case "tool.failed":
+          update((prev) =>
+            prev.map((m) => {
+              if (m.id !== assistantId) return m;
+              const existingBlock = m.contentBlocks.find(
+                (block) =>
+                  block.type === "tool" && block.toolCallId === event.toolCallId,
+              ) as ToolBlock | undefined;
+              const failedBlock: ToolBlock = {
+                type: "tool",
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                status: "failed",
+                ...(existingBlock?.input ? { input: existingBlock.input } : {}),
+                ...(event.output ? { output: event.output } : {}),
+                outputSummary:
+                  event.outputSummary ??
+                  event.error.message ??
+                  existingBlock?.outputSummary,
+                ...(event.artifacts ? { artifacts: event.artifacts } : {}),
+              };
+              return {
+                ...m,
+                contentBlocks: upsertToolBlock(m.contentBlocks, failedBlock),
               };
             }),
           );
@@ -154,10 +190,10 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
           update((prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
-              // Mark all running tool blocks as completed so spinners stop
+              // Mark all running tool blocks as failed so spinners stop while preserving error state
               const blocks = m.contentBlocks.map((block) =>
                 block.type === "tool" && block.status === "running"
-                  ? { ...block, status: "completed" as const, outputSummary: "\u5904\u7406\u5931\u8d25" }
+                  ? { ...block, status: "failed" as const, outputSummary: "\u5904\u7406\u5931\u8d25" }
                   : block,
               );
               const hasText = blocks.some((b) => b.type === "text");
@@ -190,7 +226,7 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
                 ...m,
                 contentBlocks: m.contentBlocks.map((block) =>
                   block.type === "tool" && block.status === "running"
-                    ? { ...block, status: "completed" as const }
+                    ? { ...block, status: "canceled" as const, outputSummary: "\u5df2\u53d6\u6d88" }
                     : block,
                 ),
               };

@@ -32,6 +32,7 @@ import type {
   SkillImportRequest,
   SkillListItem,
   SkillToggleRequest,
+  StreamEvent,
   VideoGenerationPayload,
   ViewerResponse,
   WorkspaceSettings,
@@ -123,6 +124,15 @@ type BackgroundJobRow = {
 };
 
 type AgentRunStatus = "accepted" | "canceled" | "completed" | "failed" | "running";
+
+type AgentRunEventRow = {
+  created_at: string;
+  event_id: string;
+  payload: string;
+  run_id: string;
+  seq: number;
+  type: string;
+};
 
 function nowIso() {
   return new Date().toISOString();
@@ -368,6 +378,7 @@ export function createLocalStore(options: {
       session_id TEXT NOT NULL,
       thread_id TEXT,
       model TEXT,
+      assistant_message_id TEXT,
       status TEXT NOT NULL,
       error_code TEXT,
       error_message TEXT,
@@ -379,9 +390,22 @@ export function createLocalStore(options: {
     );
     CREATE INDEX IF NOT EXISTS idx_agent_runs_session_created
       ON agent_runs(session_id, created_at);
+    CREATE TABLE IF NOT EXISTS agent_run_events (
+      run_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (run_id, event_id),
+      UNIQUE (run_id, seq)
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_run_events_run_seq
+      ON agent_run_events(run_id, seq);
   `);
 
   ensureWorkspaceSettingsSchema();
+  ensureAgentRunSchema();
   seedBaseData();
   seedBundledSkills();
   ensureDefaultProject();
@@ -469,6 +493,17 @@ export function createLocalStore(options: {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_settings_workspace_id
       ON workspace_settings(workspace_id)
     `);
+  }
+
+  function ensureAgentRunSchema() {
+    const columns = db
+      .prepare(`PRAGMA table_info(agent_runs)`)
+      .all() as Array<{ name: string }>;
+    const columnNames = new Set(columns.map((column) => column.name));
+
+    if (!columnNames.has("assistant_message_id")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN assistant_message_id TEXT`);
+    }
   }
 
   function seedBundledSkills() {
@@ -1441,9 +1476,13 @@ export function createLocalStore(options: {
     }));
   }
 
-  function createMessage(sessionId: string, input: ChatMessageCreateRequest): ChatMessage | null {
+  function createMessage(
+    sessionId: string,
+    input: ChatMessageCreateRequest,
+    messageId?: string,
+  ): ChatMessage | null {
     if (!hasSession(sessionId)) return null;
-    const id = randomUUID();
+    const id = messageId ?? randomUUID();
     const timestamp = nowIso();
     db.prepare(
       `
@@ -1470,6 +1509,57 @@ export function createLocalStore(options: {
       toolActivities: input.toolActivities ?? null,
       contentBlocks: input.contentBlocks ?? null,
       createdAt: timestamp,
+    };
+  }
+
+  function updateMessage(
+    messageId: string,
+    input: ChatMessageCreateRequest,
+  ): ChatMessage | null {
+    const row = db
+      .prepare(
+        `
+          SELECT session_id, created_at
+          FROM chat_messages
+          WHERE id = ?
+          LIMIT 1
+        `,
+      )
+      .get(messageId) as
+      | {
+          created_at: string;
+          session_id: string;
+        }
+      | undefined;
+    if (!row) return null;
+
+    const timestamp = nowIso();
+    db.prepare(
+      `
+        UPDATE chat_messages
+        SET role = ?,
+            content = ?,
+            content_blocks = ?
+        WHERE id = ?
+      `,
+    ).run(
+      input.role,
+      input.content,
+      input.contentBlocks ? JSON.stringify(input.contentBlocks) : null,
+      messageId,
+    );
+    db.prepare(`UPDATE chat_sessions SET updated_at = ? WHERE id = ?`).run(
+      timestamp,
+      row.session_id,
+    );
+
+    return {
+      id: messageId,
+      role: input.role,
+      content: input.content,
+      toolActivities: input.toolActivities ?? null,
+      contentBlocks: input.contentBlocks ?? null,
+      createdAt: row.created_at,
     };
   }
 
@@ -2271,6 +2361,7 @@ export function createLocalStore(options: {
   }
 
   function createAgentRun(input: {
+    assistantMessageId?: string;
     canvasId?: string;
     model?: string;
     runId: string;
@@ -2282,8 +2373,8 @@ export function createLocalStore(options: {
       `
         INSERT INTO agent_runs (
           id, workspace_id, canvas_id, session_id, thread_id, model,
-          status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          assistant_message_id, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     ).run(
       input.runId,
@@ -2292,6 +2383,7 @@ export function createLocalStore(options: {
       input.sessionId,
       input.threadId ?? null,
       input.model ?? null,
+      input.assistantMessageId ?? null,
       "accepted",
       timestamp,
       timestamp,
@@ -2299,6 +2391,7 @@ export function createLocalStore(options: {
   }
 
   function updateAgentRun(input: {
+    assistantMessageId?: string;
     errorCode?: string;
     errorMessage?: string;
     runId: string;
@@ -2310,6 +2403,7 @@ export function createLocalStore(options: {
         UPDATE agent_runs
         SET status = ?,
             updated_at = ?,
+            assistant_message_id = COALESCE(?, assistant_message_id),
             started_at = CASE WHEN ? = 'running' AND started_at IS NULL THEN ? ELSE started_at END,
             completed_at = CASE WHEN ? IN ('completed', 'failed') THEN ? ELSE completed_at END,
             canceled_at = CASE WHEN ? = 'canceled' THEN ? ELSE canceled_at END,
@@ -2320,6 +2414,7 @@ export function createLocalStore(options: {
     ).run(
       input.status,
       timestamp,
+      input.assistantMessageId ?? null,
       input.status,
       timestamp,
       input.status,
@@ -2332,6 +2427,83 @@ export function createLocalStore(options: {
       input.errorMessage ?? null,
       input.runId,
     );
+  }
+
+  function getAgentRun(runId: string) {
+    return db
+      .prepare(
+        `
+          SELECT id, session_id, status, assistant_message_id, error_code, error_message
+          FROM agent_runs
+          WHERE id = ?
+          LIMIT 1
+        `,
+      )
+      .get(runId) as
+      | {
+          assistant_message_id: string | null;
+          error_code: string | null;
+          error_message: string | null;
+          id: string;
+          session_id: string;
+          status: AgentRunStatus;
+        }
+      | undefined;
+  }
+
+  function appendAgentRunEvent(input: { event: StreamEvent; runId: string }) {
+    const current = db
+      .prepare(`SELECT COALESCE(MAX(seq), 0) AS max_seq FROM agent_run_events WHERE run_id = ?`)
+      .get(input.runId) as { max_seq: number | null };
+    const nextSeq = (current.max_seq ?? 0) + 1;
+    const timestamp = nowIso();
+    const eventId = `${input.runId}:${nextSeq}`;
+    db.prepare(
+      `
+        INSERT INTO agent_run_events (
+          run_id, event_id, seq, type, payload, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      input.runId,
+      eventId,
+      nextSeq,
+      input.event.type,
+      JSON.stringify(input.event),
+      timestamp,
+    );
+    return {
+      eventId,
+      seq: nextSeq,
+    };
+  }
+
+  function listAgentRunEvents(runId: string, cursor = 0) {
+    const rows = db
+      .prepare(
+        `
+          SELECT run_id, event_id, seq, type, payload, created_at
+          FROM agent_run_events
+          WHERE run_id = ? AND seq > ?
+          ORDER BY seq ASC
+        `,
+      )
+      .all(runId, cursor) as AgentRunEventRow[];
+    return rows.map((row) => ({
+      createdAt: row.created_at,
+      event: parseJson<StreamEvent>(row.payload, {
+        type: "run.failed",
+        runId,
+        error: {
+          code: "run_failed",
+          message: "Unable to decode persisted agent event.",
+        },
+        timestamp: row.created_at,
+      }),
+      eventId: row.event_id,
+      seq: row.seq,
+      type: row.type,
+    }));
   }
 
   function createBackgroundJob(input: {
@@ -2730,6 +2902,7 @@ export function createLocalStore(options: {
     deleteSession,
     listMessages,
     createMessage,
+    updateMessage,
     listBrandKits,
     getBrandKit,
     createBrandKit,
@@ -2751,6 +2924,9 @@ export function createLocalStore(options: {
     listEnabledSkills,
     createAgentRun,
     updateAgentRun,
+    getAgentRun,
+    appendAgentRunEvent,
+    listAgentRunEvents,
     createBackgroundJob,
     getBackgroundJob,
     listBackgroundJobs,

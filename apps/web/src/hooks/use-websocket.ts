@@ -51,6 +51,8 @@ export function useWebSocket(): WebSocketHandle {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const shouldReconnectRef = useRef(true);
+  const activeCanvasIdRef = useRef<string | null>(null);
+  const lastSeqByCanvasRef = useRef<Map<string, number>>(new Map());
   const eventListeners = useRef<Set<EventCallback>>(new Set());
   const rpcHandlers = useRef<Map<string, RPCHandler>>(new Map());
   const ackListeners = useRef<Map<string, Array<(ack: WsCommandAck) => void>>>(
@@ -168,11 +170,29 @@ export function useWebSocket(): WebSocketHandle {
         }
 
         if (serverMessage.data.type === "event") {
+          const activeCanvasId = activeCanvasIdRef.current;
+          if (activeCanvasId) {
+            const currentSeq = lastSeqByCanvasRef.current.get(activeCanvasId) ?? 0;
+            lastSeqByCanvasRef.current.set(activeCanvasId, currentSeq + 1);
+          }
           emitEvent(serverMessage.data.event);
           return;
         }
 
         if (serverMessage.data.type === "command.ack") {
+          if (serverMessage.data.action === "canvas.resume") {
+            const payload = serverMessage.data.payload as Record<string, unknown>;
+            const canvasId =
+              typeof payload.canvasId === "string" ? payload.canvasId : null;
+            const latestSeq =
+              typeof payload.latestSeq === "number" ? payload.latestSeq : null;
+            if (canvasId) {
+              activeCanvasIdRef.current = canvasId;
+              if (latestSeq !== null) {
+                lastSeqByCanvasRef.current.set(canvasId, latestSeq);
+              }
+            }
+          }
           resolveAck(serverMessage.data);
         }
       });
@@ -252,6 +272,7 @@ export function useWebSocket(): WebSocketHandle {
 
   const startRun = useCallback(
     (payload: RunCreateRequest, onAck?: (ack: WsCommandAck) => void) => {
+      activeCanvasIdRef.current = payload.canvasId ?? payload.conversationId;
       const removeAck = enqueueAck("agent.run", onAck);
       const sent = sendJson({
         type: "command",
@@ -290,13 +311,14 @@ export function useWebSocket(): WebSocketHandle {
 
   const resumeCanvas = useCallback(
     (canvasId: string, onAck?: (ack: WsCommandAck) => void) => {
+      activeCanvasIdRef.current = canvasId;
       const removeAck = enqueueAck("canvas.resume", onAck);
       const sent = sendJson({
         type: "command",
         action: "canvas.resume",
         payload: {
           canvasId,
-          lastSeq: 0,
+          lastSeq: lastSeqByCanvasRef.current.get(canvasId) ?? 0,
         },
       });
       if (!sent) {

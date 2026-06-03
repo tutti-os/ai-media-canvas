@@ -4,6 +4,7 @@ import type { WebSocket } from "ws";
 
 import {
   type RunCreateRequest,
+  type StreamEvent,
   wsCommandSchema,
   wsRpcResponseSchema,
 } from "@aimc/shared";
@@ -24,6 +25,9 @@ import type { ServerEnv } from "../config/env.js";
 
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
+  agentRunPersistence?: {
+    appendEvent: (input: { event: StreamEvent; runId: string }) => void;
+  };
   auth?: RequestAuthenticator;
   chatService?: ChatService;
   connectionManager: ConnectionManager;
@@ -191,6 +195,7 @@ async function authenticateAndBind(
             canvasId: p.canvasId,
             latestSeq: options.eventBuffer?.getLatestSeq(p.canvasId) ?? 0,
             activeRunId: activeRun?.runId ?? null,
+            assistantMessageId: activeRun?.assistantMessageId ?? null,
             replayed: missed.length,
           },
         });
@@ -270,14 +275,36 @@ async function handleRunCommand(
   const resolvedModel = payload.model ?? model;
   log.lap("resolve", { threadId: !!threadId, model: resolvedModel });
 
+  let assistantMessageId: string | undefined;
+  if (services.chatService) {
+    try {
+      const assistantMessage = await services.chatService.createMessage(
+        authenticatedUser,
+        payload.sessionId,
+        {
+          role: "assistant",
+          content: "",
+          contentBlocks: [],
+        },
+      );
+      assistantMessageId = assistantMessage.id;
+    } catch (error) {
+      log.warn("assistant_anchor_create_failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   const response = agentRuns.createRun(payload, {
     accessToken: authenticatedUser.accessToken,
+    ...(assistantMessageId ? { assistantMessageId } : {}),
     connectionId,
     ...(effectiveEnv ? { env: effectiveEnv } : {}),
     userId: authenticatedUser.id,
     ...(resolvedModel ? { model: resolvedModel } : {}),
     ...(threadId ? { threadId } : {}),
   });
+  assistantMessageId = response.assistantMessageId;
   const runId = response.runId;
   log.lap("run_created", { runId });
 
@@ -291,7 +318,10 @@ async function handleRunCommand(
   const ackMessage = {
     type: "command.ack",
     action: "agent.run",
-    payload: response,
+    payload: {
+      ...response,
+      ...(assistantMessageId ? { assistantMessageId } : {}),
+    },
   };
   let ackSent = connectionManager.sendTo(connectionId, ackMessage);
   if (!ackSent) {
@@ -304,7 +334,7 @@ async function handleRunCommand(
   log.lap("ack_sent", { runId, connectionId, delivered: ackSent });
 
   // Track active run so reconnecting clients can detect it
-  connectionManager.setActiveRun(canvasId, runId);
+  connectionManager.setActiveRun(canvasId, runId, assistantMessageId);
 
   const keepAlive = setInterval(() => {
     connectionManager.sendTo(connectionId, { type: "keep-alive" });
@@ -324,6 +354,10 @@ async function handleRunCommand(
 
       // Buffer for replay on reconnect
       services.eventBuffer?.push(canvasId, event);
+      services.agentRunPersistence?.appendEvent({
+        event,
+        runId,
+      });
 
       // Broadcast to all viewers
       connectionManager.pushToCanvas(canvasId, event);
@@ -349,39 +383,76 @@ async function handleRunCommand(
         const idx = assistantBlocks.findIndex(
           (b) => b.type === "tool" && (b as ToolBlock).toolCallId === event.toolCallId,
         );
+        const nextBlock: ToolBlock = {
+          ...(idx >= 0
+            ? (assistantBlocks[idx] as ToolBlock)
+            : {
+                type: "tool" as const,
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                status: "running" as const,
+              }),
+          status: "completed" as const,
+          ...(event.output ? { output: event.output } : {}),
+          ...(event.outputSummary ? { outputSummary: event.outputSummary } : {}),
+          ...(event.artifacts ? { artifacts: event.artifacts } : {}),
+        };
         if (idx >= 0) {
-          assistantBlocks[idx] = {
-            ...(assistantBlocks[idx] as ToolBlock),
-            status: "completed" as const,
-            ...(event.output ? { output: event.output } : {}),
-            ...(event.outputSummary ? { outputSummary: event.outputSummary } : {}),
-            ...(event.artifacts ? { artifacts: event.artifacts } : {}),
-          };
+          assistantBlocks[idx] = nextBlock;
+        } else {
+          assistantBlocks.push(nextBlock);
+        }
+      } else if (event.type === "tool.failed") {
+        const idx = assistantBlocks.findIndex(
+          (b) => b.type === "tool" && (b as ToolBlock).toolCallId === event.toolCallId,
+        );
+        const nextBlock: ToolBlock = {
+          ...(idx >= 0
+            ? (assistantBlocks[idx] as ToolBlock)
+            : {
+                type: "tool" as const,
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                status: "running" as const,
+              }),
+          status: "failed" as const,
+          ...(event.output ? { output: event.output } : {}),
+          ...(event.outputSummary
+            ? { outputSummary: event.outputSummary }
+            : { outputSummary: event.error.message }),
+          ...(event.artifacts ? { artifacts: event.artifacts } : {}),
+        };
+        if (idx >= 0) {
+          assistantBlocks[idx] = nextBlock;
+        } else {
+          assistantBlocks.push(nextBlock);
+        }
+      } else if (event.type === "run.failed" && assistantText.length === 0) {
+        const message = `抱歉，处理过程中遇到问题：${event.error.message}`;
+        assistantBlocks.push({ type: "text", text: message });
+        assistantText.push(message);
+      }
+
+      if (services.chatService && assistantMessageId) {
+        try {
+          await services.chatService.updateMessage(
+            authenticatedUser,
+            assistantMessageId,
+            {
+              role: "assistant",
+              content: assistantText.join(""),
+              contentBlocks: assistantBlocks,
+            },
+          );
+        } catch (error) {
+          log.warn("assistant_message_update_failed", {
+            error: error instanceof Error ? error.message : String(error),
+            runId,
+          });
         }
       }
     }
     log.lap("stream_done", { runId });
-
-    // ── Server-side assistant message persistence ──
-    if (services.chatService && (assistantText.length > 0 || assistantBlocks.length > 0)) {
-      try {
-        await services.chatService.createMessage(
-          authenticatedUser,
-          payload.sessionId,
-          {
-            role: "assistant",
-            content: assistantText.join(""),
-            contentBlocks: assistantBlocks,
-          },
-        );
-        log.lap("assistant_message_persisted", { runId });
-      } catch (err) {
-        log.warn("assistant_message_persist_failed", {
-          runId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
   } catch (error) {
     log.error("stream_error", { runId, error: error instanceof Error ? error.message : "unknown" });
     const failedEvent = {
@@ -394,6 +465,10 @@ async function handleRunCommand(
       timestamp: new Date().toISOString(),
     };
     services.eventBuffer?.push(canvasId, failedEvent);
+    services.agentRunPersistence?.appendEvent({
+      event: failedEvent,
+      runId,
+    });
     connectionManager.pushToCanvas(canvasId, failedEvent);
   } finally {
     clearInterval(keepAlive);

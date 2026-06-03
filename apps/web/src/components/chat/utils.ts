@@ -36,10 +36,17 @@ const TOOL_CONFIG: Record<string, ToolDisplayConfig> = {
   task: { label: "\u6267\u884c\u4efb\u52a1", icon: "tool", showCard: false },
 };
 
+export function normalizeToolName(toolName: string): string {
+  if (toolName === "image_generate") return "generate_image";
+  if (toolName === "video_generate") return "generate_video";
+  return toolName;
+}
+
 export function getToolConfig(toolName: string): ToolDisplayConfig {
+  const canonicalName = normalizeToolName(toolName);
   return (
-    TOOL_CONFIG[toolName] ?? {
-      label: formatToolName(toolName),
+    TOOL_CONFIG[canonicalName] ?? {
+      label: formatToolName(canonicalName),
       icon: "tool",
       showCard: true,
     }
