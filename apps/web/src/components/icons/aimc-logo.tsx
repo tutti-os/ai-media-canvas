@@ -1,70 +1,49 @@
 import type { SVGProps } from "react";
 
 /**
- * AI Media Canvas brand logo — 6-petal blob with star (left) and smile (right).
+ * AI Media Canvas brand logo — six-corner cloud with sparkle and sweep cutout.
  *
- * Uses `currentColor` for the blob fill so the icon automatically adapts to
- * light / dark themes.  Inner elements are always the opposite colour.
- *
- * @example
- * <AimcLogo className="size-7 text-foreground" />
+ * Traced from the selected concept so the mark stays crisp at small sizes and
+ * can be reused for loading states without raster blur.
  */
+const AIMC_LOGO_PATH =
+  "M 175.0,27.5 L 202.0,28.5 L 223.0,36.5 L 242.5,52.0 L 260.0,80.5 L 282.0,79.5 L 300.0,84.5 L 317.0,94.5 L 332.5,112.0 L 339.5,127.0 L 342.5,150.0 L 338.5,171.0 L 326.5,193.0 L 339.5,216.0 L 342.5,230.0 L 342.5,246.0 L 337.5,265.0 L 326.5,283.0 L 316.0,293.5 L 299.0,303.5 L 278.0,308.5 L 259.0,307.5 L 248.5,326.0 L 234.0,341.5 L 214.0,353.5 L 200.0,357.5 L 178.0,358.5 L 157.0,353.5 L 142.0,345.5 L 126.5,331.0 L 116.5,314.0 L 135.0,307.5 L 155.0,296.5 L 179.0,278.5 L 196.5,261.0 L 224.5,223.0 L 242.0,184.5 L 219.5,214.0 L 191.0,241.5 L 169.0,257.5 L 138.0,273.5 L 101.0,283.5 L 68.0,283.5 L 44.0,275.5 L 33.5,264.0 L 28.5,248.0 L 28.5,228.0 L 32.5,213.0 L 44.5,193.0 L 32.5,173.0 L 27.5,149.0 L 29.5,132.0 L 37.5,113.0 L 50.0,97.5 L 67.0,85.5 L 91.0,78.5 L 112.0,80.5 L 123.5,59.0 L 137.0,44.5 L 159.0,31.5 L 174.5,28.0 Z M 265.0,112.5 L 259.5,126.0 L 251.0,136.5 L 241.0,142.5 L 231.5,145.0 L 250.0,153.5 L 257.5,161.0 L 265.0,177.5 L 273.5,159.0 L 285.0,149.5 L 296.5,145.0 L 284.0,140.5 L 272.5,130.0 L 265.5,113.0 Z";
+
 export function AimcLogo(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
-      viewBox="0 0 100 100"
+      viewBox="0 0 371 387"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
       {...props}
     >
-      {/* 6-petal blob outline */}
       <path
-        d="M50 4 C56 4, 64 8, 68 16 C74 10, 84 10, 90 18 C96 26, 96 36, 90 42 C98 48, 100 58, 96 66 C92 74, 84 78, 76 76 C72 84, 62 92, 50 92 C38 92, 28 84, 24 76 C16 78, 8 74, 4 66 C0 58, 2 48, 10 42 C4 36, 4 26, 10 18 C16 10, 26 10, 32 16 C36 8, 44 4, 50 4 Z"
+        d={AIMC_LOGO_PATH}
         fill="currentColor"
-      />
-      {/* Left: four-pointed star */}
-      <path
-        d="M31 46 L35.5 34 L40 46 L51 50.5 L40 55 L35.5 67 L31 55 L20 50.5 Z"
-        className="fill-white dark:fill-black"
-      />
-      {/* Right: smile curve */}
-      <path
-        d="M56 42 Q65 54, 74 42"
-        className="stroke-white dark:stroke-black"
-        strokeWidth="3"
-        fill="none"
-        strokeLinecap="round"
+        fillRule="evenodd"
+        clipRule="evenodd"
       />
     </svg>
   );
 }
 
-/**
- * Inverted variant for dark backgrounds — white blob, dark inner elements.
- * Use this when you need explicit colour control (e.g. OG images, export cards).
- */
 export function AimcLogoInverted(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
-      viewBox="0 0 100 100"
+      viewBox="0 0 371 387"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
       {...props}
     >
       <path
-        d="M50 4 C56 4, 64 8, 68 16 C74 10, 84 10, 90 18 C96 26, 96 36, 90 42 C98 48, 100 58, 96 66 C92 74, 84 78, 76 76 C72 84, 62 92, 50 92 C38 92, 28 84, 24 76 C16 78, 8 74, 4 66 C0 58, 2 48, 10 42 C4 36, 4 26, 10 18 C16 10, 26 10, 32 16 C36 8, 44 4, 50 4 Z"
+        d={AIMC_LOGO_PATH}
         fill="white"
-      />
-      <path
-        d="M31 46 L35.5 34 L40 46 L51 50.5 L40 55 L35.5 67 L31 55 L20 50.5 Z"
-        fill="#111"
-      />
-      <path
-        d="M56 42 Q65 54, 74 42"
-        stroke="#111"
-        strokeWidth="3"
-        fill="none"
-        strokeLinecap="round"
+        fillRule="evenodd"
+        clipRule="evenodd"
       />
     </svg>
   );

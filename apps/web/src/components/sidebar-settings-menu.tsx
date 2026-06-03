@@ -65,7 +65,7 @@ export function SidebarSettingsMenu() {
           </Avatar>
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent side="top" align="center" sideOffset={10} className="w-64">
+        <DropdownMenuContent side="right" align="end" sideOffset={12} className="w-64">
           <div className="px-3 py-2">
             <div className="text-sm font-medium text-foreground">
               {displayName ?? "Local user"}
