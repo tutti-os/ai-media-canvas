@@ -546,6 +546,9 @@ export function ChatSidebar({
               ...(agentModelRef.current
                 ? { model: agentModelRef.current }
                 : {}),
+              ...(agentModelRef.current?.startsWith("codex:")
+                ? { runtimeKind: "local-codex" as const }
+                : { runtimeKind: "server-deepagent" as const }),
             },
             (ack) => {
               clearTimeout(timeout);

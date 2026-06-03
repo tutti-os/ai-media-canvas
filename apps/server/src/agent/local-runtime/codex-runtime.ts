@@ -47,7 +47,8 @@ type CodexItem = {
   type?: string;
 };
 
-const INTERNAL_SKILL_READ_RE = /\/skills\/.+\/SKILL\.md/;
+const INTERNAL_SKILL_READ_RE =
+  /\/skills\/.+\/SKILL\.md|(?:^|[\s'"])(?:\.\/)?workspace-skills\/[^\s'"]+/;
 
 function normalizeToolName(name: string) {
   if (name === "image_generate") return "generate_image";

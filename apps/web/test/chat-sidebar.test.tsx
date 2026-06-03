@@ -72,7 +72,10 @@ function createMockWs(): WebSocketHandle {
       onAck?.({
         type: "command.ack",
         action: "agent.run",
-        payload: { runId: "run_123" },
+        payload: {
+          runId: "run_123",
+          assistantMessageId: "assistant-server-id",
+        },
       });
     }),
     cancelRun: vi.fn(),
@@ -184,6 +187,7 @@ describe("ChatSidebar", () => {
           conversationId: "canvas-1",
           prompt: "hello loom",
           canvasId: "canvas-1",
+          runtimeKind: "server-deepagent",
         }),
         expect.any(Function),
       ),

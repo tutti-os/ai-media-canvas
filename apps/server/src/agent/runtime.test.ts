@@ -4,8 +4,22 @@ const { createAgentBackendMock } = vi.hoisted(() => ({
   createAgentBackendMock: vi.fn(() => ({ factory: { kind: "backend" } })),
 }));
 
+const { streamCodexLocalRunMock } = vi.hoisted(() => ({
+  streamCodexLocalRunMock: vi.fn(async function* () {
+    yield {
+      type: "run.completed" as const,
+      runId: "run-local",
+      timestamp: "2026-06-04T00:00:00.000Z",
+    };
+  }),
+}));
+
 vi.mock("./backends/index.js", () => ({
   createAgentBackend: createAgentBackendMock,
+}));
+
+vi.mock("./local-runtime/codex-runtime.js", () => ({
+  streamCodexLocalRun: streamCodexLocalRunMock,
 }));
 
 import { createAgentRunService } from "./runtime.js";
@@ -141,5 +155,59 @@ describe("createAgentRunService", () => {
         user_id: "user-1",
       },
     });
+  });
+
+  it("prefers an explicit server runtime kind over codex model prefix inference", async () => {
+    streamCodexLocalRunMock.mockClear();
+
+    const agentFactory = vi.fn(() => ({
+      stream: vi.fn(),
+      streamEvents: vi.fn(() =>
+        (async function* () {
+          yield {
+            type: "run.completed" as const,
+            runId: "run-server",
+            timestamp: "2026-06-04T00:00:00.000Z",
+          };
+        })(),
+      ),
+    }));
+
+    const runs = createAgentRunService({
+      agentFactory,
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "继续",
+        sessionId: "session-1",
+      },
+      {
+        model: "codex:gpt-5.4",
+        runtimeKind: "server-deepagent",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the agent invocation.
+    }
+
+    expect(agentFactory).toHaveBeenCalled();
+    expect(streamCodexLocalRunMock).not.toHaveBeenCalled();
   });
 });

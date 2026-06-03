@@ -10,6 +10,7 @@ import type {
   ImageAttachment,
   ImageGenerationPreference,
   MessageMention,
+  RuntimeKind,
   RunCancelResponse,
   RunCreateRequest,
   RunCreateResponse,
@@ -299,6 +300,7 @@ type CreateAgentRuntimeOptions = {
       assistantMessageId?: string;
       canvasId?: string;
       model?: string;
+      runtimeKind?: RuntimeKind;
       runId: string;
       sessionId: string;
       threadId?: string;
@@ -408,6 +410,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         connectionId?: string;
         env?: ServerEnv;
         model?: string;
+        runtimeKind?: RuntimeKind;
         threadId?: string;
         userId?: string;
       },
@@ -426,6 +429,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         controller: new AbortController(),
         ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
         ...(runOptions?.model ? { modelOverride: runOptions.model } : {}),
+        ...(runOptions?.runtimeKind ? { runtimeKind: runOptions.runtimeKind } : {}),
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
         ...(runOptions?.userId ? { userId: runOptions.userId } : {}),
         runId,
@@ -438,6 +442,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           : {}),
         ...(runInput.canvasId ? { canvasId: runInput.canvasId } : {}),
         ...(runOptions?.model ? { model: runOptions.model } : {}),
+        ...(runOptions?.runtimeKind ? { runtimeKind: runOptions.runtimeKind } : {}),
         runId,
         sessionId: runInput.sessionId,
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
@@ -449,6 +454,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           : {}),
         conversationId: input.conversationId,
         runId,
+        ...(runOptions?.runtimeKind ? { runtimeKind: runOptions.runtimeKind } : {}),
         sessionId: input.sessionId,
         status: "accepted",
       };
@@ -908,6 +914,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ? run.modelOverride
             : createDefaultModelSpecifier({ agentModel: run.modelOverride }))
           : options.model;
+        const resolvedRuntimeKind =
+          run.runtimeKind ??
+          (typeof resolvedModel === "string" && resolvedModel.startsWith("codex:")
+            ? "local-codex"
+            : "server-deepagent");
 
         // Build persistImage closure using the local user data client.
         // Client creation is deferred into the closure so it only runs
@@ -986,8 +997,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         rlog.lap("brand_kit_resolved");
 
         if (
+          resolvedRuntimeKind === "local-codex" &&
           typeof resolvedModel === "string" &&
-          resolvedModel.startsWith("codex:") &&
           options.toolGateway &&
           options.toolGatewayBaseUrl
         ) {

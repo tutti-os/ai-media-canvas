@@ -68,6 +68,11 @@ export const videoGenerationPreferenceSchema = z.object({
   models: z.array(z.string().min(1)),
 });
 
+export const runtimeKindSchema = z.enum([
+  "server-deepagent",
+  "local-codex",
+]);
+
 export const runCreateRequestSchema = z.object({
   sessionId: sessionIdSchema,
   conversationId: conversationIdSchema,
@@ -78,6 +83,7 @@ export const runCreateRequestSchema = z.object({
   videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
   mentions: z.array(messageMentionSchema).optional(),
   model: z.string().optional(),
+  runtimeKind: runtimeKindSchema.optional(),
 });
 
 export const runCreateResponseSchema = z.object({
@@ -86,6 +92,7 @@ export const runCreateResponseSchema = z.object({
   conversationId: conversationIdSchema,
   status: z.literal("accepted"),
   assistantMessageId: identifierSchema.optional(),
+  runtimeKind: runtimeKindSchema.optional(),
 });
 
 export const viewerProfileSchema = z.object({
@@ -299,6 +306,7 @@ export type VideoGenerationPreference = z.infer<
   typeof videoGenerationPreferenceSchema
 >;
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
+export type RuntimeKind = z.infer<typeof runtimeKindSchema>;
 export type ChatSessionSummary = z.infer<typeof chatSessionSummarySchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type ChatMessageCreateRequest = z.infer<typeof chatMessageCreateRequestSchema>;

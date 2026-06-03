@@ -183,7 +183,9 @@ async function authenticateAndBind(
         // Re-bind this connection to the canvas
         connectionManager.bindCanvas(connectionId, p.canvasId);
 
-        const missed = options.eventBuffer?.getAfter(p.canvasId, p.lastSeq) ?? [];
+        const missed = p.skipReplay
+          ? []
+          : (options.eventBuffer?.getAfter(p.canvasId, p.lastSeq) ?? []);
         const activeRun = connectionManager.getActiveRun(p.canvasId);
 
         // IMPORTANT: Send ACK FIRST so client registers event listener
@@ -196,6 +198,7 @@ async function authenticateAndBind(
             latestSeq: options.eventBuffer?.getLatestSeq(p.canvasId) ?? 0,
             activeRunId: activeRun?.runId ?? null,
             assistantMessageId: activeRun?.assistantMessageId ?? null,
+            skipReplay: p.skipReplay ?? false,
             replayed: missed.length,
           },
         });
@@ -302,6 +305,7 @@ async function handleRunCommand(
     ...(effectiveEnv ? { env: effectiveEnv } : {}),
     userId: authenticatedUser.id,
     ...(resolvedModel ? { model: resolvedModel } : {}),
+    ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
     ...(threadId ? { threadId } : {}),
   });
   assistantMessageId = response.assistantMessageId;

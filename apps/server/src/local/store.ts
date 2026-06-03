@@ -26,6 +26,7 @@ import type {
   ProjectCreateRequest,
   ProjectSummary,
   ProjectUpdateRequest,
+  RuntimeKind,
   SkillCreateRequest,
   SkillDetail,
   SkillFileEntry,
@@ -378,6 +379,7 @@ export function createLocalStore(options: {
       session_id TEXT NOT NULL,
       thread_id TEXT,
       model TEXT,
+      runtime_kind TEXT,
       assistant_message_id TEXT,
       status TEXT NOT NULL,
       error_code TEXT,
@@ -500,6 +502,10 @@ export function createLocalStore(options: {
       .prepare(`PRAGMA table_info(agent_runs)`)
       .all() as Array<{ name: string }>;
     const columnNames = new Set(columns.map((column) => column.name));
+
+    if (!columnNames.has("runtime_kind")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN runtime_kind TEXT`);
+    }
 
     if (!columnNames.has("assistant_message_id")) {
       db.exec(`ALTER TABLE agent_runs ADD COLUMN assistant_message_id TEXT`);
@@ -2364,6 +2370,7 @@ export function createLocalStore(options: {
     assistantMessageId?: string;
     canvasId?: string;
     model?: string;
+    runtimeKind?: RuntimeKind;
     runId: string;
     sessionId: string;
     threadId?: string;
@@ -2373,8 +2380,8 @@ export function createLocalStore(options: {
       `
         INSERT INTO agent_runs (
           id, workspace_id, canvas_id, session_id, thread_id, model,
-          assistant_message_id, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          runtime_kind, assistant_message_id, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     ).run(
       input.runId,
@@ -2383,6 +2390,7 @@ export function createLocalStore(options: {
       input.sessionId,
       input.threadId ?? null,
       input.model ?? null,
+      input.runtimeKind ?? null,
       input.assistantMessageId ?? null,
       "accepted",
       timestamp,
@@ -2433,7 +2441,7 @@ export function createLocalStore(options: {
     return db
       .prepare(
         `
-          SELECT id, session_id, status, assistant_message_id, error_code, error_message
+          SELECT id, session_id, status, runtime_kind, assistant_message_id, error_code, error_message
           FROM agent_runs
           WHERE id = ?
           LIMIT 1
@@ -2445,6 +2453,7 @@ export function createLocalStore(options: {
           error_code: string | null;
           error_message: string | null;
           id: string;
+          runtime_kind: RuntimeKind | null;
           session_id: string;
           status: AgentRunStatus;
         }

@@ -68,6 +68,7 @@ describe("createLocalStore", () => {
     store.createAgentRun({
       canvasId: project.primaryCanvas.id,
       model: "agnes:agnes-2.0-flash",
+      runtimeKind: "server-deepagent",
       runId: "run-1",
       sessionId: session!.id,
       threadId: "thread:run-session",
@@ -80,7 +81,7 @@ describe("createLocalStore", () => {
     const db = new DatabaseSync(join(dataRoot, "ai-media-canvas.db"));
     const row = db
       .prepare(
-        `SELECT id, canvas_id, session_id, thread_id, model, status, completed_at
+        `SELECT id, canvas_id, session_id, thread_id, model, runtime_kind, status, completed_at
          FROM agent_runs
          WHERE id = ?`,
       )
@@ -90,6 +91,7 @@ describe("createLocalStore", () => {
           completed_at: string | null;
           id: string;
           model: string;
+          runtime_kind: string | null;
           session_id: string;
           status: string;
           thread_id: string;
@@ -101,6 +103,7 @@ describe("createLocalStore", () => {
       canvas_id: project.primaryCanvas.id,
       id: "run-1",
       model: "agnes:agnes-2.0-flash",
+      runtime_kind: "server-deepagent",
       session_id: session!.id,
       status: "completed",
       thread_id: "thread:run-session",
@@ -132,6 +135,7 @@ describe("createLocalStore", () => {
       assistantMessageId: assistantMessage!.id,
       canvasId: project.primaryCanvas.id,
       model: "codex:gpt-5.4",
+      runtimeKind: "local-codex",
       runId: "run-anchor",
       sessionId: session!.id,
     });
@@ -176,6 +180,7 @@ describe("createLocalStore", () => {
     expect(persistedRun).toMatchObject({
       id: "run-anchor",
       assistant_message_id: assistantMessage!.id,
+      runtime_kind: "local-codex",
       status: "accepted",
     });
   });

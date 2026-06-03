@@ -979,6 +979,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           assistantMessageId: assistantMessage.id,
           env: runtimeEnv,
           ...(resolvedModel ? { model: resolvedModel } : {}),
+          ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
           userId: localUser.id,
         }),
       );

@@ -151,4 +151,71 @@ describe("useWebSocket", () => {
       ]),
     );
   });
+
+  it("resumes canvases with skipReplay and the latest known sequence", async () => {
+    const { result } = renderHook(() => useWebSocket());
+    const socket = MockWebSocket.instances[0];
+
+    act(() => {
+      socket.open();
+    });
+
+    await waitFor(() => expect(result.current.connected).toBe(true));
+
+    act(() => {
+      result.current.resumeCanvas("canvas-1", () => {});
+    });
+
+    expect(socket.sent).toContain(
+      JSON.stringify({
+        type: "command",
+        action: "canvas.resume",
+        payload: {
+          canvasId: "canvas-1",
+          lastSeq: 0,
+          skipReplay: true,
+        },
+      }),
+    );
+
+    act(() => {
+      socket.receive({
+        type: "command.ack",
+        action: "canvas.resume",
+        payload: {
+          canvasId: "canvas-1",
+          latestSeq: 2,
+          activeRunId: "run-fixed",
+          replayed: 0,
+          skipReplay: true,
+        },
+      });
+      socket.receive({
+        type: "event",
+        event: {
+          type: "message.delta",
+          runId: "run-fixed",
+          messageId: "assistant-message-run-fixed",
+          delta: "hello",
+          timestamp: new Date().toISOString(),
+        },
+      });
+    });
+
+    act(() => {
+      result.current.resumeCanvas("canvas-1", () => {});
+    });
+
+    expect(socket.sent).toContain(
+      JSON.stringify({
+        type: "command",
+        action: "canvas.resume",
+        payload: {
+          canvasId: "canvas-1",
+          lastSeq: 3,
+          skipReplay: true,
+        },
+      }),
+    );
+  });
 });

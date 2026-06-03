@@ -319,6 +319,7 @@ export function useWebSocket(): WebSocketHandle {
         payload: {
           canvasId,
           lastSeq: lastSeqByCanvasRef.current.get(canvasId) ?? 0,
+          skipReplay: true,
         },
       });
       if (!sent) {
