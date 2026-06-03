@@ -143,7 +143,7 @@ function CanvasPageContent() {
           name: title,
           thumbnailUrl: dataURL,
           assetId: el.id,
-          url: dataURL,
+          url: el.customData?.storageUrl ?? dataURL,
           mimeType: file?.mimeType ?? "image/png",
         };
       });

@@ -357,7 +357,7 @@ export function useChatSessions({
   const reloadMessages = useCallback(async (sessionId: string) => {
     if (!sessionId) {
       console.warn("[chat] reloadMessages called with empty sessionId, skipping");
-      return;
+      return [] as Message[];
     }
     try {
       const msgRes = await fetchMessages(sessionId);
@@ -369,10 +369,12 @@ export function useChatSessions({
         if (activeSessionIdRef.current === sessionId) {
           setMessages(mapped);
         }
+        return mapped;
       }
     } catch (err) {
       console.warn("[chat] Failed to reload messages on reconnect:", err);
     }
+    return [] as Message[];
   }, []);
 
   return {

@@ -27,7 +27,11 @@ import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { fetchBrandKit } from "../lib/brand-kit-api";
-import { fetchImageModels, saveMessage } from "../lib/server-api";
+import {
+  fetchImageModels,
+  fetchRunEvents,
+  saveMessage,
+} from "../lib/server-api";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import {
   type BrandKitMentionItem,
@@ -128,6 +132,46 @@ export function ChatSidebar({
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
   selectedCanvasElementsRef.current = selectedCanvasElements;
   const prevConnectedRef = useRef(false);
+  const runReplayCursorRef = useRef<Map<string, number>>(new Map());
+  const replayedArtifactKeysRef = useRef<Set<string>>(new Set());
+
+  const recoverPersistedMediaArtifacts = useCallback(
+    (sessionMessages: Array<{ contentBlocks: ContentBlock[]; role: "user" | "assistant" }>) => {
+      const latestAssistantMessage = [...sessionMessages]
+        .reverse()
+        .find((message) => message.role === "assistant");
+      if (!latestAssistantMessage) return;
+
+      const canvasUrls = new Set(
+        (onRequestCanvasImages ? onRequestCanvasImages() : [])
+          .map((item) => item.url)
+          .filter((url): url is string => typeof url === "string" && url.length > 0),
+      );
+
+      for (const block of latestAssistantMessage.contentBlocks) {
+        if (
+          block.type !== "tool" ||
+          block.status !== "completed" ||
+          block.toolName === "screenshot_canvas" ||
+          !block.artifacts
+        ) {
+          continue;
+        }
+
+        for (const artifact of block.artifacts) {
+          const replayKey = `persisted:${block.toolCallId}:${artifact.url}`;
+          if (replayedArtifactKeysRef.current.has(replayKey)) continue;
+          if (canvasUrls.has(artifact.url)) {
+            replayedArtifactKeysRef.current.add(replayKey);
+            continue;
+          }
+          replayedArtifactKeysRef.current.add(replayKey);
+          onImageGenerated?.(artifact);
+        }
+      }
+    },
+    [onImageGenerated, onRequestCanvasImages],
+  );
 
   const {
     attachments: imageAttachments,
@@ -773,7 +817,8 @@ export function ChatSidebar({
 
     void (async () => {
       // Reload messages from DB (server may have persisted while disconnected)
-      await reloadMessages(sessionId);
+      const reloadedMessages = await reloadMessages(sessionId);
+      recoverPersistedMediaArtifacts(reloadedMessages);
 
       // Resume canvas binding (after DB messages are set)
       ws.resumeCanvas(canvasId, (ack) => {
@@ -806,6 +851,72 @@ export function ChatSidebar({
             ];
           });
 
+          void (async () => {
+            try {
+              const replayCursor = runReplayCursorRef.current.get(activeRunId) ?? 0;
+              const replay = await fetchRunEvents(activeRunId, replayCursor);
+              runReplayCursorRef.current.set(activeRunId, replay.nextCursor);
+
+              for (const evt of replay.events) {
+                if (evt.runId !== activeRunId) continue;
+
+                if (
+                  evt.type === "tool.started" ||
+                  evt.type === "tool.completed" ||
+                  evt.type === "tool.failed" ||
+                  evt.type === "run.failed" ||
+                  evt.type === "run.canceled"
+                ) {
+                  applyStreamEvent(evt, assistantId, sessionId);
+                }
+
+                const backendInserted =
+                  evt.type === "tool.completed" &&
+                  evt.output &&
+                  typeof (evt.output as Record<string, unknown>).elementId === "string";
+
+                if (
+                  evt.type === "tool.completed" &&
+                  evt.artifacts &&
+                  evt.toolName !== "screenshot_canvas" &&
+                  !backendInserted
+                ) {
+                  const canvasUrls = new Set(
+                    (onRequestCanvasImages ? onRequestCanvasImages() : [])
+                      .map((item) => item.url)
+                      .filter((url): url is string => typeof url === "string" && url.length > 0),
+                  );
+
+                  for (const artifact of evt.artifacts) {
+                    const replayKey = `${evt.runId}:${evt.toolCallId}:${artifact.url}`;
+                    if (replayedArtifactKeysRef.current.has(replayKey)) continue;
+                    if (canvasUrls.has(artifact.url)) {
+                      replayedArtifactKeysRef.current.add(replayKey);
+                      continue;
+                    }
+                    replayedArtifactKeysRef.current.add(replayKey);
+                    onImageGenerated?.(artifact);
+                  }
+                }
+
+                if (evt.type === "canvas.sync") {
+                  onCanvasSync?.();
+                }
+
+                if (
+                  evt.type === "run.completed" ||
+                  evt.type === "run.failed" ||
+                  evt.type === "run.canceled"
+                ) {
+                  sendingRef.current = false;
+                  setStreaming(false);
+                }
+              }
+            } catch (error) {
+              console.warn("[chat] Failed to replay durable run events:", error);
+            }
+          })();
+
           // Reuse the shared stream event handler — eliminates ~70 lines of duplication
           const unsub = ws.onEvent((evt) => {
             if (evt.runId !== activeRunId) return;
@@ -826,6 +937,9 @@ export function ChatSidebar({
             ) {
               for (const artifact of evt.artifacts) {
                 if (onImageGenerated) {
+                  replayedArtifactKeysRef.current.add(
+                    `${evt.runId}:${evt.toolCallId}:${artifact.url}`,
+                  );
                   onImageGenerated(artifact);
                 }
               }
@@ -858,6 +972,8 @@ export function ChatSidebar({
     onImageGenerated,
     onCanvasSync,
     activeSessionIdRef,
+    recoverPersistedMediaArtifacts,
+    onRequestCanvasImages,
     reloadMessages,
     updateSessionMessages,
     setStreaming,
