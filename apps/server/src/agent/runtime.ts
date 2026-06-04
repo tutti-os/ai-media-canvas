@@ -9,7 +9,7 @@ import {
   createLocalAgentRuntime,
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
-} from "@aimc/local-agent-runtime";
+} from "@nextop-os/agent-acp-kit";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type {

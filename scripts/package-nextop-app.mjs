@@ -215,7 +215,6 @@ export async function packageNextopApp() {
   const version = rootPackage.version ?? "0.0.0";
 
   await run("pnpm", ["--filter", "@aimc/shared", "build"]);
-  await run("pnpm", ["--filter", "@aimc/local-agent-runtime", "build"]);
   await run("pnpm", ["--filter", "@aimc/web", "build"], {
     env: createWebBuildEnv(),
   });

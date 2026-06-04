@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@aimc/local-agent-runtime";
+import type { AgentEvent } from "@nextop-os/agent-acp-kit";
 import {
   imageArtifactSchema,
   type StreamEvent,

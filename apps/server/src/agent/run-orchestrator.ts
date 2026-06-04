@@ -15,11 +15,11 @@ import type {
   RuntimeLease as PackageRuntimeLease,
   RuntimeProvider as PackageRuntimeProvider,
   RuntimeTarget as PackageRuntimeTarget,
-} from "@aimc/local-agent-runtime";
+} from "@nextop-os/agent-acp-kit";
 import {
   createRuntimeControlPlane as createPackageRuntimeControlPlane,
   inferRuntimeKind as inferPackageRuntimeKind,
-} from "@aimc/local-agent-runtime/runtime-control-plane";
+} from "@nextop-os/agent-acp-kit/runtime-control-plane";
 
 export type {
   AgentRuntimeCapabilities,

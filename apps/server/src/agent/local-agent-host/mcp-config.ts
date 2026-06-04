@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import type { LocalAgentMcpServerConfig } from "@aimc/local-agent-runtime";
+import type { LocalAgentMcpServerConfig } from "@nextop-os/agent-acp-kit";
 
 export function createAimcToolsMcpServerConfig(input: {
   gatewayBaseUrl: string;
