@@ -13,7 +13,7 @@ import {
 } from "../config/env.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createAgentBackend, type AgentBackendResult } from "./backends/index.js";
-import { AIMC_SYSTEM_PROMPT } from "./prompts/aimc-main.js";
+import { buildAimcSystemPrompt } from "./prompts/aimc-main.js";
 import { createMainAgentTools } from "./tools/index.js";
 import type { PersistImageFn, SubmitImageJobFn } from "./tools/image-generate.js";
 import { createVideoGenerateTool } from "./tools/video-generate.js";
@@ -85,10 +85,7 @@ export function createAimcDeepAgent(options: {
       );
     });
 
-  let systemPrompt = options.brandKitId
-    ? AIMC_SYSTEM_PROMPT +
-      "\n\n当前项目已绑定品牌套件。在进行设计相关工作时，请先使用 get_brand_kit 工具查询品牌信息，确保设计符合品牌规范。"
-    : AIMC_SYSTEM_PROMPT;
+  let systemPrompt = buildAimcSystemPrompt({ brandKitId: options.brandKitId });
 
   // Inject enabled skills (both system and user-created) into the system prompt.
   // All skills are loaded from the database via loadWorkspaceSkills() in runtime.ts.

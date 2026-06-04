@@ -27,16 +27,14 @@ import type { ChatService } from "../features/chat/chat-service.js";
 import { createPipelineLogger } from "./logger.js";
 import type { ServerEnv } from "../config/env.js";
 import {
-  createAssistantMessageProjection,
-  projectStreamEventToAssistantMessage,
-} from "../agent/run-orchestrator.js";
-import {
-  buildReplayEnvelope,
-  persistRunEvent,
+  createAgentRunOrchestrator,
+  isLocalAgentRuntimeRequested,
+  type AgentRunOrchestrator,
 } from "../agent/run-orchestrator.js";
 
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
+  agentRunOrchestrator?: AgentRunOrchestrator;
   agentRunPersistence?: {
     appendEvent: (input: {
       canvasId?: string;
@@ -205,10 +203,13 @@ async function authenticateAndBind(
         );
       } else if (msg.action === "agent.cancel") {
         log.info("run_cancel", { userId: authenticatedUser.id, runId: msg.payload.runId });
-        const cancelResult = agentRuns.cancelRun(msg.payload.runId);
-        if (!cancelResult) {
-          socket.send(JSON.stringify({ type: "error", message: `Run not found: ${msg.payload.runId}` }));
-        }
+        void handleCancelCommand(
+          msg.payload.runId,
+          agentRuns,
+          connectionManager,
+          options,
+          socket,
+        );
       } else if (msg.action === "canvas.resume") {
         const p = msg.payload;
         log.info("canvas_resume", { userId: authenticatedUser.id, canvasId: p.canvasId, lastSeq: p.lastSeq });
@@ -331,8 +332,13 @@ async function handleRunCommand(
   log.lap("resolve", { threadId: !!threadId, model: resolvedModel });
   if (
     effectiveEnv?.trustedLocalAgentMode === false &&
-    (payload.runtimeKind === "local-agent" ||
-      (typeof resolvedModel === "string" && resolvedModel.startsWith("codex:")))
+    isLocalAgentRuntimeRequested({
+      model: resolvedModel,
+      ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
+      ...(payload.runtimeProvider
+        ? { runtimeProvider: payload.runtimeProvider }
+        : {}),
+    })
   ) {
     connectionManager.sendTo(connectionId, {
       type: "error",
@@ -419,7 +425,40 @@ async function handleRunCommand(
   }, 15_000);
 
   // Accumulate assistant content blocks for server-side persistence
-  const assistantProjection = createAssistantMessageProjection();
+  const orchestrator =
+    services.agentRunOrchestrator ??
+    createAgentRunOrchestrator({
+      eventPersistence: services.agentRunPersistence,
+    });
+  const assistantProjection = orchestrator.createAssistantProjection();
+  const publishEvent = (input: {
+    envelope: { eventId?: string; seq?: number };
+    event: StreamEvent;
+  }) => {
+    services.eventBuffer?.push(canvasId, input.event, input.envelope);
+    connectionManager.pushToCanvas(canvasId, input.event, input.envelope);
+  };
+  const updateAssistant =
+    services.chatService && assistantMessageId
+      ? async () => {
+          try {
+            await services.chatService!.updateMessage(
+              authenticatedUser,
+              assistantMessageId!,
+              {
+                role: "assistant",
+                content: assistantProjection.textParts.join(""),
+                contentBlocks: assistantProjection.blocks,
+              },
+            );
+          } catch (error) {
+            log.warn("assistant_message_update_failed", {
+              error: error instanceof Error ? error.message : String(error),
+              runId,
+            });
+          }
+        }
+      : undefined;
 
   try {
     let firstEvent = true;
@@ -429,40 +468,14 @@ async function handleRunCommand(
         firstEvent = false;
       }
 
-      // Buffer for replay on reconnect
-      const persistedEvent = persistRunEvent({
+      await orchestrator.handleStreamEvent({
         canvasId,
         event,
-        persistence: services.agentRunPersistence,
+        project: assistantProjection,
+        publish: publishEvent,
         runId,
+        ...(updateAssistant ? { updateAssistant } : {}),
       });
-      const replayEnvelope = buildReplayEnvelope(persistedEvent);
-      services.eventBuffer?.push(canvasId, event, replayEnvelope);
-
-      // Broadcast to all viewers
-      connectionManager.pushToCanvas(canvasId, event, replayEnvelope);
-
-      // Accumulate content for server-side persistence
-      projectStreamEventToAssistantMessage(assistantProjection, event);
-
-      if (services.chatService && assistantMessageId) {
-        try {
-          await services.chatService.updateMessage(
-            authenticatedUser,
-            assistantMessageId,
-            {
-              role: "assistant",
-              content: assistantProjection.textParts.join(""),
-              contentBlocks: assistantProjection.blocks,
-            },
-          );
-        } catch (error) {
-          log.warn("assistant_message_update_failed", {
-            error: error instanceof Error ? error.message : String(error),
-            runId,
-          });
-        }
-      }
     }
     log.lap("stream_done", { runId });
   } catch (error) {
@@ -476,17 +489,51 @@ async function handleRunCommand(
       },
       timestamp: new Date().toISOString(),
     };
-    const persistedEvent = persistRunEvent({
+    await orchestrator.handleStreamEvent({
       canvasId,
       event: failedEvent,
-      persistence: services.agentRunPersistence,
+      project: assistantProjection,
+      publish: publishEvent,
       runId,
+      ...(updateAssistant ? { updateAssistant } : {}),
     });
-    const replayEnvelope = buildReplayEnvelope(persistedEvent);
-    services.eventBuffer?.push(canvasId, failedEvent, replayEnvelope);
-    connectionManager.pushToCanvas(canvasId, failedEvent, replayEnvelope);
   } finally {
     clearInterval(keepAlive);
     connectionManager.clearActiveRun(canvasId, runId);
   }
+}
+
+async function handleCancelCommand(
+  runId: string,
+  agentRuns: AgentRunService,
+  connectionManager: ConnectionManager,
+  services: RegisterWsOptions,
+  socket: WebSocket,
+) {
+  const cancelResult = agentRuns.cancelRun(runId);
+  if (!cancelResult) {
+    socket.send(JSON.stringify({ type: "error", message: `Run not found: ${runId}` }));
+    return;
+  }
+
+  const activeRun = connectionManager.getActiveRunById(runId);
+  if (!activeRun) {
+    return;
+  }
+
+  const orchestrator =
+    services.agentRunOrchestrator ??
+    createAgentRunOrchestrator({
+      eventPersistence: services.agentRunPersistence,
+    });
+
+  await orchestrator.emitTerminalCancel({
+    canvasId: activeRun.canvasId,
+    publish({ event, envelope }) {
+      services.eventBuffer?.push(activeRun.canvasId, event, envelope);
+      connectionManager.pushToCanvas(activeRun.canvasId, event, envelope);
+    },
+    runId,
+  });
+  connectionManager.clearActiveRun(activeRun.canvasId, runId);
 }

@@ -111,8 +111,86 @@ export async function* runAcpTransport(
   let done = false;
   let fatalError = false;
   let nextId = 1;
+  let sessionId: string | undefined;
+  let resumeToken: string | undefined;
+  const pending = new Map<
+    number,
+    {
+      reject: (error: Error) => void;
+      resolve: (result: unknown) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
+
+  function resolvePending(message: {
+    id?: number | string;
+    result?: unknown;
+    error?: { code?: number; message?: string };
+  }) {
+    if (message.id === undefined) return false;
+    const id =
+      typeof message.id === "number"
+        ? message.id
+        : Number.parseInt(String(message.id), 10);
+    const request = pending.get(id);
+    if (!request) return false;
+    pending.delete(id);
+    clearTimeout(request.timer);
+    if (message.error) {
+      request.reject(
+        new Error(message.error.message ?? `ACP request ${id} failed.`),
+      );
+    } else {
+      request.resolve(message.result);
+    }
+    return true;
+  }
+
+  function failPending(error: Error) {
+    for (const [id, request] of pending) {
+      pending.delete(id);
+      clearTimeout(request.timer);
+      request.reject(error);
+    }
+  }
+
+  function sendRequest(method: string, requestParams?: unknown) {
+    const id = nextId++;
+    const timeoutMs = params.timeoutMs ?? plan.timeoutMs ?? 15_000;
+    const promise = new Promise<unknown>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`ACP ${method} timed out after ${timeoutMs}ms.`));
+      }, timeoutMs);
+      pending.set(id, { reject, resolve, timer });
+    });
+    sendJsonRpc(processHandle.child.stdin, {
+      jsonrpc: "2.0",
+      id,
+      method,
+      ...(requestParams !== undefined ? { params: requestParams } : {}),
+    });
+    return promise;
+  }
+
+  function captureSessionMetadata(result: unknown) {
+    if (!result || typeof result !== "object") return;
+    const record = result as Record<string, unknown>;
+    const candidateSessionId = record.sessionId ?? record.session_id ?? record.id;
+    if (typeof candidateSessionId === "string") {
+      sessionId = candidateSessionId;
+    }
+    const candidateResumeToken = record.resumeToken ?? record.resume_token;
+    if (typeof candidateResumeToken === "string") {
+      resumeToken = candidateResumeToken;
+    }
+  }
 
   const parser = createJsonRpcLineParser((message) => {
+    if (resolvePending(message)) {
+      return;
+    }
+
     if (message.error) {
       fatalError = true;
       queue.push({
@@ -153,40 +231,37 @@ export async function* runAcpTransport(
     }
   });
 
-  processHandle.child.stdout.on("data", (chunk: string) => parser.feed(chunk));
+  processHandle.child.stdout.on("data", (chunk: string) => {
+    try {
+      parser.feed(chunk);
+    } catch (error) {
+      fatalError = true;
+      const message =
+        error instanceof Error ? error.message : "Invalid ACP JSON-RPC output.";
+      queue.push({
+        type: "error",
+        code: "acp_parse_error",
+        message,
+      });
+      failPending(new Error(message));
+      processHandle.child.kill();
+    }
+  });
   processHandle.child.stderr.on("data", (chunk: string) => {
     queue.push({ type: "stderr", text: processHandle.stderr.redact(chunk) });
   });
 
-  sendJsonRpc(processHandle.child.stdin, {
-    jsonrpc: "2.0",
-    id: nextId++,
-    method: "initialize",
-    params: {
-      clientInfo: { name: "local-agent-runtime", version: "0.0.0" },
-      protocolVersion: 1,
-    },
-  });
-  sendJsonRpc(processHandle.child.stdin, {
-    jsonrpc: "2.0",
-    id: nextId++,
-    method: "session/new",
-    params: buildAcpSessionNewParams(
-      params.cwd,
-      params.mcpServers ? { mcpServers: params.mcpServers } : undefined,
-    ),
-  });
-  sendJsonRpc(processHandle.child.stdin, {
-    jsonrpc: "2.0",
-    id: nextId++,
-    method: "session/prompt",
-    params: {
-      prompt: params.prompt,
-      ...(params.model ? { model: params.model } : {}),
-    },
-  });
+  const waitForExit = processHandle.waitForExit().then(({ code, signal, timedOut }) => {
+    if (pending.size > 0) {
+      failPending(
+        new Error(
+          code && code !== 0
+            ? `ACP process exited with code ${code} before lifecycle completed.`
+            : "ACP process exited before lifecycle completed.",
+        ),
+      );
+    }
 
-  void processHandle.waitForExit().then(({ code, signal, timedOut }) => {
     if (timedOut) {
       queue.push({
         type: "error",
@@ -204,16 +279,56 @@ export async function* runAcpTransport(
             : `ACP process exited with code ${code}.`,
       });
     }
-    const canceled = signal != null;
     const failed = fatalError || timedOut || (code != null && code !== 0);
+    const canceled = signal != null && !failed;
     queue.push({
       type: "done",
       status: canceled ? "canceled" : failed ? "failed" : "completed",
       reason: canceled ? "cancelled" : failed ? "error" : "completed",
       exitCode: code,
+      ...(sessionId ? { sessionId } : {}),
+      ...(resumeToken ? { resumeToken } : {}),
     });
     done = true;
   });
+
+  try {
+    await sendRequest("initialize", {
+      clientInfo: { name: "local-agent-runtime", version: "0.0.0" },
+      protocolVersion: 1,
+    });
+    const newSessionResult = await sendRequest(
+      "session/new",
+      buildAcpSessionNewParams(
+        params.cwd,
+        params.mcpServers || params.resume
+          ? {
+              ...(params.mcpServers ? { mcpServers: params.mcpServers } : {}),
+              ...(params.resume ? { resume: params.resume } : {}),
+            }
+          : undefined,
+      ),
+    );
+    captureSessionMetadata(newSessionResult);
+    if (params.model) {
+      await sendRequest("session/set_model", {
+        ...(sessionId ? { sessionId } : {}),
+        model: params.model,
+      });
+    }
+    await sendRequest("session/prompt", {
+      ...(sessionId ? { sessionId } : {}),
+      prompt: params.prompt,
+    });
+  } catch (error) {
+    fatalError = true;
+    queue.push({
+      type: "error",
+      code: "acp_lifecycle_failed",
+      message: error instanceof Error ? error.message : "ACP lifecycle failed.",
+    });
+    processHandle.child.kill();
+  }
 
   while (!done || queue.length > 0) {
     const next = queue.shift();
@@ -223,4 +338,6 @@ export async function* runAcpTransport(
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+
+  await waitForExit.catch(() => undefined);
 }

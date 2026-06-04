@@ -166,6 +166,27 @@ export class ConnectionManager {
     return candidates[0] ?? null;
   }
 
+  /** Get active run info by run id, including its canvas binding. */
+  getActiveRunById(runId: string): ({
+    assistantMessageId?: string;
+    canvasId: string;
+    runId: string;
+    runtimeKind?: RuntimeKind;
+    runtimeProvider?: AgentRuntimeProvider;
+    sessionId: string;
+    startedAt: number;
+  }) | null {
+    for (const [canvasId, runsForCanvas] of this.activeRuns.entries()) {
+      const run = runsForCanvas.get(runId);
+      if (!run) continue;
+      return {
+        ...run,
+        canvasId,
+      };
+    }
+    return null;
+  }
+
   // ---------------------------------------------------------------------------
   // Lookups
   // ---------------------------------------------------------------------------

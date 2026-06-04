@@ -61,7 +61,88 @@ describe("runAcpTransport", () => {
         status: "completed",
         reason: "completed",
         exitCode: 0,
+        sessionId: "session_fake",
       },
     ]);
+  });
+
+  it("waits for lifecycle acknowledgements and sets model before prompt", async () => {
+    const events = [];
+    const script = createFakeAcpPeerScript({
+      expectedMethods: [
+        "initialize",
+        "session/new",
+        "session/set_model",
+        "session/prompt",
+      ],
+      sessionId: "session_model",
+      updates: [{ type: "text_delta", text: "model ready" }],
+    });
+
+    for await (const event of runAcpTransport(
+      {
+        args: ["-e", script],
+        command: process.execPath,
+        cwd: process.cwd(),
+        prompt: "make image",
+        promptInput: "stdin",
+        transport: "acp-json-rpc",
+      },
+      {
+        cwd: process.cwd(),
+        model: "kimi-k2",
+        prompt: "make image",
+        runId: "run_acp_model",
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "text_delta", text: "model ready" },
+      {
+        type: "done",
+        status: "completed",
+        reason: "completed",
+        exitCode: 0,
+        sessionId: "session_model",
+      },
+    ]);
+  });
+
+  it("fails lifecycle requests promptly when the ACP peer exits before acknowledgement", async () => {
+    const events = [];
+
+    for await (const event of runAcpTransport(
+      {
+        args: ["-e", "process.exit(1)"],
+        command: process.execPath,
+        cwd: process.cwd(),
+        prompt: "make image",
+        promptInput: "stdin",
+        timeoutMs: 5_000,
+        transport: "acp-json-rpc",
+      },
+      {
+        cwd: process.cwd(),
+        prompt: "make image",
+        runId: "run_acp_exit",
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "error",
+          code: "acp_lifecycle_failed",
+        }),
+        expect.objectContaining({
+          type: "done",
+          status: "failed",
+        }),
+      ]),
+    );
   });
 });

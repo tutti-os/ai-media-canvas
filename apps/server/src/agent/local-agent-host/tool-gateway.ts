@@ -87,14 +87,21 @@ function buildArtifacts(
   toolName: string,
   output: Record<string, unknown>,
 ): ToolArtifact[] | undefined {
+  const imageUrl =
+    typeof output.imageUrl === "string" && output.imageUrl.length > 0
+      ? output.imageUrl
+      : toolName === "screenshot_canvas" &&
+          typeof output.screenshotUrl === "string" &&
+          output.screenshotUrl.length > 0
+        ? output.screenshotUrl
+        : undefined;
   if (
     (toolName === "generate_image" || toolName === "screenshot_canvas") &&
-    typeof output.imageUrl === "string" &&
-    output.imageUrl.length > 0
+    imageUrl
   ) {
     const parsed = imageArtifactSchema.safeParse({
       type: "image",
-      url: output.imageUrl,
+      url: imageUrl,
       mimeType:
         typeof output.mimeType === "string" && output.mimeType.length > 0
           ? output.mimeType
@@ -194,6 +201,43 @@ function toolOptionsForSession(
   };
 }
 
+function extensionForMimeType(mimeType: string) {
+  switch (mimeType) {
+    case "image/jpeg":
+      return "jpg";
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    case "image/svg+xml":
+      return "svg";
+    default:
+      return "bin";
+  }
+}
+
+async function readImageBytes(sourceUrl: string) {
+  if (sourceUrl.startsWith("data:")) {
+    const match = sourceUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) {
+      throw new Error("Unsupported data URL image format.");
+    }
+    return {
+      buffer: Buffer.from(match[2]!, "base64"),
+      mimeType: match[1]!,
+    };
+  }
+
+  const response = await fetch(sourceUrl, { redirect: "follow" });
+  if (!response.ok) {
+    throw new Error(`Unable to fetch generated image: ${response.status}`);
+  }
+  return {
+    buffer: Buffer.from(await response.arrayBuffer()),
+    mimeType: response.headers.get("content-type") ?? "image/png",
+  };
+}
+
 export function createLocalToolGatewayService(
   options: CreateLocalToolGatewayOptions,
 ) {
@@ -207,10 +251,28 @@ export function createLocalToolGatewayService(
     const createUserClient = options.createUserClient as (
       accessToken: string,
     ) => UserDataClient;
+    const persistSessionImage = session.accessToken
+      ? async (sourceUrl: string, mimeType?: string) => {
+          const image = await readImageBytes(sourceUrl);
+          const resolvedMimeType = mimeType || image.mimeType;
+          const fileName = `generated-${randomUUID()}.${extensionForMimeType(resolvedMimeType)}`;
+          const objectPath = `generated/${session.runId}/${fileName}`;
+          const client = createUserClient(session.accessToken!);
+          const bucket = client.storage.from("project-assets");
+          const { error } = await bucket.upload(objectPath, image.buffer, {
+            contentType: resolvedMimeType,
+          });
+          if (error) {
+            throw new Error(error.message ?? "Unable to persist generated image.");
+          }
+          return bucket.getPublicUrl(objectPath).data.publicUrl;
+        }
+      : undefined;
     const tools: StructuredToolLike[] = [
       createInspectCanvasTool({ createUserClient }) as unknown as StructuredToolLike,
       createManipulateCanvasTool({ createUserClient }) as unknown as StructuredToolLike,
       createImageGenerateTool({
+        ...(persistSessionImage ? { persistImage: persistSessionImage } : {}),
         ...(session.submitImageJob
           ? { submitImageJob: session.submitImageJob }
           : {}),
@@ -238,6 +300,7 @@ export function createLocalToolGatewayService(
             options.connectionPublisher as unknown as Parameters<
               typeof createScreenshotCanvasTool
             >[0]["connectionManager"],
+          ...(persistSessionImage ? { persistImage: persistSessionImage } : {}),
         }) as unknown as StructuredToolLike,
       );
     }

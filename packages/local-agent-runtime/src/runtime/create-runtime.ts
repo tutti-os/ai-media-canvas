@@ -344,6 +344,8 @@ function createBuiltInAcpTransport(): Transport {
         prompt: plan.prompt,
         ...(plan.model ? { model: plan.model } : {}),
         ...(plan.mcpServers ? { mcpServers: plan.mcpServers } : {}),
+        ...(plan.resume ? { resume: plan.resume } : {}),
+        ...(plan.timeoutMs ? { timeoutMs: plan.timeoutMs } : {}),
         signal,
       } as AgentRunParams);
     },

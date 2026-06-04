@@ -10,6 +10,11 @@ export type LaunchPlan = {
   mcpServers?: LocalAgentMcpServerConfig[];
   model?: string;
   redactionSecrets?: string[];
+  resume?: {
+    mode: "native" | "provider" | "fresh";
+    providerSessionId?: string;
+    resumeToken?: string;
+  };
   runId?: string;
   transport?: TransportKind;
   timeoutMs?: number;

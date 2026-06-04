@@ -65,7 +65,10 @@ import {
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { loadServerEnv, type ServerEnv } from "./config/env.js";
 import { createAgentRunService } from "./agent/runtime.js";
-import { createAgentRunOrchestrator } from "./agent/run-orchestrator.js";
+import {
+  createAgentRunOrchestrator,
+  isLocalAgentRuntimeRequested,
+} from "./agent/run-orchestrator.js";
 import { createLocalToolGatewayService } from "./agent/local-agent-host/tool-gateway.js";
 import {
   createLocalStore,
@@ -699,6 +702,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const agentRuns = createAgentRunService({
     agentRunStore: {
       createRun: store.createAgentRun,
+      getRun: store.getAgentRun,
       updateRun: store.updateAgentRun,
     },
     connectionManager,
@@ -747,7 +751,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     void (async () => {
       const replayCanvasId = options.payload.canvasId ?? options.payload.conversationId;
       const assistantMessageState = agentRunOrchestrator.createAssistantProjection();
-      const persistAssistantMessage = async () => {
+      const updateAssistantMessage = async () => {
         if (!options.runState.assistantMessageId) return;
         await chatService.updateMessage(localUser, options.runState.assistantMessageId, {
           role: "assistant",
@@ -758,16 +762,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
       try {
         for await (const event of agentRuns.streamRun(options.runId)) {
-          agentRunOrchestrator.persistAndEnvelope({
+          await agentRunOrchestrator.handleStreamEvent({
             ...(replayCanvasId ? { canvasId: replayCanvasId } : {}),
             event,
+            project: assistantMessageState,
             runId: options.runId,
+            updateAssistant: updateAssistantMessage,
           });
           appendLocalAgentEvent(options.runState, event);
-          agentRunOrchestrator.projectEvent(assistantMessageState, event);
-          if (options.runState.assistantMessageId) {
-            await persistAssistantMessage();
-          }
         }
       } catch (error) {
         if (options.runState.done) {
@@ -785,16 +787,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           },
           timestamp: new Date().toISOString(),
         } satisfies StreamEvent;
-        agentRunOrchestrator.persistAndEnvelope({
+        await agentRunOrchestrator.handleStreamEvent({
           ...(replayCanvasId ? { canvasId: replayCanvasId } : {}),
           event: failedEvent,
+          project: assistantMessageState,
           runId: options.runId,
+          updateAssistant: updateAssistantMessage,
         });
         appendLocalAgentEvent(options.runState, failedEvent);
-        agentRunOrchestrator.projectEvent(assistantMessageState, failedEvent);
-        if (options.runState.assistantMessageId) {
-          await persistAssistantMessage();
-        }
       } finally {
         options.runState.controller = null;
         options.runState.done = true;
@@ -832,6 +832,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     await wsApp.register(websocket);
     await registerWsRoute(wsApp, {
       agentRuns,
+      agentRunOrchestrator,
       agentRunPersistence: {
         appendEvent: store.appendAgentRunEvent,
         getActiveRun: (canvasId, sessionId) => {
@@ -911,7 +912,16 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       );
       const runtimeEnv = createStandaloneAgentEnv(effectiveEnv);
       const resolvedModel = payload.model ?? runtimeEnv.agentModel;
-      if (payload.runtimeKind === "local-agent" && runtimeEnv.trustedLocalAgentMode === false) {
+      if (
+        runtimeEnv.trustedLocalAgentMode === false &&
+        isLocalAgentRuntimeRequested({
+          model: resolvedModel,
+          ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
+          ...(payload.runtimeProvider
+            ? { runtimeProvider: payload.runtimeProvider }
+            : {}),
+        })
+      ) {
         return sendApplicationError(
           reply,
           "application_error",
@@ -1009,6 +1019,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       );
     }
 
+    await agentRunOrchestrator.emitTerminalCancel({
+      runId,
+    });
     return reply.code(202).send(canceledRun);
   });
 

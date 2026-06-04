@@ -68,20 +68,26 @@ describe("createLocalStore", () => {
     store.createAgentRun({
       canvasId: project.primaryCanvas.id,
       model: "agnes:agnes-2.0-flash",
+      previousRunId: "run-previous",
+      resumeMode: "handoff",
       runtimeKind: "server-deepagent",
       runId: "run-1",
       sessionId: session!.id,
       threadId: "thread:run-session",
     });
     store.updateAgentRun({
+      providerSessionId: "provider-session-1",
       runId: "run-1",
+      resumeToken: "resume-token-1",
       status: "completed",
     });
 
     const db = new DatabaseSync(join(dataRoot, "ai-media-canvas.db"));
     const row = db
       .prepare(
-        `SELECT id, canvas_id, session_id, thread_id, model, runtime_kind, runtime_provider, status, completed_at
+        `SELECT id, canvas_id, session_id, thread_id, model, runtime_kind,
+                runtime_provider, previous_run_id, resume_mode,
+                provider_session_id, resume_token, status, completed_at
          FROM agent_runs
          WHERE id = ?`,
       )
@@ -91,6 +97,10 @@ describe("createLocalStore", () => {
           completed_at: string | null;
           id: string;
           model: string;
+          previous_run_id: string | null;
+          provider_session_id: string | null;
+          resume_mode: string | null;
+          resume_token: string | null;
           runtime_kind: string | null;
           runtime_provider: string | null;
           session_id: string;
@@ -104,6 +114,10 @@ describe("createLocalStore", () => {
       canvas_id: project.primaryCanvas.id,
       id: "run-1",
       model: "agnes:agnes-2.0-flash",
+      previous_run_id: "run-previous",
+      provider_session_id: "provider-session-1",
+      resume_mode: "handoff",
+      resume_token: "resume-token-1",
       runtime_kind: "server-deepagent",
       runtime_provider: null,
       session_id: session!.id,
@@ -210,6 +224,57 @@ describe("createLocalStore", () => {
       run_id: "run-anchor",
       run_status: "accepted",
     });
+  });
+
+  it("does not append events after a terminal run event", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const project = store.createProject({ name: "Terminal Events" });
+    const session = store.createSession(project.primaryCanvas.id, "Terminal session");
+    expect(session).not.toBeNull();
+
+    store.createAgentRun({
+      canvasId: project.primaryCanvas.id,
+      runId: "run-terminal",
+      sessionId: session!.id,
+    });
+
+    const terminal = store.appendAgentRunEvent({
+      runId: "run-terminal",
+      event: {
+        type: "run.canceled",
+        runId: "run-terminal",
+        timestamp: "2026-06-04T00:00:00.000Z",
+      },
+    });
+    const duplicate = store.appendAgentRunEvent({
+      runId: "run-terminal",
+      event: {
+        type: "run.failed",
+        runId: "run-terminal",
+        error: {
+          code: "run_failed",
+          message: "late failure",
+        },
+        timestamp: "2026-06-04T00:00:01.000Z",
+      },
+    });
+
+    expect(terminal).toEqual({ eventId: "run-terminal:1", seq: 1 });
+    expect(duplicate).toEqual({
+      duplicate: true,
+      eventId: "run-terminal:1",
+      seq: 1,
+    });
+    expect(store.listAgentRunEvents("run-terminal").map((entry) => entry.event.type)).toEqual([
+      "run.canceled",
+    ]);
   });
 
   it("finds the latest active run for a specific canvas and session", () => {

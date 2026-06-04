@@ -41,6 +41,14 @@ export type RuntimeRunRecord = {
   mentions?: MessageMention[] | undefined;
   modelOverride?: string | undefined;
   prompt: string;
+  resumeContext?: {
+    mode: "provider-local" | "handoff" | "fresh";
+    previousRunId?: string;
+    previousRuntimeKind?: RuntimeKind | null;
+    previousRuntimeProvider?: AgentRuntimeProvider | null;
+    providerSessionId?: string;
+    resumeToken?: string;
+  } | undefined;
   runId: string;
   runtimeKind?: RuntimeKind | undefined;
   runtimeProvider?: AgentRuntimeProvider | undefined;
@@ -100,6 +108,11 @@ export type LocalAgentRuntimeProviderDeps = {
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
   localAgentRuntime: Pick<LocalAgentRuntime<"local-agent", AgentRuntimeProvider>, "run">;
   now: () => string;
+  recordProviderResumeMetadata?: (input: {
+    providerSessionId?: string;
+    resumeToken?: string;
+    runId: string;
+  }) => void;
   toolGateway: ReturnType<typeof createLocalToolGatewayService>;
   toolGatewayBaseUrl: string;
 };

@@ -49,6 +49,7 @@ function buildCodexPrompt(input: {
   prompt: string;
   history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   skills: Array<{ slug: string; deliveryMode: string; materializedPath?: string; content?: string }>;
+  systemPrompt?: string;
 }) {
   const materializedSkills = input.skills.filter(
     (skill) => skill.deliveryMode === "materialized-files" && skill.materializedPath,
@@ -86,6 +87,7 @@ function buildCodexPrompt(input: {
     : "";
 
   return [
+    input.systemPrompt?.trim(),
     "You are a local Codex runtime.",
     "Prefer available MCP tools instead of faking external side effects.",
     "Do not claim a tool action happened unless the tool actually succeeded.",
@@ -225,6 +227,7 @@ export function createCodexProvider(): LocalAgentProviderPlugin<
       prompt: params.prompt,
       ...(params.history ? { history: params.history } : {}),
       skills: materialized,
+      ...(params.systemPrompt ? { systemPrompt: params.systemPrompt } : {}),
     });
     const normalizedModel = normalizeCodexModel(params.model);
     const redactionSecrets = collectMcpRedactionSecrets(
@@ -287,7 +290,7 @@ export function createCodexProvider(): LocalAgentProviderPlugin<
     },
     async buildLaunchPlan(params) {
       return {
-        ...buildCodexLaunchPlan(params),
+        ...(await prepareLaunchPlan(params)),
         ...(params.mcpServers ? { mcpServers: params.mcpServers } : {}),
         ...(params.model ? { model: params.model } : {}),
         runId: params.runId,

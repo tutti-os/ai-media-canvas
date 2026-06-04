@@ -2,27 +2,44 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  type AgentEvent,
-  type LocalAgentProviderPlugin,
+import type {
+  AgentEvent,
+  LocalAgentProviderPlugin,
 } from "@aimc/local-agent-runtime";
-import { type AgentRuntimeProvider, type StreamEvent } from "@aimc/shared";
+import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 
+import { createAimcToolsMcpServerConfig } from "../local-agent-host/mcp-config.js";
+import { mapWorkspaceSkillsToLocalAgentManifest } from "../local-agent-host/skills.js";
+import { buildAimcSystemPrompt } from "../prompts/aimc-main.js";
+import { loadNormalizedSessionHistory } from "./history.js";
+import { adaptLocalAgentEvent, toAimcRunErrorCode } from "./local-agent-events.js";
 import type {
   LocalAgentRuntimeExecutionContext,
   LocalAgentRuntimeProviderDeps,
   RuntimeExecutionContext,
 } from "./types.js";
 import { assertLocalAgentRuntimeExecutionContext } from "./types.js";
-import { adaptLocalAgentEvent, toAimcRunErrorCode } from "./local-agent-events.js";
-import { loadNormalizedSessionHistory } from "./history.js";
-import { createAimcToolsMcpServerConfig } from "../local-agent-host/mcp-config.js";
-import { mapWorkspaceSkillsToLocalAgentManifest } from "../local-agent-host/skills.js";
 
 type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   "local-agent",
   AgentRuntimeProvider
 >;
+
+function mapResumeContext(
+  resumeContext: RuntimeExecutionContext["run"]["resumeContext"],
+) {
+  if (!resumeContext) return undefined;
+  return {
+    mode:
+      resumeContext.mode === "provider-local"
+        ? ("provider" as const)
+        : ("fresh" as const),
+    ...(resumeContext.providerSessionId
+      ? { providerSessionId: resumeContext.providerSessionId }
+      : {}),
+    ...(resumeContext.resumeToken ? { resumeToken: resumeContext.resumeToken } : {}),
+  };
+}
 
 export function createLocalAgentRuntimeProvider(
   deps: LocalAgentRuntimeProviderDeps,
@@ -107,13 +124,31 @@ export function createLocalAgentRuntimeProvider(
         run.videoGenerationPreference,
         canvasSummary,
       );
+      const handoffSection =
+        run.resumeContext?.mode === "handoff" && run.resumeContext.previousRunId
+          ? [
+              "Resume handoff context:",
+              `- Previous run: ${run.resumeContext.previousRunId}`,
+              `- Previous runtime: ${run.resumeContext.previousRuntimeKind ?? "unknown"}${
+                run.resumeContext.previousRuntimeProvider
+                  ? ` (${run.resumeContext.previousRuntimeProvider})`
+                  : ""
+              }`,
+              "- Treat the conversation history and current canvas state as the source of truth.",
+              "- Continue the user's request without assuming provider-native session state is available.",
+            ].join("\n")
+          : undefined;
       const prompt = [
         "You are the local agent runtime for AI Media Canvas.",
         "If the user wants a finished visual asset, call generate_image or generate_video.",
         "Use inspect_canvas before precise canvas edits, and use manipulate_canvas for deterministic canvas updates.",
         "Do not claim an image or canvas update happened unless the tool actually succeeded.",
+        handoffSection,
         enrichedPrompt,
       ].join("\n\n");
+      const systemPrompt = buildAimcSystemPrompt({
+        brandKitId: readyContext.brandKitId,
+      });
 
       const gatewaySession = deps.toolGateway.createSession({
         ...(run.accessToken ? { accessToken: run.accessToken } : {}),
@@ -141,6 +176,7 @@ export function createLocalAgentRuntimeProvider(
         sessionId: run.sessionId,
       });
       const skillManifest = mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills);
+      const resume = mapResumeContext(run.resumeContext);
       const mcpServers = [
         createAimcToolsMcpServerConfig({
           gatewayBaseUrl: deps.toolGatewayBaseUrl,
@@ -167,16 +203,28 @@ export function createLocalAgentRuntimeProvider(
           provider: runtimeProvider,
           cwd: runDir,
           prompt,
+          systemPrompt,
           ...(history.length > 0 ? { history } : {}),
           model: resolvedModel,
           runtimeKind: "local-agent",
           runtimeProvider,
           mcpServers,
+          ...(resume ? { resume } : {}),
           signal: run.controller.signal,
           skillManifest,
         })) {
           if (event.type === "error") {
             lastError = event;
+          }
+          if (
+            event.type === "done" &&
+            (event.sessionId || event.resumeToken)
+          ) {
+            deps.recordProviderResumeMetadata?.({
+              ...(event.sessionId ? { providerSessionId: event.sessionId } : {}),
+              runId: run.runId,
+              ...(event.resumeToken ? { resumeToken: event.resumeToken } : {}),
+            });
           }
 
           const adaptedEvents = adaptLocalAgentEvent({

@@ -82,6 +82,13 @@ export const agentRuntimeProviderSchema = z
       "runtimeProvider must be a provider id using letters, numbers, '.', '_', ':', or '-'.",
   });
 
+export const agentRunResumeModeSchema = z.enum([
+  "auto",
+  "provider-local",
+  "handoff",
+  "fresh",
+]);
+
 export const runCreateRequestSchema = z
   .object({
     sessionId: sessionIdSchema,
@@ -93,6 +100,8 @@ export const runCreateRequestSchema = z
     videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
     mentions: z.array(messageMentionSchema).optional(),
     model: z.string().optional(),
+    resumeFromRunId: runIdSchema.optional(),
+    resumeMode: agentRunResumeModeSchema.optional(),
     runtimeKind: runtimeKindSchema.optional(),
     runtimeProvider: agentRuntimeProviderSchema.optional(),
   })
@@ -111,6 +120,13 @@ export const runCreateRequestSchema = z
         path: ["runtimeProvider"],
       });
     }
+    if (value.resumeMode && value.resumeMode !== "fresh" && !value.resumeFromRunId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "resumeMode requires resumeFromRunId unless resumeMode=fresh.",
+        path: ["resumeFromRunId"],
+      });
+    }
   });
 
 export const runCreateResponseSchema = z.object({
@@ -121,6 +137,7 @@ export const runCreateResponseSchema = z.object({
   assistantMessageId: identifierSchema.optional(),
   runtimeKind: runtimeKindSchema.optional(),
   runtimeProvider: agentRuntimeProviderSchema.optional(),
+  resumeMode: agentRunResumeModeSchema.exclude(["auto"]).optional(),
 });
 
 export const viewerProfileSchema = z.object({
@@ -338,6 +355,7 @@ export type RuntimeKind = z.infer<typeof runtimeKindSchema>;
 export type AgentRuntimeProvider = z.infer<
   typeof agentRuntimeProviderSchema
 >;
+export type AgentRunResumeMode = z.infer<typeof agentRunResumeModeSchema>;
 export type ChatSessionSummary = z.infer<typeof chatSessionSummarySchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type ChatMessageCreateRequest = z.infer<typeof chatMessageCreateRequestSchema>;

@@ -57,6 +57,7 @@ import {
 import type { createLocalToolGatewayService } from "./local-agent-host/tool-gateway.js";
 import {
   createRuntimeControlPlane,
+  resolveResumeMode,
   type RuntimeTarget,
 } from "./run-orchestrator.js";
 import { inferAimcRuntimeTarget } from "./run-orchestrator.js";
@@ -289,6 +290,14 @@ type RuntimeRunRecord = RunCreateRequest & {
   controller: AbortController;
   envOverride?: ServerEnv;
   modelOverride?: string;
+  resumeContext?: {
+    mode: "provider-local" | "handoff" | "fresh";
+    previousRunId?: string;
+    previousRuntimeKind?: RuntimeKind | null;
+    previousRuntimeProvider?: AgentRuntimeProvider | null;
+    providerSessionId?: string;
+    resumeToken?: string;
+  };
   runId: string;
   status: RuntimeRunStatus;
   threadId?: string;
@@ -302,6 +311,8 @@ type CreateAgentRuntimeOptions = {
       assistantMessageId?: string;
       canvasId?: string;
       model?: string;
+      previousRunId?: string;
+      resumeMode?: "provider-local" | "handoff" | "fresh";
       runtimeKind?: RuntimeKind;
       runtimeProvider?: AgentRuntimeProvider;
       runId: string;
@@ -312,11 +323,26 @@ type CreateAgentRuntimeOptions = {
       assistantMessageId?: string;
       errorCode?: string;
       errorMessage?: string;
+      providerSessionId?: string;
       runId: string;
+      resumeToken?: string;
       runtimeKind?: RuntimeKind;
       runtimeProvider?: AgentRuntimeProvider;
       status: RuntimeRunStatus;
     }): void;
+    getRun?(runId: string):
+      | {
+          id: string;
+          previous_run_id?: string | null;
+          provider_session_id?: string | null;
+          resume_mode?: "provider-local" | "handoff" | "fresh" | null;
+          resume_token?: string | null;
+          runtime_kind?: RuntimeKind | null;
+          runtime_provider?: AgentRuntimeProvider | null;
+          session_id?: string | null;
+          status?: RuntimeRunStatus;
+        }
+      | undefined;
   };
   connectionManager?: ConnectionManager;
   publishCanvasSyncEvent?: (input: {
@@ -449,6 +475,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 : {}),
               localAgentRuntime,
               now,
+              recordProviderResumeMetadata(metadata) {
+                options.agentRunStore?.updateRun({
+                  ...(metadata.providerSessionId
+                    ? { providerSessionId: metadata.providerSessionId }
+                    : {}),
+                  runId: metadata.runId,
+                  ...(metadata.resumeToken
+                    ? { resumeToken: metadata.resumeToken }
+                    : {}),
+                  status: runs.get(metadata.runId)?.status ?? "running",
+                });
+              },
               toolGateway: options.toolGateway!,
               toolGatewayBaseUrl: options.toolGatewayBaseUrl!,
             },
@@ -549,6 +587,52 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         initialRuntimeTarget?.kind ?? requestedRuntimeKind;
       const persistedRuntimeProvider =
         initialRuntimeTarget?.provider ?? requestedRuntimeProvider;
+      const previousRun = runInput.resumeFromRunId
+        ? options.agentRunStore?.getRun?.(runInput.resumeFromRunId)
+        : undefined;
+
+      if (runInput.resumeFromRunId && !previousRun) {
+        throw new Error(`Resume source run not found: ${runInput.resumeFromRunId}`);
+      }
+
+      const rawResumeMode =
+        runInput.resumeMode && runInput.resumeMode !== "auto"
+          ? runInput.resumeMode
+          : runInput.resumeFromRunId
+            ? resolveResumeMode({
+                ...(persistedRuntimeKind
+                  ? { nextRuntimeKind: persistedRuntimeKind }
+                  : {}),
+                ...(persistedRuntimeProvider
+                  ? { nextRuntimeProvider: persistedRuntimeProvider }
+                  : {}),
+                previousRuntimeKind: previousRun?.runtime_kind ?? null,
+                previousRuntimeProvider: previousRun?.runtime_provider ?? null,
+              })
+            : undefined;
+      const resolvedResumeMode =
+        rawResumeMode === "native" ? "provider-local" : rawResumeMode;
+      const resumeContext =
+        resolvedResumeMode
+          ? {
+              mode: resolvedResumeMode,
+              ...(runInput.resumeFromRunId
+                ? { previousRunId: runInput.resumeFromRunId }
+                : {}),
+              ...(previousRun?.runtime_kind != null
+                ? { previousRuntimeKind: previousRun.runtime_kind }
+                : {}),
+              ...(previousRun?.runtime_provider != null
+                ? { previousRuntimeProvider: previousRun.runtime_provider }
+                : {}),
+              ...(previousRun?.provider_session_id
+                ? { providerSessionId: previousRun.provider_session_id }
+                : {}),
+              ...(previousRun?.resume_token
+                ? { resumeToken: previousRun.resume_token }
+                : {}),
+            }
+          : undefined;
 
       runs.set(runId, {
         ...runInput,
@@ -561,6 +645,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         controller: new AbortController(),
         ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
         ...(resolvedModel ? { modelOverride: resolvedModel } : {}),
+        ...(resumeContext ? { resumeContext } : {}),
         ...(persistedRuntimeKind ? { runtimeKind: persistedRuntimeKind } : {}),
         ...(persistedRuntimeProvider
           ? { runtimeProvider: persistedRuntimeProvider }
@@ -577,6 +662,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           : {}),
         ...(runInput.canvasId ? { canvasId: runInput.canvasId } : {}),
         ...(resolvedModel ? { model: resolvedModel } : {}),
+        ...(runInput.resumeFromRunId
+          ? { previousRunId: runInput.resumeFromRunId }
+          : {}),
+        ...(resolvedResumeMode ? { resumeMode: resolvedResumeMode } : {}),
         ...(persistedRuntimeKind ? { runtimeKind: persistedRuntimeKind } : {}),
         ...(persistedRuntimeProvider
           ? { runtimeProvider: persistedRuntimeProvider }
@@ -596,6 +685,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         ...(persistedRuntimeProvider
           ? { runtimeProvider: persistedRuntimeProvider }
           : {}),
+        ...(resolvedResumeMode ? { resumeMode: resolvedResumeMode } : {}),
         sessionId: input.sessionId,
         status: "accepted",
       };

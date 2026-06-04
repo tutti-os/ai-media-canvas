@@ -61,4 +61,39 @@ describe("runCreateRequestSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("accepts explicit resume requests with a source run", () => {
+    expect(
+      runCreateRequestSchema.safeParse({
+        ...baseRunCreateRequest,
+        resumeFromRunId: "run_previous",
+        resumeMode: "provider-local",
+      }).success,
+    ).toBe(true);
+
+    expect(
+      runCreateRequestSchema.safeParse({
+        ...baseRunCreateRequest,
+        resumeFromRunId: "run_previous",
+        resumeMode: "handoff",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("requires a source run for non-fresh resume modes", () => {
+    const result = runCreateRequestSchema.safeParse({
+      ...baseRunCreateRequest,
+      resumeMode: "handoff",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "resumeMode requires resumeFromRunId unless resumeMode=fresh.",
+          path: ["resumeFromRunId"],
+        }),
+      ]),
+    );
+  });
 });

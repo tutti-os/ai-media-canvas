@@ -129,6 +129,7 @@ export function createClaudeProvider(): LocalAgentProviderPlugin<
       prompt: params.prompt,
       ...(params.history ? { history: params.history } : {}),
       skills: materialized,
+      ...(params.systemPrompt ? { systemPrompt: params.systemPrompt } : {}),
     });
     const cleanupTargets = materialized
       .map((skill) => skill.materializedPath)

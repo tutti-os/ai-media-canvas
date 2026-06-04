@@ -11,6 +11,7 @@ export type AgentRunInput<
   conversationId?: string;
   cwd: string;
   prompt: string;
+  systemPrompt?: string;
   model?: string;
   provider: TProvider;
   runtimeKind?: TKind;

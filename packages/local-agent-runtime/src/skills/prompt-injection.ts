@@ -5,6 +5,7 @@ export function composePromptWithSkills(input: {
   history?: AgentRunMessage[];
   prompt: string;
   skills: SkillMaterializationRecord[];
+  systemPrompt?: string;
 }) {
   const history = (input.history ?? [])
     .map((message) => `${message.role.toUpperCase()}:\n${message.content}`)
@@ -28,7 +29,22 @@ export function composePromptWithSkills(input: {
           .join("\n")}`
       : "";
 
-  return [skillText, history, "Current request:", input.prompt]
+  return [
+    input.systemPrompt?.trim(),
+    skillText,
+    history,
+    "Current request:",
+    input.prompt,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+export function composePromptWithSystem(input: {
+  prompt: string;
+  systemPrompt?: string;
+}) {
+  return [input.systemPrompt?.trim(), input.prompt]
     .filter(Boolean)
     .join("\n\n");
 }

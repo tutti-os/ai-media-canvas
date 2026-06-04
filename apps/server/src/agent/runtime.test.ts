@@ -19,6 +19,7 @@ vi.mock("./backends/index.js", () => ({
 }));
 
 import { createAgentRunService } from "./runtime.js";
+import { AIMC_SYSTEM_PROMPT } from "./prompts/aimc-main.js";
 
 describe("createAgentRunService", () => {
   it("prepends saved session messages and avoids duplicating the current user prompt", async () => {
@@ -364,6 +365,227 @@ describe("createAgentRunService", () => {
     );
   });
 
+  it("resolves resume mode and passes provider-local resume into the local runtime", async () => {
+    const createRun = vi.fn();
+    const updateRun = vi.fn();
+    const localRun = vi.fn(async function* () {
+      yield {
+        type: "done" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+        sessionId: "provider-session-next",
+        resumeToken: "resume-token-next",
+      };
+    });
+
+    const runs = createAgentRunService({
+      agentRunStore: {
+        createRun,
+        getRun: vi.fn(() => ({
+          id: "run-previous",
+          provider_session_id: "provider-session-prev",
+          resume_token: "resume-token-prev",
+          runtime_kind: "local-agent",
+          runtime_provider: "codex",
+          session_id: "session-1",
+          status: "completed",
+        })),
+        updateRun,
+      },
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        run: localRun,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "继续",
+        resumeFromRunId: "run-previous",
+        resumeMode: "auto",
+        sessionId: "session-1",
+      },
+      {
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+    );
+
+    expect(run.resumeMode).toBe("provider-local");
+    expect(createRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        previousRunId: "run-previous",
+        resumeMode: "provider-local",
+      }),
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the provider invocation.
+    }
+
+    expect(localRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resume: {
+          mode: "provider",
+          providerSessionId: "provider-session-prev",
+          resumeToken: "resume-token-prev",
+        },
+      }),
+    );
+    expect(updateRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerSessionId: "provider-session-next",
+        resumeToken: "resume-token-next",
+        runId: run.runId,
+      }),
+    );
+  });
+
+  it("turns cross-provider resume into a handoff without provider-native resume", async () => {
+    const createRun = vi.fn();
+    const localRun = vi.fn(async function* () {
+      yield {
+        type: "done" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+
+    const runs = createAgentRunService({
+      agentRunStore: {
+        createRun,
+        getRun: vi.fn(() => ({
+          id: "run-previous",
+          runtime_kind: "local-agent",
+          runtime_provider: "claude",
+          session_id: "session-1",
+          status: "completed",
+        })),
+        updateRun: vi.fn(),
+      },
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        run: localRun,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "继续",
+        resumeFromRunId: "run-previous",
+        sessionId: "session-1",
+      },
+      {
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+    );
+
+    expect(run.resumeMode).toBe("handoff");
+    expect(createRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        previousRunId: "run-previous",
+        resumeMode: "handoff",
+      }),
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the provider invocation.
+    }
+
+    expect(localRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining("Resume handoff context:"),
+        resume: {
+          mode: "fresh",
+        },
+      }),
+    );
+  });
+
+  it("passes the AIMC system prompt to local-agent providers", async () => {
+    const localRun = vi.fn(async function* () {
+      yield {
+        type: "done" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+
+    const runs = createAgentRunService({
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        run: localRun,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "继续",
+        sessionId: "session-1",
+      },
+      {
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the provider invocation.
+    }
+
+    expect(localRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        systemPrompt: AIMC_SYSTEM_PROMPT,
+      }),
+    );
+  });
+
   it("maps local-agent tool results into stream events with media artifacts", async () => {
     const localRun = vi.fn(async function* () {
       yield {
@@ -448,6 +670,170 @@ describe("createAgentRunService", () => {
             expect.objectContaining({
               type: "image",
               url: "https://example.com/image.png",
+            }),
+          ],
+        }),
+      ]),
+    );
+  });
+
+  it("maps local-agent screenshot tool results into image artifacts", async () => {
+    const localRun = vi.fn(async function* () {
+      yield {
+        type: "tool_result" as const,
+        id: "tool-screenshot",
+        name: "screenshot_canvas",
+        output: {
+          screenshotUrl: "https://example.com/screenshot.png",
+          mimeType: "image/png",
+          width: 800,
+          height: 600,
+        },
+        summary: "screenshot captured",
+        isError: false,
+      };
+      yield {
+        type: "done" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+
+    const runs = createAgentRunService({
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        run: localRun,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "截图",
+        sessionId: "session-1",
+      },
+      {
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+    );
+
+    const events = [];
+    for await (const event of runs.streamRun(run.runId)) {
+      events.push(event);
+    }
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool.completed",
+          toolCallId: "tool-screenshot",
+          toolName: "screenshot_canvas",
+          artifacts: [
+            expect.objectContaining({
+              type: "image",
+              url: "https://example.com/screenshot.png",
+            }),
+          ],
+        }),
+      ]),
+    );
+  });
+
+  it("maps local-agent video tool results into stream events with video artifacts", async () => {
+    const localRun = vi.fn(async function* () {
+      yield {
+        type: "tool_call" as const,
+        id: "tool-video",
+        name: "generate_video",
+        input: { prompt: "motion poster" },
+      };
+      yield {
+        type: "tool_result" as const,
+        id: "tool-video",
+        name: "generate_video",
+        output: {
+          videoUrl: "https://example.com/video.mp4",
+          mimeType: "video/mp4",
+          width: 1280,
+          height: 720,
+          durationSeconds: 5,
+          title: "motion poster",
+        },
+        summary: "video generated",
+        isError: false,
+      };
+      yield {
+        type: "done" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+
+    const runs = createAgentRunService({
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        run: localRun,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "继续",
+        sessionId: "session-1",
+      },
+      {
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+    );
+
+    const events = [];
+    for await (const event of runs.streamRun(run.runId)) {
+      events.push(event);
+    }
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool.completed",
+          toolCallId: "tool-video",
+          toolName: "generate_video",
+          outputSummary: "video generated",
+          artifacts: [
+            expect.objectContaining({
+              type: "video",
+              url: "https://example.com/video.mp4",
+              durationSeconds: 5,
             }),
           ],
         }),

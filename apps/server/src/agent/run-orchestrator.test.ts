@@ -6,6 +6,7 @@ import {
   createRuntimeControlPlane,
   inferAimcRuntimeTarget,
   inferRuntimeKind,
+  isLocalAgentRuntimeRequested,
   projectStreamEventToAssistantMessage,
   resolveResumeMode,
 } from "./run-orchestrator.js";
@@ -151,6 +152,149 @@ describe("agent run orchestrator", () => {
     ]);
   });
 
+  it("owns stream event persistence, projection, publish, and assistant update", async () => {
+    const persisted: Array<{ type: string; runId: string; canvasId?: string }> = [];
+    const published: Array<{
+      event: { type: string };
+      envelope: { eventId?: string; seq?: number };
+    }> = [];
+    const assistantUpdates: Array<{ text: string; blocks: unknown[] }> = [];
+    const orchestrator = createAgentRunOrchestrator({
+      eventPersistence: {
+        appendEvent(input) {
+          persisted.push({
+            type: input.event.type,
+            runId: input.runId,
+            ...(input.canvasId ? { canvasId: input.canvasId } : {}),
+          });
+          return {
+            eventId: `${input.runId}:${persisted.length}`,
+            seq: persisted.length,
+            canvasSeq: 100 + persisted.length,
+          };
+        },
+      },
+    });
+    const projection = orchestrator.createAssistantProjection();
+
+    const envelope = await orchestrator.handleStreamEvent({
+      canvasId: "canvas_1",
+      event: {
+        type: "message.delta",
+        runId: "run_1",
+        messageId: "msg_1",
+        delta: "hello",
+        timestamp: "2026-06-04T00:00:00.000Z",
+      },
+      project: projection,
+      publish(input) {
+        published.push(input);
+      },
+      runId: "run_1",
+      updateAssistant(state) {
+        assistantUpdates.push({
+          text: state.textParts.join(""),
+          blocks: state.blocks,
+        });
+      },
+    });
+
+    expect(envelope).toEqual({ eventId: "run_1:1", seq: 101 });
+    expect(persisted).toEqual([
+      { canvasId: "canvas_1", runId: "run_1", type: "message.delta" },
+    ]);
+    expect(published).toEqual([
+      {
+        event: expect.objectContaining({ type: "message.delta" }),
+        envelope: { eventId: "run_1:1", seq: 101 },
+      },
+    ]);
+    expect(assistantUpdates).toEqual([
+      {
+        text: "hello",
+        blocks: [{ type: "text", text: "hello" }],
+      },
+    ]);
+  });
+
+  it("emits a durable terminal cancel event", async () => {
+    const persisted: string[] = [];
+    const runStoreCalls: Array<Record<string, unknown>> = [];
+    const orchestrator = createAgentRunOrchestrator({
+      eventPersistence: {
+        appendEvent(input) {
+          persisted.push(input.event.type);
+          return {
+            eventId: `${input.runId}:${persisted.length}`,
+            seq: persisted.length,
+          };
+        },
+      },
+      runStore: {
+        createRun() {},
+        updateRun(input) {
+          runStoreCalls.push(input);
+        },
+      },
+    });
+
+    const result = await orchestrator.emitTerminalCancel({
+      now: () => "2026-06-04T00:00:00.000Z",
+      runId: "run_1",
+    });
+
+    expect(result).toEqual({
+      envelope: { eventId: "run_1:1" },
+      event: {
+        type: "run.canceled",
+        runId: "run_1",
+        timestamp: "2026-06-04T00:00:00.000Z",
+      },
+    });
+    expect(persisted).toEqual(["run.canceled"]);
+    expect(runStoreCalls).toEqual([{ runId: "run_1", status: "canceled" }]);
+  });
+
+  it("does not publish or project duplicate events after a terminal event", async () => {
+    const projection = createAssistantMessageProjection();
+    const published: unknown[] = [];
+    const assistantUpdates: unknown[] = [];
+    const orchestrator = createAgentRunOrchestrator({
+      eventPersistence: {
+        appendEvent() {
+          return {
+            duplicate: true,
+            eventId: "run_1:3",
+            seq: 3,
+          };
+        },
+      },
+    });
+
+    const envelope = await orchestrator.handleStreamEvent({
+      event: {
+        type: "message.delta",
+        runId: "run_1",
+        messageId: "msg_1",
+        delta: "late",
+        timestamp: "2026-06-04T00:00:00.000Z",
+      },
+      project: projection,
+      publish(input) {
+        published.push(input);
+      },
+      runId: "run_1",
+      updateAssistant(state) {
+        assistantUpdates.push(state);
+      },
+    });
+
+    expect(envelope).toEqual({ duplicate: true, eventId: "run_1:3" });
+    expect(published).toEqual([]);
+    expect(assistantUpdates).toEqual([]);
+    expect(projection.textParts).toEqual([]);
+  });
+
   it("projects text and media tool events into assistant message blocks", () => {
     const projection = createAssistantMessageProjection();
 
@@ -240,6 +384,37 @@ describe("agent run orchestrator", () => {
         requestedRuntimeKind: undefined,
       }),
     ).toEqual({ kind: "server-deepagent" });
+  });
+
+  it("selects a local runtime when the model prefix matches a local provider", () => {
+    expect(
+      inferAimcRuntimeTarget({
+        availableRuntimeTargets: [
+          { kind: "server-deepagent" },
+          { kind: "local-agent", provider: "codex" },
+          { kind: "local-agent", provider: "claude" },
+        ],
+        model: "codex:gpt-5.4",
+        requestedRuntimeKind: undefined,
+      }),
+    ).toEqual({ kind: "local-agent", provider: "codex" });
+  });
+
+  it("detects local-agent requests from official provider model prefixes", () => {
+    expect(isLocalAgentRuntimeRequested({ runtimeKind: "local-agent" })).toBe(
+      true,
+    );
+    expect(isLocalAgentRuntimeRequested({ runtimeProvider: "claude" })).toBe(
+      true,
+    );
+    for (const provider of ["codex", "claude", "hermes", "kimi", "kiro"]) {
+      expect(
+        isLocalAgentRuntimeRequested({ model: `${provider}:default` }),
+      ).toBe(true);
+    }
+    expect(
+      isLocalAgentRuntimeRequested({ model: "agnes:agnes-2.0-flash" }),
+    ).toBe(false);
   });
 
   it("fills the only local provider when a legacy request omits it", () => {

@@ -5,12 +5,17 @@ export function createFakeAcpPeer(messages: unknown[]) {
 export function createFakeAcpPeerScript(input: {
   updates: unknown[];
   exitCode?: number;
+  expectedMethods?: string[];
+  sessionId?: string;
 }) {
   return `
 process.stdin.setEncoding("utf8");
 let buffer = "";
 const updates = ${JSON.stringify(input.updates)};
 const exitCode = ${input.exitCode ?? 0};
+const expectedMethods = ${JSON.stringify(input.expectedMethods ?? [])};
+const sessionId = ${JSON.stringify(input.sessionId ?? "session_fake")};
+const seenMethods = [];
 
 function send(message) {
   process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
@@ -25,8 +30,31 @@ process.stdin.on("data", (chunk) => {
     newlineIndex = buffer.indexOf("\\n");
     if (!line) continue;
     const message = JSON.parse(line);
+    if (message.method) {
+      seenMethods.push(message.method);
+    }
+    if (
+      expectedMethods.length > 0 &&
+      seenMethods.length === expectedMethods.length &&
+      JSON.stringify(seenMethods) !== JSON.stringify(expectedMethods)
+    ) {
+      send({
+        method: "session/update",
+        params: {
+          type: "error",
+          error: "Unexpected ACP method order: " + JSON.stringify(seenMethods),
+        },
+      });
+      process.exit(2);
+    }
     if (message.id !== undefined) {
-      send({ id: message.id, result: { ok: true } });
+      send({
+        id: message.id,
+        result:
+          message.method === "session/new"
+            ? { ok: true, sessionId }
+            : { ok: true },
+      });
     }
     if (message.method === "session/prompt") {
       for (const update of updates) {

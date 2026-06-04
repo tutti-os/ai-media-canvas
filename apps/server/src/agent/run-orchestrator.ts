@@ -73,6 +73,27 @@ export function inferRuntimeKind(input: RuntimeKindSelectorInput): RuntimeTarget
   return inferPackageRuntimeKind<RuntimeKind, AgentRuntimeProvider>(input);
 }
 
+const LOCAL_AGENT_MODEL_PREFIXES = [
+  "codex:",
+  "claude:",
+  "hermes:",
+  "kimi:",
+  "kiro:",
+] as const;
+
+export function isLocalAgentRuntimeRequested(input: {
+  model?: string | undefined;
+  runtimeKind?: RuntimeKind | undefined;
+  runtimeProvider?: AgentRuntimeProvider | undefined;
+}) {
+  return (
+    input.runtimeKind === "local-agent" ||
+    Boolean(input.runtimeProvider) ||
+    (typeof input.model === "string" &&
+      LOCAL_AGENT_MODEL_PREFIXES.some((prefix) => input.model!.startsWith(prefix)))
+  );
+}
+
 export function inferAimcRuntimeTarget(
   input: RuntimeKindSelectorInput,
 ): RuntimeTarget {
@@ -94,6 +115,20 @@ export function inferAimcRuntimeTarget(
         ? { provider: input.requestedRuntimeProvider }
         : {}),
     };
+  }
+
+  const modelProvider =
+    typeof input.model === "string" && input.model.includes(":")
+      ? input.model.split(":", 1)[0]
+      : undefined;
+  if (modelProvider) {
+    const matchingLocalTarget = input.availableRuntimeTargets.find(
+      (target) =>
+        target.kind === "local-agent" && target.provider === modelProvider,
+    );
+    if (matchingLocalTarget) {
+      return matchingLocalTarget;
+    }
   }
 
   const serverRuntime = input.availableRuntimeTargets.find(
@@ -195,6 +230,7 @@ export function projectStreamEventToAssistantMessage(
 
 export type AgentRunEventEnvelope = {
   canvasSeq?: number;
+  duplicate?: boolean;
   eventId: string;
   seq: number;
 };
@@ -222,8 +258,9 @@ export function persistRunEvent(input: {
 
 export function buildReplayEnvelope(
   persistedEvent: AgentRunEventEnvelope | undefined,
-): { eventId?: string; seq?: number } {
+): { duplicate?: boolean; eventId?: string; seq?: number } {
   return {
+    ...(persistedEvent?.duplicate ? { duplicate: true } : {}),
     ...(persistedEvent?.eventId ? { eventId: persistedEvent.eventId } : {}),
     ...(persistedEvent?.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
   };
@@ -265,6 +302,8 @@ export type AgentRunRecordStore = {
     assistantMessageId?: string;
     canvasId?: string;
     model?: string;
+    previousRunId?: string;
+    resumeMode?: Exclude<AgentRunResumeMode, "native">;
     runtimeKind?: RuntimeKind;
     runtimeProvider?: AgentRuntimeProvider;
     runId: string;
@@ -275,20 +314,64 @@ export type AgentRunRecordStore = {
     assistantMessageId?: string;
     errorCode?: string;
     errorMessage?: string;
+    providerSessionId?: string;
     runId: string;
+    resumeToken?: string;
     runtimeKind?: RuntimeKind;
     runtimeProvider?: AgentRuntimeProvider;
     status: AgentRunStatus;
   }): void;
+  getRun?(runId: string):
+    | {
+        id: string;
+        previous_run_id?: string | null;
+        provider_session_id?: string | null;
+        resume_mode?: Exclude<AgentRunResumeMode, "native"> | null;
+        resume_token?: string | null;
+        runtime_kind?: RuntimeKind | null;
+        runtime_provider?: AgentRuntimeProvider | null;
+        session_id?: string | null;
+        status?: AgentRunStatus;
+      }
+    | undefined;
 };
 
 export type AgentRunOrchestrator = {
   createAssistantProjection(): AssistantMessageProjection;
+  emitTerminalCancel(input: {
+    canvasId?: string;
+    now?: () => string;
+    project?: AssistantMessageProjection;
+    publish?: (input: {
+      envelope: { duplicate?: boolean; eventId?: string; seq?: number };
+      event: StreamEvent;
+    }) => void;
+    runId: string;
+    updateAssistant?: (
+      projection: AssistantMessageProjection,
+    ) => Promise<void> | void;
+  }): Promise<{
+    envelope: { duplicate?: boolean; eventId?: string; seq?: number };
+    event: Extract<StreamEvent, { type: "run.canceled" }>;
+  }>;
+  handleStreamEvent(input: {
+    canvasId?: string;
+    event: StreamEvent;
+    project?: AssistantMessageProjection;
+    publish?: (input: {
+      envelope: { duplicate?: boolean; eventId?: string; seq?: number };
+      event: StreamEvent;
+    }) => void;
+    runId: string;
+    updateAssistant?: (
+      projection: AssistantMessageProjection,
+    ) => Promise<void> | void;
+  }): Promise<{ duplicate?: boolean; eventId?: string; seq?: number }>;
   persistAndEnvelope(input: {
     canvasId?: string;
     event: StreamEvent;
     runId: string;
-  }): { eventId?: string; seq?: number };
+  }): { duplicate?: boolean; eventId?: string; seq?: number };
   projectEvent(
     state: AssistantMessageProjection,
     event: StreamEvent,
@@ -321,6 +404,56 @@ export function createAgentRunOrchestrator(input: {
   return {
     createAssistantProjection() {
       return createAssistantMessageProjection();
+    },
+
+    async emitTerminalCancel(cancelInput) {
+      const event = {
+        type: "run.canceled",
+        runId: cancelInput.runId,
+        timestamp: (cancelInput.now ?? (() => new Date().toISOString()))(),
+      } satisfies Extract<StreamEvent, { type: "run.canceled" }>;
+      const envelope = await this.handleStreamEvent({
+        ...(cancelInput.canvasId ? { canvasId: cancelInput.canvasId } : {}),
+        event,
+        ...(cancelInput.project ? { project: cancelInput.project } : {}),
+        ...(cancelInput.publish ? { publish: cancelInput.publish } : {}),
+        runId: cancelInput.runId,
+        ...(cancelInput.updateAssistant
+          ? { updateAssistant: cancelInput.updateAssistant }
+          : {}),
+      });
+      input.runStore?.updateRun({
+        runId: cancelInput.runId,
+        status: "canceled",
+      });
+      return { envelope, event };
+    },
+
+    async handleStreamEvent(streamInput) {
+      const envelope = this.persistAndEnvelope({
+        ...(streamInput.canvasId ? { canvasId: streamInput.canvasId } : {}),
+        event: streamInput.event,
+        runId: streamInput.runId,
+      });
+
+      if (envelope.duplicate) {
+        return envelope;
+      }
+
+      if (streamInput.project) {
+        this.projectEvent(streamInput.project, streamInput.event);
+      }
+
+      streamInput.publish?.({
+        envelope,
+        event: streamInput.event,
+      });
+
+      if (streamInput.project && streamInput.updateAssistant) {
+        await streamInput.updateAssistant(streamInput.project);
+      }
+
+      return envelope;
     },
 
     persistAndEnvelope(eventInput) {

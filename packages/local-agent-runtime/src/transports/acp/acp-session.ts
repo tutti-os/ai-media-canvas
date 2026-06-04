@@ -5,7 +5,10 @@ import type { AcpSessionNewParams } from "./acp-types.js";
 
 export function buildAcpSessionNewParams(
   cwd: string,
-  options?: { mcpServers?: LocalAgentMcpServerConfig[] },
+  options?: {
+    mcpServers?: LocalAgentMcpServerConfig[];
+    resume?: AcpSessionNewParams["resume"];
+  },
 ): AcpSessionNewParams {
   return {
     cwd: path.resolve(cwd),
@@ -29,5 +32,6 @@ export function buildAcpSessionNewParams(
         };
       },
     ),
+    ...(options?.resume ? { resume: options.resume } : {}),
   };
 }

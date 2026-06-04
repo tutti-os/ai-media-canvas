@@ -1,5 +1,9 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { createCodexProvider } from "../../src/providers/codex/index.js";
 import { buildCodexLaunchPlan } from "../../src/providers/codex/launch-plan.js";
 
 describe("buildCodexLaunchPlan", () => {
@@ -59,5 +63,22 @@ describe("buildCodexLaunchPlan", () => {
       "-c",
       'model_reasoning_effort="low"',
     ]);
+  });
+
+  it("prepends system prompts to the stdin prompt for provider runs", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "codex-system-prompt-plan-"));
+    try {
+      const plan = await createCodexProvider().buildLaunchPlan({
+        runId: "run-1",
+        cwd,
+        prompt: "draw a poster",
+        systemPrompt: "AIMC system rules",
+      });
+
+      expect(plan.prompt).toMatch(/^AIMC system rules\n\n/);
+      expect(plan.prompt).toContain("Current request:\n\ndraw a poster");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 });

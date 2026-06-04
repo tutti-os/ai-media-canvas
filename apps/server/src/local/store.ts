@@ -5,6 +5,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 
 import type {
   AgentRuntimeProvider,
+  AgentRunResumeMode,
   AssetBucket,
   AssetObject,
   BackgroundJob,
@@ -385,6 +386,10 @@ export function createLocalStore(options: {
       model TEXT,
       runtime_kind TEXT,
       runtime_provider TEXT,
+      previous_run_id TEXT,
+      resume_mode TEXT,
+      provider_session_id TEXT,
+      resume_token TEXT,
       assistant_message_id TEXT,
       status TEXT NOT NULL,
       error_code TEXT,
@@ -537,6 +542,22 @@ export function createLocalStore(options: {
 
     if (!columnNames.has("assistant_message_id")) {
       db.exec(`ALTER TABLE agent_runs ADD COLUMN assistant_message_id TEXT`);
+    }
+
+    if (!columnNames.has("previous_run_id")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN previous_run_id TEXT`);
+    }
+
+    if (!columnNames.has("resume_mode")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN resume_mode TEXT`);
+    }
+
+    if (!columnNames.has("provider_session_id")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN provider_session_id TEXT`);
+    }
+
+    if (!columnNames.has("resume_token")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN resume_token TEXT`);
     }
 
     const eventColumns = db
@@ -2417,6 +2438,8 @@ export function createLocalStore(options: {
     assistantMessageId?: string;
     canvasId?: string;
     model?: string;
+    previousRunId?: string;
+    resumeMode?: Exclude<AgentRunResumeMode, "auto">;
     runtimeKind?: RuntimeKind;
     runtimeProvider?: AgentRuntimeProvider;
     runId: string;
@@ -2428,8 +2451,9 @@ export function createLocalStore(options: {
       `
         INSERT INTO agent_runs (
           id, workspace_id, canvas_id, session_id, thread_id, model,
-          runtime_kind, runtime_provider, assistant_message_id, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          runtime_kind, runtime_provider, previous_run_id, resume_mode,
+          assistant_message_id, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     ).run(
       input.runId,
@@ -2440,6 +2464,8 @@ export function createLocalStore(options: {
       input.model ?? null,
       input.runtimeKind ?? null,
       input.runtimeProvider ?? null,
+      input.previousRunId ?? null,
+      input.resumeMode ?? null,
       input.assistantMessageId ?? null,
       "accepted",
       timestamp,
@@ -2461,7 +2487,9 @@ export function createLocalStore(options: {
     assistantMessageId?: string;
     errorCode?: string;
     errorMessage?: string;
+    providerSessionId?: string;
     runId: string;
+    resumeToken?: string;
     runtimeKind?: RuntimeKind;
     runtimeProvider?: AgentRuntimeProvider;
     status: AgentRunStatus;
@@ -2474,6 +2502,8 @@ export function createLocalStore(options: {
             updated_at = ?,
             runtime_kind = COALESCE(?, runtime_kind),
             runtime_provider = COALESCE(?, runtime_provider),
+            provider_session_id = COALESCE(?, provider_session_id),
+            resume_token = COALESCE(?, resume_token),
             assistant_message_id = COALESCE(?, assistant_message_id),
             started_at = CASE WHEN ? = 'running' AND started_at IS NULL THEN ? ELSE started_at END,
             completed_at = CASE WHEN ? IN ('completed', 'failed') THEN ? ELSE completed_at END,
@@ -2487,6 +2517,8 @@ export function createLocalStore(options: {
       timestamp,
       input.runtimeKind ?? null,
       input.runtimeProvider ?? null,
+      input.providerSessionId ?? null,
+      input.resumeToken ?? null,
       input.assistantMessageId ?? null,
       input.status,
       timestamp,
@@ -2518,7 +2550,9 @@ export function createLocalStore(options: {
     return db
       .prepare(
         `
-          SELECT id, session_id, status, runtime_kind, runtime_provider, assistant_message_id, error_code, error_message
+          SELECT id, session_id, status, runtime_kind, runtime_provider,
+                 previous_run_id, resume_mode, assistant_message_id,
+                 provider_session_id, resume_token, error_code, error_message
           FROM agent_runs
           WHERE id = ?
           LIMIT 1
@@ -2530,6 +2564,10 @@ export function createLocalStore(options: {
           error_code: string | null;
           error_message: string | null;
           id: string;
+          previous_run_id: string | null;
+          provider_session_id: string | null;
+          resume_mode: Exclude<AgentRunResumeMode, "auto"> | null;
+          resume_token: string | null;
           runtime_kind: RuntimeKind | null;
           runtime_provider: AgentRuntimeProvider | null;
           session_id: string;
@@ -2542,7 +2580,9 @@ export function createLocalStore(options: {
     return db
       .prepare(
         `
-          SELECT id, session_id, status, runtime_kind, runtime_provider, assistant_message_id, error_code, error_message
+          SELECT id, session_id, status, runtime_kind, runtime_provider,
+                 previous_run_id, resume_mode, assistant_message_id,
+                 provider_session_id, resume_token, error_code, error_message
           FROM agent_runs
           WHERE canvas_id = ?
             AND session_id = ?
@@ -2557,6 +2597,10 @@ export function createLocalStore(options: {
           error_code: string | null;
           error_message: string | null;
           id: string;
+          previous_run_id: string | null;
+          provider_session_id: string | null;
+          resume_mode: Exclude<AgentRunResumeMode, "auto"> | null;
+          resume_token: string | null;
           runtime_kind: RuntimeKind | null;
           runtime_provider: AgentRuntimeProvider | null;
           session_id: string;
@@ -2570,6 +2614,32 @@ export function createLocalStore(options: {
     event: StreamEvent;
     runId: string;
   }) {
+    const existingTerminal = db
+      .prepare(
+        `
+          SELECT event_id, seq, canvas_seq
+          FROM agent_run_events
+          WHERE run_id = ?
+            AND type IN ('run.completed', 'run.failed', 'run.canceled')
+          ORDER BY seq ASC
+          LIMIT 1
+        `,
+      )
+      .get(input.runId) as
+      | { canvas_seq: number | null; event_id: string; seq: number }
+      | undefined;
+
+    if (existingTerminal) {
+      return {
+        ...(existingTerminal.canvas_seq != null
+          ? { canvasSeq: existingTerminal.canvas_seq }
+          : {}),
+        duplicate: true,
+        eventId: existingTerminal.event_id,
+        seq: existingTerminal.seq,
+      };
+    }
+
     const current = db
       .prepare(`SELECT COALESCE(MAX(seq), 0) AS max_seq FROM agent_run_events WHERE run_id = ?`)
       .get(input.runId) as { max_seq: number | null };

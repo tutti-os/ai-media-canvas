@@ -20,14 +20,21 @@ function buildArtifacts(
   toolName: string,
   output: Record<string, unknown>,
 ): ToolArtifact[] | undefined {
+  const imageUrl =
+    typeof output.imageUrl === "string" && output.imageUrl.length > 0
+      ? output.imageUrl
+      : toolName === "screenshot_canvas" &&
+          typeof output.screenshotUrl === "string" &&
+          output.screenshotUrl.length > 0
+        ? output.screenshotUrl
+        : undefined;
   if (
     (toolName === "generate_image" || toolName === "screenshot_canvas") &&
-    typeof output.imageUrl === "string" &&
-    output.imageUrl.length > 0
+    imageUrl
   ) {
     const parsed = imageArtifactSchema.safeParse({
       type: "image",
-      url: output.imageUrl,
+      url: imageUrl,
       mimeType:
         typeof output.mimeType === "string" && output.mimeType.length > 0
           ? output.mimeType

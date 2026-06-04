@@ -16,6 +16,11 @@ export type AcpSessionNewParams = {
         env: LocalAgentMcpEnvEntry[];
       })
   >;
+  resume?: {
+    mode: "native" | "provider" | "fresh";
+    providerSessionId?: string;
+    resumeToken?: string;
+  };
 };
 
 export type JsonRpcEnvelope = {
