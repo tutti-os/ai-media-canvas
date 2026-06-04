@@ -84,7 +84,7 @@ function createMockWs(): WebSocketHandle {
     cancelRun: vi.fn(),
     onEvent: vi.fn(() => () => {}),
     registerRPC: vi.fn(() => () => {}),
-    resumeCanvas: vi.fn((_canvasId, onAck) => {
+    resumeCanvas: vi.fn((_canvasId, _sessionId, onAck) => {
       onAck?.({
         type: "command.ack",
         action: "canvas.resume",
@@ -315,7 +315,7 @@ describe("ChatSidebar", () => {
           replayListener = null;
         };
       }),
-      resumeCanvas: vi.fn((_canvasId, onAck) => {
+      resumeCanvas: vi.fn((_canvasId, _sessionId, onAck) => {
         onAck?.({
           type: "command.ack",
           action: "canvas.resume",
@@ -347,10 +347,10 @@ describe("ChatSidebar", () => {
     await waitFor(() => expect(fetchRunEventsMock).toHaveBeenCalledWith("run-reconnect", 0));
     expect(await screen.findByText("Recovered transcript")).toBeInTheDocument();
     await waitFor(() => expect(imageGeneratedSpy).toHaveBeenCalledTimes(1));
-    replayListener?.({
-      replayed: true,
-      eventId: "run-reconnect:8",
-      seq: 8,
+	    replayListener?.({
+	      replayed: true,
+	      eventId: "run-reconnect:8",
+	      seq: 99,
       event: {
         type: "tool.completed",
         runId: "run-reconnect",
@@ -378,7 +378,7 @@ describe("ChatSidebar", () => {
     );
   });
 
-  it("recovers persisted media artifacts from the latest assistant snapshot after reconnect", async () => {
+	  it("recovers persisted media artifacts from the latest assistant snapshot after reconnect", async () => {
     const imageGeneratedSpy = vi.fn();
     fetchMessagesMock.mockResolvedValue({
       messages: [
@@ -431,5 +431,59 @@ describe("ChatSidebar", () => {
         url: "https://example.com/from-snapshot.png",
       }),
     );
+	  });
+
+  it("does not reinsert persisted media when backend already inserted the canvas element", async () => {
+    const imageGeneratedSpy = vi.fn();
+    fetchMessagesMock.mockResolvedValue({
+      messages: [
+        {
+          id: "assistant-saved",
+          role: "assistant",
+          content: "",
+          createdAt: "2026-03-24T00:00:00.000Z",
+          toolActivities: null,
+          contentBlocks: [
+            {
+              type: "tool",
+              toolCallId: "tool-backend-inserted",
+              toolName: "generate_image",
+              status: "completed",
+              output: {
+                elementId: "canvas-element-1",
+                imageUrl: "https://example.com/backend-inserted.png",
+              },
+              artifacts: [
+                {
+                  type: "image",
+                  title: "Backend inserted",
+                  url: "https://example.com/backend-inserted.png",
+                  mimeType: "image/png",
+                  width: 1024,
+                  height: 1024,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          onImageGenerated={imageGeneratedSpy}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("Backend inserted")).toBeInTheDocument());
+    expect(imageGeneratedSpy).not.toHaveBeenCalled();
   });
 });

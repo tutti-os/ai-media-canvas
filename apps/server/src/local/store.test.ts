@@ -81,7 +81,7 @@ describe("createLocalStore", () => {
     const db = new DatabaseSync(join(dataRoot, "ai-media-canvas.db"));
     const row = db
       .prepare(
-        `SELECT id, canvas_id, session_id, thread_id, model, runtime_kind, status, completed_at
+        `SELECT id, canvas_id, session_id, thread_id, model, runtime_kind, runtime_provider, status, completed_at
          FROM agent_runs
          WHERE id = ?`,
       )
@@ -92,6 +92,7 @@ describe("createLocalStore", () => {
           id: string;
           model: string;
           runtime_kind: string | null;
+          runtime_provider: string | null;
           session_id: string;
           status: string;
           thread_id: string;
@@ -104,6 +105,7 @@ describe("createLocalStore", () => {
       id: "run-1",
       model: "agnes:agnes-2.0-flash",
       runtime_kind: "server-deepagent",
+      runtime_provider: null,
       session_id: session!.id,
       status: "completed",
       thread_id: "thread:run-session",
@@ -135,7 +137,8 @@ describe("createLocalStore", () => {
       assistantMessageId: assistantMessage!.id,
       canvasId: project.primaryCanvas.id,
       model: "codex:gpt-5.4",
-      runtimeKind: "local-codex",
+      runtimeKind: "local-agent",
+      runtimeProvider: "codex",
       runId: "run-anchor",
       sessionId: session!.id,
     });
@@ -170,6 +173,24 @@ describe("createLocalStore", () => {
       ?.find((message) => message.id === assistantMessage!.id);
     const persistedEvents = store.listAgentRunEvents("run-anchor");
     const persistedRun = store.getAgentRun("run-anchor");
+    const db = new DatabaseSync(join(dataRoot, "ai-media-canvas.db"));
+    const messageRow = db
+      .prepare(
+        `
+          SELECT run_id, run_status, last_run_event_id
+          FROM chat_messages
+          WHERE id = ?
+          LIMIT 1
+        `,
+      )
+      .get(assistantMessage!.id) as
+      | {
+          last_run_event_id: string | null;
+          run_id: string | null;
+          run_status: string | null;
+        }
+      | undefined;
+    db.close();
 
     expect(updatedMessage).toMatchObject({
       id: assistantMessage!.id,
@@ -180,8 +201,63 @@ describe("createLocalStore", () => {
     expect(persistedRun).toMatchObject({
       id: "run-anchor",
       assistant_message_id: assistantMessage!.id,
-      runtime_kind: "local-codex",
+      runtime_kind: "local-agent",
+      runtime_provider: "codex",
       status: "accepted",
+    });
+    expect(messageRow).toEqual({
+      last_run_event_id: "run-anchor:2",
+      run_id: "run-anchor",
+      run_status: "accepted",
+    });
+  });
+
+  it("finds the latest active run for a specific canvas and session", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const project = store.createProject({ name: "Resume Binding" });
+    const sessionA = store.createSession(project.primaryCanvas.id, "Session A");
+    const sessionB = store.createSession(project.primaryCanvas.id, "Session B");
+    expect(sessionA).not.toBeNull();
+    expect(sessionB).not.toBeNull();
+
+    store.createAgentRun({
+      canvasId: project.primaryCanvas.id,
+      model: "codex:gpt-5.4",
+      runtimeKind: "local-agent",
+      runtimeProvider: "codex",
+      runId: "run-a",
+      sessionId: sessionA!.id,
+    });
+    store.createAgentRun({
+      canvasId: project.primaryCanvas.id,
+      model: "codex:gpt-5.4",
+      runtimeKind: "server-deepagent",
+      runId: "run-b",
+      sessionId: sessionB!.id,
+    });
+    store.updateAgentRun({
+      runId: "run-b",
+      status: "running",
+    });
+
+    expect(
+      store.getActiveAgentRun(project.primaryCanvas.id, sessionA!.id),
+    ).toMatchObject({
+      id: "run-a",
+      session_id: sessionA!.id,
+    });
+    expect(
+      store.getActiveAgentRun(project.primaryCanvas.id, sessionB!.id),
+    ).toMatchObject({
+      id: "run-b",
+      session_id: sessionB!.id,
     });
   });
 
@@ -201,7 +277,8 @@ describe("createLocalStore", () => {
     store.createAgentRun({
       canvasId: project.primaryCanvas.id,
       model: "codex:gpt-5.4",
-      runtimeKind: "local-codex",
+      runtimeKind: "local-agent",
+      runtimeProvider: "codex",
       runId: "run-canvas",
       sessionId: session!.id,
     });
@@ -261,7 +338,8 @@ describe("createLocalStore", () => {
     store.createAgentRun({
       canvasId: project.primaryCanvas.id,
       model: "codex:gpt-5.4",
-      runtimeKind: "local-codex",
+      runtimeKind: "local-agent",
+      runtimeProvider: "codex",
       runId: "run-interrupted",
       sessionId: session!.id,
     });

@@ -70,21 +70,41 @@ export const videoGenerationPreferenceSchema = z.object({
 
 export const runtimeKindSchema = z.enum([
   "server-deepagent",
-  "local-codex",
+  "local-agent",
 ]);
 
-export const runCreateRequestSchema = z.object({
-  sessionId: sessionIdSchema,
-  conversationId: conversationIdSchema,
-  prompt: z.string(),
-  canvasId: canvasIdSchema.optional(),
-  attachments: z.array(imageAttachmentSchema).optional(),
-  imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
-  videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
-  mentions: z.array(messageMentionSchema).optional(),
-  model: z.string().optional(),
-  runtimeKind: runtimeKindSchema.optional(),
-});
+export const agentRuntimeProviderSchema = z.enum(["codex"]);
+
+export const runCreateRequestSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    conversationId: conversationIdSchema,
+    prompt: z.string(),
+    canvasId: canvasIdSchema.optional(),
+    attachments: z.array(imageAttachmentSchema).optional(),
+    imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
+    videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
+    mentions: z.array(messageMentionSchema).optional(),
+    model: z.string().optional(),
+    runtimeKind: runtimeKindSchema.optional(),
+    runtimeProvider: agentRuntimeProviderSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.runtimeProvider && value.runtimeKind !== "local-agent") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "runtimeProvider requires runtimeKind=local-agent.",
+        path: ["runtimeProvider"],
+      });
+    }
+    if (value.runtimeKind === "local-agent" && !value.runtimeProvider) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "runtimeKind=local-agent requires runtimeProvider.",
+        path: ["runtimeProvider"],
+      });
+    }
+  });
 
 export const runCreateResponseSchema = z.object({
   runId: runIdSchema,
@@ -93,6 +113,7 @@ export const runCreateResponseSchema = z.object({
   status: z.literal("accepted"),
   assistantMessageId: identifierSchema.optional(),
   runtimeKind: runtimeKindSchema.optional(),
+  runtimeProvider: agentRuntimeProviderSchema.optional(),
 });
 
 export const viewerProfileSchema = z.object({
@@ -307,6 +328,9 @@ export type VideoGenerationPreference = z.infer<
 >;
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 export type RuntimeKind = z.infer<typeof runtimeKindSchema>;
+export type AgentRuntimeProvider = z.infer<
+  typeof agentRuntimeProviderSchema
+>;
 export type ChatSessionSummary = z.infer<typeof chatSessionSummarySchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type ChatMessageCreateRequest = z.infer<typeof chatMessageCreateRequestSchema>;

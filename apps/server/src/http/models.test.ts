@@ -20,6 +20,14 @@ describe("registerModelRoutes", () => {
     delete process.env.AIMC_CODEX_CLI_AVAILABLE;
   });
 
+  it("loads trusted local agent mode from the environment", () => {
+    expect(
+      loadServerEnv({}, { AIMC_TRUSTED_LOCAL_AGENT_MODE: "false" })
+        .trustedLocalAgentMode,
+    ).toBe(false);
+    expect(loadServerEnv({}, {}).trustedLocalAgentMode).toBe(true);
+  });
+
   it("includes Agnes models only when Agnes credentials are configured", async () => {
     const appWithoutAgnes = Fastify();
     apps.push(appWithoutAgnes);

@@ -1,81 +1,74 @@
-import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import type { RuntimeKind, StreamEvent } from "@aimc/shared";
+import type {
+  AgentRuntimeProvider,
+  RuntimeKind,
+  StreamEvent,
+} from "@aimc/shared";
+import type {
+  AgentRuntimeCapabilities,
+  AgentRuntimeMode,
+  AgentRuntimeRecord as PackageAgentRuntimeRecord,
+  AgentRuntimeStatus,
+  RuntimeKindSelector as PackageRuntimeKindSelector,
+  RuntimeKindSelectorInput as PackageRuntimeKindSelectorInput,
+  RuntimeLease as PackageRuntimeLease,
+  RuntimeProvider as PackageRuntimeProvider,
+  RuntimeTarget as PackageRuntimeTarget,
+} from "@aimc/local-agent-runtime";
+import {
+  createRuntimeControlPlane as createPackageRuntimeControlPlane,
+  inferRuntimeKind as inferPackageRuntimeKind,
+} from "@aimc/local-agent-runtime/runtime-control-plane";
 
-export type RuntimeProvider<TContext> = {
-  kind: RuntimeKind;
-  streamRun(context: TContext): AsyncGenerator<StreamEvent>;
+export type {
+  AgentRuntimeCapabilities,
+  AgentRuntimeMode,
+  AgentRuntimeStatus,
 };
 
-export type RuntimeKindSelectorInput = {
-  availableRuntimeKinds: RuntimeKind[];
-  model: BaseLanguageModel | string | undefined;
-  requestedRuntimeKind: RuntimeKind | undefined;
-};
-
-export type RuntimeKindSelector = (
-  input: RuntimeKindSelectorInput,
-) => RuntimeKind;
-
-export function inferRuntimeKind(input: RuntimeKindSelectorInput): RuntimeKind {
-  if (input.requestedRuntimeKind) {
-    return input.requestedRuntimeKind;
-  }
-
-  if (input.availableRuntimeKinds.length === 1) {
-    return input.availableRuntimeKinds[0]!;
-  }
-
-  throw new Error(
-    "No runtime kind requested and no selector configured for multiple runtime providers",
-  );
-}
+export type AgentRuntimeRecord = PackageAgentRuntimeRecord<
+  RuntimeKind,
+  AgentRuntimeProvider
+>;
+export type RuntimeKindSelector = PackageRuntimeKindSelector<
+  RuntimeKind,
+  AgentRuntimeProvider
+>;
+export type RuntimeKindSelectorInput = PackageRuntimeKindSelectorInput<
+  RuntimeKind,
+  AgentRuntimeProvider
+>;
+export type RuntimeLease = PackageRuntimeLease<
+  RuntimeKind,
+  AgentRuntimeProvider
+>;
+export type RuntimeProvider<TContext> = PackageRuntimeProvider<
+  TContext,
+  StreamEvent,
+  RuntimeKind,
+  AgentRuntimeProvider
+>;
+export type RuntimeTarget = PackageRuntimeTarget<
+  RuntimeKind,
+  AgentRuntimeProvider
+>;
 
 export function createRuntimeControlPlane<TContext>(
   providers: RuntimeProvider<TContext>[],
   options?: {
+    now?: () => string;
     selectRuntimeKind?: RuntimeKindSelector;
   },
 ) {
-  const providerMap = new Map<RuntimeKind, RuntimeProvider<TContext>>(
-    providers.map((provider) => [provider.kind, provider]),
-  );
+  return createPackageRuntimeControlPlane<
+    TContext,
+    StreamEvent,
+    RuntimeKind,
+    AgentRuntimeProvider
+  >(providers, options);
+}
 
-  return {
-    listRuntimeKinds(): RuntimeKind[] {
-      return [...providerMap.keys()];
-    },
-
-    resolveRuntimeKind(input: {
-      model: BaseLanguageModel | string | undefined;
-      requestedRuntimeKind: RuntimeKind | undefined;
-    }): RuntimeKind {
-      if (
-        input.requestedRuntimeKind &&
-        !providerMap.has(input.requestedRuntimeKind)
-      ) {
-        throw new Error(
-          `No runtime provider registered for ${input.requestedRuntimeKind}`,
-        );
-      }
-
-      const selectRuntimeKind = options?.selectRuntimeKind ?? inferRuntimeKind;
-      const kind = selectRuntimeKind({
-        availableRuntimeKinds: [...providerMap.keys()],
-        model: input.model,
-        requestedRuntimeKind: input.requestedRuntimeKind,
-      });
-      if (!providerMap.has(kind)) {
-        throw new Error(`No runtime provider registered for ${kind}`);
-      }
-      return kind;
-    },
-
-    streamRun(kind: RuntimeKind, context: TContext): AsyncGenerator<StreamEvent> {
-      const provider = providerMap.get(kind);
-      if (!provider) {
-        throw new Error(`No runtime provider registered for ${kind}`);
-      }
-      return provider.streamRun(context);
-    },
-  };
+export function inferRuntimeKind(
+  input: RuntimeKindSelectorInput,
+): RuntimeTarget {
+  return inferPackageRuntimeKind<RuntimeKind, AgentRuntimeProvider>(input);
 }

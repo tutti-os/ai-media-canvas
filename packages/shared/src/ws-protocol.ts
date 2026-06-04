@@ -48,6 +48,7 @@ export const wsResumeCommandSchema = z.object({
   action: z.literal("canvas.resume"),
   payload: z.object({
     canvasId: z.string().min(1),
+    sessionId: z.string().min(1),
     lastSeq: z.number().int().min(0).default(0),
     skipReplay: z.boolean().optional(),
   }),

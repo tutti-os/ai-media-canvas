@@ -11,7 +11,19 @@ export function createServerDeepAgentRuntimeProvider(
   deps: ServerDeepAgentRuntimeProviderDeps,
 ) {
   return {
-    kind: "server-deepagent" as const,
+    runtime: {
+      id: "server-deepagent",
+      kind: "server-deepagent" as const,
+      mode: "server" as const,
+      status: "online" as const,
+      capabilities: {
+        cancel: true,
+        nativeResume: false,
+        streaming: true,
+        toolGateway: false,
+        maxConcurrentRuns: 8,
+      },
+    },
     async *streamRun(
       context: RuntimeExecutionContext,
     ): AsyncGenerator<StreamEvent> {

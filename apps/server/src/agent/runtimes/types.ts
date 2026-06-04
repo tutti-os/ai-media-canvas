@@ -1,6 +1,12 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type {
+  AgentEvent,
+  LocalAgentRuntime,
+  LocalAgentProviderPlugin,
+} from "@aimc/local-agent-runtime";
+import type {
+  AgentRuntimeProvider,
   ChatMessage,
   ImageAttachment,
   ImageGenerationPreference,
@@ -16,8 +22,7 @@ import type { ConnectionManager } from "../../ws/connection-manager.js";
 import type { createPipelineLogger } from "../../ws/logger.js";
 import type { createAgentBackend } from "../backends/index.js";
 import type { AimcAgentFactory } from "../deep-agent.js";
-import type { streamCodexLocalRun } from "../local-runtime/codex-runtime.js";
-import type { createLocalToolGatewayService } from "../local-runtime/tool-gateway.js";
+import type { createLocalToolGatewayService } from "../local-runtime/aimc-tool-gateway.js";
 import type { SubmitImageJobFn } from "../tools/image-generate.js";
 import type { SubmitVideoJobFn } from "../tools/video-generate.js";
 import type { WorkspaceSkillEntry } from "../workspace-skills.js";
@@ -38,6 +43,7 @@ export type RuntimeRunRecord = {
   prompt: string;
   runId: string;
   runtimeKind?: RuntimeKind | undefined;
+  runtimeProvider?: AgentRuntimeProvider | undefined;
   sessionId: string;
   status: "accepted" | "running" | "completed" | "failed" | "canceled";
   threadId?: string | undefined;
@@ -92,11 +98,19 @@ export type LocalCodexRuntimeProviderDeps = {
   buildUserMessage: BuildUserMessage;
   loadCanvasSummaryForRuntime: LoadCanvasSummaryForRuntime;
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
+  localAgentProvider?: Pick<
+    LocalAgentProviderPlugin<"local-agent", "codex">,
+    "run"
+  >;
+  localAgentRuntime?: Pick<LocalAgentRuntime<"local-agent", "codex">, "run">;
   now: () => string;
-  streamCodexLocalRun?: typeof streamCodexLocalRun;
   toolGateway: ReturnType<typeof createLocalToolGatewayService>;
   toolGatewayBaseUrl: string;
 };
+
+export type LocalAgentToolRunner = (
+  params: Parameters<LocalAgentProviderPlugin<"local-agent", "codex">["run"]>[0],
+) => AsyncGenerator<AgentEvent>;
 
 export type ServerDeepAgentRuntimeProviderDeps = {
   adaptDeepAgentStream: (input: {

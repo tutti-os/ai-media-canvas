@@ -164,7 +164,7 @@ describe("useWebSocket", () => {
     await waitFor(() => expect(result.current.connected).toBe(true));
 
     act(() => {
-      result.current.resumeCanvas("canvas-1", () => {});
+      result.current.resumeCanvas("canvas-1", "session-1", () => {});
     });
 
     expect(socket.sent).toContain(
@@ -173,6 +173,7 @@ describe("useWebSocket", () => {
         action: "canvas.resume",
         payload: {
           canvasId: "canvas-1",
+          sessionId: "session-1",
           lastSeq: 0,
           skipReplay: false,
         },
@@ -194,7 +195,7 @@ describe("useWebSocket", () => {
     });
 
     act(() => {
-      result.current.resumeCanvas("canvas-1", () => {});
+      result.current.resumeCanvas("canvas-1", "session-1", () => {});
     });
 
     expect(socket.sent).toContain(
@@ -203,6 +204,7 @@ describe("useWebSocket", () => {
         action: "canvas.resume",
         payload: {
           canvasId: "canvas-1",
+          sessionId: "session-1",
           lastSeq: 0,
           skipReplay: false,
         },
@@ -224,7 +226,7 @@ describe("useWebSocket", () => {
     });
 
     act(() => {
-      result.current.resumeCanvas("canvas-1", () => {});
+      result.current.resumeCanvas("canvas-1", "session-1", () => {});
     });
 
     expect(socket.sent).toContain(
@@ -233,6 +235,7 @@ describe("useWebSocket", () => {
         action: "canvas.resume",
         payload: {
           canvasId: "canvas-1",
+          sessionId: "session-1",
           lastSeq: 7,
           skipReplay: false,
         },

@@ -7,7 +7,6 @@ import Fastify, { type FastifyInstance } from "fastify";
 
 import {
   applicationErrorResponseSchema,
-  type ContentBlock,
   healthResponseSchema,
   profileUpdateRequestSchema,
   profileUpdateResponseSchema,
@@ -15,7 +14,6 @@ import {
   runCreateRequestSchema,
   runCreateResponseSchema,
   type StreamEvent,
-  type ToolBlock,
   viewerResponseSchema,
 } from "@aimc/shared";
 
@@ -67,7 +65,8 @@ import {
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { loadServerEnv, type ServerEnv } from "./config/env.js";
 import { createAgentRunService } from "./agent/runtime.js";
-import { createLocalToolGatewayService } from "./agent/local-runtime/tool-gateway.js";
+import { createAgentRunOrchestrator } from "./agent/runtime-orchestrator/orchestrator.js";
+import { createLocalToolGatewayService } from "./agent/local-runtime/aimc-tool-gateway.js";
 import {
   createLocalStore,
   type LocalStore,
@@ -631,103 +630,6 @@ function createStandaloneAgentEnv(baseEnv: ServerEnv): ServerEnv {
   };
 }
 
-type AssistantMessageState = {
-  blocks: ContentBlock[];
-  textParts: string[];
-};
-
-function appendAssistantMessageEvent(
-  state: AssistantMessageState,
-  event: StreamEvent,
-) {
-  if (event.type === "message.delta") {
-    const lastBlock = state.blocks[state.blocks.length - 1];
-    if (lastBlock?.type === "text") {
-      lastBlock.text += event.delta;
-    } else {
-      state.blocks.push({ type: "text", text: event.delta });
-    }
-    state.textParts.push(event.delta);
-    return;
-  }
-
-  if (event.type === "tool.started") {
-    state.blocks.push({
-      type: "tool",
-      toolCallId: event.toolCallId,
-      toolName: event.toolName,
-      status: "running",
-      ...(event.input ? { input: event.input } : {}),
-    });
-    return;
-  }
-
-  if (event.type === "tool.completed") {
-    const index = state.blocks.findIndex(
-      (block) =>
-        block.type === "tool" && block.toolCallId === event.toolCallId,
-    );
-    const currentBlock =
-      index >= 0
-        ? (state.blocks[index] as ToolBlock)
-        : {
-            type: "tool" as const,
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            status: "running" as const,
-          };
-    const nextBlock: ToolBlock = {
-      ...currentBlock,
-      status: "completed",
-      ...(event.output ? { output: event.output } : {}),
-      ...(event.outputSummary ? { outputSummary: event.outputSummary } : {}),
-      ...(event.artifacts ? { artifacts: event.artifacts } : {}),
-    };
-    if (index < 0) {
-      state.blocks.push(nextBlock);
-    } else {
-      state.blocks[index] = nextBlock;
-    }
-    return;
-  }
-
-  if (event.type === "tool.failed") {
-    const index = state.blocks.findIndex(
-      (block) =>
-        block.type === "tool" && block.toolCallId === event.toolCallId,
-    );
-    const currentBlock =
-      index >= 0
-        ? (state.blocks[index] as ToolBlock)
-        : {
-            type: "tool" as const,
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            status: "running" as const,
-          };
-    const nextBlock: ToolBlock = {
-      ...currentBlock,
-      status: "failed",
-      ...(event.output ? { output: event.output } : {}),
-      ...(event.outputSummary
-        ? { outputSummary: event.outputSummary }
-        : { outputSummary: event.error.message }),
-      ...(event.artifacts ? { artifacts: event.artifacts } : {}),
-    };
-    if (index < 0) {
-      state.blocks.push(nextBlock);
-    } else {
-      state.blocks[index] = nextBlock;
-    }
-    return;
-  }
-
-  if (event.type === "run.failed" && state.textParts.length === 0) {
-    const message = `抱歉，处理过程中遇到问题：${event.error.message}`;
-    state.blocks.push({ type: "text", text: message });
-    state.textParts.push(message);
-  }
-}
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const env = loadServerEnv(options.env);
@@ -814,9 +716,22 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         eventId: persistedEvent.eventId,
         ...(persistedEvent.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
       });
+      return {
+        eventId: persistedEvent.eventId,
+        ...(persistedEvent.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
+      };
     },
     toolGateway: localToolGateway,
     toolGatewayBaseUrl: localToolGatewayBaseUrl,
+  });
+  const agentRunOrchestrator = createAgentRunOrchestrator({
+    eventPersistence: {
+      appendEvent: store.appendAgentRunEvent,
+    },
+    runStore: {
+      createRun: store.createAgentRun,
+      updateRun: store.updateAgentRun,
+    },
   });
   const localAgentRuns = new Map<string, LocalAgentRunState>();
 
@@ -831,10 +746,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   }) => {
     void (async () => {
       const replayCanvasId = options.payload.canvasId ?? options.payload.conversationId;
-      const assistantMessageState: AssistantMessageState = {
-        blocks: [],
-        textParts: [],
-      };
+      const assistantMessageState = agentRunOrchestrator.createAssistantProjection();
       const persistAssistantMessage = async () => {
         if (!options.runState.assistantMessageId) return;
         await chatService.updateMessage(localUser, options.runState.assistantMessageId, {
@@ -846,13 +758,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
       try {
         for await (const event of agentRuns.streamRun(options.runId)) {
-          store.appendAgentRunEvent({
+          agentRunOrchestrator.persistAndEnvelope({
             ...(replayCanvasId ? { canvasId: replayCanvasId } : {}),
             event,
             runId: options.runId,
           });
           appendLocalAgentEvent(options.runState, event);
-          appendAssistantMessageEvent(assistantMessageState, event);
+          agentRunOrchestrator.projectEvent(assistantMessageState, event);
           if (options.runState.assistantMessageId) {
             await persistAssistantMessage();
           }
@@ -873,13 +785,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           },
           timestamp: new Date().toISOString(),
         } satisfies StreamEvent;
-        store.appendAgentRunEvent({
+        agentRunOrchestrator.persistAndEnvelope({
           ...(replayCanvasId ? { canvasId: replayCanvasId } : {}),
           event: failedEvent,
           runId: options.runId,
         });
         appendLocalAgentEvent(options.runState, failedEvent);
-        appendAssistantMessageEvent(assistantMessageState, failedEvent);
+        agentRunOrchestrator.projectEvent(assistantMessageState, failedEvent);
         if (options.runState.assistantMessageId) {
           await persistAssistantMessage();
         }
@@ -922,6 +834,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       agentRuns,
       agentRunPersistence: {
         appendEvent: store.appendAgentRunEvent,
+        getActiveRun: (canvasId, sessionId) => {
+          const run = store.getActiveAgentRun(canvasId, sessionId);
+          if (!run) {
+            return null;
+          }
+          return {
+            assistantMessageId: run.assistant_message_id,
+            runId: run.id,
+            runtimeKind: run.runtime_kind,
+            runtimeProvider: run.runtime_provider,
+            sessionId: run.session_id,
+            status: run.status,
+          };
+        },
         getLatestCanvasSeq: store.getLatestCanvasEventSeq,
         listCanvasEvents: store.listCanvasAgentEvents,
       },
@@ -985,6 +911,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       );
       const runtimeEnv = createStandaloneAgentEnv(effectiveEnv);
       const resolvedModel = payload.model ?? runtimeEnv.agentModel;
+      if (payload.runtimeKind === "local-agent" && runtimeEnv.trustedLocalAgentMode === false) {
+        return sendApplicationError(
+          reply,
+          "application_error",
+          "Local agent runtime is disabled for this server.",
+          403,
+        );
+      }
       const assistantMessage = await chatService.createMessage(localUser, payload.sessionId, {
         role: "assistant",
         content: "",
@@ -997,6 +931,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           env: runtimeEnv,
           ...(resolvedModel ? { model: resolvedModel } : {}),
           ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
+          ...(payload.runtimeProvider
+            ? { runtimeProvider: payload.runtimeProvider }
+            : {}),
           userId: localUser.id,
         }),
       );

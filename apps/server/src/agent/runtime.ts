@@ -3,9 +3,11 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
+import type { LocalAgentProviderPlugin } from "@aimc/local-agent-runtime";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type {
+  AgentRuntimeProvider,
   ChatMessage,
   ImageAttachment,
   ImageGenerationPreference,
@@ -38,21 +40,23 @@ import {
   createAimcDeepAgent,
 } from "./deep-agent.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
-import { loadWorkspaceSkills, type WorkspaceSkillEntry } from "./workspace-skills.js";
+import type { WorkspaceSkillEntry } from "./workspace-skills.js";
+import { resolveAimcWorkspaceSkills } from "./local-runtime/aimc-skill-resolver.js";
 import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
 import { insertImageElement, insertVideoElement } from "../features/canvas/canvas-element-writer.js";
 import {
   buildAgentImageJobPayload,
   buildAgentVideoJobPayload,
 } from "./job-payloads.js";
-import type { createLocalToolGatewayService } from "./local-runtime/tool-gateway.js";
+import type { createLocalToolGatewayService } from "./local-runtime/aimc-tool-gateway.js";
 import {
   createRuntimeControlPlane,
-  type RuntimeKindSelectorInput,
+  type RuntimeTarget,
 } from "./runtime-control-plane.js";
-import { createLocalCodexRuntimeProvider } from "./runtime-adapters/local-codex.js";
-import { createServerDeepAgentRuntimeProvider } from "./runtime-adapters/server-deepagent.js";
-import type { RuntimeExecutionContext } from "./runtime-adapters/types.js";
+import { inferAimcRuntimeTarget } from "./runtime-orchestrator/runtime-selection.js";
+import { createLocalCodexRuntimeProvider } from "./runtimes/local-agent-adapter.js";
+import { createServerDeepAgentRuntimeProvider } from "./runtimes/server-deepagent-adapter.js";
+import type { RuntimeExecutionContext } from "./runtimes/types.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
 
 /**
@@ -306,6 +310,7 @@ type CreateAgentRuntimeOptions = {
       canvasId?: string;
       model?: string;
       runtimeKind?: RuntimeKind;
+      runtimeProvider?: AgentRuntimeProvider;
       runId: string;
       sessionId: string;
       threadId?: string;
@@ -316,6 +321,7 @@ type CreateAgentRuntimeOptions = {
       errorMessage?: string;
       runId: string;
       runtimeKind?: RuntimeKind;
+      runtimeProvider?: AgentRuntimeProvider;
       status: RuntimeRunStatus;
     }): void;
   };
@@ -324,12 +330,16 @@ type CreateAgentRuntimeOptions = {
     canvasId: string;
     event: Extract<StreamEvent, { type: "canvas.sync" }>;
     runId: string;
-  }) => void;
+  }) => { eventId?: string; seq?: number } | undefined;
   createUserClient?: (accessToken: string) => unknown;
   creditService?: CreditService;
   env: ServerEnv;
   eventDelayMs?: number;
   jobService?: JobService;
+  localAgentProvider?: Pick<
+    LocalAgentProviderPlugin<"local-agent", "codex">,
+    "run"
+  >;
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
   model?: BaseLanguageModel | string;
   now?: () => string;
@@ -415,13 +425,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     }
   }
 
+  const localAgentTrusted = options.env.trustedLocalAgentMode !== false;
   const runtimeProviders = [
-    ...(options.toolGateway && options.toolGatewayBaseUrl
+    ...(localAgentTrusted && options.toolGateway && options.toolGatewayBaseUrl
       ? ([
           createLocalCodexRuntimeProvider({
             buildAttachmentDataMap,
             buildUserMessage,
             loadCanvasSummaryForRuntime,
+            ...(options.localAgentProvider
+              ? { localAgentProvider: options.localAgentProvider }
+              : {}),
             ...(options.loadSessionMessages
               ? { loadSessionMessages: options.loadSessionMessages }
               : {}),
@@ -429,12 +443,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             toolGateway: options.toolGateway,
             toolGatewayBaseUrl: options.toolGatewayBaseUrl,
           }),
-        ] satisfies Array<{
-          kind: RuntimeKind;
-          streamRun: (
-            context: RuntimeExecutionContext,
-          ) => AsyncGenerator<StreamEvent>;
-        }>)
+        ] satisfies Array<ReturnType<typeof createLocalCodexRuntimeProvider>>)
       : []),
     createServerDeepAgentRuntimeProvider({
       adaptDeepAgentStream,
@@ -456,30 +465,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     }),
   ];
 
-  function inferAimcRuntimeKind(input: RuntimeKindSelectorInput): RuntimeKind {
-    if (input.requestedRuntimeKind) {
-      return input.requestedRuntimeKind;
-    }
-
-    if (
-      typeof input.model === "string" &&
-      input.model.startsWith("codex:") &&
-      input.availableRuntimeKinds.includes("local-codex")
-    ) {
-      return "local-codex";
-    }
-
-    if (input.availableRuntimeKinds.includes("server-deepagent")) {
-      return "server-deepagent";
-    }
-
-    return input.availableRuntimeKinds[0]!;
-  }
-
   const runtimeControlPlane = createRuntimeControlPlane<RuntimeExecutionContext>(
     runtimeProviders,
     {
-      selectRuntimeKind: inferAimcRuntimeKind,
+      now,
+      selectRuntimeKind: inferAimcRuntimeTarget,
     },
   );
 
@@ -514,12 +504,40 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         env?: ServerEnv;
         model?: string;
         runtimeKind?: RuntimeKind;
+        runtimeProvider?: AgentRuntimeProvider;
         threadId?: string;
         userId?: string;
       },
     ): RunCreateResponse {
       const runId = runIdFactory();
-      const { accessToken: _ignoredAccessToken, ...runInput } = input;
+      const runInput = input;
+      const requestedRuntimeKind = runOptions?.runtimeKind ?? runInput.runtimeKind;
+      const requestedRuntimeProvider =
+        runOptions?.runtimeProvider ?? runInput.runtimeProvider;
+      const resolvedModel =
+        runOptions?.model ??
+        runInput.model ??
+        (typeof options.model === "string" ? options.model : undefined);
+
+      let initialRuntimeTarget: RuntimeTarget | null = null;
+      try {
+        initialRuntimeTarget = runtimeControlPlane.resolveRuntimeTarget({
+          model: resolvedModel,
+          requestedRuntimeKind,
+          ...(requestedRuntimeProvider
+            ? { requestedRuntimeProvider }
+            : {}),
+        });
+      } catch (error) {
+        if (requestedRuntimeKind) {
+          throw error;
+        }
+        initialRuntimeTarget = null;
+      }
+      const persistedRuntimeKind =
+        initialRuntimeTarget?.kind ?? requestedRuntimeKind;
+      const persistedRuntimeProvider =
+        initialRuntimeTarget?.provider ?? requestedRuntimeProvider;
 
       runs.set(runId, {
         ...runInput,
@@ -531,8 +549,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
-        ...(runOptions?.model ? { modelOverride: runOptions.model } : {}),
-        ...(runOptions?.runtimeKind ? { runtimeKind: runOptions.runtimeKind } : {}),
+        ...(resolvedModel ? { modelOverride: resolvedModel } : {}),
+        ...(persistedRuntimeKind ? { runtimeKind: persistedRuntimeKind } : {}),
+        ...(persistedRuntimeProvider
+          ? { runtimeProvider: persistedRuntimeProvider }
+          : {}),
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
         ...(runOptions?.userId ? { userId: runOptions.userId } : {}),
         runId,
@@ -544,8 +565,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           ? { assistantMessageId: runOptions.assistantMessageId }
           : {}),
         ...(runInput.canvasId ? { canvasId: runInput.canvasId } : {}),
-        ...(runOptions?.model ? { model: runOptions.model } : {}),
-        ...(runOptions?.runtimeKind ? { runtimeKind: runOptions.runtimeKind } : {}),
+        ...(resolvedModel ? { model: resolvedModel } : {}),
+        ...(persistedRuntimeKind ? { runtimeKind: persistedRuntimeKind } : {}),
+        ...(persistedRuntimeProvider
+          ? { runtimeProvider: persistedRuntimeProvider }
+          : {}),
         runId,
         sessionId: runInput.sessionId,
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
@@ -557,7 +581,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           : {}),
         conversationId: input.conversationId,
         runId,
-        ...(runOptions?.runtimeKind ? { runtimeKind: runOptions.runtimeKind } : {}),
+        ...(persistedRuntimeKind ? { runtimeKind: persistedRuntimeKind } : {}),
+        ...(persistedRuntimeProvider
+          ? { runtimeProvider: persistedRuntimeProvider }
+          : {}),
         sessionId: input.sessionId,
         status: "accepted",
       };
@@ -743,8 +770,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     runId,
                     timestamp: new Date().toISOString(),
                   } satisfies StreamEvent;
-                  options.publishCanvasSyncEvent?.({ canvasId, event, runId });
-                  options.connectionManager?.pushToCanvas(canvasId, event);
+                  const replayEnvelope = options.publishCanvasSyncEvent?.({ canvasId, event, runId });
+                  options.connectionManager?.pushToCanvas(canvasId, event, replayEnvelope);
                   jobLap("canvas_element_inserted", { elementId });
                 } catch (insertErr) {
                   // Graceful degradation: log error but still return result
@@ -940,8 +967,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     runId,
                     timestamp: new Date().toISOString(),
                   } satisfies StreamEvent;
-                  options.publishCanvasSyncEvent?.({ canvasId, event, runId });
-                  options.connectionManager?.pushToCanvas(canvasId, event);
+                  const replayEnvelope = options.publishCanvasSyncEvent?.({ canvasId, event, runId });
+                  options.connectionManager?.pushToCanvas(canvasId, event, replayEnvelope);
                   jobLap("canvas_element_inserted", { elementId });
                 } catch (insertErr) {
                   // Graceful degradation: log error but still return result
@@ -995,8 +1022,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       let workspaceSkills: WorkspaceSkillEntry[] = [];
       if (run.canvasId && run.accessToken && options.createUserClient) {
         try {
-          const wsClient = options.createUserClient(run.accessToken) as UserDataClient;
-          workspaceSkills = await loadWorkspaceSkills(wsClient, run.canvasId);
+          workspaceSkills = await resolveAimcWorkspaceSkills({
+            accessToken: run.accessToken,
+            canvasId: run.canvasId,
+            createUserClient: options.createUserClient,
+          });
           rlog.lap("workspace_skills_loaded", { count: workspaceSkills.length });
         } catch (err) {
           // Non-fatal: agent runs without workspace skills
@@ -1013,17 +1043,29 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         { hasWorkspaceSkills: workspaceSkills.length > 0 },
       );
 
+      let activeRuntimeTarget: RuntimeTarget | null = null;
+      let runtimeLease: { release(): void } | null = null;
+
       try {
         const resolvedModel = run.modelOverride
           ? (run.modelOverride.includes(":")
             ? run.modelOverride
             : createDefaultModelSpecifier({ agentModel: run.modelOverride }))
           : options.model;
-        const resolvedRuntimeKind = runtimeControlPlane.resolveRuntimeKind({
+        const resolvedRuntimeTarget = runtimeControlPlane.resolveRuntimeTarget({
           model: resolvedModel,
           requestedRuntimeKind: run.runtimeKind,
+          ...(run.runtimeProvider
+            ? { requestedRuntimeProvider: run.runtimeProvider }
+            : {}),
         });
-        run.runtimeKind = resolvedRuntimeKind;
+        activeRuntimeTarget = resolvedRuntimeTarget;
+        run.runtimeKind = resolvedRuntimeTarget.kind;
+        run.runtimeProvider = resolvedRuntimeTarget.provider;
+        runtimeLease = runtimeControlPlane.acquireRuntimeLease(
+          resolvedRuntimeTarget,
+          run.runId,
+        );
 
         // Resolve brand kit ID from canvas → project in a single joined query
         let brandKitId: string | null = null;
@@ -1064,12 +1106,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
         options.agentRunStore?.updateRun({
           runId,
-          runtimeKind: resolvedRuntimeKind,
+          runtimeKind: resolvedRuntimeTarget.kind,
+          ...(resolvedRuntimeTarget.provider
+            ? { runtimeProvider: resolvedRuntimeTarget.provider }
+            : {}),
           status: run.status,
         });
 
         for await (const event of runtimeControlPlane.streamRun(
-          resolvedRuntimeKind,
+          resolvedRuntimeTarget,
           {
             backendResult,
             brandKitId,
@@ -1122,6 +1167,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
       } catch (streamError) {
         console.error("[agent-runtime] Stream iteration failed:", streamError);
+        if (activeRuntimeTarget) {
+          runtimeControlPlane.updateRuntimeStatus(activeRuntimeTarget, "degraded");
+        }
         const failedEvent = toFailedEvent(runId, now, streamError);
         run.status = "failed";
         options.agentRunStore?.updateRun({
@@ -1134,6 +1182,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         return;
       }
       finally {
+        runtimeLease?.release();
         if (backendResult.sandboxDir) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(
             (err) => console.warn("[sandbox] cleanup failed:", err.message),

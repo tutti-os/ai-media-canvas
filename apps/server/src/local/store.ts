@@ -4,6 +4,7 @@ import { extname, join, resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 
 import type {
+  AgentRuntimeProvider,
   AssetBucket,
   AssetObject,
   BackgroundJob,
@@ -275,6 +276,9 @@ export function createLocalStore(options: {
       role TEXT NOT NULL,
       content TEXT NOT NULL,
       content_blocks TEXT,
+      run_id TEXT,
+      run_status TEXT,
+      last_run_event_id TEXT,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS assets (
@@ -380,6 +384,7 @@ export function createLocalStore(options: {
       thread_id TEXT,
       model TEXT,
       runtime_kind TEXT,
+      runtime_provider TEXT,
       assistant_message_id TEXT,
       status TEXT NOT NULL,
       error_code TEXT,
@@ -498,6 +503,25 @@ export function createLocalStore(options: {
   }
 
   function ensureAgentRunSchema() {
+    const messageColumns = db
+      .prepare(`PRAGMA table_info(chat_messages)`)
+      .all() as Array<{ name: string }>;
+    const messageColumnNames = new Set(
+      messageColumns.map((column) => column.name),
+    );
+
+    if (!messageColumnNames.has("run_id")) {
+      db.exec(`ALTER TABLE chat_messages ADD COLUMN run_id TEXT`);
+    }
+
+    if (!messageColumnNames.has("run_status")) {
+      db.exec(`ALTER TABLE chat_messages ADD COLUMN run_status TEXT`);
+    }
+
+    if (!messageColumnNames.has("last_run_event_id")) {
+      db.exec(`ALTER TABLE chat_messages ADD COLUMN last_run_event_id TEXT`);
+    }
+
     const columns = db
       .prepare(`PRAGMA table_info(agent_runs)`)
       .all() as Array<{ name: string }>;
@@ -505,6 +529,10 @@ export function createLocalStore(options: {
 
     if (!columnNames.has("runtime_kind")) {
       db.exec(`ALTER TABLE agent_runs ADD COLUMN runtime_kind TEXT`);
+    }
+
+    if (!columnNames.has("runtime_provider")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN runtime_provider TEXT`);
     }
 
     if (!columnNames.has("assistant_message_id")) {
@@ -2390,6 +2418,7 @@ export function createLocalStore(options: {
     canvasId?: string;
     model?: string;
     runtimeKind?: RuntimeKind;
+    runtimeProvider?: AgentRuntimeProvider;
     runId: string;
     sessionId: string;
     threadId?: string;
@@ -2399,8 +2428,8 @@ export function createLocalStore(options: {
       `
         INSERT INTO agent_runs (
           id, workspace_id, canvas_id, session_id, thread_id, model,
-          runtime_kind, assistant_message_id, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          runtime_kind, runtime_provider, assistant_message_id, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     ).run(
       input.runId,
@@ -2410,11 +2439,22 @@ export function createLocalStore(options: {
       input.threadId ?? null,
       input.model ?? null,
       input.runtimeKind ?? null,
+      input.runtimeProvider ?? null,
       input.assistantMessageId ?? null,
       "accepted",
       timestamp,
       timestamp,
     );
+    if (input.assistantMessageId) {
+      db.prepare(
+        `
+          UPDATE chat_messages
+          SET run_id = ?,
+              run_status = ?
+          WHERE id = ?
+        `,
+      ).run(input.runId, "accepted", input.assistantMessageId);
+    }
   }
 
   function updateAgentRun(input: {
@@ -2423,6 +2463,7 @@ export function createLocalStore(options: {
     errorMessage?: string;
     runId: string;
     runtimeKind?: RuntimeKind;
+    runtimeProvider?: AgentRuntimeProvider;
     status: AgentRunStatus;
   }) {
     const timestamp = nowIso();
@@ -2432,6 +2473,7 @@ export function createLocalStore(options: {
         SET status = ?,
             updated_at = ?,
             runtime_kind = COALESCE(?, runtime_kind),
+            runtime_provider = COALESCE(?, runtime_provider),
             assistant_message_id = COALESCE(?, assistant_message_id),
             started_at = CASE WHEN ? = 'running' AND started_at IS NULL THEN ? ELSE started_at END,
             completed_at = CASE WHEN ? IN ('completed', 'failed') THEN ? ELSE completed_at END,
@@ -2444,6 +2486,7 @@ export function createLocalStore(options: {
       input.status,
       timestamp,
       input.runtimeKind ?? null,
+      input.runtimeProvider ?? null,
       input.assistantMessageId ?? null,
       input.status,
       timestamp,
@@ -2457,13 +2500,25 @@ export function createLocalStore(options: {
       input.errorMessage ?? null,
       input.runId,
     );
+    const run = getAgentRun(input.runId);
+    const assistantMessageId = input.assistantMessageId ?? run?.assistant_message_id;
+    if (assistantMessageId) {
+      db.prepare(
+        `
+          UPDATE chat_messages
+          SET run_id = COALESCE(run_id, ?),
+              run_status = ?
+          WHERE id = ?
+        `,
+      ).run(input.runId, input.status, assistantMessageId);
+    }
   }
 
   function getAgentRun(runId: string) {
     return db
       .prepare(
         `
-          SELECT id, session_id, status, runtime_kind, assistant_message_id, error_code, error_message
+          SELECT id, session_id, status, runtime_kind, runtime_provider, assistant_message_id, error_code, error_message
           FROM agent_runs
           WHERE id = ?
           LIMIT 1
@@ -2476,6 +2531,34 @@ export function createLocalStore(options: {
           error_message: string | null;
           id: string;
           runtime_kind: RuntimeKind | null;
+          runtime_provider: AgentRuntimeProvider | null;
+          session_id: string;
+          status: AgentRunStatus;
+        }
+      | undefined;
+  }
+
+  function getActiveAgentRun(canvasId: string, sessionId: string) {
+    return db
+      .prepare(
+        `
+          SELECT id, session_id, status, runtime_kind, runtime_provider, assistant_message_id, error_code, error_message
+          FROM agent_runs
+          WHERE canvas_id = ?
+            AND session_id = ?
+            AND status IN ('accepted', 'running')
+          ORDER BY updated_at DESC, created_at DESC
+          LIMIT 1
+        `,
+      )
+      .get(canvasId, sessionId) as
+      | {
+          assistant_message_id: string | null;
+          error_code: string | null;
+          error_message: string | null;
+          id: string;
+          runtime_kind: RuntimeKind | null;
+          runtime_provider: AgentRuntimeProvider | null;
           session_id: string;
           status: AgentRunStatus;
         }
@@ -2516,6 +2599,20 @@ export function createLocalStore(options: {
       JSON.stringify(input.event),
       timestamp,
     );
+    db.prepare(
+      `
+        UPDATE chat_messages
+        SET last_run_event_id = ?,
+            run_status = CASE
+              WHEN ? = 'run.completed' THEN 'completed'
+              WHEN ? = 'run.failed' THEN 'failed'
+              WHEN ? = 'run.canceled' THEN 'canceled'
+              WHEN run_status IS NULL THEN 'running'
+              ELSE run_status
+            END
+        WHERE run_id = ?
+      `,
+    ).run(eventId, input.event.type, input.event.type, input.event.type, input.runId);
     return {
       ...(input.canvasId && nextCanvasSeq != null ? { canvasSeq: nextCanvasSeq } : {}),
       eventId,
@@ -3068,6 +3165,7 @@ export function createLocalStore(options: {
     createAgentRun,
     updateAgentRun,
     getAgentRun,
+    getActiveAgentRun,
     appendAgentRunEvent,
     listAgentRunEvents,
     listCanvasAgentEvents,

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@aimc/local-agent-runtime": "workspace:*",
     "@aimc/shared": "workspace:*",
     "@fastify/multipart": "^9.4.0",
     "@fastify/websocket": "^11.2.0",

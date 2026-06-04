@@ -142,6 +142,11 @@ export function ChatSidebar({
     [],
   );
 
+  const hasBackendInsertedElement = useCallback((block: ContentBlock) => {
+    if (block.type !== "tool" || !block.output) return false;
+    return typeof (block.output as Record<string, unknown>).elementId === "string";
+  }, []);
+
   const recoverMediaArtifactsFromBlocks = useCallback(
     (contentBlocks: ContentBlock[]) => {
       const canvasUrls = new Set(
@@ -163,6 +168,10 @@ export function ChatSidebar({
         for (const artifact of block.artifacts) {
           const replayKey = artifactReplayKey(block.toolCallId, artifact.url);
           if (replayedArtifactKeysRef.current.has(replayKey)) continue;
+          if (hasBackendInsertedElement(block)) {
+            replayedArtifactKeysRef.current.add(replayKey);
+            continue;
+          }
           if (canvasUrls.has(artifact.url)) {
             replayedArtifactKeysRef.current.add(replayKey);
             continue;
@@ -172,8 +181,8 @@ export function ChatSidebar({
         }
       }
     },
-    [artifactReplayKey, onImageGenerated, onRequestCanvasImages],
-  );
+	    [artifactReplayKey, hasBackendInsertedElement, onImageGenerated, onRequestCanvasImages],
+	  );
 
   const recoverPersistedMediaArtifacts = useCallback(
     (sessionMessages: Array<{ contentBlocks: ContentBlock[]; role: "user" | "assistant" }>) => {
@@ -605,7 +614,10 @@ export function ChatSidebar({
                 ? { model: agentModelRef.current }
                 : {}),
               ...(agentModelRef.current?.startsWith("codex:")
-                ? { runtimeKind: "local-codex" as const }
+                ? {
+                    runtimeKind: "local-agent" as const,
+                    runtimeProvider: "codex" as const,
+                  }
                 : { runtimeKind: "server-deepagent" as const }),
             },
             (ack) => {
@@ -844,7 +856,7 @@ export function ChatSidebar({
       let resumedRunId: string | null = null;
       let resumedAssistantId: string | null = null;
       let hydratingActiveRun = false;
-      let hydratedRunSeq = 0;
+      const hydratedRunEventIds = new Set<string>();
       const queuedResumeEvents: Array<{
         event: StreamEvent;
         eventId?: string;
@@ -855,6 +867,7 @@ export function ChatSidebar({
       const processResumedEntry = (
         entry: {
           event: StreamEvent;
+          eventId?: string;
           replayed?: boolean;
           seq?: number;
         },
@@ -910,7 +923,7 @@ export function ChatSidebar({
           return;
         }
 
-        if (typeof entry.seq === "number" && entry.seq <= hydratedRunSeq) {
+        if (entry.eventId && hydratedRunEventIds.has(entry.eventId)) {
           return;
         }
 
@@ -918,7 +931,7 @@ export function ChatSidebar({
       });
 
       // Resume canvas binding (after DB messages are set)
-      ws.resumeCanvas(canvasId, (ack) => {
+      ws.resumeCanvas(canvasId, sessionId, (ack) => {
         const activeRunId = (ack.payload as Record<string, unknown>)
           .activeRunId;
         const assistantMessageId = (ack.payload as Record<string, unknown>)
@@ -937,7 +950,6 @@ export function ChatSidebar({
           resumedAssistantId = assistantId;
 
           hydratingActiveRun = true;
-          hydratedRunSeq = 0;
           queuedResumeEvents.length = 0;
 
           // Must use updateSessionMessages (not setMessages) so the placeholder
@@ -969,7 +981,12 @@ export function ChatSidebar({
               }
               if (canceled || resumedRunId !== activeRunId) return;
 
-              hydratedRunSeq = entries[entries.length - 1]?.seq ?? 0;
+              hydratedRunEventIds.clear();
+              for (const entry of entries) {
+                if (entry.eventId) {
+                  hydratedRunEventIds.add(entry.eventId);
+                }
+              }
               const hydratedBlocks = materializeAssistantBlocksFromEvents(
                 entries.map((item) => item.event),
               );
@@ -990,7 +1007,10 @@ export function ChatSidebar({
               );
               queuedResumeEvents.length = 0;
               for (const queuedEntry of pending) {
-                if (typeof queuedEntry.seq === "number" && queuedEntry.seq <= hydratedRunSeq) {
+	                if (
+	                  queuedEntry.eventId &&
+	                  hydratedRunEventIds.has(queuedEntry.eventId)
+	                ) {
                   continue;
                 }
                 processResumedEntry(queuedEntry, assistantId);

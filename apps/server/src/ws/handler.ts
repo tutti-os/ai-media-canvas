@@ -3,14 +3,19 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 
 import {
+  type AgentRuntimeProvider,
   type RunCreateRequest,
+  type RuntimeKind,
   type StreamEvent,
   wsCommandSchema,
   wsRpcResponseSchema,
 } from "@aimc/shared";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
-import type { SettingsService } from "../features/settings/settings-service.js";
+import {
+  LOCAL_WORKSPACE_ID,
+  type SettingsService,
+} from "../features/settings/settings-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type {
   AuthenticatedUser,
@@ -19,9 +24,16 @@ import type {
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";
 import type { ChatService } from "../features/chat/chat-service.js";
-import type { ContentBlock, ToolBlock } from "@aimc/shared";
 import { createPipelineLogger } from "./logger.js";
 import type { ServerEnv } from "../config/env.js";
+import {
+  createAssistantMessageProjection,
+  projectStreamEventToAssistantMessage,
+} from "../agent/runtime-orchestrator/run-event-projector.js";
+import {
+  buildReplayEnvelope,
+  persistRunEvent,
+} from "../agent/runtime-orchestrator/run-event-store.js";
 
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
@@ -32,6 +44,14 @@ type RegisterWsOptions = {
       runId: string;
     }) => { canvasSeq?: number; eventId: string; seq: number };
     getLatestCanvasSeq?: (canvasId: string) => number;
+    getActiveRun?: (canvasId: string, sessionId: string) => {
+      assistantMessageId: string | null;
+      runId: string;
+      runtimeKind: RuntimeKind | null;
+      runtimeProvider: AgentRuntimeProvider | null;
+      sessionId: string;
+      status: "accepted" | "running" | "completed" | "failed" | "canceled";
+    } | null;
     listCanvasEvents?: (canvasId: string, cursor?: number) => Array<{
       event: StreamEvent;
       eventId: string;
@@ -154,11 +174,10 @@ async function authenticateAndBind(
 
       if (msg.action === "agent.run") {
         const p = msg.payload;
-        const runToken = p.accessToken ?? token;
         void handleRunCommand(
           {
             ...authenticatedUser,
-            accessToken: runToken,
+            accessToken: token,
           },
           connectionId,
           {
@@ -175,6 +194,10 @@ async function authenticateAndBind(
             : {}),
           ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
           ...(p.model !== undefined ? { model: p.model } : {}),
+          ...(p.runtimeKind !== undefined ? { runtimeKind: p.runtimeKind } : {}),
+          ...(p.runtimeProvider !== undefined
+            ? { runtimeProvider: p.runtimeProvider }
+            : {}),
           },
           agentRuns,
           connectionManager,
@@ -198,7 +221,10 @@ async function authenticateAndBind(
           : (options.agentRunPersistence?.listCanvasEvents?.(p.canvasId, p.lastSeq)
             ?? options.eventBuffer?.getAfter(p.canvasId, p.lastSeq)
             ?? []);
-        const activeRun = connectionManager.getActiveRun(p.canvasId);
+        const activeRun =
+          connectionManager.getActiveRun(p.canvasId, p.sessionId) ??
+          options.agentRunPersistence?.getActiveRun?.(p.canvasId, p.sessionId) ??
+          null;
         const latestPersistedSeq =
           options.agentRunPersistence?.getLatestCanvasSeq?.(p.canvasId) ?? 0;
         const latestBufferedSeq = options.eventBuffer?.getLatestSeq(p.canvasId) ?? 0;
@@ -213,6 +239,8 @@ async function authenticateAndBind(
             latestSeq: Math.max(latestPersistedSeq, latestBufferedSeq),
             activeRunId: activeRun?.runId ?? null,
             assistantMessageId: activeRun?.assistantMessageId ?? null,
+            runtimeKind: activeRun?.runtimeKind ?? null,
+            runtimeProvider: activeRun?.runtimeProvider ?? null,
             skipReplay: p.skipReplay ?? false,
             replayed: missed.length,
           },
@@ -241,13 +269,13 @@ async function authenticateAndBind(
   socket.on("close", () => {
     log.info("disconnected", { userId: authenticatedUser.id, connectionId });
     clearInterval(pingInterval);
-    connectionManager.remove(connectionId);
+    connectionManager.remove(connectionId, socket);
   });
 
   socket.on("error", () => {
     log.error("socket_error", { userId: authenticatedUser.id, connectionId });
     clearInterval(pingInterval);
-    connectionManager.remove(connectionId);
+    connectionManager.remove(connectionId, socket);
   });
 }
 
@@ -285,9 +313,9 @@ async function handleRunCommand(
     (async (): Promise<ServerEnv | undefined> => {
       if (!services.settingsService || !services.viewerService) return undefined;
       try {
-        const viewer = await services.viewerService.ensureViewer(authenticatedUser);
+        await services.viewerService.ensureViewer(authenticatedUser);
         return await services.settingsService.getEffectiveServerEnv(
-          viewer.workspace.id,
+          LOCAL_WORKSPACE_ID,
         );
       } catch (error) {
         log.warn("model_resolve_failed", {
@@ -301,6 +329,18 @@ async function handleRunCommand(
   // Client-provided model takes priority over workspace default
   const resolvedModel = payload.model ?? model;
   log.lap("resolve", { threadId: !!threadId, model: resolvedModel });
+  if (
+    effectiveEnv?.trustedLocalAgentMode === false &&
+    (payload.runtimeKind === "local-agent" ||
+      (typeof resolvedModel === "string" && resolvedModel.startsWith("codex:")))
+  ) {
+    connectionManager.sendTo(connectionId, {
+      type: "error",
+      code: "local_agent_disabled",
+      message: "Local agent runtime is disabled for this server.",
+    });
+    return;
+  }
 
   let assistantMessageId: string | undefined;
   if (services.chatService) {
@@ -330,6 +370,9 @@ async function handleRunCommand(
     userId: authenticatedUser.id,
     ...(resolvedModel ? { model: resolvedModel } : {}),
     ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
+    ...(payload.runtimeProvider
+      ? { runtimeProvider: payload.runtimeProvider }
+      : {}),
     ...(threadId ? { threadId } : {}),
   });
   assistantMessageId = response.assistantMessageId;
@@ -362,15 +405,21 @@ async function handleRunCommand(
   log.lap("ack_sent", { runId, connectionId, delivered: ackSent });
 
   // Track active run so reconnecting clients can detect it
-  connectionManager.setActiveRun(canvasId, runId, assistantMessageId);
+  connectionManager.setActiveRun(
+    canvasId,
+    runId,
+    payload.sessionId,
+    assistantMessageId,
+    response.runtimeKind,
+    response.runtimeProvider,
+  );
 
   const keepAlive = setInterval(() => {
     connectionManager.sendTo(connectionId, { type: "keep-alive" });
   }, 15_000);
 
   // Accumulate assistant content blocks for server-side persistence
-  const assistantText: string[] = [];
-  const assistantBlocks: ContentBlock[] = [];
+  const assistantProjection = createAssistantMessageProjection();
 
   try {
     let firstEvent = true;
@@ -381,92 +430,20 @@ async function handleRunCommand(
       }
 
       // Buffer for replay on reconnect
-      const persistedEvent = services.agentRunPersistence?.appendEvent({
+      const persistedEvent = persistRunEvent({
         canvasId,
         event,
+        persistence: services.agentRunPersistence,
         runId,
       });
-      services.eventBuffer?.push(canvasId, event, {
-        ...(persistedEvent?.eventId ? { eventId: persistedEvent.eventId } : {}),
-        ...(persistedEvent?.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
-      });
+      const replayEnvelope = buildReplayEnvelope(persistedEvent);
+      services.eventBuffer?.push(canvasId, event, replayEnvelope);
 
       // Broadcast to all viewers
-      connectionManager.pushToCanvas(canvasId, event, {
-        ...(persistedEvent?.eventId ? { eventId: persistedEvent.eventId } : {}),
-        ...(persistedEvent?.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
-      });
+      connectionManager.pushToCanvas(canvasId, event, replayEnvelope);
 
       // Accumulate content for server-side persistence
-      if (event.type === "message.delta") {
-        const lastBlock = assistantBlocks[assistantBlocks.length - 1];
-        if (lastBlock && lastBlock.type === "text") {
-          (lastBlock as { type: "text"; text: string }).text += event.delta;
-        } else {
-          assistantBlocks.push({ type: "text", text: event.delta });
-        }
-        assistantText.push(event.delta);
-      } else if (event.type === "tool.started") {
-        assistantBlocks.push({
-          type: "tool",
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          status: "running" as const,
-          ...(event.input ? { input: event.input } : {}),
-        });
-      } else if (event.type === "tool.completed") {
-        const idx = assistantBlocks.findIndex(
-          (b) => b.type === "tool" && (b as ToolBlock).toolCallId === event.toolCallId,
-        );
-        const nextBlock: ToolBlock = {
-          ...(idx >= 0
-            ? (assistantBlocks[idx] as ToolBlock)
-            : {
-                type: "tool" as const,
-                toolCallId: event.toolCallId,
-                toolName: event.toolName,
-                status: "running" as const,
-              }),
-          status: "completed" as const,
-          ...(event.output ? { output: event.output } : {}),
-          ...(event.outputSummary ? { outputSummary: event.outputSummary } : {}),
-          ...(event.artifacts ? { artifacts: event.artifacts } : {}),
-        };
-        if (idx >= 0) {
-          assistantBlocks[idx] = nextBlock;
-        } else {
-          assistantBlocks.push(nextBlock);
-        }
-      } else if (event.type === "tool.failed") {
-        const idx = assistantBlocks.findIndex(
-          (b) => b.type === "tool" && (b as ToolBlock).toolCallId === event.toolCallId,
-        );
-        const nextBlock: ToolBlock = {
-          ...(idx >= 0
-            ? (assistantBlocks[idx] as ToolBlock)
-            : {
-                type: "tool" as const,
-                toolCallId: event.toolCallId,
-                toolName: event.toolName,
-                status: "running" as const,
-              }),
-          status: "failed" as const,
-          ...(event.output ? { output: event.output } : {}),
-          ...(event.outputSummary
-            ? { outputSummary: event.outputSummary }
-            : { outputSummary: event.error.message }),
-          ...(event.artifacts ? { artifacts: event.artifacts } : {}),
-        };
-        if (idx >= 0) {
-          assistantBlocks[idx] = nextBlock;
-        } else {
-          assistantBlocks.push(nextBlock);
-        }
-      } else if (event.type === "run.failed" && assistantText.length === 0) {
-        const message = `抱歉，处理过程中遇到问题：${event.error.message}`;
-        assistantBlocks.push({ type: "text", text: message });
-        assistantText.push(message);
-      }
+      projectStreamEventToAssistantMessage(assistantProjection, event);
 
       if (services.chatService && assistantMessageId) {
         try {
@@ -475,8 +452,8 @@ async function handleRunCommand(
             assistantMessageId,
             {
               role: "assistant",
-              content: assistantText.join(""),
-              contentBlocks: assistantBlocks,
+              content: assistantProjection.textParts.join(""),
+              contentBlocks: assistantProjection.blocks,
             },
           );
         } catch (error) {
@@ -499,21 +476,17 @@ async function handleRunCommand(
       },
       timestamp: new Date().toISOString(),
     };
-    const persistedEvent = services.agentRunPersistence?.appendEvent({
+    const persistedEvent = persistRunEvent({
       canvasId,
       event: failedEvent,
+      persistence: services.agentRunPersistence,
       runId,
     });
-    services.eventBuffer?.push(canvasId, failedEvent, {
-      ...(persistedEvent?.eventId ? { eventId: persistedEvent.eventId } : {}),
-      ...(persistedEvent?.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
-    });
-    connectionManager.pushToCanvas(canvasId, failedEvent, {
-      ...(persistedEvent?.eventId ? { eventId: persistedEvent.eventId } : {}),
-      ...(persistedEvent?.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
-    });
+    const replayEnvelope = buildReplayEnvelope(persistedEvent);
+    services.eventBuffer?.push(canvasId, failedEvent, replayEnvelope);
+    connectionManager.pushToCanvas(canvasId, failedEvent, replayEnvelope);
   } finally {
     clearInterval(keepAlive);
-    connectionManager.clearActiveRun(canvasId);
+    connectionManager.clearActiveRun(canvasId, runId);
   }
 }

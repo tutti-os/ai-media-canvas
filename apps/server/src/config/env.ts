@@ -27,6 +27,7 @@ export type ServerEnv = {
   port: number;
   replicateApiToken?: string;
   skillsRoot?: string;
+  trustedLocalAgentMode?: boolean;
   version: string;
   volcesApiKey?: string;
   volcesBaseUrl?: string;
@@ -128,6 +129,9 @@ export function loadServerEnv(
   const skillsRoot =
     overrides.skillsRoot ??
     normalizeOptionalString(source.AIMC_SKILLS_ROOT ?? source.SKILLS_ROOT);
+  const trustedLocalAgentMode =
+    overrides.trustedLocalAgentMode ??
+    parseOptionalBoolean(source.AIMC_TRUSTED_LOCAL_AGENT_MODE, true);
   const volcesApiKey =
     overrides.volcesApiKey ??
     normalizeOptionalString(source.AIMC_VOLCES_API_KEY ?? source.VOLCES_API_KEY);
@@ -172,6 +176,7 @@ export function loadServerEnv(
     ...(googleVertexVideoLocation ? { googleVertexVideoLocation } : {}),
     ...(replicateApiToken ? { replicateApiToken } : {}),
     ...(skillsRoot ? { skillsRoot } : {}),
+    trustedLocalAgentMode,
     ...(volcesApiKey ? { volcesApiKey } : {}),
     ...(volcesBaseUrl ? { volcesBaseUrl } : {}),
     ...(workerId ? { workerId } : {}),
@@ -189,6 +194,14 @@ function parseOptionalInt(value: string | undefined) {
   if (!value) return undefined;
   const parsed = Number.parseInt(value, 10);
   return Number.isInteger(parsed) ? parsed : undefined;
+}
+
+function parseOptionalBoolean(value: string | undefined, fallback: boolean) {
+  if (value == null || value.trim() === "") return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  throw new Error(`Invalid boolean value: ${value}`);
 }
 
 function parsePort(rawPort: string | undefined) {

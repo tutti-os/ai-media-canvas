@@ -43,7 +43,7 @@ async function fetchManifest() {
 async function callTool(
   name: string,
   args: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
+): Promise<{ isError: boolean; result: Record<string, unknown> }> {
   const response = await fetch(`${gatewayUrl}/${encodeURIComponent(name)}`, {
     method: "POST",
     headers: {
@@ -59,10 +59,13 @@ async function callTool(
   };
 
   if (!response.ok) {
+    if (payload.result && typeof payload.result === "object") {
+      return { isError: true, result: payload.result };
+    }
     throw new Error(payload.error?.message ?? `Tool call failed: ${response.status}`);
   }
 
-  return payload.result ?? {};
+  return { isError: false, result: payload.result ?? {} };
 }
 
 function sendError(id: JsonRpcId | undefined, code: number, message: string, data?: unknown) {
@@ -135,11 +138,12 @@ async function handleRequest(message: JsonRpcRequest) {
     }
 
     try {
-      const result = await callTool(toolName, args);
+      const { isError, result } = await callTool(toolName, args);
       send({
         jsonrpc: "2.0",
         id: message.id,
         result: {
+          ...(isError ? { isError: true } : {}),
           content: [
             {
               type: "text",

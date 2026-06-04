@@ -35,7 +35,11 @@ export type WebSocketHandle = {
   cancelRun: (runId: string) => void;
   onEvent: (cb: EventCallback) => () => void;
   registerRPC: (method: string, handler: RPCHandler) => () => void;
-  resumeCanvas: (canvasId: string, onAck?: (ack: WsCommandAck) => void) => void;
+  resumeCanvas: (
+    canvasId: string,
+    sessionId: string,
+    onAck?: (ack: WsCommandAck) => void,
+  ) => void;
 };
 
 function createConnectionId() {
@@ -343,7 +347,11 @@ export function useWebSocket(): WebSocketHandle {
   );
 
   const resumeCanvas = useCallback(
-    (canvasId: string, onAck?: (ack: WsCommandAck) => void) => {
+    (
+      canvasId: string,
+      sessionId: string,
+      onAck?: (ack: WsCommandAck) => void,
+    ) => {
       activeCanvasIdRef.current = canvasId;
       const removeAck = enqueueAck("canvas.resume", onAck);
       const sent = sendJson({
@@ -351,6 +359,7 @@ export function useWebSocket(): WebSocketHandle {
         action: "canvas.resume",
         payload: {
           canvasId,
+          sessionId,
           lastSeq: lastSeqByCanvasRef.current.get(canvasId) ?? 0,
           skipReplay: false,
         },

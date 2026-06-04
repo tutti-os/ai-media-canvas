@@ -4,6 +4,9 @@ Date: 2026-06-03
 Project: `ai-media-canvas`
 Status: Draft
 
+> 实施顺序与阶段交付请先读执行文档：
+> [2026-06-04-local-agent-runtime-execution-plan.zh-CN.md](/Users/wwcome/work/demo/ai-media-canvas/docs/2026-06-04-local-agent-runtime-execution-plan.zh-CN.md)
+
 ## 目标
 
 `ai-media-canvas` 需要同时保留现有的服务端 deepagent 链路，并新增一种可以调用本地 agent CLI 的链路。这个方案的核心目标是让两种执行方式共享同一套产品语义：

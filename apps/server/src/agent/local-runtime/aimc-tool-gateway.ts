@@ -167,8 +167,9 @@ function normalizeToolResult(
     isError: Boolean(errorMessage),
     output: parsedRecord,
   };
-  if (errorMessage || outputSummary) {
-    result.outputSummary = errorMessage ?? outputSummary;
+  const summary = errorMessage ?? outputSummary;
+  if (summary) {
+    result.outputSummary = summary;
   }
   if (artifacts) {
     result.artifacts = artifacts;
