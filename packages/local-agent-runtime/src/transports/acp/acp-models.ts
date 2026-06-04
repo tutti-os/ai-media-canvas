@@ -3,6 +3,37 @@ import { spawn } from "node:child_process";
 import { createJsonRpcLineParser, sendJsonRpc } from "./acp-jsonrpc.js";
 import { buildAcpSessionNewParams } from "./acp-session.js";
 
+const DEFAULT_MODEL_OPTION = { id: "default", label: "Default (CLI config)" };
+
+function normalizeAcpModels(
+  models: unknown,
+  defaultModelOption = DEFAULT_MODEL_OPTION,
+) {
+  const payload = (models ?? {}) as Record<string, unknown>;
+  const available = Array.isArray(payload.availableModels)
+    ? payload.availableModels
+    : [];
+  const currentModelId =
+    typeof payload.currentModelId === "string" ? payload.currentModelId : null;
+  const seen = new Set([defaultModelOption.id]);
+  const out = [defaultModelOption];
+
+  for (const model of available) {
+    const record = (model ?? {}) as Record<string, unknown>;
+    const id = typeof record.modelId === "string" ? record.modelId.trim() : "";
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    const labelBase = name && name !== id ? `${name} (${id})` : id;
+    out.push({
+      id,
+      label: id === currentModelId ? `${labelBase} (current)` : labelBase,
+    });
+  }
+
+  return out;
+}
+
 export async function detectAcpModels(input: {
   args: string[];
   bin: string;
@@ -20,11 +51,23 @@ export async function detectAcpModels(input: {
       });
 
       child.stdout.setEncoding("utf8");
+      let settled = false;
       let expectedId = 1;
+
+      function finish<T>(fn: (value: T) => void, value: T) {
+        if (settled) return;
+        settled = true;
+        fn(value);
+      }
+
+      function fail(error: Error) {
+        finish(reject, error);
+        child.kill("SIGTERM");
+      }
+
       const parser = createJsonRpcLineParser((message) => {
         if (message.error) {
-          reject(new Error(message.error.message ?? "ACP detection failed"));
-          child.kill("SIGTERM");
+          fail(new Error(message.error.message ?? "ACP detection failed"));
           return;
         }
         if (message.id !== expectedId) return;
@@ -38,29 +81,23 @@ export async function detectAcpModels(input: {
           });
           return;
         }
-        const result = message.result as {
-          models?: { availableModels?: Array<{ modelId?: string }> };
-        };
-        const models =
-          result?.models?.availableModels
-            ?.map((model) => model.modelId?.trim())
-            .filter((model): model is string => Boolean(model))
-            .map((model) => ({ id: model, label: model })) ?? [];
-        resolve(models);
+        const result = (message.result ?? {}) as Record<string, unknown>;
+        const models = normalizeAcpModels(result.models);
+        finish(resolve, models);
         child.kill("SIGTERM");
       });
 
       child.stdout.on("data", (chunk: string) => parser.feed(chunk));
-      child.on("error", reject);
+      child.on("error", (error) => fail(error));
       child.on("close", (code) => {
+        if (settled) return;
         if (code !== 0) {
-          reject(new Error(`ACP model detection exited with code ${code}`));
+          fail(new Error(`ACP model detection exited with code ${code}`));
         }
       });
 
       const timer = setTimeout(() => {
-        child.kill("SIGTERM");
-        reject(new Error(`ACP model detection timed out after ${timeoutMs}ms`));
+        fail(new Error(`ACP model detection timed out after ${timeoutMs}ms`));
       }, timeoutMs);
 
       sendJsonRpc(child.stdin, {

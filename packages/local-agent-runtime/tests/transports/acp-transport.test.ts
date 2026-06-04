@@ -1,9 +1,33 @@
 import { describe, expect, it } from "vitest";
 
+import { detectAcpModels } from "../../src/transports/acp/acp-models.js";
 import { runAcpTransport } from "../../src/transports/acp/acp-client.js";
 import { createFakeAcpPeerScript } from "../../src/testing/index.js";
 
 describe("runAcpTransport", () => {
+  it("discovers ACP models from session/new", async () => {
+    const script = createFakeAcpPeerScript({
+      currentModelId: "kimi-k2",
+      models: [
+        { modelId: "kimi-k2", name: "Kimi K2" },
+        { modelId: "kimi-k2-thinking" },
+      ],
+      updates: [],
+    });
+
+    await expect(
+      detectAcpModels({
+        args: ["-e", script],
+        bin: process.execPath,
+        cwd: process.cwd(),
+      }),
+    ).resolves.toEqual([
+      { id: "default", label: "Default (CLI config)" },
+      { id: "kimi-k2", label: "Kimi K2 (kimi-k2) (current)" },
+      { id: "kimi-k2-thinking", label: "kimi-k2-thinking" },
+    ]);
+  });
+
   it("maps ACP session updates into normalized agent events", async () => {
     const events = [];
     const script = createFakeAcpPeerScript({

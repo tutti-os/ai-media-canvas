@@ -1,4 +1,4 @@
-export const CODEX_DEFAULT_MODELS = [
+export const CODEX_FALLBACK_MODELS = [
   { id: "default", label: "Default (CLI config)" },
   { id: "gpt-5.5", label: "gpt-5.5" },
   { id: "gpt-5.4", label: "gpt-5.4" },

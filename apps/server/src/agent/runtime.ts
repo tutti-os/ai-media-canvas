@@ -534,10 +534,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
 
       run.status = "canceled";
-      options.agentRunStore?.updateRun({
-        runId,
-        status: "canceled",
-      });
       return {
         runId,
         status: "canceled",
@@ -1229,21 +1225,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           },
         )) {
         run.status = mapEventToStatus(event);
-        if (isTerminalEvent(event)) {
-          if (event.type === "run.failed") {
-            options.agentRunStore?.updateRun({
-              errorCode: event.error.code,
-              errorMessage: event.error.message,
-              runId,
-              status: run.status,
-            });
-          } else {
-            options.agentRunStore?.updateRun({
-              runId,
-              status: run.status,
-            });
-          }
-        }
         yield event;
 
         if (!isTerminalEvent(event) && options.eventDelayMs) {
@@ -1253,10 +1234,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             });
           } catch {
             run.status = "canceled";
-            options.agentRunStore?.updateRun({
-              runId,
-              status: "canceled",
-            });
             yield {
               runId,
               timestamp: now(),
@@ -1273,12 +1250,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         }
         const failedEvent = toFailedEvent(runId, now, streamError);
         run.status = "failed";
-        options.agentRunStore?.updateRun({
-          errorCode: failedEvent.error.code,
-          errorMessage: failedEvent.error.message,
-          runId,
-          status: "failed",
-        });
         yield failedEvent;
         return;
       }

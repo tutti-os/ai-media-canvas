@@ -36,5 +36,14 @@ describe("detectClaude", () => {
       skillsDir: join(process.env.HOME ?? "", ".claude", "skills"),
       supported: true,
     });
+    expect(detection.models.map((model) => model.id)).toEqual([
+      "default",
+      "sonnet",
+      "opus",
+      "haiku",
+      "claude-opus-4-5",
+      "claude-sonnet-4-5",
+      "claude-haiku-4-5",
+    ]);
   });
 });

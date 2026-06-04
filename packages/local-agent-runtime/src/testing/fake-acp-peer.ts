@@ -6,6 +6,8 @@ export function createFakeAcpPeerScript(input: {
   updates: unknown[];
   exitCode?: number;
   expectedMethods?: string[];
+  models?: Array<{ modelId: string; name?: string }>;
+  currentModelId?: string;
   sessionId?: string;
 }) {
   return `
@@ -14,6 +16,8 @@ let buffer = "";
 const updates = ${JSON.stringify(input.updates)};
 const exitCode = ${input.exitCode ?? 0};
 const expectedMethods = ${JSON.stringify(input.expectedMethods ?? [])};
+const models = ${JSON.stringify(input.models ?? [])};
+const currentModelId = ${JSON.stringify(input.currentModelId ?? null)};
 const sessionId = ${JSON.stringify(input.sessionId ?? "session_fake")};
 const seenMethods = [];
 
@@ -52,7 +56,14 @@ process.stdin.on("data", (chunk) => {
         id: message.id,
         result:
           message.method === "session/new"
-            ? { ok: true, sessionId }
+            ? {
+                ok: true,
+                sessionId,
+                models: {
+                  availableModels: models,
+                  ...(currentModelId ? { currentModelId } : {}),
+                },
+              }
             : { ok: true },
       });
     }

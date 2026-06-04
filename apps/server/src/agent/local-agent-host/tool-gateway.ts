@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import type { BackendFactory } from "deepagents";
 import { z } from "zod";
 import {
   imageArtifactSchema,
@@ -15,6 +16,8 @@ import { createBrandKitTool } from "../tools/brand-kit.js";
 import { createImageGenerateTool, type SubmitImageJobFn } from "../tools/image-generate.js";
 import { createInspectCanvasTool } from "../tools/inspect-canvas.js";
 import { createManipulateCanvasTool } from "../tools/manipulate-canvas.js";
+import { createPersistSandboxFileTool } from "../tools/persist-sandbox-file.js";
+import { createProjectSearchTool } from "../tools/project-search.js";
 import { createScreenshotCanvasTool } from "../tools/screenshot-canvas.js";
 import { createVideoGenerateTool, type SubmitVideoJobFn } from "../tools/video-generate.js";
 
@@ -41,11 +44,13 @@ export type LocalToolGatewayCallResult = {
 type LocalToolGatewaySession = {
   accessToken?: string;
   attachmentDataMap?: Record<string, string>;
+  backendFactory?: BackendFactory;
   brandKitId?: string | null;
   canvasId?: string;
   connectionId?: string;
   runId: string;
   runtimeEnv: ServerEnv;
+  sandboxDir?: string;
   submitImageJob?: SubmitImageJobFn;
   submitVideoJob?: SubmitVideoJobFn;
   userId?: string;
@@ -188,6 +193,7 @@ function toolOptionsForSession(
   session: LocalToolGatewaySession,
 ): Record<string, unknown> {
   return {
+    state: {},
     configurable: {
       ...(session.accessToken ? { access_token: session.accessToken } : {}),
       ...(session.attachmentDataMap &&
@@ -283,6 +289,23 @@ export function createLocalToolGatewayService(
           : {}),
       }) as unknown as StructuredToolLike,
     ];
+
+    if (session.backendFactory) {
+      tools.unshift(
+        createProjectSearchTool(
+          session.backendFactory,
+        ) as unknown as StructuredToolLike,
+      );
+    }
+
+    if (session.accessToken) {
+      tools.push(
+        createPersistSandboxFileTool({
+          createUserClient,
+          ...(session.sandboxDir ? { sandboxDir: session.sandboxDir } : {}),
+        }) as unknown as StructuredToolLike,
+      );
+    }
 
     if (session.brandKitId) {
       tools.push(

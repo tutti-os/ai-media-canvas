@@ -17,6 +17,7 @@ export type ServerEnv = {
   agnesDefaultModel?: string;
   anthropicApiKey?: string;
   anthropicBaseUrl?: string;
+  dataRoot?: string;
   googleApiKey?: string;
   googleApplicationCredentials?: string;
   googleVertexLocation?: string;
@@ -44,6 +45,8 @@ export function loadServerEnv(
 ): ServerEnv {
   const webDistDir =
     overrides.webDistDir ?? normalizeOptionalString(source.AIMC_WEB_DIST);
+  const dataRoot =
+    overrides.dataRoot ?? normalizeOptionalString(source.AIMC_DATA_ROOT);
   const agentBackendMode =
     overrides.agentBackendMode ??
     parseAgentBackendMode(
@@ -157,10 +160,14 @@ export function loadServerEnv(
     agentModelConfigured: configuredAgentModel !== undefined,
     agentModel,
     port: overrides.port ?? parsePort(source.AIMC_SERVER_PORT ?? source.PORT),
-    version: overrides.version ?? readServerVersion(),
+    version:
+      overrides.version ??
+      normalizeOptionalString(source.AIMC_APP_VERSION) ??
+      readServerVersion(),
     webOrigin:
       overrides.webOrigin ?? source.AIMC_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
+    ...(dataRoot ? { dataRoot } : {}),
     ...(webDistDir ? { webDistDir } : {}),
     ...(agnesApiKey ? { agnesApiKey } : {}),
     ...(agnesBaseUrl ? { agnesBaseUrl } : {}),

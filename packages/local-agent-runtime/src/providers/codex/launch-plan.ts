@@ -1,5 +1,5 @@
 import type { AgentRunParams, ProviderLaunchPlan } from "../../core/provider-plugin.js";
-import { clampCodexReasoning } from "./models.js";
+import { clampCodexReasoning } from "./fallback-models.js";
 
 export function buildCodexLaunchPlan(
   params: AgentRunParams<"local-agent", "codex">,

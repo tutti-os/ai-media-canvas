@@ -266,6 +266,27 @@ export function buildReplayEnvelope(
   };
 }
 
+function isTerminalStreamEvent(event: StreamEvent) {
+  return (
+    event.type === "run.canceled" ||
+    event.type === "run.completed" ||
+    event.type === "run.failed"
+  );
+}
+
+function statusForTerminalEvent(event: StreamEvent): AgentRunStatus | undefined {
+  switch (event.type) {
+    case "run.canceled":
+      return "canceled";
+    case "run.completed":
+      return "completed";
+    case "run.failed":
+      return "failed";
+    default:
+      return undefined;
+  }
+}
+
 export type AgentRunResumeMode = "native" | "provider-local" | "handoff" | "fresh";
 
 export type AgentRunResumeContext = {
@@ -422,10 +443,6 @@ export function createAgentRunOrchestrator(input: {
           ? { updateAssistant: cancelInput.updateAssistant }
           : {}),
       });
-      input.runStore?.updateRun({
-        runId: cancelInput.runId,
-        status: "canceled",
-      });
       return { envelope, event };
     },
 
@@ -438,6 +455,22 @@ export function createAgentRunOrchestrator(input: {
 
       if (envelope.duplicate) {
         return envelope;
+      }
+
+      if (isTerminalStreamEvent(streamInput.event)) {
+        const status = statusForTerminalEvent(streamInput.event);
+        if (status) {
+          input.runStore?.updateRun({
+            ...(streamInput.event.type === "run.failed"
+              ? {
+                  errorCode: streamInput.event.error.code,
+                  errorMessage: streamInput.event.error.message,
+                }
+              : {}),
+            runId: streamInput.runId,
+            status,
+          });
+        }
       }
 
       if (streamInput.project) {

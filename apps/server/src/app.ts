@@ -641,6 +641,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const webDistDir = env.webDistDir ?? DEFAULT_WEB_DIST_DIR;
   const store = createLocalStore({
     assetBaseUrl,
+    ...(env.dataRoot ? { dataRoot: env.dataRoot } : {}),
   });
   store.recoverInterruptedAgentRuns();
 

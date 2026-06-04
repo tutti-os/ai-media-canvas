@@ -27,6 +27,7 @@ registerAllProviders(env);
 
 const store = createLocalStore({
   assetBaseUrl: `http://${host}:${env.port}`,
+  ...(env.dataRoot ? { dataRoot: env.dataRoot } : {}),
 });
 const jobService = createJobService(store);
 const settingsService = createSettingsService(store, env);

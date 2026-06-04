@@ -150,24 +150,26 @@ export function createLocalAgentRuntimeProvider(
         brandKitId: readyContext.brandKitId,
       });
 
+      const runDir = await mkdtemp(
+        join(tmpdir(), `aimc-local-agent-${runtimeProvider}-run-`),
+      );
       const gatewaySession = deps.toolGateway.createSession({
         ...(run.accessToken ? { accessToken: run.accessToken } : {}),
         ...(Object.keys(attachmentDataMap).length > 0
           ? { attachmentDataMap }
           : {}),
+        backendFactory: readyContext.backendResult.factory,
         ...(readyContext.brandKitId ? { brandKitId: readyContext.brandKitId } : {}),
         ...(run.canvasId ? { canvasId: run.canvasId } : {}),
         ...(run.connectionId ? { connectionId: run.connectionId } : {}),
         runId: run.runId,
         runtimeEnv,
+        sandboxDir: runDir,
         ...(submitImageJob ? { submitImageJob } : {}),
         ...(submitVideoJob ? { submitVideoJob } : {}),
         ...(run.userId ? { userId: run.userId } : {}),
       });
 
-      const runDir = await mkdtemp(
-        join(tmpdir(), `aimc-local-agent-${runtimeProvider}-run-`),
-      );
       const history = await loadNormalizedSessionHistory({
         currentPrompt: enrichedPrompt,
         ...(deps.loadSessionMessages

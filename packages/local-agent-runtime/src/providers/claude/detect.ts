@@ -4,7 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { resolveCommandExecutable } from "../../process/command-resolver.js";
-import { CLAUDE_DEFAULT_MODELS } from "./models.js";
+import { CLAUDE_FALLBACK_MODELS } from "./fallback-models.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -27,7 +27,7 @@ export async function detectClaude(options?: {
     authState: "unknown" as const,
     configDir,
     executablePath,
-    models: CLAUDE_DEFAULT_MODELS,
+    models: CLAUDE_FALLBACK_MODELS,
     skillsDir: path.join(configDir, "skills"),
     supported: true,
     version: stdout.trim() || "unknown",

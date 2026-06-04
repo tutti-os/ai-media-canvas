@@ -259,6 +259,7 @@ describe("agent run orchestrator", () => {
     const projection = createAssistantMessageProjection();
     const published: unknown[] = [];
     const assistantUpdates: unknown[] = [];
+    const runStoreCalls: Array<Record<string, unknown>> = [];
     const orchestrator = createAgentRunOrchestrator({
       eventPersistence: {
         appendEvent() {
@@ -269,14 +270,18 @@ describe("agent run orchestrator", () => {
           };
         },
       },
+      runStore: {
+        createRun() {},
+        updateRun(input) {
+          runStoreCalls.push(input);
+        },
+      },
     });
 
     const envelope = await orchestrator.handleStreamEvent({
       event: {
-        type: "message.delta",
+        type: "run.completed",
         runId: "run_1",
-        messageId: "msg_1",
-        delta: "late",
         timestamp: "2026-06-04T00:00:00.000Z",
       },
       project: projection,
@@ -293,6 +298,7 @@ describe("agent run orchestrator", () => {
     expect(published).toEqual([]);
     expect(assistantUpdates).toEqual([]);
     expect(projection.textParts).toEqual([]);
+    expect(runStoreCalls).toEqual([]);
   });
 
   it("projects text and media tool events into assistant message blocks", () => {
