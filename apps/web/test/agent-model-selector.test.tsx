@@ -5,11 +5,12 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { fetchModelsMock, fetchWorkspaceSettingsMock, setModelMock } = vi.hoisted(() => ({
-  fetchModelsMock: vi.fn(),
-  fetchWorkspaceSettingsMock: vi.fn(),
-  setModelMock: vi.fn(),
-}));
+const { fetchModelsMock, fetchWorkspaceSettingsMock, setModelMock } =
+  vi.hoisted(() => ({
+    fetchModelsMock: vi.fn(),
+    fetchWorkspaceSettingsMock: vi.fn(),
+    setModelMock: vi.fn(),
+  }));
 
 vi.mock("../src/lib/server-api", () => ({
   fetchModels: fetchModelsMock,
@@ -64,7 +65,11 @@ describe("AgentModelSelector", () => {
       })
       .mockResolvedValueOnce({
         models: [
-          { id: "openai:deepseek-chat", name: "deepseek-chat", provider: "openai" },
+          {
+            id: "openai:deepseek-chat",
+            name: "deepseek-chat",
+            provider: "openai",
+          },
           { id: "openai:qwen-plus", name: "qwen-plus", provider: "openai" },
         ],
       });
@@ -74,6 +79,9 @@ describe("AgentModelSelector", () => {
     await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
 
     await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
 
     await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("deepseek-chat")).toBeInTheDocument();
@@ -85,7 +93,11 @@ describe("AgentModelSelector", () => {
       models: [
         { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
         { id: "openai:gpt-5.5", name: "gpt-5.5", provider: "openai" },
-        { id: "agnes:agnes-2.0-flash", name: "Agnes 2.0 Flash", provider: "agnes" },
+        {
+          id: "agnes:agnes-2.0-flash",
+          name: "Agnes 2.0 Flash",
+          provider: "agnes",
+        },
       ],
     });
 
@@ -93,6 +105,9 @@ describe("AgentModelSelector", () => {
 
     await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
     await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
 
     expect(
       await screen.findByText("Uses default model: gpt-5.4"),
@@ -111,6 +126,60 @@ describe("AgentModelSelector", () => {
     expect(screen.getByTestId("settings-dialog")).toHaveTextContent("agent");
   });
 
+  it("switches the picker between local CLI and API provider models", async () => {
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        { id: "codex:gpt-5.4", name: "Codex CLI", provider: "codex" },
+        { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
+
+    expect(
+      await screen.findByRole("button", { name: "Local CLI" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: "API provider" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("Codex CLI")).toBeInTheDocument();
+    expect(screen.queryByText("gpt-5.4")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "API provider" }));
+
+    expect(screen.getByRole("button", { name: "Local CLI" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(
+      screen.getByRole("button", { name: "API provider" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByText("gpt-5.4")).toBeInTheDocument();
+    expect(screen.queryByText("Codex CLI")).not.toBeInTheDocument();
+  });
+
+  it("shows the default local CLI provider in the trigger", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "codex:default",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        { id: "codex:default", name: "Default (CLI config)", provider: "codex" },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    expect(
+      await screen.findByRole("button", { name: /Codex CLI/i }),
+    ).toBeInTheDocument();
+  });
+
   it("keeps the picker scrollable when the model list is taller than the viewport", async () => {
     fetchModelsMock.mockResolvedValue({
       models: Array.from({ length: 20 }, (_, index) => ({
@@ -125,29 +194,30 @@ describe("AgentModelSelector", () => {
     await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
     await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
 
-    const popover = container.ownerDocument.querySelector(
-      ".overflow-y-auto",
-    );
+    const popover = container.ownerDocument.querySelector(".overflow-y-auto");
     expect(popover).toHaveClass("max-h-[min(28rem,calc(100vh-2rem))]");
     expect(popover).toHaveClass("overflow-y-auto");
   });
 
   it("lets people enter and apply a custom model id from the picker", async () => {
     fetchModelsMock.mockResolvedValue({
-      models: [
-        { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
-      ],
+      models: [{ id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" }],
     });
 
     render(<AgentModelSelector compact />);
 
     await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
     await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
 
     const input = await screen.findByLabelText("Custom model ID");
     await userEvent.clear(input);
     await userEvent.type(input, "anthropic:minimax-m2.5");
-    await userEvent.click(screen.getByRole("button", { name: "Use custom model" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Use custom model" }),
+    );
 
     expect(setModelMock).toHaveBeenCalledWith("anthropic:minimax-m2.5");
   });

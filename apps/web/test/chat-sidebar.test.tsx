@@ -11,9 +11,9 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { WebSocketHandle } from "../src/hooks/use-websocket";
 import { ChatSidebar } from "../src/components/chat-sidebar";
 import { ToastProvider } from "../src/components/toast";
+import type { WebSocketHandle } from "../src/hooks/use-websocket";
 
 const settingsDialogSpy = vi.fn();
 
@@ -99,10 +99,30 @@ function createMockWs(): WebSocketHandle {
   };
 }
 
+function createMockLocalStorage(): Storage {
+  const values = new Map<string, string>();
+  return {
+    get length() {
+      return values.size;
+    },
+    clear: vi.fn(() => values.clear()),
+    getItem: vi.fn((key: string) => values.get(key) ?? null),
+    key: vi.fn((index: number) => Array.from(values.keys())[index] ?? null),
+    removeItem: vi.fn((key: string) => values.delete(key)),
+    setItem: vi.fn((key: string, value: string) =>
+      values.set(key, String(value)),
+    ),
+  };
+}
+
 describe("ChatSidebar", () => {
   let mockWs: WebSocketHandle;
 
   beforeEach(() => {
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: createMockLocalStorage(),
+    });
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: vi.fn().mockImplementation(() => ({
@@ -128,11 +148,18 @@ describe("ChatSidebar", () => {
     deleteSessionMock.mockReset();
     fetchImageModelsMock.mockReset();
     fetchImageModelsMock.mockResolvedValue({
-      models: [{ id: "local:placeholder-image", displayName: "Local Placeholder Image" }],
+      models: [
+        {
+          id: "local:placeholder-image",
+          displayName: "Local Placeholder Image",
+        },
+      ],
     });
     fetchModelsMock.mockReset();
     fetchModelsMock.mockResolvedValue({
-      models: [{ id: "local:assistant", name: "Local Assistant", provider: "local" }],
+      models: [
+        { id: "local:assistant", name: "Local Assistant", provider: "local" },
+      ],
     });
     fetchRunEventsMock.mockReset();
     fetchRunEventsMock.mockResolvedValue({
@@ -184,9 +211,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(
-      /start with an idea/i,
-    );
+    const input = await screen.findByPlaceholderText(/start with an idea/i);
     await userEvent.type(input, "hello loom{Enter}");
 
     await waitFor(() =>
@@ -196,14 +221,60 @@ describe("ChatSidebar", () => {
           conversationId: "canvas-1",
           prompt: "hello loom",
           canvasId: "canvas-1",
-          runtimeKind: "server-deepagent",
         }),
         expect.any(Function),
       ),
     );
     expect(mockWs.startRun).not.toHaveBeenCalledWith(
       expect.objectContaining({
+        runtimeKind: expect.any(String),
+      }),
+      expect.anything(),
+    );
+    expect(mockWs.startRun).not.toHaveBeenCalledWith(
+      expect.objectContaining({
         sessionId: "session-canvas-1",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("passes selected local CLI models without forcing the server runtime", async () => {
+    localStorage.setItem("aimc:agent-model", "claude:sonnet");
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(/start with an idea/i);
+    await userEvent.type(input, "use claude{Enter}");
+
+    await waitFor(() =>
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: "claude:sonnet",
+          prompt: "use claude",
+        }),
+        expect.any(Function),
+      ),
+    );
+    expect(mockWs.startRun).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimeKind: "server-deepagent",
+      }),
+      expect.anything(),
+    );
+    expect(mockWs.startRun).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimeProvider: expect.any(String),
       }),
       expect.anything(),
     );
@@ -267,7 +338,12 @@ describe("ChatSidebar", () => {
   it("replays durable run events on reconnect to recover missed media insertions", async () => {
     const imageGeneratedSpy = vi.fn();
     let replayListener:
-      | ((entry: { event: Record<string, unknown>; replayed?: boolean; eventId?: string; seq?: number }) => void)
+      | ((entry: {
+          event: Record<string, unknown>;
+          replayed?: boolean;
+          eventId?: string;
+          seq?: number;
+        }) => void)
       | null = null;
     fetchRunEventsMock.mockResolvedValue({
       done: true,
@@ -344,13 +420,15 @@ describe("ChatSidebar", () => {
     );
 
     await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
-    await waitFor(() => expect(fetchRunEventsMock).toHaveBeenCalledWith("run-reconnect", 0));
+    await waitFor(() =>
+      expect(fetchRunEventsMock).toHaveBeenCalledWith("run-reconnect", 0),
+    );
     expect(await screen.findByText("Recovered transcript")).toBeInTheDocument();
     await waitFor(() => expect(imageGeneratedSpy).toHaveBeenCalledTimes(1));
-	    replayListener?.({
-	      replayed: true,
-	      eventId: "run-reconnect:8",
-	      seq: 99,
+    replayListener?.({
+      replayed: true,
+      eventId: "run-reconnect:8",
+      seq: 99,
       event: {
         type: "tool.completed",
         runId: "run-reconnect",
@@ -378,7 +456,7 @@ describe("ChatSidebar", () => {
     );
   });
 
-	  it("recovers persisted media artifacts from the latest assistant snapshot after reconnect", async () => {
+  it("recovers persisted media artifacts from the latest assistant snapshot after reconnect", async () => {
     const imageGeneratedSpy = vi.fn();
     fetchMessagesMock.mockResolvedValue({
       messages: [
@@ -431,7 +509,7 @@ describe("ChatSidebar", () => {
         url: "https://example.com/from-snapshot.png",
       }),
     );
-	  });
+  });
 
   it("does not reinsert persisted media when backend already inserted the canvas element", async () => {
     const imageGeneratedSpy = vi.fn();
@@ -483,7 +561,9 @@ describe("ChatSidebar", () => {
     );
 
     await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getByText("Backend inserted")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Backend inserted")).toBeInTheDocument(),
+    );
     expect(imageGeneratedSpy).not.toHaveBeenCalled();
   });
 });

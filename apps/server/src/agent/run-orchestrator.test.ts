@@ -413,7 +413,21 @@ describe("agent run orchestrator", () => {
     expect(isLocalAgentRuntimeRequested({ runtimeProvider: "claude" })).toBe(
       true,
     );
-    for (const provider of ["codex", "claude", "hermes", "kimi", "kiro"]) {
+    for (const provider of [
+      "codex",
+      "claude",
+      "devin",
+      "hermes",
+      "kimi",
+      "kiro",
+      "kilo",
+      "vibe",
+      "cursor",
+      "gemini",
+      "opencode",
+      "qoder",
+      "qwen",
+    ]) {
       expect(
         isLocalAgentRuntimeRequested({ model: `${provider}:default` }),
       ).toBe(true);

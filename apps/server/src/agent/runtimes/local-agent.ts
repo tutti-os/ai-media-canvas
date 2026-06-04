@@ -2,11 +2,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 import type {
   AgentEvent,
   LocalAgentProviderPlugin,
 } from "@nextop-os/agent-acp-kit";
-import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 
 import { createAimcToolsMcpServerConfig } from "../local-agent-host/mcp-config.js";
 import { mapWorkspaceSkillsToLocalAgentManifest } from "../local-agent-host/skills.js";
@@ -39,6 +39,11 @@ function mapResumeContext(
       : {}),
     ...(resumeContext.resumeToken ? { resumeToken: resumeContext.resumeToken } : {}),
   };
+}
+
+function stripLocalAgentProviderPrefix(model: string, provider: string) {
+  const prefix = `${provider}:`;
+  return model.startsWith(prefix) ? model.slice(prefix.length) : model;
 }
 
 export function createLocalAgentRuntimeProvider(
@@ -207,7 +212,7 @@ export function createLocalAgentRuntimeProvider(
           prompt,
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
-          model: resolvedModel,
+          model: stripLocalAgentProviderPrefix(resolvedModel, runtimeProvider),
           runtimeKind: "local-agent",
           runtimeProvider,
           mcpServers,

@@ -1,0 +1,62 @@
+"use client";
+
+export type AgentModelSourceTab = "local-cli" | "api-provider";
+
+const API_PROVIDER_IDS = new Set([
+  "agnes",
+  "openai",
+  "anthropic",
+  "google",
+  "vertex",
+]);
+
+export const LOCAL_CLI_PROVIDER_LABELS: Record<string, string> = {
+  codex: "Codex CLI",
+  claude: "Claude Code",
+  cursor: "Cursor Agent",
+  devin: "Devin for Terminal",
+  gemini: "Gemini CLI",
+  hermes: "Hermes",
+  kilo: "Kilo",
+  kimi: "Kimi CLI",
+  kiro: "Kiro CLI",
+  opencode: "OpenCode",
+  qoder: "Qoder CLI",
+  qwen: "Qwen Code",
+  vibe: "Mistral Vibe CLI",
+};
+
+export const LOCAL_CLI_PROVIDER_FALLBACK_MARKS: Record<string, string> = {
+  claude: "C",
+  codex: ">_",
+  devin: "D",
+  hermes: "H",
+  kiro: "K",
+};
+
+export function isApiProvider(provider: string) {
+  return API_PROVIDER_IDS.has(provider);
+}
+
+export function isLocalCliProvider(provider: string) {
+  return !isApiProvider(provider);
+}
+
+export function getAgentModelSourceTab(modelId: string | null | undefined) {
+  const provider = modelId?.split(":")[0] ?? "";
+  return provider && isApiProvider(provider) ? "api-provider" : "local-cli";
+}
+
+export function formatLocalCliProviderLabel(provider: string) {
+  return (
+    LOCAL_CLI_PROVIDER_LABELS[provider] ??
+    `${provider.charAt(0).toUpperCase()}${provider.slice(1)} CLI`
+  );
+}
+
+export function getLocalCliProviderFallbackMark(provider: string) {
+  return (
+    LOCAL_CLI_PROVIDER_FALLBACK_MARKS[provider] ??
+    provider.slice(0, 2).toUpperCase()
+  );
+}

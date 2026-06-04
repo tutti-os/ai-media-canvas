@@ -18,8 +18,8 @@ vi.mock("./backends/index.js", () => ({
   createAgentBackend: createAgentBackendMock,
 }));
 
-import { createAgentRunService } from "./runtime.js";
 import { AIMC_SYSTEM_PROMPT } from "./prompts/aimc-main.js";
+import { createAgentRunService } from "./runtime.js";
 
 describe("createAgentRunService", () => {
   it("prepends saved session messages and avoids duplicating the current user prompt", async () => {
@@ -317,6 +317,7 @@ describe("createAgentRunService", () => {
             throw new Error("not used");
           },
           async *run() {
+            yield* [];
             throw new Error("not used");
           },
         },
@@ -362,6 +363,87 @@ describe("createAgentRunService", () => {
           delta: "claude:claude",
         }),
       ]),
+    );
+  });
+
+  it("strips the local provider prefix before invoking generic ACP providers", async () => {
+    const localRun = vi.fn(async function* () {
+      yield {
+        type: "done" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+
+    const runs = createAgentRunService({
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        run: localRun,
+      },
+      localAgentProviderPlugins: [
+        {
+          id: "hermes",
+          displayName: "Hermes",
+          kind: "local-agent",
+          async detect() {
+            return null;
+          },
+          capabilities() {
+            return {
+              cancel: true,
+              nativeResume: false,
+              streaming: true,
+              toolGateway: false,
+              maxConcurrentRuns: 1,
+            };
+          },
+          async buildLaunchPlan() {
+            throw new Error("not used");
+          },
+          async *run() {
+            yield* [];
+            throw new Error("not used");
+          },
+        },
+      ],
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "继续",
+        sessionId: "session-1",
+      },
+      {
+        model: "hermes:openai-codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "hermes",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the provider invocation.
+    }
+
+    expect(localRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "hermes",
+        runtimeProvider: "hermes",
+        model: "openai-codex:gpt-5.4",
+      }),
     );
   });
 
