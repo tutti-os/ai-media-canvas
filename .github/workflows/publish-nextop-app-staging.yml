@@ -1,0 +1,30 @@
+name: Publish Nextop App Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Optional release version override. Defaults to manifest.version + short git sha.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    uses: nextop-os/nextop/.github/workflows/publish-nextop-app-release.yml@main
+    with:
+      app_id: ai-media-canvas
+      package_command: pnpm package:nextop
+      package_dir: build/nextop-app/package
+      icon_path: build/nextop-app/package/icon.svg
+      release_version: ${{ inputs.release_version || '' }}
+      runner: macos-latest
+      pnpm_version: 10.26.2
+      aws_region: ${{ vars.NEXTOP_APP_RELEASES_STAGING_AWS_REGION || vars.NEXTOP_APP_RELEASES_AWS_REGION }}
+      aws_role_arn: ${{ vars.NEXTOP_APP_RELEASES_STAGING_AWS_ROLE_ARN || vars.NEXTOP_APP_RELEASES_AWS_ROLE_ARN }}
+      s3_bucket: ${{ vars.NEXTOP_APP_RELEASES_STAGING_S3_BUCKET || vars.NEXTOP_APP_RELEASES_S3_BUCKET }}
+      s3_prefix: ${{ vars.NEXTOP_APP_RELEASES_STAGING_S3_PREFIX || 'nextop-app-releases-staging' }}
+      release_assets_base_url: ${{ vars.NEXTOP_APP_RELEASES_STAGING_BASE_URL || 'https://d1x7gb6wqsqmnm.cloudfront.net/nextop-app-releases-staging' }}
