@@ -65,8 +65,8 @@ import {
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { loadServerEnv, type ServerEnv } from "./config/env.js";
 import { createAgentRunService } from "./agent/runtime.js";
-import { createAgentRunOrchestrator } from "./agent/runtime-orchestrator/orchestrator.js";
-import { createLocalToolGatewayService } from "./agent/local-runtime/aimc-tool-gateway.js";
+import { createAgentRunOrchestrator } from "./agent/run-orchestrator.js";
+import { createLocalToolGatewayService } from "./agent/local-agent-host/tool-gateway.js";
 import {
   createLocalStore,
   type LocalStore,

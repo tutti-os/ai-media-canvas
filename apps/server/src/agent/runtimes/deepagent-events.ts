@@ -12,7 +12,7 @@ import {
 import { imageArtifactSchema, videoArtifactSchema } from "@aimc/shared";
 import type { StreamEvent, ToolArtifact } from "@aimc/shared";
 
-import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
+import { sanitizeErrorForClient } from "../../utils/error-sanitizer.js";
 
 /**
  * Shape of a LangChain v2 stream event from `streamEvents()`.
@@ -276,7 +276,7 @@ export async function* adaptDeepAgentStream(
 
     // Log full error detail server-side
     console.error(
-      `[stream-adapter] Stream error for run ${options.runId}:`,
+      `[deepagent-events] Stream error for run ${options.runId}:`,
       error,
     );
 

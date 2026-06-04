@@ -3,7 +3,7 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatVertexAI } from "@langchain/google-vertexai";
 import { ChatOpenAI } from "@langchain/openai";
-import { createDeepAgent } from "deepagents";
+import { createDeepAgent, type SubAgent } from "deepagents";
 
 import {
   DEFAULT_AGENT_MODEL,
@@ -14,9 +14,9 @@ import {
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createAgentBackend, type AgentBackendResult } from "./backends/index.js";
 import { AIMC_SYSTEM_PROMPT } from "./prompts/aimc-main.js";
-import { createVideoSubAgent } from "./sub-agents.js";
 import { createMainAgentTools } from "./tools/index.js";
 import type { PersistImageFn, SubmitImageJobFn } from "./tools/image-generate.js";
+import { createVideoGenerateTool } from "./tools/video-generate.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
@@ -39,6 +39,18 @@ export type AimcAgentFactory = (options: {
   submitVideoJob?: SubmitVideoJobFn;
   workspaceSkills?: WorkspaceSkillEntry[];
 }) => AimcAgent;
+
+function createVideoSubAgent(): SubAgent {
+  return {
+    name: "generate_video",
+    description:
+      "Generate a video based on a creative description. Video generation availability depends on provider configuration.",
+    systemPrompt: `You are a video generation specialist. Given a description, generate a video using the generate_video tool and return the result.
+
+If video generation is not available or fails, clearly explain the limitation.`,
+    tools: [createVideoGenerateTool()],
+  };
+}
 
 export function createAimcDeepAgent(options: {
   backendResult?: AgentBackendResult;

@@ -29,11 +29,11 @@ import type { ServerEnv } from "../config/env.js";
 import {
   createAssistantMessageProjection,
   projectStreamEventToAssistantMessage,
-} from "../agent/runtime-orchestrator/run-event-projector.js";
+} from "../agent/run-orchestrator.js";
 import {
   buildReplayEnvelope,
   persistRunEvent,
-} from "../agent/runtime-orchestrator/run-event-store.js";
+} from "../agent/run-orchestrator.js";
 
 type RegisterWsOptions = {
   agentRuns: AgentRunService;

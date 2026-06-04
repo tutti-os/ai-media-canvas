@@ -4,8 +4,8 @@ const { createAgentBackendMock } = vi.hoisted(() => ({
   createAgentBackendMock: vi.fn(() => ({ factory: { kind: "backend" } })),
 }));
 
-const { localAgentProviderRunMock } = vi.hoisted(() => ({
-  localAgentProviderRunMock: vi.fn(async function* () {
+const { localAgentRuntimeRunMock } = vi.hoisted(() => ({
+  localAgentRuntimeRunMock: vi.fn(async function* () {
     yield {
       type: "done" as const,
       reason: "completed" as const,
@@ -154,7 +154,7 @@ describe("createAgentRunService", () => {
   });
 
   it("prefers an explicit server runtime kind over codex model prefix inference", async () => {
-    localAgentProviderRunMock.mockClear();
+    localAgentRuntimeRunMock.mockClear();
 
     const agentFactory = vi.fn(() => ({
       stream: vi.fn(),
@@ -179,8 +179,8 @@ describe("createAgentRunService", () => {
         webOrigin: "http://localhost:3000",
       },
       loadSessionMessages: async () => [],
-      localAgentProvider: {
-        run: localAgentProviderRunMock,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
       },
       toolGateway: {
         createSession: vi.fn(() => ({ token: "tool-token" })),
@@ -207,11 +207,11 @@ describe("createAgentRunService", () => {
     }
 
     expect(agentFactory).toHaveBeenCalled();
-    expect(localAgentProviderRunMock).not.toHaveBeenCalled();
+    expect(localAgentRuntimeRunMock).not.toHaveBeenCalled();
   });
 
   it("persists explicit local runtime kind when Codex is requested", async () => {
-    localAgentProviderRunMock.mockClear();
+    localAgentRuntimeRunMock.mockClear();
     const updateRun = vi.fn();
 
     const runs = createAgentRunService({
@@ -226,8 +226,8 @@ describe("createAgentRunService", () => {
         version: "0.0.0",
         webOrigin: "http://localhost:3000",
       },
-      localAgentProvider: {
-        run: localAgentProviderRunMock,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
       },
       loadSessionMessages: async () => [],
       toolGateway: {
@@ -260,7 +260,7 @@ describe("createAgentRunService", () => {
       // Exhaust the stream so runtime reaches the provider invocation.
     }
 
-    expect(localAgentProviderRunMock).toHaveBeenCalled();
+    expect(localAgentRuntimeRunMock).toHaveBeenCalled();
     expect(updateRun).toHaveBeenCalledWith(
       expect.objectContaining({
         runId: run.runId,
@@ -268,6 +268,99 @@ describe("createAgentRunService", () => {
         runtimeProvider: "codex",
         status: "running",
       }),
+    );
+  });
+
+  it("passes non-Codex local-agent providers through the host adapter", async () => {
+    const localRun = vi.fn(async function* (params) {
+      yield {
+        type: "text_delta" as const,
+        text: `${params.provider}:${params.runtimeProvider}`,
+      };
+      yield {
+        type: "done" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+
+    const runs = createAgentRunService({
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        run: localRun,
+      },
+      localAgentProviderPlugins: [
+        {
+          id: "claude",
+          displayName: "Claude Code",
+          kind: "local-agent",
+          async detect() {
+            return null;
+          },
+          capabilities() {
+            return {
+              cancel: true,
+              nativeResume: false,
+              streaming: true,
+              toolGateway: true,
+              maxConcurrentRuns: 1,
+            };
+          },
+          async buildLaunchPlan() {
+            throw new Error("not used");
+          },
+          async *run() {
+            throw new Error("not used");
+          },
+        },
+      ],
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "继续",
+        sessionId: "session-1",
+      },
+      {
+        model: "sonnet",
+        runtimeKind: "local-agent",
+        runtimeProvider: "claude",
+      },
+    );
+
+    const events = [];
+    for await (const event of runs.streamRun(run.runId)) {
+      events.push(event);
+    }
+
+    expect(localRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "claude",
+        runtimeProvider: "claude",
+        model: "sonnet",
+      }),
+    );
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "message.delta",
+          delta: "claude:claude",
+        }),
+      ]),
     );
   });
 
@@ -308,7 +401,7 @@ describe("createAgentRunService", () => {
         version: "0.0.0",
         webOrigin: "http://localhost:3000",
       },
-      localAgentProvider: {
+      localAgentRuntime: {
         run: localRun,
       },
       loadSessionMessages: async () => [],
@@ -363,7 +456,7 @@ describe("createAgentRunService", () => {
   });
 
   it("falls back to the server runtime when Codex is inferred but no local gateway is registered", async () => {
-    localAgentProviderRunMock.mockClear();
+    localAgentRuntimeRunMock.mockClear();
 
     const agentFactory = vi.fn(() => ({
       stream: vi.fn(),
@@ -407,13 +500,13 @@ describe("createAgentRunService", () => {
       events.push(event);
     }
 
-    expect(localAgentProviderRunMock).not.toHaveBeenCalled();
+    expect(localAgentRuntimeRunMock).not.toHaveBeenCalled();
     expect(agentFactory).toHaveBeenCalled();
     expect(events.some((event) => event.type === "run.failed")).toBe(false);
   });
 
   it("fails fast when local Codex is explicitly requested without a registered gateway", async () => {
-    localAgentProviderRunMock.mockClear();
+    localAgentRuntimeRunMock.mockClear();
 
     const runs = createAgentRunService({
       env: {
@@ -442,11 +535,11 @@ describe("createAgentRunService", () => {
       ),
     ).toThrow("No runtime provider registered for local-agent (codex)");
 
-    expect(localAgentProviderRunMock).not.toHaveBeenCalled();
+    expect(localAgentRuntimeRunMock).not.toHaveBeenCalled();
   });
 
   it("does not register local Codex when trusted local mode is disabled", async () => {
-    localAgentProviderRunMock.mockClear();
+    localAgentRuntimeRunMock.mockClear();
 
     const runs = createAgentRunService({
       env: {
@@ -457,8 +550,8 @@ describe("createAgentRunService", () => {
         version: "0.0.0",
         webOrigin: "http://localhost:3000",
       },
-      localAgentProvider: {
-        run: localAgentProviderRunMock,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
       },
       loadSessionMessages: async () => [],
       toolGateway: {
@@ -484,6 +577,6 @@ describe("createAgentRunService", () => {
       ),
     ).toThrow("No runtime provider registered for local-agent (codex)");
 
-    expect(localAgentProviderRunMock).not.toHaveBeenCalled();
+    expect(localAgentRuntimeRunMock).not.toHaveBeenCalled();
   });
 });

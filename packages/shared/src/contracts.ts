@@ -73,7 +73,14 @@ export const runtimeKindSchema = z.enum([
   "local-agent",
 ]);
 
-export const agentRuntimeProviderSchema = z.enum(["codex"]);
+export const agentRuntimeProviderSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .regex(/^[a-z0-9][a-z0-9._:-]*$/i, {
+    message:
+      "runtimeProvider must be a provider id using letters, numbers, '.', '_', ':', or '-'.",
+  });
 
 export const runCreateRequestSchema = z
   .object({

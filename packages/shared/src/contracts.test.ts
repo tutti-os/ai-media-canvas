@@ -26,7 +26,7 @@ describe("runCreateRequestSchema", () => {
     );
   });
 
-  it("accepts explicit local Codex runs", () => {
+  it("accepts explicit local provider ids", () => {
     expect(
       runCreateRequestSchema.safeParse({
         ...baseRunCreateRequest,
@@ -34,5 +34,31 @@ describe("runCreateRequestSchema", () => {
         runtimeProvider: "codex",
       }).success,
     ).toBe(true);
+
+    expect(
+      runCreateRequestSchema.safeParse({
+        ...baseRunCreateRequest,
+        runtimeKind: "local-agent",
+        runtimeProvider: "claude",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects malformed local provider ids", () => {
+    expect(
+      runCreateRequestSchema.safeParse({
+        ...baseRunCreateRequest,
+        runtimeKind: "local-agent",
+        runtimeProvider: "",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      runCreateRequestSchema.safeParse({
+        ...baseRunCreateRequest,
+        runtimeKind: "local-agent",
+        runtimeProvider: "../codex",
+      }).success,
+    ).toBe(false);
   });
 });

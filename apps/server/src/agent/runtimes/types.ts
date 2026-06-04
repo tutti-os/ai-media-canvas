@@ -22,7 +22,7 @@ import type { ConnectionManager } from "../../ws/connection-manager.js";
 import type { createPipelineLogger } from "../../ws/logger.js";
 import type { createAgentBackend } from "../backends/index.js";
 import type { AimcAgentFactory } from "../deep-agent.js";
-import type { createLocalToolGatewayService } from "../local-runtime/aimc-tool-gateway.js";
+import type { createLocalToolGatewayService } from "../local-agent-host/tool-gateway.js";
 import type { SubmitImageJobFn } from "../tools/image-generate.js";
 import type { SubmitVideoJobFn } from "../tools/video-generate.js";
 import type { WorkspaceSkillEntry } from "../workspace-skills.js";
@@ -63,7 +63,7 @@ export type RuntimeExecutionContext = {
   workspaceSkills: WorkspaceSkillEntry[];
 };
 
-export type LocalCodexRuntimeExecutionContext = Omit<
+export type LocalAgentRuntimeExecutionContext = Omit<
   RuntimeExecutionContext,
   "resolvedModel"
 > & {
@@ -93,23 +93,19 @@ export type LoadCanvasSummaryForRuntime = (
   context: RuntimeExecutionContext,
 ) => Promise<string | null>;
 
-export type LocalCodexRuntimeProviderDeps = {
+export type LocalAgentRuntimeProviderDeps = {
   buildAttachmentDataMap: BuildAttachmentDataMap;
   buildUserMessage: BuildUserMessage;
   loadCanvasSummaryForRuntime: LoadCanvasSummaryForRuntime;
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
-  localAgentProvider?: Pick<
-    LocalAgentProviderPlugin<"local-agent", "codex">,
-    "run"
-  >;
-  localAgentRuntime?: Pick<LocalAgentRuntime<"local-agent", "codex">, "run">;
+  localAgentRuntime: Pick<LocalAgentRuntime<"local-agent", AgentRuntimeProvider>, "run">;
   now: () => string;
   toolGateway: ReturnType<typeof createLocalToolGatewayService>;
   toolGatewayBaseUrl: string;
 };
 
 export type LocalAgentToolRunner = (
-  params: Parameters<LocalAgentProviderPlugin<"local-agent", "codex">["run"]>[0],
+  params: Parameters<LocalAgentProviderPlugin<"local-agent", AgentRuntimeProvider>["run"]>[0],
 ) => AsyncGenerator<AgentEvent>;
 
 export type ServerDeepAgentRuntimeProviderDeps = {
@@ -136,10 +132,10 @@ export type PersistImageClientFactory = (
   accessToken: string,
 ) => UserDataClient;
 
-export function assertLocalCodexRuntimeExecutionContext(
+export function assertLocalAgentRuntimeExecutionContext(
   context: RuntimeExecutionContext,
-): asserts context is LocalCodexRuntimeExecutionContext {
+): asserts context is LocalAgentRuntimeExecutionContext {
   if (typeof context.resolvedModel !== "string") {
-    throw new Error("Local Codex runtime requires a string model.");
+    throw new Error("Local agent runtime requires a string model.");
   }
 }

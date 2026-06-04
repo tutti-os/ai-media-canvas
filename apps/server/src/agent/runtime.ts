@@ -3,7 +3,13 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
-import type { LocalAgentProviderPlugin } from "@aimc/local-agent-runtime";
+import {
+  createClaudeProvider,
+  createCodexProvider,
+  createLocalAgentRuntime,
+  type LocalAgentProviderPlugin,
+  type LocalAgentRuntime,
+} from "@aimc/local-agent-runtime";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type {
@@ -41,23 +47,24 @@ import {
 } from "./deep-agent.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
-import { resolveAimcWorkspaceSkills } from "./local-runtime/aimc-skill-resolver.js";
+import { resolveAimcWorkspaceSkills } from "./local-agent-host/skills.js";
 import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
 import { insertImageElement, insertVideoElement } from "../features/canvas/canvas-element-writer.js";
 import {
   buildAgentImageJobPayload,
   buildAgentVideoJobPayload,
 } from "./job-payloads.js";
-import type { createLocalToolGatewayService } from "./local-runtime/aimc-tool-gateway.js";
+import type { createLocalToolGatewayService } from "./local-agent-host/tool-gateway.js";
 import {
   createRuntimeControlPlane,
   type RuntimeTarget,
-} from "./runtime-control-plane.js";
-import { inferAimcRuntimeTarget } from "./runtime-orchestrator/runtime-selection.js";
-import { createLocalCodexRuntimeProvider } from "./runtimes/local-agent-adapter.js";
-import { createServerDeepAgentRuntimeProvider } from "./runtimes/server-deepagent-adapter.js";
+} from "./run-orchestrator.js";
+import { inferAimcRuntimeTarget } from "./run-orchestrator.js";
+import { createLocalAgentRuntimeProvider } from "./runtimes/local-agent.js";
+import { createServerDeepAgentRuntimeProvider } from "./runtimes/server-deepagent.js";
 import type { RuntimeExecutionContext } from "./runtimes/types.js";
-import { adaptDeepAgentStream } from "./stream-adapter.js";
+import { adaptDeepAgentStream } from "./runtimes/deepagent-events.js";
+import { loadNormalizedSessionHistory } from "./runtimes/history.js";
 
 /**
  * Build the text portion of a user message, appending <input_images> XML
@@ -248,37 +255,23 @@ async function buildSessionHistoryMessages(
   currentPrompt: string,
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>,
 ): Promise<Array<HumanMessage | AIMessage>> {
-  if (!loadSessionMessages) return [];
+  const history = await loadNormalizedSessionHistory({
+    currentPrompt,
+    ...(loadSessionMessages ? { loadSessionMessages } : {}),
+    onError(error) {
+      console.warn(
+        "[runtime] Failed to load local chat history:",
+        error instanceof Error ? error.message : error,
+      );
+    },
+    sessionId,
+  });
 
-  let savedMessages: ChatMessage[];
-  try {
-    savedMessages = await loadSessionMessages(sessionId);
-  } catch (error) {
-    console.warn(
-      "[runtime] Failed to load local chat history:",
-      error instanceof Error ? error.message : error,
-    );
-    return [];
-  }
-
-  const history =
-    savedMessages.at(-1)?.role === "user" &&
-    normalizeText(savedMessages.at(-1)?.content ?? "") ===
-      normalizeText(currentPrompt)
-      ? savedMessages.slice(0, -1)
-      : savedMessages;
-
-  return history
-    .filter((message) => message.role === "user" || message.role === "assistant")
-    .map((message) =>
-      message.role === "assistant"
-        ? new AIMessage(message.content)
-        : new HumanMessage(message.content),
-    );
-}
-
-function normalizeText(value: string) {
-  return value.trim().replace(/\s+/g, " ");
+  return history.map((message) =>
+    message.role === "assistant"
+      ? new AIMessage(message.content)
+      : new HumanMessage(message.content),
+  );
 }
 
 type RuntimeRunStatus =
@@ -336,8 +329,12 @@ type CreateAgentRuntimeOptions = {
   env: ServerEnv;
   eventDelayMs?: number;
   jobService?: JobService;
-  localAgentProvider?: Pick<
-    LocalAgentProviderPlugin<"local-agent", "codex">,
+  localAgentProviderPlugins?: LocalAgentProviderPlugin<
+    "local-agent",
+    AgentRuntimeProvider
+  >[];
+  localAgentRuntime?: Pick<
+    LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
     "run"
   >;
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
@@ -426,24 +423,38 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
   }
 
   const localAgentTrusted = options.env.trustedLocalAgentMode !== false;
+  const localAgentProviderPlugins =
+    options.localAgentProviderPlugins ??
+    ([
+      createCodexProvider(),
+      createClaudeProvider(),
+    ] as LocalAgentProviderPlugin<"local-agent", AgentRuntimeProvider>[]);
+  const localAgentRuntime =
+    localAgentTrusted && options.toolGateway && options.toolGatewayBaseUrl
+      ? options.localAgentRuntime ??
+        createLocalAgentRuntime({
+          providers: localAgentProviderPlugins,
+        })
+      : null;
   const runtimeProviders = [
-    ...(localAgentTrusted && options.toolGateway && options.toolGatewayBaseUrl
-      ? ([
-          createLocalCodexRuntimeProvider({
-            buildAttachmentDataMap,
-            buildUserMessage,
-            loadCanvasSummaryForRuntime,
-            ...(options.localAgentProvider
-              ? { localAgentProvider: options.localAgentProvider }
-              : {}),
-            ...(options.loadSessionMessages
-              ? { loadSessionMessages: options.loadSessionMessages }
-              : {}),
-            now,
-            toolGateway: options.toolGateway,
-            toolGatewayBaseUrl: options.toolGatewayBaseUrl,
-          }),
-        ] satisfies Array<ReturnType<typeof createLocalCodexRuntimeProvider>>)
+    ...(localAgentRuntime && options.toolGateway && options.toolGatewayBaseUrl
+      ? localAgentProviderPlugins.map((providerPlugin) =>
+          createLocalAgentRuntimeProvider(
+            {
+              buildAttachmentDataMap,
+              buildUserMessage,
+              loadCanvasSummaryForRuntime,
+              ...(options.loadSessionMessages
+                ? { loadSessionMessages: options.loadSessionMessages }
+                : {}),
+              localAgentRuntime,
+              now,
+              toolGateway: options.toolGateway!,
+              toolGatewayBaseUrl: options.toolGatewayBaseUrl!,
+            },
+            providerPlugin,
+          ),
+        )
       : []),
     createServerDeepAgentRuntimeProvider({
       adaptDeepAgentStream,
@@ -1048,7 +1059,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       try {
         const resolvedModel = run.modelOverride
-          ? (run.modelOverride.includes(":")
+          ? (run.runtimeKind === "local-agent" || run.modelOverride.includes(":")
             ? run.modelOverride
             : createDefaultModelSpecifier({ agentModel: run.modelOverride }))
           : options.model;

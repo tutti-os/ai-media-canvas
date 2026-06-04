@@ -1,0 +1,348 @@
+import type {
+  AgentRuntimeProvider,
+  ContentBlock,
+  RuntimeKind,
+  StreamEvent,
+  ToolBlock,
+} from "@aimc/shared";
+import type {
+  AgentRuntimeCapabilities,
+  AgentRuntimeMode,
+  AgentRuntimeRecord as PackageAgentRuntimeRecord,
+  AgentRuntimeStatus,
+  RuntimeKindSelector as PackageRuntimeKindSelector,
+  RuntimeKindSelectorInput as PackageRuntimeKindSelectorInput,
+  RuntimeLease as PackageRuntimeLease,
+  RuntimeProvider as PackageRuntimeProvider,
+  RuntimeTarget as PackageRuntimeTarget,
+} from "@aimc/local-agent-runtime";
+import {
+  createRuntimeControlPlane as createPackageRuntimeControlPlane,
+  inferRuntimeKind as inferPackageRuntimeKind,
+} from "@aimc/local-agent-runtime/runtime-control-plane";
+
+export type {
+  AgentRuntimeCapabilities,
+  AgentRuntimeMode,
+  AgentRuntimeStatus,
+};
+
+export type AgentRuntimeRecord = PackageAgentRuntimeRecord<
+  RuntimeKind,
+  AgentRuntimeProvider
+>;
+export type RuntimeKindSelector = PackageRuntimeKindSelector<
+  RuntimeKind,
+  AgentRuntimeProvider
+>;
+export type RuntimeKindSelectorInput = PackageRuntimeKindSelectorInput<
+  RuntimeKind,
+  AgentRuntimeProvider
+>;
+export type RuntimeLease = PackageRuntimeLease<
+  RuntimeKind,
+  AgentRuntimeProvider
+>;
+export type RuntimeProvider<TContext> = PackageRuntimeProvider<
+  TContext,
+  StreamEvent,
+  RuntimeKind,
+  AgentRuntimeProvider
+>;
+export type RuntimeTarget = PackageRuntimeTarget<
+  RuntimeKind,
+  AgentRuntimeProvider
+>;
+
+export function createRuntimeControlPlane<TContext>(
+  providers: RuntimeProvider<TContext>[],
+  options?: {
+    now?: () => string;
+    selectRuntimeKind?: RuntimeKindSelector;
+  },
+) {
+  return createPackageRuntimeControlPlane<
+    TContext,
+    StreamEvent,
+    RuntimeKind,
+    AgentRuntimeProvider
+  >(providers, options);
+}
+
+export function inferRuntimeKind(input: RuntimeKindSelectorInput): RuntimeTarget {
+  return inferPackageRuntimeKind<RuntimeKind, AgentRuntimeProvider>(input);
+}
+
+export function inferAimcRuntimeTarget(
+  input: RuntimeKindSelectorInput,
+): RuntimeTarget {
+  if (input.requestedRuntimeKind) {
+    if (
+      input.requestedRuntimeKind === "local-agent" &&
+      !input.requestedRuntimeProvider
+    ) {
+      const localTargets = input.availableRuntimeTargets.filter(
+        (target) => target.kind === "local-agent" && target.provider,
+      );
+      if (localTargets.length === 1) {
+        return localTargets[0]!;
+      }
+    }
+    return {
+      kind: input.requestedRuntimeKind,
+      ...(input.requestedRuntimeProvider
+        ? { provider: input.requestedRuntimeProvider }
+        : {}),
+    };
+  }
+
+  const serverRuntime = input.availableRuntimeTargets.find(
+    (target) => target.kind === "server-deepagent",
+  );
+  if (serverRuntime) {
+    return serverRuntime;
+  }
+
+  return input.availableRuntimeTargets[0]!;
+}
+
+export type AssistantMessageProjection = {
+  blocks: ContentBlock[];
+  textParts: string[];
+};
+
+export function createAssistantMessageProjection(): AssistantMessageProjection {
+  return {
+    blocks: [],
+    textParts: [],
+  };
+}
+
+export function projectStreamEventToAssistantMessage(
+  state: AssistantMessageProjection,
+  event: StreamEvent,
+) {
+  if (event.type === "message.delta") {
+    const lastBlock = state.blocks[state.blocks.length - 1];
+    if (lastBlock?.type === "text") {
+      lastBlock.text += event.delta;
+    } else {
+      state.blocks.push({ type: "text", text: event.delta });
+    }
+    state.textParts.push(event.delta);
+    return;
+  }
+
+  if (event.type === "tool.started") {
+    const index = state.blocks.findIndex(
+      (block) =>
+        block.type === "tool" && block.toolCallId === event.toolCallId,
+    );
+    const nextBlock = {
+      type: "tool",
+      toolCallId: event.toolCallId,
+      toolName: event.toolName,
+      status: "running",
+      ...(event.input ? { input: event.input } : {}),
+    } satisfies ToolBlock;
+    if (index >= 0) {
+      state.blocks[index] = nextBlock;
+    } else {
+      state.blocks.push(nextBlock);
+    }
+    return;
+  }
+
+  if (event.type === "tool.completed" || event.type === "tool.failed") {
+    const index = state.blocks.findIndex(
+      (block) =>
+        block.type === "tool" && block.toolCallId === event.toolCallId,
+    );
+    const currentBlock =
+      index >= 0
+        ? (state.blocks[index] as ToolBlock)
+        : {
+            type: "tool" as const,
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            status: "running" as const,
+          };
+    const nextBlock: ToolBlock = {
+      ...currentBlock,
+      status: event.type === "tool.completed" ? "completed" : "failed",
+      ...(event.output ? { output: event.output } : {}),
+      ...(event.outputSummary
+        ? { outputSummary: event.outputSummary }
+        : event.type === "tool.failed"
+          ? { outputSummary: event.error.message }
+          : {}),
+      ...(event.artifacts ? { artifacts: event.artifacts } : {}),
+    };
+    if (index < 0) {
+      state.blocks.push(nextBlock);
+    } else {
+      state.blocks[index] = nextBlock;
+    }
+    return;
+  }
+
+  if (event.type === "run.failed" && state.textParts.length === 0) {
+    const message = `抱歉，处理过程中遇到问题：${event.error.message}`;
+    state.blocks.push({ type: "text", text: message });
+    state.textParts.push(message);
+  }
+}
+
+export type AgentRunEventEnvelope = {
+  canvasSeq?: number;
+  eventId: string;
+  seq: number;
+};
+
+export type AgentRunEventPersistence = {
+  appendEvent(input: {
+    canvasId?: string;
+    event: StreamEvent;
+    runId: string;
+  }): AgentRunEventEnvelope;
+};
+
+export function persistRunEvent(input: {
+  canvasId?: string;
+  event: StreamEvent;
+  persistence?: AgentRunEventPersistence | undefined;
+  runId: string;
+}): AgentRunEventEnvelope | undefined {
+  return input.persistence?.appendEvent({
+    ...(input.canvasId ? { canvasId: input.canvasId } : {}),
+    event: input.event,
+    runId: input.runId,
+  });
+}
+
+export function buildReplayEnvelope(
+  persistedEvent: AgentRunEventEnvelope | undefined,
+): { eventId?: string; seq?: number } {
+  return {
+    ...(persistedEvent?.eventId ? { eventId: persistedEvent.eventId } : {}),
+    ...(persistedEvent?.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
+  };
+}
+
+export type AgentRunResumeMode = "native" | "provider-local" | "handoff" | "fresh";
+
+export type AgentRunResumeContext = {
+  mode: AgentRunResumeMode;
+  previousRunId?: string;
+  previousRuntimeKind?: RuntimeKind | null;
+  previousRuntimeProvider?: AgentRuntimeProvider | null;
+  providerSessionId?: string;
+  resumeToken?: string;
+};
+
+export function resolveResumeMode(input: {
+  nextRuntimeKind?: RuntimeKind;
+  nextRuntimeProvider?: AgentRuntimeProvider;
+  previousRuntimeKind?: RuntimeKind | null;
+  previousRuntimeProvider?: AgentRuntimeProvider | null;
+}): AgentRunResumeMode {
+  if (!input.previousRuntimeKind) {
+    return "fresh";
+  }
+  if (
+    input.previousRuntimeKind === input.nextRuntimeKind &&
+    input.previousRuntimeProvider === input.nextRuntimeProvider
+  ) {
+    return "provider-local";
+  }
+  return "handoff";
+}
+
+type AgentRunStatus = "accepted" | "canceled" | "completed" | "failed" | "running";
+
+export type AgentRunRecordStore = {
+  createRun(input: {
+    assistantMessageId?: string;
+    canvasId?: string;
+    model?: string;
+    runtimeKind?: RuntimeKind;
+    runtimeProvider?: AgentRuntimeProvider;
+    runId: string;
+    sessionId: string;
+    threadId?: string;
+  }): void;
+  updateRun(input: {
+    assistantMessageId?: string;
+    errorCode?: string;
+    errorMessage?: string;
+    runId: string;
+    runtimeKind?: RuntimeKind;
+    runtimeProvider?: AgentRuntimeProvider;
+    status: AgentRunStatus;
+  }): void;
+};
+
+export type AgentRunOrchestrator = {
+  createAssistantProjection(): AssistantMessageProjection;
+  persistAndEnvelope(input: {
+    canvasId?: string;
+    event: StreamEvent;
+    runId: string;
+  }): { eventId?: string; seq?: number };
+  projectEvent(
+    state: AssistantMessageProjection,
+    event: StreamEvent,
+  ): AssistantMessageProjection;
+  recordAcceptedRun(input: {
+    assistantMessageId?: string;
+    canvasId?: string;
+    model?: string;
+    runtimeKind?: RuntimeKind;
+    runtimeProvider?: AgentRuntimeProvider;
+    runId: string;
+    sessionId: string;
+    threadId?: string;
+  }): void;
+  updateRunStatus(input: {
+    assistantMessageId?: string;
+    errorCode?: string;
+    errorMessage?: string;
+    runId: string;
+    runtimeKind?: RuntimeKind;
+    runtimeProvider?: AgentRuntimeProvider;
+    status: AgentRunStatus;
+  }): void;
+};
+
+export function createAgentRunOrchestrator(input: {
+  eventPersistence?: AgentRunEventPersistence | undefined;
+  runStore?: AgentRunRecordStore | undefined;
+}): AgentRunOrchestrator {
+  return {
+    createAssistantProjection() {
+      return createAssistantMessageProjection();
+    },
+
+    persistAndEnvelope(eventInput) {
+      return buildReplayEnvelope(
+        persistRunEvent({
+          ...eventInput,
+          persistence: input.eventPersistence,
+        }),
+      );
+    },
+
+    projectEvent(state, event) {
+      projectStreamEventToAssistantMessage(state, event);
+      return state;
+    },
+
+    recordAcceptedRun(runInput) {
+      input.runStore?.createRun(runInput);
+    },
+
+    updateRunStatus(statusInput) {
+      input.runStore?.updateRun(statusInput);
+    },
+  };
+}

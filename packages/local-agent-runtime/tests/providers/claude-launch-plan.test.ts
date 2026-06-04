@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { createClaudeProvider } from "../../src/providers/claude/index.js";
 import { buildClaudeLaunchPlan } from "../../src/providers/claude/launch-plan.js";
 
 describe("buildClaudeLaunchPlan", () => {
@@ -32,5 +36,93 @@ describe("buildClaudeLaunchPlan", () => {
         "bypassPermissions",
       ],
     });
+  });
+
+  it("passes MCP servers through a per-run Claude Code config file", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "claude-mcp-plan-"));
+    try {
+      const plan = await createClaudeProvider().buildLaunchPlan({
+        runId: "run-1",
+        cwd,
+        prompt: "generate a poster",
+        mcpServers: [
+          {
+            name: "aimc",
+            type: "stdio",
+            command: "node",
+            args: ["/tmp/aimc-tools-mcp.js"],
+            env: {
+              AIMC_TOOL_TOKEN: "secret-token",
+            },
+          },
+        ],
+      });
+
+      const configIndex = plan.args.indexOf("--mcp-config");
+      expect(configIndex).toBeGreaterThan(-1);
+      const configPath = plan.args[configIndex + 1];
+      expect(configPath).toContain(cwd);
+      await expect(readFile(configPath, "utf8")).resolves.toBe(
+        JSON.stringify({
+          mcpServers: {
+            aimc: {
+              type: "stdio",
+              command: "node",
+              args: ["/tmp/aimc-tools-mcp.js"],
+              env: {
+                AIMC_TOOL_TOKEN: "secret-token",
+              },
+            },
+          },
+        }),
+      );
+      expect(plan.redactionSecrets).toEqual(["secret-token"]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("serializes HTTP MCP servers for Claude Code configs", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "claude-http-mcp-plan-"));
+    try {
+      const plan = await createClaudeProvider().buildLaunchPlan({
+        runId: "run-1",
+        cwd,
+        prompt: "inspect",
+        mcpServers: [
+          {
+            name: "remote",
+            type: "http",
+            url: "https://example.com/mcp",
+            headers: {
+              Authorization: "Bearer token",
+            },
+            env: [{ key: "EXTRA", value: "value" }],
+          },
+        ],
+      });
+
+      const configIndex = plan.args.indexOf("--mcp-config");
+      const configPath = plan.args[configIndex + 1];
+      await expect(readFile(configPath, "utf8")).resolves.toBe(
+        JSON.stringify({
+        mcpServers: {
+            remote: {
+              type: "http",
+              url: "https://example.com/mcp",
+              headers: {
+                Authorization: "Bearer token",
+              },
+              env: {
+                EXTRA: "value",
+              },
+            },
+          },
+        }),
+      );
+      expect(plan.redactionSecrets).toEqual(["value", "Bearer token"]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 });
