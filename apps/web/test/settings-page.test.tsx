@@ -649,6 +649,44 @@ describe("SettingsPage", () => {
     );
   });
 
+  it("shows disabled install-required cards for pinned Local CLI providers", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({ models: [] });
+
+    render(<SettingsPage />);
+
+    const codexButton = await screen.findByRole("button", { name: /Codex/i });
+    const claudeButton = screen.getByRole("button", { name: /Claude Code/i });
+
+    expect(codexButton).toBeDisabled();
+    expect(claudeButton).toBeDisabled();
+    expect(screen.getAllByText("Install required")).toHaveLength(2);
+    expect(
+      screen.getByText(/Install Codex or Claude Code/i),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Model")).toBeDisabled();
+    expect(screen.getByLabelText("Model")).toHaveValue("");
+  });
+
   it("does not preselect a Local CLI provider when no local model is selected", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {

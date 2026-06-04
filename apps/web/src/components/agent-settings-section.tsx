@@ -42,6 +42,9 @@ type LocalCliProviderGroup = {
   label: string;
   models: ModelInfo[];
 };
+type LocalCliProviderDisplayGroup = LocalCliProviderGroup & {
+  installed: boolean;
+};
 type ApiProviderPreset = {
   provider: AgentProtocolId;
   label: string;
@@ -66,6 +69,7 @@ const LOCAL_CLI_PROVIDER_ORDER = [
   "qoder",
   "vibe",
 ];
+const PINNED_LOCAL_CLI_PROVIDERS = ["codex", "claude"];
 
 const AGENT_PROTOCOLS: Array<{
   id: AgentProtocolId;
@@ -555,6 +559,34 @@ function LocalCliProviderModelPicker({
   const activeGroup =
     providerGroups.find((group) => group.provider === effectiveActiveProvider) ??
     null;
+  const displayGroups = useMemo<LocalCliProviderDisplayGroup[]>(() => {
+    const groups = new Map<string, LocalCliProviderDisplayGroup>();
+
+    for (const provider of PINNED_LOCAL_CLI_PROVIDERS) {
+      groups.set(provider, {
+        provider,
+        label: formatLocalCliProviderLabel(provider),
+        models: [],
+        installed: false,
+      });
+    }
+
+    for (const group of providerGroups) {
+      groups.set(group.provider, { ...group, installed: true });
+    }
+
+    return Array.from(groups.values()).sort((first, second) => {
+      const firstIndex = LOCAL_CLI_PROVIDER_ORDER.indexOf(first.provider);
+      const secondIndex = LOCAL_CLI_PROVIDER_ORDER.indexOf(second.provider);
+      const firstRank =
+        firstIndex === -1 ? LOCAL_CLI_PROVIDER_ORDER.length : firstIndex;
+      const secondRank =
+        secondIndex === -1 ? LOCAL_CLI_PROVIDER_ORDER.length : secondIndex;
+
+      if (firstRank !== secondRank) return firstRank - secondRank;
+      return first.label.localeCompare(second.label);
+    });
+  }, [providerGroups]);
   const activeModelPrefix = activeGroup ? `${activeGroup.provider}:` : "";
   const selectedModelBelongsToActiveProvider = activeModelPrefix
     ? selectedModel.startsWith(activeModelPrefix)
@@ -608,14 +640,14 @@ function LocalCliProviderModelPicker({
         </Button>
       </div>
 
-      {providerGroups.length > 0 ? (
+      {displayGroups.length > 0 ? (
         <div className="space-y-4">
           <div className="rounded-xl border bg-card p-4 shadow-sm">
             <div className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Detected CLI
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              {providerGroups.map((group) => {
+              {displayGroups.map((group) => {
                 const selected = activeGroup?.provider === group.provider;
 
                 return (
@@ -623,7 +655,9 @@ function LocalCliProviderModelPicker({
                     key={group.provider}
                     type="button"
                     aria-pressed={selected}
+                    disabled={!group.installed}
                     onClick={() => {
+                      if (!group.installed) return;
                       onProviderChange(group.provider);
                       setCustomProviderDrafting(null);
                       setCustomModelDraft("");
@@ -633,9 +667,11 @@ function LocalCliProviderModelPicker({
                       }
                     }}
                     className={`flex min-h-20 w-full items-center gap-3 rounded-xl border bg-background p-3 text-left transition-colors ${
-                      selected
-                        ? "border-accent bg-accent/10 shadow-sm"
-                        : "border-border hover:border-accent/40 hover:bg-background/70"
+                      !group.installed
+                        ? "cursor-not-allowed border-border opacity-55"
+                        : selected
+                          ? "border-accent bg-accent/10 shadow-sm"
+                          : "border-border hover:border-accent/40 hover:bg-background/70"
                     }`}
                   >
                     <LocalCliProviderIcon
@@ -649,8 +685,11 @@ function LocalCliProviderModelPicker({
                         {group.label}
                       </span>
                       <span className="mt-1 block truncate text-xs text-muted-foreground">
-                        {group.models.length}{" "}
-                        {group.models.length === 1 ? "model" : "models"}
+                        {group.installed
+                          ? `${group.models.length} ${
+                              group.models.length === 1 ? "model" : "models"
+                            }`
+                          : "Install required"}
                       </span>
                     </span>
                     <span
@@ -662,6 +701,12 @@ function LocalCliProviderModelPicker({
                 );
               })}
             </div>
+            {providerGroups.length === 0 ? (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Install Codex or Claude Code, then rescan to enable local agent
+                routes.
+              </p>
+            ) : null}
           </div>
 
           <div className="rounded-xl border bg-card p-4 shadow-sm">
