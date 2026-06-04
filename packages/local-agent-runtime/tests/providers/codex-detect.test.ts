@@ -15,6 +15,24 @@ describe("detectCodex", () => {
     }
   });
 
+  it("reports unsupported when the Codex CLI is not installed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "aimc-codex-missing-"));
+    tempDirs.push(dir);
+
+    const detection = await detectCodex({
+      env: { PATH: dir, CODEX_HOME: join(dir, ".codex-home") },
+    });
+
+    expect(detection).toMatchObject({
+      authState: "missing",
+      executablePath: "codex",
+      supported: false,
+      version: "not-installed",
+    });
+    expect(detection.unsupportedReason).toContain("Executable not found");
+    expect(detection.models?.length).toBeGreaterThan(0);
+  });
+
   it("returns config and skills directories from CODEX_HOME", async () => {
     const dir = mkdtempSync(join(tmpdir(), "aimc-codex-detect-"));
     tempDirs.push(dir);

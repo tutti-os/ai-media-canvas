@@ -15,6 +15,24 @@ describe("detectClaude", () => {
     }
   });
 
+  it("reports unsupported when Claude Code and fallbacks are not installed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "aimc-claude-missing-"));
+    tempDirs.push(dir);
+
+    const detection = await detectClaude({
+      env: { PATH: dir },
+    });
+
+    expect(detection).toMatchObject({
+      authState: "missing",
+      executablePath: "claude",
+      supported: false,
+      version: "not-installed",
+    });
+    expect(detection.unsupportedReason).toContain("Executable not found");
+    expect(detection.models.map((model) => model.id)).toContain("sonnet");
+  });
+
   it("falls back to openclaude and reports config roots", async () => {
     const dir = mkdtempSync(join(tmpdir(), "aimc-claude-detect-"));
     tempDirs.push(dir);
