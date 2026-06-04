@@ -316,6 +316,93 @@ describe("SettingsPage", () => {
     );
   });
 
+  it("quick fills OpenAI-compatible BYOK provider settings", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "sk-local-openai",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    updateWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "openai:deepseek-chat",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          openai: [
+            "openai:deepseek-chat",
+            "openai:deepseek-reasoner",
+            "openai:deepseek-v4-flash",
+            "openai:deepseek-v4-pro",
+          ],
+        },
+        openAIApiKey: "sk-local-openai",
+        openAIApiBase: "https://api.deepseek.com",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+    await userEvent.selectOptions(
+      await screen.findByLabelText("Quick fill provider"),
+      "https://api.deepseek.com",
+    );
+
+    expect(screen.getByLabelText("OpenAI Base URL")).toHaveValue(
+      "https://api.deepseek.com",
+    );
+    expect(screen.getByLabelText("OpenAI-compatible model 1")).toHaveValue(
+      "deepseek-chat",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaultModel: "openai:deepseek-chat",
+          openAIApiBase: "https://api.deepseek.com",
+          providerModels: expect.objectContaining({
+            openai: [
+              "openai:deepseek-chat",
+              "openai:deepseek-reasoner",
+              "openai:deepseek-v4-flash",
+              "openai:deepseek-v4-pro",
+            ],
+          }),
+        }),
+      ),
+    );
+  });
+
   it("lets the default model picker switch to Anthropic and choose a model", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
@@ -487,8 +574,8 @@ describe("SettingsPage", () => {
     });
     fetchModelsMock.mockResolvedValue({
       models: [
-        { id: "codex:gpt-5.4", name: "Codex CLI", provider: "codex" },
-        { id: "codex:gpt-5.5", name: "Codex CLI", provider: "codex" },
+        { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
+        { id: "codex:gpt-5.5", name: "Codex", provider: "codex" },
         { id: "claude:sonnet", name: "Sonnet", provider: "claude" },
         { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
       ],
@@ -499,7 +586,7 @@ describe("SettingsPage", () => {
     expect(
       await screen.findByRole("button", { name: "Local CLI" }),
     ).toHaveAttribute("aria-pressed", "true");
-    expect(await screen.findByText("Codex CLI")).toBeInTheDocument();
+    expect((await screen.findAllByText("Codex")).length).toBeGreaterThan(0);
     expect(screen.getByText("2 models")).toBeInTheDocument();
     expect(screen.getByLabelText("Model")).toHaveValue("codex:gpt-5.4");
     await userEvent.selectOptions(screen.getByLabelText("Model"), "codex:gpt-5.5");
@@ -522,6 +609,87 @@ describe("SettingsPage", () => {
     expect(await screen.findByLabelText("OpenAI API Key")).toHaveValue(
       "sk-local-openai",
     );
-    expect(screen.queryByText("Codex CLI")).not.toBeInTheDocument();
+    expect(screen.queryByText("Codex")).not.toBeInTheDocument();
+  });
+
+  it("keeps the Agent save action in a fixed bottom footer", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "codex:gpt-5.4",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
+      ],
+    });
+
+    render(<SettingsPage />);
+
+    await screen.findByRole("button", { name: "Save" });
+    const saveFooter = screen.getByTestId("agent-settings-save-footer");
+    expect(saveFooter).toHaveClass("sticky");
+    expect(saveFooter).toContainElement(
+      screen.getByRole("button", { name: "Save" }),
+    );
+  });
+
+  it("does not preselect a Local CLI provider when no local model is selected", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        { id: "claude:sonnet", name: "Sonnet", provider: "claude" },
+        { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
+      ],
+    });
+
+    render(<SettingsPage />);
+
+    const claudeButton = await screen.findByRole("button", {
+      name: /Claude Code/i,
+    });
+    const codexButton = screen.getByRole("button", { name: /Codex/i });
+
+    expect(claudeButton).toHaveAttribute("aria-pressed", "false");
+    expect(codexButton).toHaveAttribute("aria-pressed", "false");
+    expect(
+      codexButton.compareDocumentPosition(claudeButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Model")).toHaveValue("");
   });
 });

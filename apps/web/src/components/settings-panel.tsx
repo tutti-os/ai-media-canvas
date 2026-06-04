@@ -12,6 +12,7 @@ import {
   fetchWorkspaceSettings,
   updateWorkspaceSettings,
 } from "@/lib/server-api";
+import { notifyWorkspaceSettingsUpdated } from "@/lib/workspace-settings-events";
 
 export type SettingsTab = "agent" | "media";
 
@@ -80,6 +81,7 @@ export function SettingsPanel({
     async (settings: WorkspaceSettings) => {
       const result = await updateWorkspaceSettings(settings);
       setWorkspaceSettings(result.settings);
+      notifyWorkspaceSettingsUpdated();
     },
     [],
   );
@@ -92,6 +94,7 @@ export function SettingsPanel({
           <AgentSettingsSection
             settings={workspaceSettings}
             onSave={handleWorkspaceSettingsSave}
+            surface={surface}
           />
         );
       case "media":
@@ -126,7 +129,7 @@ export function SettingsPanel({
     <div
       className={
         surface === "dialog"
-          ? "flex min-h-0 flex-col md:flex-row"
+          ? "flex min-h-0 flex-1 flex-col md:flex-row"
           : "overflow-hidden rounded-[28px] border bg-card shadow-sm"
       }
     >
@@ -157,7 +160,7 @@ export function SettingsPanel({
       <section
         className={
           surface === "dialog"
-            ? "min-w-0 flex-1 overflow-y-auto p-6 md:min-w-[560px] lg:min-w-[700px]"
+            ? "flex min-w-0 flex-1 flex-col md:min-w-[560px] lg:min-w-[700px]"
             : "min-h-[640px] flex-1 p-6 md:p-8"
         }
       >
@@ -167,7 +170,13 @@ export function SettingsPanel({
           </div>
         ) : null}
 
-        {activeSection}
+        {surface === "dialog" && activeTab === "media" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-6 md:p-8">
+            {activeSection}
+          </div>
+        ) : (
+          activeSection
+        )}
       </section>
     </div>
   );

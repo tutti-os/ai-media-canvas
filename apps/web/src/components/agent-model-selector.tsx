@@ -9,6 +9,7 @@ import {
   isLocalCliProvider,
 } from "@/lib/agent-model-groups";
 import { fetchModels, fetchWorkspaceSettings } from "@/lib/server-api";
+import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "@/lib/workspace-settings-events";
 import { Cloud, Settings2, Terminal } from "lucide-react";
 import {
   useCallback,
@@ -122,6 +123,22 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
   // homepage selector stays in sync with recent settings changes.
   useEffect(() => {
     loadModels();
+  }, [loadModels]);
+
+  useEffect(() => {
+    const handleSettingsUpdated = () => {
+      loadModels();
+    };
+    window.addEventListener(
+      WORKSPACE_SETTINGS_UPDATED_EVENT,
+      handleSettingsUpdated,
+    );
+    return () => {
+      window.removeEventListener(
+        WORKSPACE_SETTINGS_UPDATED_EVENT,
+        handleSettingsUpdated,
+      );
+    };
   }, [loadModels]);
 
   useEffect(() => {

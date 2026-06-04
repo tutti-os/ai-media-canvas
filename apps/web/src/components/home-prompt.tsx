@@ -3,6 +3,7 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -20,7 +21,11 @@ import type { HomeExampleSelection } from "@/lib/home-example-seeds";
 import { AgentModelSelector } from "@/components/agent-model-selector";
 import { ImageAttachmentBar } from "@/components/image-attachment-bar";
 import { ImageModelPreferencePopover } from "@/components/image-model-preference";
-import { useAgentModel } from "@/hooks/use-agent-model";
+import { SettingsDialog } from "@/components/settings-dialog";
+import {
+  AGENT_MODEL_REQUIRED_MESSAGE,
+  useAgentModelRequirement,
+} from "@/hooks/use-agent-model-requirement";
 import { useImageModelPreference } from "@/hooks/use-image-model-preference";
 import { useVideoModelPreference } from "@/hooks/use-video-model-preference";
 
@@ -111,13 +116,27 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [configurationError, setConfigurationError] = useState<string | null>(
+      null,
+    );
     const agentBtnRef = useRef<HTMLButtonElement>(null);
     const { preference } = useImageModelPreference();
     const { preference: videoPreference } = useVideoModelPreference();
-    const { model: agentModel } = useAgentModel();
+    const {
+      isAgentModelConfigured,
+      model: agentModel,
+      ensureAgentModelConfigured,
+    } = useAgentModelRequirement();
     const seedImageMentions = selectedSeed?.inputMentions.filter(
       (mention) => mention.type === "image",
     ) ?? [];
+
+    useEffect(() => {
+      if (configurationError && isAgentModelConfigured) {
+        setConfigurationError(null);
+      }
+    }, [configurationError, isAgentModelConfigured]);
 
     useImperativeHandle(ref, () => ({
       fill(text: string) {
@@ -135,13 +154,19 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const hasContent =
       value.trim().length > 0 || (attachments && attachments.length > 0);
 
-    const handleSubmit = useCallback(() => {
+    const handleSubmit = useCallback(async () => {
       const trimmed = value.trim();
       if (
         (!trimmed && (!attachments || attachments.length === 0) && !selectedSeed) ||
         disabled ||
         isUploading
       ) {
+        return;
+      }
+
+      if (!(await ensureAgentModelConfigured())) {
+        setConfigurationError(AGENT_MODEL_REQUIRED_MESSAGE);
+        setSettingsOpen(true);
         return;
       }
 
@@ -162,6 +187,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
           : undefined,
         agentModel ?? undefined,
       );
+      setConfigurationError(null);
       setValue("");
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
@@ -170,6 +196,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       agentModel,
       attachments,
       disabled,
+      ensureAgentModelConfigured,
       isUploading,
       onSubmit,
       preference,
@@ -340,10 +367,24 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
           </button>
         </div>
 
+        {configurationError ? (
+          <p
+            role="alert"
+            className="px-3 pb-3 text-left text-xs text-destructive sm:px-4"
+          >
+            {configurationError}
+          </p>
+        ) : null}
+
         <ImageModelPreferencePopover
           open={modelPopoverOpen}
           onClose={() => setModelPopoverOpen(false)}
           anchorRef={agentBtnRef}
+        />
+        <SettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          initialTab="agent"
         />
       </div>
     );

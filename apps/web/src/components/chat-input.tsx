@@ -327,6 +327,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           </div>
           <button
             onClick={handleSubmit}
+            aria-label="发送消息"
             disabled={disabled || !hasContent || isUploading}
             className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/80 active:bg-primary/90 disabled:opacity-20 disabled:cursor-not-allowed"
           >

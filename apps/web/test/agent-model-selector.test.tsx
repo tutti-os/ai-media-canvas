@@ -38,6 +38,7 @@ vi.mock("../src/components/settings-dialog", () => ({
 }));
 
 import { AgentModelSelector } from "../src/components/agent-model-selector";
+import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "../src/lib/workspace-settings-events";
 
 describe("AgentModelSelector", () => {
   beforeEach(() => {
@@ -129,7 +130,7 @@ describe("AgentModelSelector", () => {
   it("switches the picker between local CLI and API provider models", async () => {
     fetchModelsMock.mockResolvedValue({
       models: [
-        { id: "codex:gpt-5.4", name: "Codex CLI", provider: "codex" },
+        { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
         { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
       ],
     });
@@ -145,7 +146,7 @@ describe("AgentModelSelector", () => {
     expect(
       screen.getByRole("button", { name: "API provider" }),
     ).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByText("Codex CLI")).toBeInTheDocument();
+    expect(screen.getAllByText("Codex").length).toBeGreaterThan(0);
     expect(screen.queryByText("gpt-5.4")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "API provider" }));
@@ -158,7 +159,7 @@ describe("AgentModelSelector", () => {
       screen.getByRole("button", { name: "API provider" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(await screen.findByText("gpt-5.4")).toBeInTheDocument();
-    expect(screen.queryByText("Codex CLI")).not.toBeInTheDocument();
+    expect(screen.queryByText("Codex")).not.toBeInTheDocument();
   });
 
   it("shows the default local CLI provider in the trigger", async () => {
@@ -176,7 +177,43 @@ describe("AgentModelSelector", () => {
     render(<AgentModelSelector compact />);
 
     expect(
-      await screen.findByRole("button", { name: /Codex CLI/i }),
+      await screen.findByRole("button", { name: /Codex/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("refreshes the trigger when workspace settings are saved elsewhere", async () => {
+    fetchWorkspaceSettingsMock
+      .mockResolvedValueOnce({
+        settings: {
+          defaultModel: "codex:default",
+        },
+      })
+      .mockResolvedValueOnce({
+        settings: {
+          defaultModel: "claude:default",
+        },
+      });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        { id: "codex:default", name: "Default (CLI config)", provider: "codex" },
+        {
+          id: "claude:default",
+          name: "Default (CLI config)",
+          provider: "claude",
+        },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    expect(
+      await screen.findByRole("button", { name: /Codex/i }),
+    ).toBeInTheDocument();
+
+    window.dispatchEvent(new Event(WORKSPACE_SETTINGS_UPDATED_EVENT));
+
+    expect(
+      await screen.findByRole("button", { name: /Claude Code/i }),
     ).toBeInTheDocument();
   });
 
