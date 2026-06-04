@@ -4,7 +4,7 @@ import type {
   AgentEvent,
   LocalAgentRuntime,
   LocalAgentProviderPlugin,
-} from "@aimc/local-agent-runtime";
+} from "@nextop-os/agent-acp-kit";
 import type {
   AgentRuntimeProvider,
   ChatMessage,

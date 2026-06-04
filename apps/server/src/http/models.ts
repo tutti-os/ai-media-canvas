@@ -7,7 +7,7 @@ import {
   type AgentDetection,
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
-} from "@aimc/local-agent-runtime";
+} from "@nextop-os/agent-acp-kit";
 import {
   modelListResponseSchema,
   type AgentRuntimeProvider,

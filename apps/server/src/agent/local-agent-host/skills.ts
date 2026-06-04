@@ -1,4 +1,4 @@
-import type { SkillMaterializationRecord } from "@aimc/local-agent-runtime";
+import type { SkillMaterializationRecord } from "@nextop-os/agent-acp-kit";
 
 import type { UserDataClient } from "../../auth/request.js";
 import { loadWorkspaceSkills, type WorkspaceSkillEntry } from "../workspace-skills.js";

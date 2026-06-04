@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type {
   AgentEvent,
   LocalAgentProviderPlugin,
-} from "@aimc/local-agent-runtime";
+} from "@nextop-os/agent-acp-kit";
 import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 
 import { createAimcToolsMcpServerConfig } from "../local-agent-host/mcp-config.js";
