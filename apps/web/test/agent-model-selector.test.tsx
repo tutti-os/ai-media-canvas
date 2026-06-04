@@ -171,6 +171,7 @@ describe("AgentModelSelector", () => {
     fetchModelsMock.mockResolvedValue({
       models: [
         { id: "codex:default", name: "Default (CLI config)", provider: "codex" },
+        { id: "codex:gpt-5.5", name: "gpt-5.5", provider: "codex" },
       ],
     });
 
@@ -178,6 +179,10 @@ describe("AgentModelSelector", () => {
 
     expect(
       await screen.findByRole("button", { name: /Codex/i }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Codex/i }));
+    expect(
+      await screen.findByText("Uses default model: gpt-5.5"),
     ).toBeInTheDocument();
   });
 

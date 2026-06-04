@@ -67,6 +67,17 @@ function formatDefaultModelLabel(
   models: ModelOption[],
 ) {
   if (!modelId) return null;
+  const provider = getModelProvider(modelId);
+  if (
+    provider &&
+    isLocalCliProvider(provider) &&
+    modelId === `${provider}:default`
+  ) {
+    const concreteModel = models.find(
+      (model) => model.provider === provider && model.id !== modelId,
+    );
+    if (concreteModel) return concreteModel.name;
+  }
   const matchingModel = models.find((model) => model.id === modelId);
   if (matchingModel) return matchingModel.name;
   const [, scopedId = modelId] = modelId.split(":");

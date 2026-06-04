@@ -1,4 +1,10 @@
-import type { WorkspaceSettings } from "@aimc/shared";
+import type { AgentRuntimeProvider, WorkspaceSettings } from "@aimc/shared";
+import {
+  type AgentDetection,
+  type LocalAgentRuntime,
+  createDefaultLocalAgentProviderPlugins,
+  createLocalAgentRuntime,
+} from "@nextop-os/agent-acp-kit";
 
 import type { AuthenticatedUser } from "../../auth/types.js";
 import {
@@ -6,8 +12,8 @@ import {
   DEFAULT_AGNES_BASE_URL,
   type ServerEnv,
 } from "../../config/env.js";
-import { clearProviders } from "../../generation/providers/registry.js";
 import { registerAllProviders } from "../../generation/providers/register-all.js";
+import { clearProviders } from "../../generation/providers/registry.js";
 import type { LocalStore } from "../../local/store.js";
 
 export const LOCAL_WORKSPACE_ID = "local-workspace";
@@ -36,6 +42,72 @@ export const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   volcesApiKey: "",
   volcesBaseUrl: "",
 };
+
+const API_AGENT_MODEL_PROVIDERS = new Set([
+  "agnes",
+  "anthropic",
+  "google",
+  "openai",
+  "vertex",
+]);
+
+type LocalAgentModelDiscovery = Pick<
+  LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
+  "detect"
+>;
+
+export type SettingsServiceOptions = {
+  localAgentModelDiscovery?: LocalAgentModelDiscovery;
+};
+
+function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
+  return createLocalAgentRuntime({
+    providers: createDefaultLocalAgentProviderPlugins(),
+  });
+}
+
+function getModelProvider(modelId: string) {
+  return modelId.includes(":") ? (modelId.split(":", 1)[0] ?? "") : "";
+}
+
+function localAgentModelId(provider: string, modelId: string) {
+  const trimmed = modelId.trim();
+  if (!trimmed) return null;
+  return trimmed.startsWith(`${provider}:`)
+    ? trimmed
+    : `${provider}:${trimmed}`;
+}
+
+function isLocalAgentModelId(modelId: string) {
+  const provider = getModelProvider(modelId);
+  return Boolean(provider && !API_AGENT_MODEL_PROVIDERS.has(provider));
+}
+
+async function resolveLocalAgentDefaultModel(
+  modelId: string,
+  localAgentModelDiscovery: LocalAgentModelDiscovery,
+) {
+  if (!modelId.endsWith(":default") || !isLocalAgentModelId(modelId)) {
+    return modelId;
+  }
+
+  const provider = getModelProvider(modelId);
+  try {
+    const detections = await localAgentModelDiscovery.detect();
+    const detection = detections.find(
+      (entry) => String(entry.provider) === provider,
+    );
+    const result = detection?.result as AgentDetection | null | undefined;
+    if (!result || result.supported === false) return modelId;
+
+    const concreteModel = (result.models ?? [])
+      .map((model) => localAgentModelId(provider, model.id))
+      .find((id) => id && id !== modelId);
+    return concreteModel ?? modelId;
+  } catch {
+    return modelId;
+  }
+}
 
 function normalizeModelList(values: string[] | undefined): string[] {
   if (!Array.isArray(values)) return [];
@@ -245,19 +317,32 @@ export function refreshGenerationProviders(env: ServerEnv) {
 export function createSettingsService(
   store: LocalStore,
   baseEnv: ServerEnv,
+  options: SettingsServiceOptions = {},
 ): SettingsService {
+  const localAgentModelDiscovery =
+    options.localAgentModelDiscovery ?? createDefaultLocalAgentModelDiscovery();
+
   return {
     async getWorkspaceSettings(_user, _workspaceId) {
       return normalizeWorkspaceSettings(store.getWorkspaceSettings());
     },
 
     async updateWorkspaceSettings(_user, _workspaceId, settings) {
-      return store.updateWorkspaceSettings(normalizeWorkspaceSettings(settings));
+      return store.updateWorkspaceSettings(
+        normalizeWorkspaceSettings(settings),
+      );
     },
 
     async getEffectiveServerEnv(_workspaceId = LOCAL_WORKSPACE_ID) {
       const settings = normalizeWorkspaceSettings(store.getWorkspaceSettings());
-      return resolveEffectiveServerEnv(baseEnv, settings);
+      const effectiveEnv = resolveEffectiveServerEnv(baseEnv, settings);
+      return {
+        ...effectiveEnv,
+        agentModel: await resolveLocalAgentDefaultModel(
+          effectiveEnv.agentModel,
+          localAgentModelDiscovery,
+        ),
+      };
     },
   };
 }

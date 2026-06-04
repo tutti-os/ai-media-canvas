@@ -655,6 +655,77 @@ describe("SettingsPage", () => {
     expect(screen.queryByText("Codex")).not.toBeInTheDocument();
   });
 
+  it("uses the first concrete Local CLI model instead of the CLI default option", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "codex:default",
+          name: "Default (CLI config)",
+          provider: "codex",
+        },
+        { id: "codex:gpt-5.5", name: "gpt-5.5", provider: "codex" },
+        { id: "codex:gpt-5.4", name: "gpt-5.4", provider: "codex" },
+      ],
+    });
+    updateWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "codex:gpt-5.5",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Codex/i }),
+    );
+
+    expect(await screen.findByLabelText("Model")).toHaveValue("codex:gpt-5.5");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaultModel: "codex:gpt-5.5",
+        }),
+      ),
+    );
+  });
+
   it("keeps the Agent save action in a fixed bottom footer", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {

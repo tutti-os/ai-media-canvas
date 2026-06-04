@@ -283,6 +283,7 @@ function groupLocalCliModels(models: ModelInfo[]): LocalCliProviderGroup[] {
 
 function getLocalCliProviderDefaultModel(group: LocalCliProviderGroup) {
   return (
+    group.models.find((model) => model.id !== `${group.provider}:default`) ??
     group.models.find((model) => model.id === `${group.provider}:default`) ??
     group.models[0] ??
     null
@@ -662,7 +663,8 @@ function LocalCliProviderModelPicker({
                       onProviderChange(group.provider);
                       setCustomProviderDrafting(null);
                       setCustomModelDraft("");
-                      const defaultModel = getLocalCliProviderDefaultModel(group);
+                      const defaultModel =
+                        getLocalCliProviderDefaultModel(group);
                       if (defaultModel) {
                         onSelect(defaultModel.id);
                       }
