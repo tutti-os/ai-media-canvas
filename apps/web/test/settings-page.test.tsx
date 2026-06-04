@@ -86,6 +86,43 @@ describe("SettingsPage", () => {
     );
   });
 
+  it("defaults BYOK protocol credentials to Agnes when no API provider is selected", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://agnes.example/v1",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+
+    expect(await screen.findByLabelText("Agnes API Key")).toHaveValue(
+      "sk-local-agnes",
+    );
+    expect(screen.getByLabelText("Agnes Base URL")).toHaveValue(
+      "https://agnes.example/v1",
+    );
+    expect(screen.queryByLabelText("OpenAI API Key")).not.toBeInTheDocument();
+  });
+
   it("loads and saves local agent provider settings from the Agent tab", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
@@ -371,6 +408,9 @@ describe("SettingsPage", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "API provider" }),
     );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "OpenAI-compatible" }),
+    );
     await userEvent.selectOptions(
       await screen.findByLabelText("Quick fill provider"),
       "https://api.deepseek.com",
@@ -598,6 +638,9 @@ describe("SettingsPage", () => {
     expect(screen.queryByLabelText("OpenAI API Key")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "API provider" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "OpenAI-compatible" }),
+    );
 
     expect(screen.getByRole("button", { name: "Local CLI" })).toHaveAttribute(
       "aria-pressed",

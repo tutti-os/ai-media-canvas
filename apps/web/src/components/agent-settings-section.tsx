@@ -193,13 +193,14 @@ function getInitialProtocol(settings: WorkspaceSettings): AgentProtocolId {
   const provider = settings.defaultModel.split(":")[0];
   if (
     provider === "agnes" ||
+    provider === "openai" ||
     provider === "google" ||
     provider === "vertex" ||
     provider === "anthropic"
   ) {
     return provider;
   }
-  return "openai";
+  return "agnes";
 }
 
 function buildModelId(provider: AgentProtocolId, value: string): string {
