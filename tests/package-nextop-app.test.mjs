@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -28,7 +28,7 @@ test("createManifest returns the Nextop package manifest contract", () => {
     description: "Local-first AI media canvas workspace app.",
     icon: {
       type: "asset",
-      src: "icon.png",
+      src: "icon.svg",
     },
     runtime: {
       kind: "custom",
@@ -69,7 +69,21 @@ test("renderAgentsGuide is non-empty and documents package layout", () => {
   assert.match(guide, /AI Media Canvas/);
   assert.match(guide, /nextop\.app\.json/);
   assert.match(guide, /bootstrap\.sh/);
+  assert.match(guide, /icon\.svg/);
   assert.match(guide, /NEXTOP_APP_DATA_DIR/);
+});
+
+test("Nextop icon asset keeps the original logo style with a contrast-safe tile", async () => {
+  const icon = await readFile(
+    path.resolve("apps/web/public/brand/aimc-nextop-app-icon.svg"),
+    "utf8",
+  );
+
+  assert.match(icon, /<svg/);
+  assert.match(icon, /<rect/);
+  assert.match(icon, /fill="#F8FAFC"/);
+  assert.match(icon, /stroke="#E5E7EB"/);
+  assert.match(icon, /fill="#000"/);
 });
 
 test("createWebBuildEnv prevents local dev server URLs from being baked into package dist", () => {

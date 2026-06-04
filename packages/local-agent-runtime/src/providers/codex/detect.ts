@@ -110,17 +110,51 @@ export async function detectCodex(options?: {
   minimumVersion?: string;
   overridePath?: string;
 }) {
-  const executablePath = await resolveCommandExecutable({
-    command: options?.command ?? "codex",
-    ...(options?.env ? { env: options.env } : {}),
-    ...(options?.overridePath ? { overridePath: options.overridePath } : {}),
-  });
-  const { stdout } = await execFileAsync(executablePath, ["--version"], {
-    env: options?.env,
-  });
-  const version = stdout.trim() || "unknown";
+  const command = options?.command ?? "codex";
   const configDir = (options?.env?.CODEX_HOME || process.env.CODEX_HOME || "").trim()
     || path.join(homedir(), ".codex");
+  let executablePath: string;
+  try {
+    executablePath = await resolveCommandExecutable({
+      command,
+      ...(options?.env ? { env: options.env } : {}),
+      ...(options?.overridePath ? { overridePath: options.overridePath } : {}),
+    });
+  } catch (error) {
+    return {
+      authState: "missing" as const,
+      configDir,
+      executablePath: command,
+      models: CODEX_FALLBACK_MODELS,
+      skillsDir: path.join(configDir, "skills"),
+      supported: false,
+      unsupportedReason:
+        error instanceof Error ? error.message : `Executable not found: ${command}`,
+      version: "not-installed",
+    };
+  }
+
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync(executablePath, ["--version"], {
+      env: options?.env,
+    }));
+  } catch (error) {
+    return {
+      authState: "unknown" as const,
+      configDir,
+      executablePath,
+      models: CODEX_FALLBACK_MODELS,
+      skillsDir: path.join(configDir, "skills"),
+      supported: false,
+      unsupportedReason:
+        error instanceof Error
+          ? `Unable to run ${command} --version: ${error.message}`
+          : `Unable to run ${command} --version`,
+      version: "unknown",
+    };
+  }
+  const version = stdout.trim() || "unknown";
   const supported = isVersionAtLeast(version, options?.minimumVersion);
   const models = await discoverCodexModels({
     ...(options?.env ? { env: options.env } : {}),

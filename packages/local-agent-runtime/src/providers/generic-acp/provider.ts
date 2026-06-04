@@ -1,6 +1,7 @@
 import type { AgentEvent } from "../../core/events.js";
 import type { LocalAgentProviderPlugin } from "../../core/provider-plugin.js";
 import type { RawAgentStream } from "../../core/transport.js";
+import { resolveCommandExecutable } from "../../process/command-resolver.js";
 import { composePromptWithSystem } from "../../skills/prompt-injection.js";
 import { runAcpTransport } from "../../transports/acp/acp-client.js";
 import { detectAcpModels } from "../../transports/acp/acp-models.js";
@@ -24,15 +25,34 @@ export function createGenericAcpProvider(input: {
     displayName: input.displayName,
     kind: "local-agent",
     async detect() {
+      let executablePath: string;
+      try {
+        executablePath = await resolveCommandExecutable({
+          command: input.command,
+        });
+      } catch (error) {
+        return {
+          authState: "missing",
+          executablePath: input.command,
+          models: [],
+          supported: false,
+          unsupportedReason:
+            error instanceof Error
+              ? error.message
+              : `Executable not found on PATH: ${input.command}`,
+          version: "not-installed",
+        };
+      }
       const models = await detectAcpModels({
         args: input.args,
-        bin: input.command,
+        bin: executablePath,
         cwd: process.cwd(),
       }).catch(() => []);
       return {
         authState: "unknown",
-        executablePath: input.command,
+        executablePath,
         models,
+        supported: true,
         version: "unknown",
       };
     },
