@@ -263,6 +263,17 @@ describe("registerModelRoutes", () => {
             version: "1.0.0",
           },
         },
+        {
+          provider: "hermes" as const,
+          displayName: "Hermes",
+          result: {
+            authState: "unknown" as const,
+            executablePath: "hermes",
+            models: [{ id: "openai-codex:gpt-5.4", label: "Hermes GPT" }],
+            supported: true,
+            version: "1.0.0",
+          },
+        },
       ]),
     };
     const app = Fastify();
@@ -303,6 +314,11 @@ describe("registerModelRoutes", () => {
           id: "claude:opus",
           name: "Scoped Opus",
           provider: "claude",
+        },
+        {
+          id: "hermes:openai-codex:gpt-5.4",
+          name: "Hermes GPT",
+          provider: "hermes",
         },
       ]),
     );

@@ -77,6 +77,9 @@ describe("SettingsPage", () => {
     await screen.findByText("Failed to load local settings. Please try again.");
     const retryButton = screen.getByRole("button", { name: "Retry" });
     await userEvent.click(retryButton);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
 
     await waitFor(() =>
       expect(screen.getByText("Default LLM Model")).toBeInTheDocument(),
@@ -139,10 +142,19 @@ describe("SettingsPage", () => {
 
     render(<SettingsPage />);
 
-    expect((await screen.findAllByText("openai:gpt-4.1")).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("OpenAI API Key")).toHaveValue("sk-local-openai");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+    expect(
+      (await screen.findAllByText("openai:gpt-4.1")).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByLabelText("OpenAI API Key")).toHaveValue(
+      "sk-local-openai",
+    );
     const agnesButton = screen.getByRole("button", { name: "Agnes" });
-    const openAIButton = screen.getByRole("button", { name: "OpenAI-compatible" });
+    const openAIButton = screen.getByRole("button", {
+      name: "OpenAI-compatible",
+    });
     expect(
       agnesButton.compareDocumentPosition(openAIButton) &
         Node.DOCUMENT_POSITION_FOLLOWING,
@@ -177,7 +189,9 @@ describe("SettingsPage", () => {
       screen.getByRole("button", { name: "Browse available models" }),
     );
     await userEvent.click(
-      await screen.findByRole("menuitemradio", { name: /Use gemini-2.5-flash/i }),
+      await screen.findByRole("menuitemradio", {
+        name: /Use gemini-2.5-flash/i,
+      }),
     );
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -235,7 +249,11 @@ describe("SettingsPage", () => {
     });
     fetchModelsMock.mockResolvedValue({
       models: [
-        { id: "openai:deepseek-chat", name: "deepseek-chat", provider: "openai" },
+        {
+          id: "openai:deepseek-chat",
+          name: "deepseek-chat",
+          provider: "openai",
+        },
         { id: "openai:qwen-plus", name: "qwen-plus", provider: "openai" },
         {
           id: "anthropic:minimax-m2.5",
@@ -273,6 +291,9 @@ describe("SettingsPage", () => {
 
     render(<SettingsPage />);
 
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
     await screen.findByLabelText("OpenAI API Key");
     const customModelInput = screen.getByRole("textbox", {
       name: "Add OpenAI-compatible model",
@@ -290,7 +311,9 @@ describe("SettingsPage", () => {
         }),
       ),
     );
-    expect(screen.getByLabelText("OpenAI API Key")).toHaveValue("sk-local-openai");
+    expect(screen.getByLabelText("OpenAI API Key")).toHaveValue(
+      "sk-local-openai",
+    );
   });
 
   it("lets the default model picker switch to Anthropic and choose a model", async () => {
@@ -322,7 +345,11 @@ describe("SettingsPage", () => {
     });
     fetchModelsMock.mockResolvedValue({
       models: [
-        { id: "agnes:agnes-2.0-flash", name: "Agnes 2.0 Flash", provider: "agnes" },
+        {
+          id: "agnes:agnes-2.0-flash",
+          name: "Agnes 2.0 Flash",
+          provider: "agnes",
+        },
         {
           id: "anthropic:minimax-m2.5",
           name: "minimax-m2.5",
@@ -359,6 +386,9 @@ describe("SettingsPage", () => {
 
     render(<SettingsPage />);
 
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
     await screen.findByText("Default LLM Model");
     await userEvent.click(
       await screen.findByRole("button", { name: "Browse available models" }),
@@ -408,12 +438,8 @@ describe("SettingsPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Replicate" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Volces" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Agnes" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Volces" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Agnes" })).toBeInTheDocument();
     expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
     expect(
       screen.getAllByRole("link", { name: "Get Agnes API Key" })[0],
@@ -423,10 +449,79 @@ describe("SettingsPage", () => {
     ).toHaveAttribute("href", "https://agnes-ai.com/doc/quick-start");
     expect(screen.getByText("Seedance 1.5 Pro")).toBeInTheDocument();
     expect(screen.getByText("Agnes Video v2.0")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("replicate-local-token")).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue("replicate-local-token"),
+    ).toBeInTheDocument();
     expect(screen.getByDisplayValue("sk-local-agnes")).toBeInTheDocument();
     expect(
       screen.getByDisplayValue("https://ark.cn-beijing.volces.com/api/v3"),
     ).toBeInTheDocument();
+  });
+
+  it("switches the Agent settings between Local CLI and API provider setup", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "codex:gpt-5.4",
+        providerModels: {
+          openai: ["openai:gpt-5.4"],
+          anthropic: [],
+          agnes: [],
+          google: [],
+          vertex: [],
+        },
+        openAIApiKey: "sk-local-openai",
+        openAIApiBase: "https://gateway.example/v1",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        { id: "codex:gpt-5.4", name: "Codex CLI", provider: "codex" },
+        { id: "codex:gpt-5.5", name: "Codex CLI", provider: "codex" },
+        { id: "claude:sonnet", name: "Sonnet", provider: "claude" },
+        { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
+      ],
+    });
+
+    render(<SettingsPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Local CLI" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByText("Codex CLI")).toBeInTheDocument();
+    expect(screen.getByText("2 models")).toBeInTheDocument();
+    expect(screen.getByLabelText("Model")).toHaveValue("codex:gpt-5.4");
+    await userEvent.selectOptions(screen.getByLabelText("Model"), "codex:gpt-5.5");
+    expect(screen.getByLabelText("Model")).toHaveValue("codex:gpt-5.5");
+    await userEvent.selectOptions(screen.getByLabelText("Model"), "__custom__");
+    expect(await screen.findByLabelText("Custom model id")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Claude Code/i }));
+    expect(await screen.findByLabelText("Model")).toHaveValue("claude:sonnet");
+    expect(screen.queryByLabelText("OpenAI API Key")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "API provider" }));
+
+    expect(screen.getByRole("button", { name: "Local CLI" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(
+      screen.getByRole("button", { name: "API provider" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByLabelText("OpenAI API Key")).toHaveValue(
+      "sk-local-openai",
+    );
+    expect(screen.queryByText("Codex CLI")).not.toBeInTheDocument();
   });
 });

@@ -5,6 +5,7 @@ import type {
   StreamEvent,
   ToolBlock,
 } from "@aimc/shared";
+import { DEFAULT_LOCAL_AGENT_PROVIDER_IDS } from "@nextop-os/agent-acp-kit";
 import type {
   AgentRuntimeCapabilities,
   AgentRuntimeMode,
@@ -73,13 +74,9 @@ export function inferRuntimeKind(input: RuntimeKindSelectorInput): RuntimeTarget
   return inferPackageRuntimeKind<RuntimeKind, AgentRuntimeProvider>(input);
 }
 
-const LOCAL_AGENT_MODEL_PREFIXES = [
-  "codex:",
-  "claude:",
-  "hermes:",
-  "kimi:",
-  "kiro:",
-] as const;
+const LOCAL_AGENT_MODEL_PREFIXES = DEFAULT_LOCAL_AGENT_PROVIDER_IDS.map(
+  (provider) => `${provider}:`,
+);
 
 export function isLocalAgentRuntimeRequested(input: {
   model?: string | undefined;

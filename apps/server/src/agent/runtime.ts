@@ -4,8 +4,7 @@ import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
-  createClaudeProvider,
-  createCodexProvider,
+  createDefaultLocalAgentProviderPlugins,
   createLocalAgentRuntime,
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
@@ -450,11 +449,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
   const localAgentTrusted = options.env.trustedLocalAgentMode !== false;
   const localAgentProviderPlugins =
-    options.localAgentProviderPlugins ??
-    ([
-      createCodexProvider(),
-      createClaudeProvider(),
-    ] as LocalAgentProviderPlugin<"local-agent", AgentRuntimeProvider>[]);
+    options.localAgentProviderPlugins ?? createDefaultLocalAgentProviderPlugins();
   const localAgentRuntime =
     localAgentTrusted && options.toolGateway && options.toolGatewayBaseUrl
       ? options.localAgentRuntime ??

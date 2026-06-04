@@ -1,19 +1,17 @@
 import type { FastifyInstance } from "fastify";
 
 import {
-  createClaudeProvider,
-  createCodexProvider,
-  createLocalAgentRuntime,
-  type AgentDetection,
-  type LocalAgentProviderPlugin,
-  type LocalAgentRuntime,
-} from "@nextop-os/agent-acp-kit";
-import {
   modelListResponseSchema,
   type AgentRuntimeProvider,
   type ModelInfo,
   type WorkspaceSettings,
 } from "@aimc/shared";
+import {
+  type AgentDetection,
+  type LocalAgentRuntime,
+  createDefaultLocalAgentProviderPlugins,
+  createLocalAgentRuntime,
+} from "@nextop-os/agent-acp-kit";
 
 import type { ServerEnv } from "../config/env.js";
 import {
@@ -191,17 +189,14 @@ async function fetchOpenAICompatibleModels(
 
 function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
   return createLocalAgentRuntime({
-    providers: [
-      createCodexProvider(),
-      createClaudeProvider(),
-    ] as LocalAgentProviderPlugin<"local-agent", AgentRuntimeProvider>[],
+    providers: createDefaultLocalAgentProviderPlugins(),
   });
 }
 
 function localAgentModelId(provider: string, modelId: string) {
   const trimmed = modelId.trim();
   if (!trimmed) return null;
-  return trimmed.includes(":") ? trimmed : `${provider}:${trimmed}`;
+  return trimmed.startsWith(`${provider}:`) ? trimmed : `${provider}:${trimmed}`;
 }
 
 function buildLocalAgentModels(

@@ -1,10 +1,24 @@
 "use client";
 
-import { Settings2 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useAgentModel } from "@/hooks/use-agent-model";
+import {
+  type AgentModelSourceTab,
+  formatLocalCliProviderLabel,
+  getAgentModelSourceTab,
+  isApiProvider,
+  isLocalCliProvider,
+} from "@/lib/agent-model-groups";
 import { fetchModels, fetchWorkspaceSettings } from "@/lib/server-api";
+import { Cloud, Settings2, Terminal } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+import { LocalCliProviderIcon } from "./local-cli-provider-icon";
 import { SettingsDialog } from "./settings-dialog";
 
 type ModelOption = { id: string; name: string; provider: string };
@@ -47,7 +61,10 @@ function formatProviderLabel(provider: string) {
   }
 }
 
-function formatDefaultModelLabel(modelId: string | null, models: ModelOption[]) {
+function formatDefaultModelLabel(
+  modelId: string | null,
+  models: ModelOption[],
+) {
   if (!modelId) return null;
   const matchingModel = models.find((model) => model.id === modelId);
   if (matchingModel) return matchingModel.name;
@@ -55,10 +72,19 @@ function formatDefaultModelLabel(modelId: string | null, models: ModelOption[]) 
   return scopedId;
 }
 
+function getModelProvider(modelId: string | null | undefined) {
+  return modelId?.includes(":") ? (modelId.split(":", 1)[0] ?? "") : "";
+}
+
 function ProviderLogo({ provider }: { provider: string }) {
   if (provider === "local" || provider === "codex") {
     return (
-      <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor">
+      <svg
+        aria-hidden="true"
+        className="h-3.5 w-3.5 shrink-0"
+        viewBox="0 0 16 16"
+        fill="currentColor"
+      >
         <path d="M8 1.5 9.91 5.37l4.27.62-3.09 3.01.73 4.25L8 11.24l-3.82 2.01.73-4.25-3.09-3.01 4.27-.62L8 1.5Z" />
       </svg>
     );
@@ -71,8 +97,12 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
-  const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<string | null>(null);
+  const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
+    string | null
+  >(null);
   const [customModelDraft, setCustomModelDraft] = useState("");
+  const [activeModelTab, setActiveModelTab] =
+    useState<AgentModelSourceTab>("local-cli");
   const btnRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -82,7 +112,9 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
       .catch(() => {});
 
     fetchWorkspaceSettings()
-      .then((data) => setWorkspaceDefaultModel(data.settings.defaultModel || null))
+      .then((data) =>
+        setWorkspaceDefaultModel(data.settings.defaultModel || null),
+      )
       .catch(() => {});
   }, []);
 
@@ -100,6 +132,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
   useEffect(() => {
     if (!open) return;
     setCustomModelDraft(model ?? workspaceDefaultModel ?? "");
+    setActiveModelTab(getAgentModelSourceTab(model));
   }, [model, open, workspaceDefaultModel]);
 
   // Close on outside click
@@ -129,12 +162,32 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
     return () => document.removeEventListener("keydown", handler);
   }, [open]);
 
-  const isActive = model !== null;
   const selectedModel = models.find((m) => m.id === model);
+  const selectedProvider = selectedModel?.provider || getModelProvider(model);
+  const workspaceDefaultProvider = getModelProvider(workspaceDefaultModel);
+  const triggerLocalProvider =
+    selectedProvider && isLocalCliProvider(selectedProvider)
+      ? selectedProvider
+      : !model &&
+          workspaceDefaultProvider &&
+          isLocalCliProvider(workspaceDefaultProvider)
+        ? workspaceDefaultProvider
+        : "";
+  const triggerLocalProviderLabel = triggerLocalProvider
+    ? formatLocalCliProviderLabel(triggerLocalProvider)
+    : null;
+  const isActive = model !== null;
+  const isTriggerActive = isActive || Boolean(triggerLocalProvider);
   const displayLabel =
-    (selectedModel ? selectedModel.name : formatDefaultModelLabel(model, models)) ??
+    triggerLocalProviderLabel ??
+    (selectedModel
+      ? selectedModel.name
+      : formatDefaultModelLabel(model, models)) ??
     "Agent";
-  const defaultModelLabel = formatDefaultModelLabel(workspaceDefaultModel, models);
+  const defaultModelLabel = formatDefaultModelLabel(
+    workspaceDefaultModel,
+    models,
+  );
   const trimmedCustomModelDraft = customModelDraft.trim();
 
   // Auto-positioning popover (above or below based on available space)
@@ -163,19 +216,31 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
     }
   }, [open]);
 
+  const visibleModels = models.filter((item) =>
+    activeModelTab === "local-cli"
+      ? isLocalCliProvider(item.provider)
+      : isApiProvider(item.provider),
+  );
+
   // Deduplicate provider list from actual models
-  const providers = [...new Set(models.map((m) => m.provider))].sort((left, right) => {
-    const leftIndex = PROVIDER_PRIORITY.indexOf(left);
-    const rightIndex = PROVIDER_PRIORITY.indexOf(right);
-    const normalizedLeft = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
-    const normalizedRight = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
+  const providers = [...new Set(visibleModels.map((m) => m.provider))].sort(
+    (left, right) => {
+      const leftIndex = PROVIDER_PRIORITY.indexOf(left);
+      const rightIndex = PROVIDER_PRIORITY.indexOf(right);
+      const normalizedLeft =
+        leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
+      const normalizedRight =
+        rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
 
-    if (normalizedLeft !== normalizedRight) {
-      return normalizedLeft - normalizedRight;
-    }
+      if (normalizedLeft !== normalizedRight) {
+        return normalizedLeft - normalizedRight;
+      }
 
-    return formatProviderLabel(left).localeCompare(formatProviderLabel(right));
-  });
+      return formatProviderLabel(left).localeCompare(
+        formatProviderLabel(right),
+      );
+    },
+  );
 
   function applyCustomModel() {
     if (!trimmedCustomModelDraft) return;
@@ -192,22 +257,34 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
         className={`flex items-center justify-center gap-1 box-border rounded-full border-[0.5px] cursor-pointer font-inter transition-[border-color,background-color] duration-100 ease-in-out ${
           compact ? "h-8 px-2.5" : "h-8 px-3"
         } ${
-          isActive
+          isTriggerActive
             ? "border-accent bg-accent/10 text-foreground hover:bg-accent/20 active:bg-accent/30"
             : "border-border text-foreground hover:bg-muted"
         } bg-transparent`}
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="14"
-          height="14"
-          fill="none"
-          viewBox="0 0 14 14"
-          className="[&_path]:fill-current"
-        >
-          <path fill="currentColor" d={SPARKLE_ICON_PATH} />
-        </svg>
-        <span className={compact ? "text-[11px]" : "text-xs"}>{displayLabel}</span>
+        {triggerLocalProvider ? (
+          <LocalCliProviderIcon
+            provider={triggerLocalProvider}
+            label={triggerLocalProviderLabel ?? displayLabel}
+            className="size-4 rounded-sm"
+            iconSize={15}
+          />
+        ) : (
+          <svg
+            aria-hidden="true"
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            fill="none"
+            viewBox="0 0 14 14"
+            className="[&_path]:fill-current"
+          >
+            <path fill="currentColor" d={SPARKLE_ICON_PATH} />
+          </svg>
+        )}
+        <span className={compact ? "text-[11px]" : "text-xs"}>
+          {displayLabel}
+        </span>
       </button>
       {open &&
         typeof document !== "undefined" &&
@@ -234,6 +311,39 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
                 Settings
               </button>
             </div>
+            <div className="mb-2 grid grid-cols-2 rounded-full border border-border bg-muted/30 p-0.5">
+              {[
+                {
+                  id: "local-cli" as const,
+                  label: "Local CLI",
+                  icon: Terminal,
+                },
+                {
+                  id: "api-provider" as const,
+                  label: "API provider",
+                  icon: Cloud,
+                },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const selected = activeModelTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setActiveModelTab(tab.id)}
+                    className={`inline-flex h-8 items-center justify-center gap-1 rounded-full px-2 text-[11px] font-medium transition-colors ${
+                      selected
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="h-3 w-3" />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
             {/* Auto option */}
             <button
               type="button"
@@ -257,6 +367,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
               </span>
               {!isActive && (
                 <svg
+                  aria-hidden="true"
                   className="h-3 w-3 text-accent-foreground"
                   viewBox="0 0 16 16"
                   fill="currentColor"
@@ -267,7 +378,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
             </button>
             {/* Group by provider */}
             {providers.map((provider) => {
-              const providerModels = models.filter(
+              const providerModels = visibleModels.filter(
                 (m) => m.provider === provider,
               );
               if (providerModels.length === 0) return null;
@@ -294,6 +405,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
                       <span className="flex-1 text-left">{m.name}</span>
                       {model === m.id && (
                         <svg
+                          aria-hidden="true"
                           className="h-3 w-3 text-accent-foreground"
                           viewBox="0 0 16 16"
                           fill="currentColor"
@@ -306,36 +418,47 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
                 </div>
               );
             })}
-            <form
-              className="mt-3 border-t border-border pt-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                applyCustomModel();
-              }}
-            >
-              <label
-                htmlFor="customModelId"
-                className="px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60"
-              >
-                Custom model ID
-              </label>
-              <div className="mt-2 space-y-2 px-2">
-                <input
-                  id="customModelId"
-                  value={customModelDraft}
-                  onChange={(event) => setCustomModelDraft(event.target.value)}
-                  placeholder="anthropic:minimax-m2.5"
-                  className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-accent"
-                />
-                <button
-                  type="submit"
-                  disabled={!trimmedCustomModelDraft}
-                  className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Use custom model
-                </button>
+            {providers.length === 0 ? (
+              <div className="rounded-lg px-2 py-4 text-xs text-muted-foreground">
+                {activeModelTab === "local-cli"
+                  ? "No local CLI models detected."
+                  : "No API provider models configured."}
               </div>
-            </form>
+            ) : null}
+            {activeModelTab === "api-provider" ? (
+              <form
+                className="mt-3 border-t border-border pt-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  applyCustomModel();
+                }}
+              >
+                <label
+                  htmlFor="customModelId"
+                  className="px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60"
+                >
+                  Custom model ID
+                </label>
+                <div className="mt-2 space-y-2 px-2">
+                  <input
+                    id="customModelId"
+                    value={customModelDraft}
+                    onChange={(event) =>
+                      setCustomModelDraft(event.target.value)
+                    }
+                    placeholder="anthropic:minimax-m2.5"
+                    className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-accent"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!trimmedCustomModelDraft}
+                    className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Use custom model
+                  </button>
+                </div>
+              </form>
+            ) : null}
           </div>,
           document.body,
         )}
