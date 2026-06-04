@@ -8,7 +8,6 @@ const {
   createAgentBackendMock,
   createDeepAgentMock,
   createMainAgentToolsMock,
-  createVideoSubAgentMock,
 } = vi.hoisted(() => ({
   chatAnthropicMock: vi.fn((options) => ({
     provider: "anthropic",
@@ -32,7 +31,6 @@ const {
     streamEvents: vi.fn(),
   })),
   createMainAgentToolsMock: vi.fn(() => []),
-  createVideoSubAgentMock: vi.fn(() => ({ name: "video" })),
 }));
 
 vi.mock("@langchain/anthropic", () => ({
@@ -59,10 +57,6 @@ vi.mock("./backends/index.js", () => ({
   createAgentBackend: createAgentBackendMock,
 }));
 
-vi.mock("./sub-agents.js", () => ({
-  createVideoSubAgent: createVideoSubAgentMock,
-}));
-
 vi.mock("./tools/index.js", () => ({
   createMainAgentTools: createMainAgentToolsMock,
 }));
@@ -78,7 +72,6 @@ describe("createAimcDeepAgent", () => {
     createAgentBackendMock.mockClear();
     createDeepAgentMock.mockClear();
     createMainAgentToolsMock.mockClear();
-    createVideoSubAgentMock.mockClear();
   });
 
   it("uses ChatAnthropic for anthropic-scoped default models", () => {

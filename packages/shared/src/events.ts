@@ -60,6 +60,18 @@ export const toolCompletedEventSchema = z.object({
   timestamp: timestampSchema,
 });
 
+export const toolFailedEventSchema = z.object({
+  type: z.literal("tool.failed"),
+  runId: runIdSchema,
+  toolCallId: toolCallIdSchema,
+  toolName: z.string().min(1),
+  error: aimcErrorSchema,
+  output: z.record(z.unknown()).optional(),
+  outputSummary: z.string().optional(),
+  artifacts: z.array(toolArtifactSchema).optional(),
+  timestamp: timestampSchema,
+});
+
 export const runCompletedEventSchema = z.object({
   type: z.literal("run.completed"),
   runId: runIdSchema,
@@ -99,6 +111,7 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   thinkingDeltaEventSchema,
   toolStartedEventSchema,
   toolCompletedEventSchema,
+  toolFailedEventSchema,
   runCanceledEventSchema,
   runCompletedEventSchema,
   runFailedEventSchema,

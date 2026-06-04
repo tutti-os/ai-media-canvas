@@ -4,6 +4,8 @@ import { extname, join, resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 
 import type {
+  AgentRuntimeProvider,
+  AgentRunResumeMode,
   AssetBucket,
   AssetObject,
   BackgroundJob,
@@ -26,12 +28,14 @@ import type {
   ProjectCreateRequest,
   ProjectSummary,
   ProjectUpdateRequest,
+  RuntimeKind,
   SkillCreateRequest,
   SkillDetail,
   SkillFileEntry,
   SkillImportRequest,
   SkillListItem,
   SkillToggleRequest,
+  StreamEvent,
   VideoGenerationPayload,
   ViewerResponse,
   WorkspaceSettings,
@@ -123,6 +127,15 @@ type BackgroundJobRow = {
 };
 
 type AgentRunStatus = "accepted" | "canceled" | "completed" | "failed" | "running";
+
+type AgentRunEventRow = {
+  created_at: string;
+  event_id: string;
+  payload: string;
+  run_id: string;
+  seq: number;
+  type: string;
+};
 
 function nowIso() {
   return new Date().toISOString();
@@ -264,6 +277,9 @@ export function createLocalStore(options: {
       role TEXT NOT NULL,
       content TEXT NOT NULL,
       content_blocks TEXT,
+      run_id TEXT,
+      run_status TEXT,
+      last_run_event_id TEXT,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS assets (
@@ -368,6 +384,13 @@ export function createLocalStore(options: {
       session_id TEXT NOT NULL,
       thread_id TEXT,
       model TEXT,
+      runtime_kind TEXT,
+      runtime_provider TEXT,
+      previous_run_id TEXT,
+      resume_mode TEXT,
+      provider_session_id TEXT,
+      resume_token TEXT,
+      assistant_message_id TEXT,
       status TEXT NOT NULL,
       error_code TEXT,
       error_message TEXT,
@@ -379,9 +402,22 @@ export function createLocalStore(options: {
     );
     CREATE INDEX IF NOT EXISTS idx_agent_runs_session_created
       ON agent_runs(session_id, created_at);
+    CREATE TABLE IF NOT EXISTS agent_run_events (
+      run_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (run_id, event_id),
+      UNIQUE (run_id, seq)
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_run_events_run_seq
+      ON agent_run_events(run_id, seq);
   `);
 
   ensureWorkspaceSettingsSchema();
+  ensureAgentRunSchema();
   seedBaseData();
   seedBundledSkills();
   ensureDefaultProject();
@@ -468,6 +504,79 @@ export function createLocalStore(options: {
     db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_settings_workspace_id
       ON workspace_settings(workspace_id)
+    `);
+  }
+
+  function ensureAgentRunSchema() {
+    const messageColumns = db
+      .prepare(`PRAGMA table_info(chat_messages)`)
+      .all() as Array<{ name: string }>;
+    const messageColumnNames = new Set(
+      messageColumns.map((column) => column.name),
+    );
+
+    if (!messageColumnNames.has("run_id")) {
+      db.exec(`ALTER TABLE chat_messages ADD COLUMN run_id TEXT`);
+    }
+
+    if (!messageColumnNames.has("run_status")) {
+      db.exec(`ALTER TABLE chat_messages ADD COLUMN run_status TEXT`);
+    }
+
+    if (!messageColumnNames.has("last_run_event_id")) {
+      db.exec(`ALTER TABLE chat_messages ADD COLUMN last_run_event_id TEXT`);
+    }
+
+    const columns = db
+      .prepare(`PRAGMA table_info(agent_runs)`)
+      .all() as Array<{ name: string }>;
+    const columnNames = new Set(columns.map((column) => column.name));
+
+    if (!columnNames.has("runtime_kind")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN runtime_kind TEXT`);
+    }
+
+    if (!columnNames.has("runtime_provider")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN runtime_provider TEXT`);
+    }
+
+    if (!columnNames.has("assistant_message_id")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN assistant_message_id TEXT`);
+    }
+
+    if (!columnNames.has("previous_run_id")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN previous_run_id TEXT`);
+    }
+
+    if (!columnNames.has("resume_mode")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN resume_mode TEXT`);
+    }
+
+    if (!columnNames.has("provider_session_id")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN provider_session_id TEXT`);
+    }
+
+    if (!columnNames.has("resume_token")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN resume_token TEXT`);
+    }
+
+    const eventColumns = db
+      .prepare(`PRAGMA table_info(agent_run_events)`)
+      .all() as Array<{ name: string }>;
+    const eventColumnNames = new Set(eventColumns.map((column) => column.name));
+
+    if (!eventColumnNames.has("canvas_id")) {
+      db.exec(`ALTER TABLE agent_run_events ADD COLUMN canvas_id TEXT`);
+    }
+
+    if (!eventColumnNames.has("canvas_seq")) {
+      db.exec(`ALTER TABLE agent_run_events ADD COLUMN canvas_seq INTEGER`);
+    }
+
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_run_events_canvas_seq
+        ON agent_run_events(canvas_id, canvas_seq)
+        WHERE canvas_id IS NOT NULL AND canvas_seq IS NOT NULL;
     `);
   }
 
@@ -1441,9 +1550,13 @@ export function createLocalStore(options: {
     }));
   }
 
-  function createMessage(sessionId: string, input: ChatMessageCreateRequest): ChatMessage | null {
+  function createMessage(
+    sessionId: string,
+    input: ChatMessageCreateRequest,
+    messageId?: string,
+  ): ChatMessage | null {
     if (!hasSession(sessionId)) return null;
-    const id = randomUUID();
+    const id = messageId ?? randomUUID();
     const timestamp = nowIso();
     db.prepare(
       `
@@ -1470,6 +1583,57 @@ export function createLocalStore(options: {
       toolActivities: input.toolActivities ?? null,
       contentBlocks: input.contentBlocks ?? null,
       createdAt: timestamp,
+    };
+  }
+
+  function updateMessage(
+    messageId: string,
+    input: ChatMessageCreateRequest,
+  ): ChatMessage | null {
+    const row = db
+      .prepare(
+        `
+          SELECT session_id, created_at
+          FROM chat_messages
+          WHERE id = ?
+          LIMIT 1
+        `,
+      )
+      .get(messageId) as
+      | {
+          created_at: string;
+          session_id: string;
+        }
+      | undefined;
+    if (!row) return null;
+
+    const timestamp = nowIso();
+    db.prepare(
+      `
+        UPDATE chat_messages
+        SET role = ?,
+            content = ?,
+            content_blocks = ?
+        WHERE id = ?
+      `,
+    ).run(
+      input.role,
+      input.content,
+      input.contentBlocks ? JSON.stringify(input.contentBlocks) : null,
+      messageId,
+    );
+    db.prepare(`UPDATE chat_sessions SET updated_at = ? WHERE id = ?`).run(
+      timestamp,
+      row.session_id,
+    );
+
+    return {
+      id: messageId,
+      role: input.role,
+      content: input.content,
+      toolActivities: input.toolActivities ?? null,
+      contentBlocks: input.contentBlocks ?? null,
+      createdAt: row.created_at,
     };
   }
 
@@ -2271,8 +2435,13 @@ export function createLocalStore(options: {
   }
 
   function createAgentRun(input: {
+    assistantMessageId?: string;
     canvasId?: string;
     model?: string;
+    previousRunId?: string;
+    resumeMode?: Exclude<AgentRunResumeMode, "auto">;
+    runtimeKind?: RuntimeKind;
+    runtimeProvider?: AgentRuntimeProvider;
     runId: string;
     sessionId: string;
     threadId?: string;
@@ -2282,8 +2451,9 @@ export function createLocalStore(options: {
       `
         INSERT INTO agent_runs (
           id, workspace_id, canvas_id, session_id, thread_id, model,
-          status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          runtime_kind, runtime_provider, previous_run_id, resume_mode,
+          assistant_message_id, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     ).run(
       input.runId,
@@ -2292,16 +2462,36 @@ export function createLocalStore(options: {
       input.sessionId,
       input.threadId ?? null,
       input.model ?? null,
+      input.runtimeKind ?? null,
+      input.runtimeProvider ?? null,
+      input.previousRunId ?? null,
+      input.resumeMode ?? null,
+      input.assistantMessageId ?? null,
       "accepted",
       timestamp,
       timestamp,
     );
+    if (input.assistantMessageId) {
+      db.prepare(
+        `
+          UPDATE chat_messages
+          SET run_id = ?,
+              run_status = ?
+          WHERE id = ?
+        `,
+      ).run(input.runId, "accepted", input.assistantMessageId);
+    }
   }
 
   function updateAgentRun(input: {
+    assistantMessageId?: string;
     errorCode?: string;
     errorMessage?: string;
+    providerSessionId?: string;
     runId: string;
+    resumeToken?: string;
+    runtimeKind?: RuntimeKind;
+    runtimeProvider?: AgentRuntimeProvider;
     status: AgentRunStatus;
   }) {
     const timestamp = nowIso();
@@ -2310,6 +2500,11 @@ export function createLocalStore(options: {
         UPDATE agent_runs
         SET status = ?,
             updated_at = ?,
+            runtime_kind = COALESCE(?, runtime_kind),
+            runtime_provider = COALESCE(?, runtime_provider),
+            provider_session_id = COALESCE(?, provider_session_id),
+            resume_token = COALESCE(?, resume_token),
+            assistant_message_id = COALESCE(?, assistant_message_id),
             started_at = CASE WHEN ? = 'running' AND started_at IS NULL THEN ? ELSE started_at END,
             completed_at = CASE WHEN ? IN ('completed', 'failed') THEN ? ELSE completed_at END,
             canceled_at = CASE WHEN ? = 'canceled' THEN ? ELSE canceled_at END,
@@ -2320,6 +2515,11 @@ export function createLocalStore(options: {
     ).run(
       input.status,
       timestamp,
+      input.runtimeKind ?? null,
+      input.runtimeProvider ?? null,
+      input.providerSessionId ?? null,
+      input.resumeToken ?? null,
+      input.assistantMessageId ?? null,
       input.status,
       timestamp,
       input.status,
@@ -2332,6 +2532,288 @@ export function createLocalStore(options: {
       input.errorMessage ?? null,
       input.runId,
     );
+    const run = getAgentRun(input.runId);
+    const assistantMessageId = input.assistantMessageId ?? run?.assistant_message_id;
+    if (assistantMessageId) {
+      db.prepare(
+        `
+          UPDATE chat_messages
+          SET run_id = COALESCE(run_id, ?),
+              run_status = ?
+          WHERE id = ?
+        `,
+      ).run(input.runId, input.status, assistantMessageId);
+    }
+  }
+
+  function getAgentRun(runId: string) {
+    return db
+      .prepare(
+        `
+          SELECT id, session_id, status, runtime_kind, runtime_provider,
+                 previous_run_id, resume_mode, assistant_message_id,
+                 provider_session_id, resume_token, error_code, error_message
+          FROM agent_runs
+          WHERE id = ?
+          LIMIT 1
+        `,
+      )
+      .get(runId) as
+      | {
+          assistant_message_id: string | null;
+          error_code: string | null;
+          error_message: string | null;
+          id: string;
+          previous_run_id: string | null;
+          provider_session_id: string | null;
+          resume_mode: Exclude<AgentRunResumeMode, "auto"> | null;
+          resume_token: string | null;
+          runtime_kind: RuntimeKind | null;
+          runtime_provider: AgentRuntimeProvider | null;
+          session_id: string;
+          status: AgentRunStatus;
+        }
+      | undefined;
+  }
+
+  function getActiveAgentRun(canvasId: string, sessionId: string) {
+    return db
+      .prepare(
+        `
+          SELECT id, session_id, status, runtime_kind, runtime_provider,
+                 previous_run_id, resume_mode, assistant_message_id,
+                 provider_session_id, resume_token, error_code, error_message
+          FROM agent_runs
+          WHERE canvas_id = ?
+            AND session_id = ?
+            AND status IN ('accepted', 'running')
+          ORDER BY updated_at DESC, created_at DESC
+          LIMIT 1
+        `,
+      )
+      .get(canvasId, sessionId) as
+      | {
+          assistant_message_id: string | null;
+          error_code: string | null;
+          error_message: string | null;
+          id: string;
+          previous_run_id: string | null;
+          provider_session_id: string | null;
+          resume_mode: Exclude<AgentRunResumeMode, "auto"> | null;
+          resume_token: string | null;
+          runtime_kind: RuntimeKind | null;
+          runtime_provider: AgentRuntimeProvider | null;
+          session_id: string;
+          status: AgentRunStatus;
+        }
+      | undefined;
+  }
+
+  function appendAgentRunEvent(input: {
+    canvasId?: string;
+    event: StreamEvent;
+    runId: string;
+  }) {
+    const existingTerminal = db
+      .prepare(
+        `
+          SELECT event_id, seq, canvas_seq
+          FROM agent_run_events
+          WHERE run_id = ?
+            AND type IN ('run.completed', 'run.failed', 'run.canceled')
+          ORDER BY seq ASC
+          LIMIT 1
+        `,
+      )
+      .get(input.runId) as
+      | { canvas_seq: number | null; event_id: string; seq: number }
+      | undefined;
+
+    if (existingTerminal) {
+      return {
+        ...(existingTerminal.canvas_seq != null
+          ? { canvasSeq: existingTerminal.canvas_seq }
+          : {}),
+        duplicate: true,
+        eventId: existingTerminal.event_id,
+        seq: existingTerminal.seq,
+      };
+    }
+
+    const current = db
+      .prepare(`SELECT COALESCE(MAX(seq), 0) AS max_seq FROM agent_run_events WHERE run_id = ?`)
+      .get(input.runId) as { max_seq: number | null };
+    const nextSeq = (current.max_seq ?? 0) + 1;
+    const nextCanvasSeq = input.canvasId
+      ? ((db
+          .prepare(
+            `SELECT COALESCE(MAX(canvas_seq), 0) AS max_seq FROM agent_run_events WHERE canvas_id = ?`,
+          )
+          .get(input.canvasId) as { max_seq: number | null }).max_seq ?? 0) + 1
+      : null;
+    const timestamp = nowIso();
+    const eventId = `${input.runId}:${nextSeq}`;
+    db.prepare(
+      `
+        INSERT INTO agent_run_events (
+          run_id, event_id, seq, canvas_id, canvas_seq, type, payload, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      input.runId,
+      eventId,
+      nextSeq,
+      input.canvasId ?? null,
+      nextCanvasSeq,
+      input.event.type,
+      JSON.stringify(input.event),
+      timestamp,
+    );
+    db.prepare(
+      `
+        UPDATE chat_messages
+        SET last_run_event_id = ?,
+            run_status = CASE
+              WHEN ? = 'run.completed' THEN 'completed'
+              WHEN ? = 'run.failed' THEN 'failed'
+              WHEN ? = 'run.canceled' THEN 'canceled'
+              WHEN run_status IS NULL THEN 'running'
+              ELSE run_status
+            END
+        WHERE run_id = ?
+      `,
+    ).run(eventId, input.event.type, input.event.type, input.event.type, input.runId);
+    return {
+      ...(input.canvasId && nextCanvasSeq != null ? { canvasSeq: nextCanvasSeq } : {}),
+      eventId,
+      seq: nextSeq,
+    };
+  }
+
+  function listAgentRunEvents(runId: string, cursor = 0) {
+    const rows = db
+      .prepare(
+        `
+          SELECT run_id, event_id, seq, type, payload, created_at
+          FROM agent_run_events
+          WHERE run_id = ? AND seq > ?
+          ORDER BY seq ASC
+        `,
+      )
+      .all(runId, cursor) as AgentRunEventRow[];
+    return rows.map((row) => ({
+      createdAt: row.created_at,
+      event: parseJson<StreamEvent>(row.payload, {
+        type: "run.failed",
+        runId,
+        error: {
+          code: "run_failed",
+          message: "Unable to decode persisted agent event.",
+        },
+        timestamp: row.created_at,
+      }),
+      eventId: row.event_id,
+      seq: row.seq,
+      type: row.type,
+    }));
+  }
+
+  function getLatestCanvasEventSeq(canvasId: string) {
+    const row = db
+      .prepare(
+        `SELECT COALESCE(MAX(canvas_seq), 0) AS max_seq FROM agent_run_events WHERE canvas_id = ?`,
+      )
+      .get(canvasId) as { max_seq: number | null };
+    return row.max_seq ?? 0;
+  }
+
+  function listCanvasAgentEvents(canvasId: string, cursor = 0) {
+    const rows = db
+      .prepare(
+        `
+          SELECT run_id, event_id, seq, canvas_seq, type, payload, created_at
+          FROM agent_run_events
+          WHERE canvas_id = ? AND canvas_seq > ?
+          ORDER BY canvas_seq ASC
+        `,
+      )
+      .all(canvasId, cursor) as Array<
+        AgentRunEventRow & {
+          canvas_seq: number | null;
+        }
+      >;
+    return rows.map((row) => ({
+      createdAt: row.created_at,
+      event: parseJson<StreamEvent>(row.payload, {
+        type: "run.failed",
+        runId: row.run_id,
+        error: {
+          code: "run_failed",
+          message: "Unable to decode persisted canvas event.",
+        },
+        timestamp: row.created_at,
+      }),
+      eventId: row.event_id,
+      runId: row.run_id,
+      seq: row.seq,
+      canvasSeq: row.canvas_seq ?? 0,
+      type: row.type,
+    }));
+  }
+
+  function recoverInterruptedAgentRuns(message = "Server restarted during an active agent run.") {
+    const interruptedRuns = db
+      .prepare(
+        `
+          SELECT id, canvas_id
+          FROM agent_runs
+          WHERE status IN ('accepted', 'running')
+        `,
+      )
+      .all() as Array<{
+        canvas_id: string | null;
+        id: string;
+      }>;
+
+    for (const run of interruptedRuns) {
+      updateAgentRun({
+        runId: run.id,
+        status: "failed",
+        errorCode: "run_failed",
+        errorMessage: message,
+      });
+
+      const lastEvent = db
+        .prepare(
+          `
+            SELECT type
+            FROM agent_run_events
+            WHERE run_id = ?
+            ORDER BY seq DESC
+            LIMIT 1
+          `,
+        )
+        .get(run.id) as { type: string } | undefined;
+      if (lastEvent && ["run.completed", "run.failed", "run.canceled"].includes(lastEvent.type)) {
+        continue;
+      }
+
+      appendAgentRunEvent({
+        ...(run.canvas_id ? { canvasId: run.canvas_id } : {}),
+        runId: run.id,
+        event: {
+          type: "run.failed",
+          runId: run.id,
+          error: {
+            code: "run_failed",
+            message,
+          },
+          timestamp: nowIso(),
+        },
+      });
+    }
+
+    return interruptedRuns.length;
   }
 
   function createBackgroundJob(input: {
@@ -2730,6 +3212,7 @@ export function createLocalStore(options: {
     deleteSession,
     listMessages,
     createMessage,
+    updateMessage,
     listBrandKits,
     getBrandKit,
     createBrandKit,
@@ -2751,6 +3234,13 @@ export function createLocalStore(options: {
     listEnabledSkills,
     createAgentRun,
     updateAgentRun,
+    getAgentRun,
+    getActiveAgentRun,
+    appendAgentRunEvent,
+    listAgentRunEvents,
+    listCanvasAgentEvents,
+    getLatestCanvasEventSeq,
+    recoverInterruptedAgentRuns,
     createBackgroundJob,
     getBackgroundJob,
     listBackgroundJobs,

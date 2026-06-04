@@ -21,6 +21,7 @@ const {
   createSessionMock,
   deleteSessionMock,
   fetchMessagesMock,
+  fetchRunEventsMock,
   fetchSessionsMock,
   saveMessageMock,
   updateSessionTitleMock,
@@ -31,6 +32,7 @@ const {
   createSessionMock: vi.fn(),
   deleteSessionMock: vi.fn(),
   fetchMessagesMock: vi.fn(),
+  fetchRunEventsMock: vi.fn(),
   fetchImageModelsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
   fetchWorkspaceSettingsMock: vi.fn(),
@@ -44,6 +46,7 @@ vi.mock("../src/lib/server-api", () => ({
   deleteSession: deleteSessionMock,
   fetchImageModels: fetchImageModelsMock,
   fetchModels: fetchModelsMock,
+  fetchRunEvents: fetchRunEventsMock,
   fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
   fetchMessages: fetchMessagesMock,
   fetchSessions: fetchSessionsMock,
@@ -72,13 +75,16 @@ function createMockWs(): WebSocketHandle {
       onAck?.({
         type: "command.ack",
         action: "agent.run",
-        payload: { runId: "run_123" },
+        payload: {
+          runId: "run_123",
+          assistantMessageId: "assistant-server-id",
+        },
       });
     }),
     cancelRun: vi.fn(),
     onEvent: vi.fn(() => () => {}),
     registerRPC: vi.fn(() => () => {}),
-    resumeCanvas: vi.fn((_canvasId, onAck) => {
+    resumeCanvas: vi.fn((_canvasId, _sessionId, onAck) => {
       onAck?.({
         type: "command.ack",
         action: "canvas.resume",
@@ -127,6 +133,12 @@ describe("ChatSidebar", () => {
     fetchModelsMock.mockReset();
     fetchModelsMock.mockResolvedValue({
       models: [{ id: "local:assistant", name: "Local Assistant", provider: "local" }],
+    });
+    fetchRunEventsMock.mockReset();
+    fetchRunEventsMock.mockResolvedValue({
+      done: true,
+      events: [],
+      nextCursor: 0,
     });
     fetchWorkspaceSettingsMock.mockReset();
     fetchWorkspaceSettingsMock.mockResolvedValue({
@@ -184,6 +196,7 @@ describe("ChatSidebar", () => {
           conversationId: "canvas-1",
           prompt: "hello loom",
           canvasId: "canvas-1",
+          runtimeKind: "server-deepagent",
         }),
         expect.any(Function),
       ),
@@ -249,5 +262,228 @@ describe("ChatSidebar", () => {
     expect(settingsDialogSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({ open: true }),
     );
+  });
+
+  it("replays durable run events on reconnect to recover missed media insertions", async () => {
+    const imageGeneratedSpy = vi.fn();
+    let replayListener:
+      | ((entry: { event: Record<string, unknown>; replayed?: boolean; eventId?: string; seq?: number }) => void)
+      | null = null;
+    fetchRunEventsMock.mockResolvedValue({
+      done: true,
+      nextCursor: 8,
+      events: [
+        {
+          eventId: "run-reconnect:7",
+          seq: 7,
+          event: {
+            type: "message.delta",
+            runId: "run-reconnect",
+            messageId: "assistant-reconnect",
+            delta: "Recovered transcript",
+            timestamp: "2026-06-04T00:00:00.000Z",
+          },
+        },
+        {
+          eventId: "run-reconnect:8",
+          seq: 8,
+          event: {
+            type: "tool.completed",
+            runId: "run-reconnect",
+            toolCallId: "tool-1",
+            toolName: "generate_image",
+            artifacts: [
+              {
+                type: "image",
+                title: "Recovered image",
+                url: "https://example.com/recovered.png",
+                mimeType: "image/png",
+                width: 1024,
+                height: 1024,
+              },
+            ],
+            timestamp: "2026-06-04T00:00:00.000Z",
+          },
+        },
+      ],
+    });
+    mockWs = {
+      ...mockWs,
+      onEvent: vi.fn((listener) => {
+        replayListener = listener as typeof replayListener;
+        return () => {
+          replayListener = null;
+        };
+      }),
+      resumeCanvas: vi.fn((_canvasId, _sessionId, onAck) => {
+        onAck?.({
+          type: "command.ack",
+          action: "canvas.resume",
+          payload: {
+            canvasId: "canvas-1",
+            latestSeq: 0,
+            activeRunId: "run-reconnect",
+            assistantMessageId: "assistant-reconnect",
+            replayed: 0,
+          },
+        });
+      }),
+    };
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          onImageGenerated={imageGeneratedSpy}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
+    await waitFor(() => expect(fetchRunEventsMock).toHaveBeenCalledWith("run-reconnect", 0));
+    expect(await screen.findByText("Recovered transcript")).toBeInTheDocument();
+    await waitFor(() => expect(imageGeneratedSpy).toHaveBeenCalledTimes(1));
+	    replayListener?.({
+	      replayed: true,
+	      eventId: "run-reconnect:8",
+	      seq: 99,
+      event: {
+        type: "tool.completed",
+        runId: "run-reconnect",
+        toolCallId: "tool-1",
+        toolName: "generate_image",
+        artifacts: [
+          {
+            type: "image",
+            title: "Recovered image",
+            url: "https://example.com/recovered.png",
+            mimeType: "image/png",
+            width: 1024,
+            height: 1024,
+          },
+        ],
+        timestamp: "2026-06-04T00:00:00.000Z",
+      },
+    });
+    await waitFor(() => expect(imageGeneratedSpy).toHaveBeenCalledTimes(1));
+    expect(imageGeneratedSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "image",
+        url: "https://example.com/recovered.png",
+      }),
+    );
+  });
+
+	  it("recovers persisted media artifacts from the latest assistant snapshot after reconnect", async () => {
+    const imageGeneratedSpy = vi.fn();
+    fetchMessagesMock.mockResolvedValue({
+      messages: [
+        {
+          id: "assistant-saved",
+          role: "assistant",
+          content: "",
+          createdAt: "2026-03-24T00:00:00.000Z",
+          toolActivities: null,
+          contentBlocks: [
+            {
+              type: "tool",
+              toolCallId: "tool-saved",
+              toolName: "generate_image",
+              status: "completed",
+              artifacts: [
+                {
+                  type: "image",
+                  title: "Recovered from snapshot",
+                  url: "https://example.com/from-snapshot.png",
+                  mimeType: "image/png",
+                  width: 1024,
+                  height: 1024,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          onImageGenerated={imageGeneratedSpy}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
+    await waitFor(() => expect(imageGeneratedSpy).toHaveBeenCalledTimes(1));
+    expect(imageGeneratedSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "image",
+        url: "https://example.com/from-snapshot.png",
+      }),
+    );
+	  });
+
+  it("does not reinsert persisted media when backend already inserted the canvas element", async () => {
+    const imageGeneratedSpy = vi.fn();
+    fetchMessagesMock.mockResolvedValue({
+      messages: [
+        {
+          id: "assistant-saved",
+          role: "assistant",
+          content: "",
+          createdAt: "2026-03-24T00:00:00.000Z",
+          toolActivities: null,
+          contentBlocks: [
+            {
+              type: "tool",
+              toolCallId: "tool-backend-inserted",
+              toolName: "generate_image",
+              status: "completed",
+              output: {
+                elementId: "canvas-element-1",
+                imageUrl: "https://example.com/backend-inserted.png",
+              },
+              artifacts: [
+                {
+                  type: "image",
+                  title: "Backend inserted",
+                  url: "https://example.com/backend-inserted.png",
+                  mimeType: "image/png",
+                  width: 1024,
+                  height: 1024,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          onImageGenerated={imageGeneratedSpy}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("Backend inserted")).toBeInTheDocument());
+    expect(imageGeneratedSpy).not.toHaveBeenCalled();
   });
 });

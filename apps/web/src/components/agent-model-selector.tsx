@@ -16,7 +16,15 @@ const SPARKLE_ICON_PATH =
 const CHECK_PATH =
   "M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 1 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0";
 
-const PROVIDER_PRIORITY = ["agnes", "openai", "anthropic", "google", "vertex", "local"];
+const PROVIDER_PRIORITY = [
+  "agnes",
+  "openai",
+  "anthropic",
+  "google",
+  "vertex",
+  "codex",
+  "local",
+];
 
 function formatProviderLabel(provider: string) {
   switch (provider) {
@@ -30,6 +38,8 @@ function formatProviderLabel(provider: string) {
       return "Google";
     case "vertex":
       return "Vertex";
+    case "codex":
+      return "Codex";
     case "local":
       return "Local";
     default:
@@ -46,7 +56,7 @@ function formatDefaultModelLabel(modelId: string | null, models: ModelOption[]) 
 }
 
 function ProviderLogo({ provider }: { provider: string }) {
-  if (provider === "local") {
+  if (provider === "local" || provider === "codex") {
     return (
       <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor">
         <path d="M8 1.5 9.91 5.37l4.27.62-3.09 3.01.73 4.25L8 11.24l-3.82 2.01.73-4.25-3.09-3.01 4.27-.62L8 1.5Z" />

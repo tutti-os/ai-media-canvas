@@ -4,6 +4,9 @@ Date: 2026-06-03
 Project: `ai-media-canvas`
 Status: Draft
 
+> 实施顺序与阶段交付请先读执行文档：
+> [2026-06-04-local-agent-runtime-execution-plan.zh-CN.md](/Users/wwcome/work/demo/ai-media-canvas/docs/2026-06-04-local-agent-runtime-execution-plan.zh-CN.md)
+
 ## 目标
 
 `ai-media-canvas` 需要同时保留现有的服务端 deepagent 链路，并新增一种可以调用本地 agent CLI 的链路。这个方案的核心目标是让两种执行方式共享同一套产品语义：
@@ -1228,6 +1231,68 @@ package 的 error taxonomy 也需要成为 public contract：
 - `provider_auth_required`
 - `provider_rate_limited`
 - `unknown_provider_error`
+
+### 8.1 SDK 给 open-design 复用的可行性
+
+结论：可以复用，但只能复用 local-agent runtime SDK 的“本地 agent 执行层”，不能把 AIMC 应用层一起带过去。open-design 当前 daemon 已经有非常相似的结构：`apps/daemon/src/agents.ts` 维护 `AGENT_DEFS`、PATH detection、model list、`buildArgs`、`streamFormat`；`apps/daemon/src/acp.ts` 已有 ACP JSON-RPC lifecycle；daemon 还会生成 live artifacts MCP server 配置。SDK 如果保持 host-agnostic，open-design 可以逐步用它替换这部分重复执行层。
+
+可直接复用：
+
+| SDK 能力 | open-design 对应现状 | 复用方式 |
+|---|---|---|
+| CLI detection / version / model list | `AGENT_DEFS` + `detectAgents()` | 用 provider plugin 替代手写 probe |
+| process runtime | chat handler 手写 `spawn` / stdin / stderr tail | 用 `process/*` 统一 spawn/cancel/timeout |
+| transports | `claude-stream-json`、`json-event-stream`、`plain`、`acp-json-rpc` | SDK 提供 JSONL/plain/ACP transport |
+| ACP JSON-RPC | `apps/daemon/src/acp.ts` | 提炼为 `transports/acp`，OD 只传 `mcpServers` |
+| provider adapters | Claude/Codex/Qoder/Copilot/Pi 等 `buildArgs` | 逐步迁移到 provider plugin |
+| MCP helpers | `buildLiveArtifactsMcpServersForAgent()` | OD 继续生成自己的 live-artifacts MCP config，SDK 只负责转交给 provider |
+| skill helpers | `.od-skills/<id>` staging、prompt injection | SDK 可复用文件 materialize/prompt injection primitives |
+| AgentEvent normalization | OD 各 parser 映射到 UI events | 先统一成 SDK `AgentEvent`，OD 再映射成自己的 SSE/UI event |
+| fake provider tests | OD 当前大量真实 CLI 兼容风险 | 用 fake provider/fake ACP peer 做 conformance |
+
+不能直接复用，必须留在 open-design host 层：
+
+| AIMC 方案中的能力 | open-design 为什么不能直接用 |
+|---|---|
+| AIMC Tool Gateway | OD 有自己的 live artifacts/tools/connectors/media dispatcher |
+| `AimcToolDefinition` canonical tools | OD 工具名和产物语义不是 canvas/media/job 那套 |
+| `MediaToolResult` | 只对 AIMC `generate_image/generate_video` UI contract 有意义 |
+| `agent_run_events` DB schema | OD 有自己的 transcript / persisted event 结构 |
+| Runtime Control Plane | OD daemon 是本机常驻进程，不一定需要 AIMC 的 runtime registry/heartbeat/claim 模型 |
+| workspace DB skills source | OD skills 是文件系统扫描，不是 AIMC workspace DB |
+| canvas write lease / credits / tier guard | AIMC 业务权限，OD 没有这层语义 |
+
+因此如果目标是让 open-design 直接使用，SDK public API 要避免 AIMC 命名和业务概念：
+
+- `@aimc/local-agent-runtime` 可以作为 AIMC 内部包名，但对外建议改成中性包名，例如 `@local-agent/runtime`、`@agent-runtime/local` 或 `@open-agent/runtime`。
+- `AimcToolDefinition`、`AIMC_TOOL_TOKEN`、`AIMC_TOOL_GATEWAY_URL` 不进入 core SDK，只作为 AIMC host binding 示例。
+- core SDK 只保留 `AgentRunInput`、`AgentEvent`、`ProviderPlugin`、`Transport`、`McpServerConfig`、`SkillDeliveryHints`、`ProcessSupervisor`。
+- host 应用自己实现 `ToolBridge`、`SkillSource`、`EventMapper`、`RunStore`。
+
+建议抽一个 host adapter contract：
+
+```ts
+type LocalAgentHostAdapter = {
+  prepareRun(input: HostRunRequest): Promise<AgentRunInput>;
+  prepareSkills?(input: HostRunRequest): Promise<PreparedSkills>;
+  buildMcpServers?(input: HostRunRequest): Promise<McpServerConfig[]>;
+  mapEvent(event: AgentEvent): HostStreamEvent;
+  persistEvent?(event: AgentEvent): Promise<void>;
+  redact?(value: unknown): unknown;
+};
+```
+
+AIMC 的 host adapter 会接 Tool Gateway、workspace DB skills、`StreamEvent`、`agent_run_events`。open-design 的 host adapter 会接 `.od-skills`、design systems、live artifacts MCP、SSE event、transcript export。
+
+open-design 的迁移建议：
+
+1. 先把 SDK 作为内部依赖引入，只替换 `acp-json-rpc` transport 和 process supervisor。
+2. 再把 Codex/Claude provider 的 detection/buildArgs/parser 迁到 SDK provider plugin。
+3. 保留 OD 的 `buildLiveArtifactsMcpServersForAgent()`，把结果作为 `mcpServers` 传给 SDK。
+4. 保留 OD skills/design-system staging，只复用 SDK 的 path sanitize、materialize、prompt-injection helper。
+5. 最后把 OD 的 `AgentEvent` 与 SDK `AgentEvent` 对齐，减少 `claude-stream.ts`、`copilot-stream.ts`、`qoder-stream.ts` 这类 parser 重复。
+
+判断标准：如果 SDK 中任何核心模块 import 了 AIMC server、canvas、media、Supabase、workspace DB，它就不能被 open-design 直接复用；如果这些只存在于 AIMC host adapter，则 open-design 可以直接使用 SDK。
 
 ### 9. ACP Transport 设计
 

@@ -13,6 +13,7 @@ import {
   formatParamValue,
   getToolConfig,
   isHumanReadable,
+  normalizeToolName,
 } from "./utils";
 
 /* ------------------------------------------------------------------ */
@@ -170,8 +171,9 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const videoArtifact = block.artifacts?.find(
     (artifact): artifact is VideoArtifact => artifact.type === "video",
   );
-  const isImageTool = block.toolName === "generate_image";
-  const isVideoTool = block.toolName === "generate_video";
+  const canonicalToolName = normalizeToolName(block.toolName);
+  const isImageTool = canonicalToolName === "generate_image";
+  const isVideoTool = canonicalToolName === "generate_video";
   const isMediaTool = isImageTool || isVideoTool;
   const mediaError =
     isMediaTool &&

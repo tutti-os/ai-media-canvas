@@ -11,7 +11,14 @@ import type {
 import { wsRpcRequestSchema, wsServerMessageSchema } from "@aimc/shared";
 import { getServerBaseUrl } from "../lib/env";
 
-type EventCallback = (event: StreamEvent) => void;
+export type StreamEventEnvelope = {
+  event: StreamEvent;
+  eventId?: string;
+  replayed?: boolean;
+  seq?: number;
+};
+
+type EventCallback = (event: StreamEventEnvelope) => void;
 type RPCHandler = (
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
@@ -28,7 +35,11 @@ export type WebSocketHandle = {
   cancelRun: (runId: string) => void;
   onEvent: (cb: EventCallback) => () => void;
   registerRPC: (method: string, handler: RPCHandler) => () => void;
-  resumeCanvas: (canvasId: string, onAck?: (ack: WsCommandAck) => void) => void;
+  resumeCanvas: (
+    canvasId: string,
+    sessionId: string,
+    onAck?: (ack: WsCommandAck) => void,
+  ) => void;
 };
 
 function createConnectionId() {
@@ -51,13 +62,16 @@ export function useWebSocket(): WebSocketHandle {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const shouldReconnectRef = useRef(true);
+  const activeCanvasIdRef = useRef<string | null>(null);
+  const lastSeqByCanvasRef = useRef<Map<string, number>>(new Map());
+  const seenEventIdsRef = useRef<Map<string, Set<string>>>(new Map());
   const eventListeners = useRef<Set<EventCallback>>(new Set());
   const rpcHandlers = useRef<Map<string, RPCHandler>>(new Map());
   const ackListeners = useRef<Map<string, Array<(ack: WsCommandAck) => void>>>(
     new Map(),
   );
 
-  const emitEvent = useCallback((event: StreamEvent) => {
+  const emitEvent = useCallback((event: StreamEventEnvelope) => {
     for (const listener of eventListeners.current) {
       listener(event);
     }
@@ -168,11 +182,52 @@ export function useWebSocket(): WebSocketHandle {
         }
 
         if (serverMessage.data.type === "event") {
-          emitEvent(serverMessage.data.event);
+          const activeCanvasId = activeCanvasIdRef.current;
+          if (activeCanvasId && typeof serverMessage.data.eventId === "string") {
+            const seenForCanvas =
+              seenEventIdsRef.current.get(activeCanvasId) ?? new Set<string>();
+            if (seenForCanvas.has(serverMessage.data.eventId)) {
+              return;
+            }
+            seenForCanvas.add(serverMessage.data.eventId);
+            seenEventIdsRef.current.set(activeCanvasId, seenForCanvas);
+          }
+          if (activeCanvasId) {
+            const nextSeq =
+              typeof serverMessage.data.seq === "number"
+                ? Math.max(
+                    serverMessage.data.seq,
+                    lastSeqByCanvasRef.current.get(activeCanvasId) ?? 0,
+                  )
+                : (lastSeqByCanvasRef.current.get(activeCanvasId) ?? 0) + 1;
+            lastSeqByCanvasRef.current.set(activeCanvasId, nextSeq);
+          }
+          emitEvent({
+            event: serverMessage.data.event,
+            ...(typeof serverMessage.data.eventId === "string"
+              ? { eventId: serverMessage.data.eventId }
+              : {}),
+            ...(
+              (serverMessage.data as { replayed?: boolean }).replayed === true
+                ? { replayed: true }
+                : {}
+            ),
+            ...(typeof serverMessage.data.seq === "number"
+              ? { seq: serverMessage.data.seq }
+              : {}),
+          });
           return;
         }
 
         if (serverMessage.data.type === "command.ack") {
+          if (serverMessage.data.action === "canvas.resume") {
+            const payload = serverMessage.data.payload as Record<string, unknown>;
+            const canvasId =
+              typeof payload.canvasId === "string" ? payload.canvasId : null;
+            if (canvasId) {
+              activeCanvasIdRef.current = canvasId;
+            }
+          }
           resolveAck(serverMessage.data);
         }
       });
@@ -252,6 +307,7 @@ export function useWebSocket(): WebSocketHandle {
 
   const startRun = useCallback(
     (payload: RunCreateRequest, onAck?: (ack: WsCommandAck) => void) => {
+      activeCanvasIdRef.current = payload.canvasId ?? payload.conversationId;
       const removeAck = enqueueAck("agent.run", onAck);
       const sent = sendJson({
         type: "command",
@@ -261,16 +317,18 @@ export function useWebSocket(): WebSocketHandle {
       if (!sent) {
         removeAck();
         emitEvent({
-          type: "run.failed",
-          runId:
-            typeof crypto !== "undefined" && crypto.randomUUID
-              ? crypto.randomUUID()
-              : `run-failed-${Date.now()}`,
-          error: {
-            code: "run_failed",
-            message: "WebSocket connection is not ready.",
+          event: {
+            type: "run.failed",
+            runId:
+              typeof crypto !== "undefined" && crypto.randomUUID
+                ? crypto.randomUUID()
+                : `run-failed-${Date.now()}`,
+            error: {
+              code: "run_failed",
+              message: "WebSocket connection is not ready.",
+            },
+            timestamp: new Date().toISOString(),
           },
-          timestamp: new Date().toISOString(),
         });
       }
     },
@@ -289,14 +347,21 @@ export function useWebSocket(): WebSocketHandle {
   );
 
   const resumeCanvas = useCallback(
-    (canvasId: string, onAck?: (ack: WsCommandAck) => void) => {
+    (
+      canvasId: string,
+      sessionId: string,
+      onAck?: (ack: WsCommandAck) => void,
+    ) => {
+      activeCanvasIdRef.current = canvasId;
       const removeAck = enqueueAck("canvas.resume", onAck);
       const sent = sendJson({
         type: "command",
         action: "canvas.resume",
         payload: {
           canvasId,
-          lastSeq: 0,
+          sessionId,
+          lastSeq: lastSeqByCanvasRef.current.get(canvasId) ?? 0,
+          skipReplay: false,
         },
       });
       if (!sent) {

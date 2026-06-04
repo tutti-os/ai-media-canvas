@@ -1,7 +1,16 @@
 import type { FastifyInstance } from "fastify";
 
 import {
+  createClaudeProvider,
+  createCodexProvider,
+  createLocalAgentRuntime,
+  type AgentDetection,
+  type LocalAgentProviderPlugin,
+  type LocalAgentRuntime,
+} from "@aimc/local-agent-runtime";
+import {
   modelListResponseSchema,
+  type AgentRuntimeProvider,
   type ModelInfo,
   type WorkspaceSettings,
 } from "@aimc/shared";
@@ -45,6 +54,11 @@ const GOOGLE_MODELS: ModelInfo[] = [
 const AGNES_MODELS: ModelInfo[] = [
   { id: "agnes:agnes-2.0-flash", name: "Agnes 2.0 Flash", provider: "agnes" },
 ];
+
+type LocalAgentModelDiscovery = Pick<
+  LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
+  "detect"
+>;
 
 function buildConfiguredModels(
   provider: keyof WorkspaceSettings["providerModels"],
@@ -175,11 +189,57 @@ async function fetchOpenAICompatibleModels(
   return normalizeOpenAICompatibleModels(await response.json());
 }
 
+function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
+  return createLocalAgentRuntime({
+    providers: [
+      createCodexProvider(),
+      createClaudeProvider(),
+    ] as LocalAgentProviderPlugin<"local-agent", AgentRuntimeProvider>[],
+  });
+}
+
+function localAgentModelId(provider: string, modelId: string) {
+  const trimmed = modelId.trim();
+  if (!trimmed) return null;
+  return trimmed.includes(":") ? trimmed : `${provider}:${trimmed}`;
+}
+
+function buildLocalAgentModels(
+  detections: Awaited<ReturnType<LocalAgentModelDiscovery["detect"]>>,
+): ModelInfo[] {
+  const models: ModelInfo[] = [];
+  const seen = new Set<string>();
+
+  for (const detection of detections) {
+    const result = detection.result as AgentDetection | null;
+    if (!result || result.supported === false) continue;
+
+    for (const model of result.models ?? []) {
+      const id = localAgentModelId(String(detection.provider), model.id);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      models.push({
+        id,
+        name: model.label || model.id,
+        provider: String(detection.provider),
+      });
+    }
+  }
+
+  return models;
+}
+
 export async function registerModelRoutes(
   app: FastifyInstance,
   env: ServerEnv,
   settingsService?: SettingsService,
+  options?: {
+    localAgentModelDiscovery?: LocalAgentModelDiscovery;
+  },
 ) {
+  const localAgentModelDiscovery =
+    options?.localAgentModelDiscovery ?? createDefaultLocalAgentModelDiscovery();
+
   app.get("/api/models", async (_request, reply) => {
     const workspaceSettings = settingsService
       ? await settingsService.getWorkspaceSettings(null, LOCAL_WORKSPACE_ID)
@@ -257,6 +317,18 @@ export async function registerModelRoutes(
       models.push(
         ...buildConfiguredModels("vertex", workspaceSettings.providerModels.vertex),
       );
+    }
+    if (effectiveEnv.trustedLocalAgentMode !== false) {
+      try {
+        models.push(
+          ...buildLocalAgentModels(await localAgentModelDiscovery.detect()),
+        );
+      } catch (error) {
+        app.log.warn(
+          { err: error },
+          "Failed to load local-agent models; omitting local providers.",
+        );
+      }
     }
     return reply.code(200).send(modelListResponseSchema.parse({ models }));
   });

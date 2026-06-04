@@ -3,13 +3,22 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
+import {
+  createClaudeProvider,
+  createCodexProvider,
+  createLocalAgentRuntime,
+  type LocalAgentProviderPlugin,
+  type LocalAgentRuntime,
+} from "@aimc/local-agent-runtime";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type {
+  AgentRuntimeProvider,
   ChatMessage,
   ImageAttachment,
   ImageGenerationPreference,
   MessageMention,
+  RuntimeKind,
   RunCancelResponse,
   RunCreateRequest,
   RunCreateResponse,
@@ -32,20 +41,31 @@ import { TierGuardError, type TierGuard } from "../features/credits/tier-guard.j
 import { getPlanConfig, type BillingErrorCode, type ImageQualityLevel } from "@aimc/shared";
 import { createAgentBackend } from "./backends/index.js";
 import {
-  type AimcAgent,
   type AimcAgentFactory,
   createDefaultModelSpecifier,
   createAimcDeepAgent,
 } from "./deep-agent.js";
-import { adaptDeepAgentStream } from "./stream-adapter.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
-import { loadWorkspaceSkills, type WorkspaceSkillEntry } from "./workspace-skills.js";
+import type { WorkspaceSkillEntry } from "./workspace-skills.js";
+import { resolveAimcWorkspaceSkills } from "./local-agent-host/skills.js";
 import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
 import { insertImageElement, insertVideoElement } from "../features/canvas/canvas-element-writer.js";
 import {
   buildAgentImageJobPayload,
   buildAgentVideoJobPayload,
 } from "./job-payloads.js";
+import type { createLocalToolGatewayService } from "./local-agent-host/tool-gateway.js";
+import {
+  createRuntimeControlPlane,
+  resolveResumeMode,
+  type RuntimeTarget,
+} from "./run-orchestrator.js";
+import { inferAimcRuntimeTarget } from "./run-orchestrator.js";
+import { createLocalAgentRuntimeProvider } from "./runtimes/local-agent.js";
+import { createServerDeepAgentRuntimeProvider } from "./runtimes/server-deepagent.js";
+import type { RuntimeExecutionContext } from "./runtimes/types.js";
+import { adaptDeepAgentStream } from "./runtimes/deepagent-events.js";
+import { loadNormalizedSessionHistory } from "./runtimes/history.js";
 
 /**
  * Build the text portion of a user message, appending <input_images> XML
@@ -236,37 +256,23 @@ async function buildSessionHistoryMessages(
   currentPrompt: string,
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>,
 ): Promise<Array<HumanMessage | AIMessage>> {
-  if (!loadSessionMessages) return [];
+  const history = await loadNormalizedSessionHistory({
+    currentPrompt,
+    ...(loadSessionMessages ? { loadSessionMessages } : {}),
+    onError(error) {
+      console.warn(
+        "[runtime] Failed to load local chat history:",
+        error instanceof Error ? error.message : error,
+      );
+    },
+    sessionId,
+  });
 
-  let savedMessages: ChatMessage[];
-  try {
-    savedMessages = await loadSessionMessages(sessionId);
-  } catch (error) {
-    console.warn(
-      "[runtime] Failed to load local chat history:",
-      error instanceof Error ? error.message : error,
-    );
-    return [];
-  }
-
-  const history =
-    savedMessages.at(-1)?.role === "user" &&
-    normalizeText(savedMessages.at(-1)?.content ?? "") ===
-      normalizeText(currentPrompt)
-      ? savedMessages.slice(0, -1)
-      : savedMessages;
-
-  return history
-    .filter((message) => message.role === "user" || message.role === "assistant")
-    .map((message) =>
-      message.role === "assistant"
-        ? new AIMessage(message.content)
-        : new HumanMessage(message.content),
-    );
-}
-
-function normalizeText(value: string) {
-  return value.trim().replace(/\s+/g, " ");
+  return history.map((message) =>
+    message.role === "assistant"
+      ? new AIMessage(message.content)
+      : new HumanMessage(message.content),
+  );
 }
 
 type RuntimeRunStatus =
@@ -278,11 +284,20 @@ type RuntimeRunStatus =
 
 type RuntimeRunRecord = RunCreateRequest & {
   accessToken?: string;
+  assistantMessageId?: string;
   connectionId?: string;
   consumed: boolean;
   controller: AbortController;
   envOverride?: ServerEnv;
   modelOverride?: string;
+  resumeContext?: {
+    mode: "provider-local" | "handoff" | "fresh";
+    previousRunId?: string;
+    previousRuntimeKind?: RuntimeKind | null;
+    previousRuntimeProvider?: AgentRuntimeProvider | null;
+    providerSessionId?: string;
+    resumeToken?: string;
+  };
   runId: string;
   status: RuntimeRunStatus;
   threadId?: string;
@@ -293,30 +308,68 @@ type CreateAgentRuntimeOptions = {
   agentFactory?: AimcAgentFactory;
   agentRunStore?: {
     createRun(input: {
+      assistantMessageId?: string;
       canvasId?: string;
       model?: string;
+      previousRunId?: string;
+      resumeMode?: "provider-local" | "handoff" | "fresh";
+      runtimeKind?: RuntimeKind;
+      runtimeProvider?: AgentRuntimeProvider;
       runId: string;
       sessionId: string;
       threadId?: string;
     }): void;
     updateRun(input: {
+      assistantMessageId?: string;
       errorCode?: string;
       errorMessage?: string;
+      providerSessionId?: string;
       runId: string;
+      resumeToken?: string;
+      runtimeKind?: RuntimeKind;
+      runtimeProvider?: AgentRuntimeProvider;
       status: RuntimeRunStatus;
     }): void;
+    getRun?(runId: string):
+      | {
+          id: string;
+          previous_run_id?: string | null;
+          provider_session_id?: string | null;
+          resume_mode?: "provider-local" | "handoff" | "fresh" | null;
+          resume_token?: string | null;
+          runtime_kind?: RuntimeKind | null;
+          runtime_provider?: AgentRuntimeProvider | null;
+          session_id?: string | null;
+          status?: RuntimeRunStatus;
+        }
+      | undefined;
   };
   connectionManager?: ConnectionManager;
+  publishCanvasSyncEvent?: (input: {
+    canvasId: string;
+    event: Extract<StreamEvent, { type: "canvas.sync" }>;
+    runId: string;
+  }) => { eventId?: string; seq?: number } | undefined;
   createUserClient?: (accessToken: string) => unknown;
   creditService?: CreditService;
   env: ServerEnv;
   eventDelayMs?: number;
   jobService?: JobService;
+  localAgentProviderPlugins?: LocalAgentProviderPlugin<
+    "local-agent",
+    AgentRuntimeProvider
+  >[];
+  localAgentRuntime?: Pick<
+    LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
+    "run"
+  >;
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
   model?: BaseLanguageModel | string;
   now?: () => string;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
+  toolGateway?: ReturnType<typeof createLocalToolGatewayService>;
+  toolGatewayBaseUrl?: string;
   viewerService?: ViewerService;
 };
 
@@ -371,6 +424,104 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     }
   }
 
+  async function loadCanvasSummaryForRuntime(context: RuntimeExecutionContext) {
+    const { run } = context;
+    if (!run.canvasId || !run.accessToken || !options.createUserClient) {
+      return null;
+    }
+
+    try {
+      const canvasClient = options.createUserClient(run.accessToken) as any;
+      const { data: canvasData } = await canvasClient
+        .from("canvases")
+        .select("content")
+        .eq("id", run.canvasId)
+        .single();
+      if (!canvasData?.content?.elements) {
+        return null;
+      }
+      return buildCanvasSummaryForContext(
+        canvasData.content.elements as Array<Record<string, unknown>>,
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  const localAgentTrusted = options.env.trustedLocalAgentMode !== false;
+  const localAgentProviderPlugins =
+    options.localAgentProviderPlugins ??
+    ([
+      createCodexProvider(),
+      createClaudeProvider(),
+    ] as LocalAgentProviderPlugin<"local-agent", AgentRuntimeProvider>[]);
+  const localAgentRuntime =
+    localAgentTrusted && options.toolGateway && options.toolGatewayBaseUrl
+      ? options.localAgentRuntime ??
+        createLocalAgentRuntime({
+          providers: localAgentProviderPlugins,
+        })
+      : null;
+  const runtimeProviders = [
+    ...(localAgentRuntime && options.toolGateway && options.toolGatewayBaseUrl
+      ? localAgentProviderPlugins.map((providerPlugin) =>
+          createLocalAgentRuntimeProvider(
+            {
+              buildAttachmentDataMap,
+              buildUserMessage,
+              loadCanvasSummaryForRuntime,
+              ...(options.loadSessionMessages
+                ? { loadSessionMessages: options.loadSessionMessages }
+                : {}),
+              localAgentRuntime,
+              now,
+              recordProviderResumeMetadata(metadata) {
+                options.agentRunStore?.updateRun({
+                  ...(metadata.providerSessionId
+                    ? { providerSessionId: metadata.providerSessionId }
+                    : {}),
+                  runId: metadata.runId,
+                  ...(metadata.resumeToken
+                    ? { resumeToken: metadata.resumeToken }
+                    : {}),
+                  status: runs.get(metadata.runId)?.status ?? "running",
+                });
+              },
+              toolGateway: options.toolGateway!,
+              toolGatewayBaseUrl: options.toolGatewayBaseUrl!,
+            },
+            providerPlugin,
+          ),
+        )
+      : []),
+    createServerDeepAgentRuntimeProvider({
+      adaptDeepAgentStream,
+      buildAttachmentDataMap,
+      buildSessionHistoryMessages,
+      buildUserMessage,
+      ...(options.connectionManager
+        ? { connectionManager: options.connectionManager }
+        : {}),
+      ...(options.createUserClient
+        ? { createUserClient: options.createUserClient }
+        : {}),
+      loadCanvasSummaryForRuntime,
+      ...(options.loadSessionMessages
+        ? { loadSessionMessages: options.loadSessionMessages }
+        : {}),
+      now,
+      resolvedAgentFactory,
+    }),
+  ];
+
+  const runtimeControlPlane = createRuntimeControlPlane<RuntimeExecutionContext>(
+    runtimeProviders,
+    {
+      now,
+      selectRuntimeKind: inferAimcRuntimeTarget,
+    },
+  );
+
   return {
     cancelRun(runId: string): RunCancelResponse | null {
       const run = runs.get(runId);
@@ -383,10 +534,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
 
       run.status = "canceled";
-      options.agentRunStore?.updateRun({
-        runId,
-        status: "canceled",
-      });
       return {
         runId,
         status: "canceled",
@@ -397,24 +544,108 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       input: RunCreateRequest,
       runOptions?: {
         accessToken?: string;
+        assistantMessageId?: string;
         connectionId?: string;
         env?: ServerEnv;
         model?: string;
+        runtimeKind?: RuntimeKind;
+        runtimeProvider?: AgentRuntimeProvider;
         threadId?: string;
         userId?: string;
       },
     ): RunCreateResponse {
       const runId = runIdFactory();
-      const { accessToken: _ignoredAccessToken, ...runInput } = input;
+      const runInput = input;
+      const requestedRuntimeKind = runOptions?.runtimeKind ?? runInput.runtimeKind;
+      const requestedRuntimeProvider =
+        runOptions?.runtimeProvider ?? runInput.runtimeProvider;
+      const resolvedModel =
+        runOptions?.model ??
+        runInput.model ??
+        (typeof options.model === "string" ? options.model : undefined);
+
+      let initialRuntimeTarget: RuntimeTarget | null = null;
+      try {
+        initialRuntimeTarget = runtimeControlPlane.resolveRuntimeTarget({
+          model: resolvedModel,
+          requestedRuntimeKind,
+          ...(requestedRuntimeProvider
+            ? { requestedRuntimeProvider }
+            : {}),
+        });
+      } catch (error) {
+        if (requestedRuntimeKind) {
+          throw error;
+        }
+        initialRuntimeTarget = null;
+      }
+      const persistedRuntimeKind =
+        initialRuntimeTarget?.kind ?? requestedRuntimeKind;
+      const persistedRuntimeProvider =
+        initialRuntimeTarget?.provider ?? requestedRuntimeProvider;
+      const previousRun = runInput.resumeFromRunId
+        ? options.agentRunStore?.getRun?.(runInput.resumeFromRunId)
+        : undefined;
+
+      if (runInput.resumeFromRunId && !previousRun) {
+        throw new Error(`Resume source run not found: ${runInput.resumeFromRunId}`);
+      }
+
+      const rawResumeMode =
+        runInput.resumeMode && runInput.resumeMode !== "auto"
+          ? runInput.resumeMode
+          : runInput.resumeFromRunId
+            ? resolveResumeMode({
+                ...(persistedRuntimeKind
+                  ? { nextRuntimeKind: persistedRuntimeKind }
+                  : {}),
+                ...(persistedRuntimeProvider
+                  ? { nextRuntimeProvider: persistedRuntimeProvider }
+                  : {}),
+                previousRuntimeKind: previousRun?.runtime_kind ?? null,
+                previousRuntimeProvider: previousRun?.runtime_provider ?? null,
+              })
+            : undefined;
+      const resolvedResumeMode =
+        rawResumeMode === "native" ? "provider-local" : rawResumeMode;
+      const resumeContext =
+        resolvedResumeMode
+          ? {
+              mode: resolvedResumeMode,
+              ...(runInput.resumeFromRunId
+                ? { previousRunId: runInput.resumeFromRunId }
+                : {}),
+              ...(previousRun?.runtime_kind != null
+                ? { previousRuntimeKind: previousRun.runtime_kind }
+                : {}),
+              ...(previousRun?.runtime_provider != null
+                ? { previousRuntimeProvider: previousRun.runtime_provider }
+                : {}),
+              ...(previousRun?.provider_session_id
+                ? { providerSessionId: previousRun.provider_session_id }
+                : {}),
+              ...(previousRun?.resume_token
+                ? { resumeToken: previousRun.resume_token }
+                : {}),
+            }
+          : undefined;
 
       runs.set(runId, {
         ...runInput,
         ...(runOptions?.accessToken ? { accessToken: runOptions.accessToken } : {}),
+        ...(runOptions?.assistantMessageId
+          ? { assistantMessageId: runOptions.assistantMessageId }
+          : {}),
         ...(runOptions?.connectionId ? { connectionId: runOptions.connectionId } : {}),
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
-        ...(runOptions?.model ? { modelOverride: runOptions.model } : {}),
+        ...(resolvedModel ? { modelOverride: resolvedModel } : {}),
+        ...(resumeContext ? { resumeContext } : {}),
+        ...(persistedRuntimeKind ? { runtimeKind: persistedRuntimeKind } : {}),
+        ...(persistedRuntimeProvider
+          ? { runtimeProvider: persistedRuntimeProvider }
+          : {}),
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
         ...(runOptions?.userId ? { userId: runOptions.userId } : {}),
         runId,
@@ -422,16 +653,35 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       });
 
       options.agentRunStore?.createRun({
+        ...(runOptions?.assistantMessageId
+          ? { assistantMessageId: runOptions.assistantMessageId }
+          : {}),
         ...(runInput.canvasId ? { canvasId: runInput.canvasId } : {}),
-        ...(runOptions?.model ? { model: runOptions.model } : {}),
+        ...(resolvedModel ? { model: resolvedModel } : {}),
+        ...(runInput.resumeFromRunId
+          ? { previousRunId: runInput.resumeFromRunId }
+          : {}),
+        ...(resolvedResumeMode ? { resumeMode: resolvedResumeMode } : {}),
+        ...(persistedRuntimeKind ? { runtimeKind: persistedRuntimeKind } : {}),
+        ...(persistedRuntimeProvider
+          ? { runtimeProvider: persistedRuntimeProvider }
+          : {}),
         runId,
         sessionId: runInput.sessionId,
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
       });
 
       return {
+        ...(runOptions?.assistantMessageId
+          ? { assistantMessageId: runOptions.assistantMessageId }
+          : {}),
         conversationId: input.conversationId,
         runId,
+        ...(persistedRuntimeKind ? { runtimeKind: persistedRuntimeKind } : {}),
+        ...(persistedRuntimeProvider
+          ? { runtimeProvider: persistedRuntimeProvider }
+          : {}),
+        ...(resolvedResumeMode ? { resumeMode: resolvedResumeMode } : {}),
         sessionId: input.sessionId,
         status: "accepted",
       };
@@ -612,11 +862,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   elementId = insertResult.elementId;
 
                   // Notify connected frontends to refresh canvas
-                  options.connectionManager?.pushToCanvas(canvasId, {
+                  const event = {
                     type: "canvas.sync" as const,
                     runId,
                     timestamp: new Date().toISOString(),
-                  });
+                  } satisfies StreamEvent;
+                  const replayEnvelope = options.publishCanvasSyncEvent?.({ canvasId, event, runId });
+                  options.connectionManager?.pushToCanvas(canvasId, event, replayEnvelope);
                   jobLap("canvas_element_inserted", { elementId });
                 } catch (insertErr) {
                   // Graceful degradation: log error but still return result
@@ -807,11 +1059,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   elementId = insertResult.elementId;
 
                   // Notify connected frontends to refresh canvas
-                  options.connectionManager?.pushToCanvas(canvasId, {
+                  const event = {
                     type: "canvas.sync" as const,
                     runId,
                     timestamp: new Date().toISOString(),
-                  });
+                  } satisfies StreamEvent;
+                  const replayEnvelope = options.publishCanvasSyncEvent?.({ canvasId, event, runId });
+                  options.connectionManager?.pushToCanvas(canvasId, event, replayEnvelope);
                   jobLap("canvas_element_inserted", { elementId });
                 } catch (insertErr) {
                   // Graceful degradation: log error but still return result
@@ -865,8 +1119,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       let workspaceSkills: WorkspaceSkillEntry[] = [];
       if (run.canvasId && run.accessToken && options.createUserClient) {
         try {
-          const wsClient = options.createUserClient(run.accessToken) as UserDataClient;
-          workspaceSkills = await loadWorkspaceSkills(wsClient, run.canvasId);
+          workspaceSkills = await resolveAimcWorkspaceSkills({
+            accessToken: run.accessToken,
+            canvasId: run.canvasId,
+            createUserClient: options.createUserClient,
+          });
           rlog.lap("workspace_skills_loaded", { count: workspaceSkills.length });
         } catch (err) {
           // Non-fatal: agent runs without workspace skills
@@ -883,53 +1140,29 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         { hasWorkspaceSkills: workspaceSkills.length > 0 },
       );
 
-      try {
-      let agent: AimcAgent;
+      let activeRuntimeTarget: RuntimeTarget | null = null;
+      let runtimeLease: { release(): void } | null = null;
+
       try {
         const resolvedModel = run.modelOverride
-          ? (run.modelOverride.includes(":")
+          ? (run.runtimeKind === "local-agent" || run.modelOverride.includes(":")
             ? run.modelOverride
             : createDefaultModelSpecifier({ agentModel: run.modelOverride }))
           : options.model;
-
-        // Build persistImage closure using the local user data client.
-        // Client creation is deferred into the closure so it only runs
-        // when an image is actually generated (avoids throwing in tests
-        // that don't configure provider env vars).
-        let persistImage: ((url: string, mime: string, prompt: string) => Promise<string>) | undefined;
-        if (options.createUserClient && run.accessToken) {
-          const createClient = options.createUserClient;
-          const accessToken = run.accessToken;
-          persistImage = async (sourceUrl, mimeType, prompt) => {
-            const client = createClient(accessToken) as UserDataClient;
-            const response = await fetch(sourceUrl);
-            if (!response.ok) throw new Error(`Download failed: ${response.status}`);
-            const buffer = Buffer.from(await response.arrayBuffer());
-            const ext = mimeType === "image/webp" ? "webp" : "png";
-            const slug = prompt.slice(0, 40).replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
-            const fileName = `gen-${slug}-${Date.now()}.${ext}`;
-
-            const { data: ws } = await client
-              .from("workspaces")
-              .select("id")
-              .eq("type", "personal")
-              .limit(1)
-              .single();
-            const workspaceId = ws?.id ?? "default";
-            const objectPath = `${workspaceId}/${Date.now()}-${fileName}`;
-
-            const { error: uploadError } = await client.storage
-              .from("project-assets")
-              .upload(objectPath, buffer, { contentType: mimeType, upsert: false });
-            if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
-
-            const { data: urlData } = client.storage
-              .from("project-assets")
-              .getPublicUrl(objectPath);
-
-            return urlData.publicUrl;
-          };
-        }
+        const resolvedRuntimeTarget = runtimeControlPlane.resolveRuntimeTarget({
+          model: resolvedModel,
+          requestedRuntimeKind: run.runtimeKind,
+          ...(run.runtimeProvider
+            ? { requestedRuntimeProvider: run.runtimeProvider }
+            : {}),
+        });
+        activeRuntimeTarget = resolvedRuntimeTarget;
+        run.runtimeKind = resolvedRuntimeTarget.kind;
+        run.runtimeProvider = resolvedRuntimeTarget.provider;
+        runtimeLease = runtimeControlPlane.acquireRuntimeLease(
+          resolvedRuntimeTarget,
+          run.runId,
+        );
 
         // Resolve brand kit ID from canvas → project in a single joined query
         let brandKitId: string | null = null;
@@ -968,207 +1201,30 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
         rlog.lap("brand_kit_resolved");
 
-        if (workspaceSkills.length > 0) {
-          rlog.lap("workspace_skills_loaded_without_store", {
-            count: workspaceSkills.length,
-          });
-        }
-
-        agent = resolvedAgentFactory({
-          backendResult,
-          ...(brandKitId ? { brandKitId } : {}),
-          ...(run.canvasId ? { canvasId: run.canvasId } : {}),
-          ...(options.connectionManager ? { connectionManager: options.connectionManager } : {}),
-          env: runtimeEnv,
-          ...(resolvedModel ? { model: resolvedModel } : {}),
-          ...(persistImage ? { persistImage } : {}),
-          // execute 工具由 LocalShellBackend 自动提供，无需手动传递
-          ...(submitImageJob ? { submitImageJob } : {}),
-          ...(submitVideoJob ? { submitVideoJob } : {}),
-          ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
-        });
-        rlog.lap("agent_factory_done");
-      } catch (error) {
-        const failedEvent = toFailedEvent(runId, now, error);
-        run.status = "failed";
         options.agentRunStore?.updateRun({
-          errorCode: failedEvent.error.code,
-          errorMessage: failedEvent.error.message,
           runId,
-          status: "failed",
+          runtimeKind: resolvedRuntimeTarget.kind,
+          ...(resolvedRuntimeTarget.provider
+            ? { runtimeProvider: resolvedRuntimeTarget.provider }
+            : {}),
+          status: run.status,
         });
-        yield failedEvent;
-        return;
-      }
 
-      let stream: AsyncIterable<unknown>;
-      try {
-        // Auto-inject canvas state summary so the agent has immediate awareness
-        // of what's on the canvas without needing to call inspect_canvas first.
-        let canvasSummary: string | null = null;
-        if (run.canvasId && run.accessToken && options.createUserClient) {
-          try {
-            const canvasClient = options.createUserClient(run.accessToken) as any;
-            const { data: canvasData } = await canvasClient
-              .from("canvases")
-              .select("content")
-              .eq("id", run.canvasId)
-              .single();
-            if (canvasData?.content?.elements) {
-              canvasSummary = buildCanvasSummaryForContext(
-                canvasData.content.elements as Array<Record<string, unknown>>,
-              );
-            }
-          } catch {
-            // Non-critical — agent can still call inspect_canvas manually
-          }
-        }
-
-        const hasAttachments = run.attachments && run.attachments.length > 0;
-        let userMessage: HumanMessage;
-        let attachmentDataMap: Record<string, string> = {};
-
-        if (hasAttachments) {
-          // Download images and build parallel data structures:
-          // 1. imageBlocks: base64 content parts for LLM vision
-          // 2. downloaded: assetId → base64 mapping for tool resolution
-          const downloaded: Array<{ assetId: string; mimeType: string; base64: string }> = [];
-          const imageBlocks = await Promise.all(
-            run.attachments!.map(async (a) => {
-              try {
-                let b64: string;
-                let mime: string;
-
-                // Handle data URIs directly (canvas-ref images) — no fetch needed
-                const dataUriMatch = a.url.match(/^data:([^;]+);base64,(.+)$/);
-                if (dataUriMatch) {
-                  mime = dataUriMatch[1]!;
-                  b64 = dataUriMatch[2]!;
-                } else {
-                  const res = await fetch(a.url);
-                  const buf = Buffer.from(await res.arrayBuffer());
-                  mime = a.mimeType || res.headers.get("content-type") || "image/png";
-                  b64 = buf.toString("base64");
-                }
-
-                downloaded.push({ assetId: a.assetId, mimeType: mime, base64: b64 });
-                // Use standard LangChain image_url format — works with both
-                // Google Gemini and OpenAI adapters. The Anthropic-style
-                // { type: "image", source_type: "base64" } format is NOT
-                // recognized by @langchain/google-genai and gets serialized
-                // as raw text, blowing past the token limit.
-                return {
-                  type: "image_url" as const,
-                  image_url: `data:${mime};base64,${b64}`,
-                };
-              } catch {
-                return {
-                  type: "image_url" as const,
-                  image_url: a.url,
-                };
-              }
-            }),
-          );
-
-          // Build XML text tags for LLM to reference by assetId
-          const { text: enrichedPrompt } = buildUserMessage(
-            run.prompt,
-            run.attachments!,
-            run.imageGenerationPreference,
-            run.mentions,
-            run.videoGenerationPreference,
-            canvasSummary,
-          );
-
-          // Build assetId → data URI map for tool-level resolution
-          attachmentDataMap = buildAttachmentDataMap(downloaded);
-
-          userMessage = new HumanMessage({
-            content: [
-              { type: "text" as const, text: enrichedPrompt },
-              ...imageBlocks,
-            ],
-          });
-        } else {
-          const { text: enrichedPrompt } = buildUserMessage(
-            run.prompt,
-            [],
-            run.imageGenerationPreference,
-            run.mentions,
-            run.videoGenerationPreference,
-            canvasSummary,
-          );
-          userMessage = new HumanMessage(enrichedPrompt);
-        }
-
-        const messages = [
-          ...(await buildSessionHistoryMessages(
-            run.sessionId,
-            run.prompt,
-            options.loadSessionMessages,
-          )),
-          userMessage,
-        ];
-
-        rlog.lap("stream_call_start", { messageCount: messages.length });
-        stream = agent.streamEvents(
+        for await (const event of runtimeControlPlane.streamRun(
+          resolvedRuntimeTarget,
           {
-            messages,
+            backendResult,
+            brandKitId,
+            resolvedModel,
+            rlog,
+            run,
+            runtimeEnv,
+            ...(submitImageJob ? { submitImageJob } : {}),
+            ...(submitVideoJob ? { submitVideoJob } : {}),
+            workspaceSkills,
           },
-          {
-            ...(run.canvasId || run.accessToken || run.userId || Object.keys(attachmentDataMap).length > 0
-              ? {
-                  configurable: {
-                    ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
-                    ...(run.accessToken ? { access_token: run.accessToken } : {}),
-                    ...(run.connectionId ? { connection_id: run.connectionId } : {}),
-                    ...(run.userId ? { user_id: run.userId } : {}),
-                    ...(Object.keys(attachmentDataMap).length > 0
-                      ? { user_attachment_map: attachmentDataMap }
-                      : {}),
-                  },
-                }
-              : {}),
-            signal: run.controller.signal,
-            version: "v2",
-          },
-        );
-        rlog.lap("stream_call_returned");
-      } catch (error) {
-        const failedEvent = toFailedEvent(runId, now, error);
-        run.status = "failed";
-        options.agentRunStore?.updateRun({
-          errorCode: failedEvent.error.code,
-          errorMessage: failedEvent.error.message,
-          runId,
-          status: "failed",
-        });
-        yield failedEvent;
-        return;
-      }
-
-      try {
-      for await (const event of adaptDeepAgentStream({
-        conversationId: run.conversationId,
-        now,
-        runId,
-        sessionId: run.sessionId,
-        signal: run.controller.signal,
-        stream,
-      })) {
+        )) {
         run.status = mapEventToStatus(event);
-        if (isTerminalEvent(event)) {
-          options.agentRunStore?.updateRun({
-            ...(event.type === "run.failed"
-              ? {
-                  errorCode: event.error.code,
-                  errorMessage: event.error.message,
-                }
-              : {}),
-            runId,
-            status: run.status,
-          });
-        }
         yield event;
 
         if (!isTerminalEvent(event) && options.eventDelayMs) {
@@ -1178,10 +1234,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             });
           } catch {
             run.status = "canceled";
-            options.agentRunStore?.updateRun({
-              runId,
-              status: "canceled",
-            });
             yield {
               runId,
               timestamp: now(),
@@ -1193,18 +1245,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
       } catch (streamError) {
         console.error("[agent-runtime] Stream iteration failed:", streamError);
+        if (activeRuntimeTarget) {
+          runtimeControlPlane.updateRuntimeStatus(activeRuntimeTarget, "degraded");
+        }
         const failedEvent = toFailedEvent(runId, now, streamError);
         run.status = "failed";
-        options.agentRunStore?.updateRun({
-          errorCode: failedEvent.error.code,
-          errorMessage: failedEvent.error.message,
-          runId,
-          status: "failed",
-        });
         yield failedEvent;
         return;
       }
-      } finally {
+      finally {
+        runtimeLease?.release();
         if (backendResult.sandboxDir) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(
             (err) => console.warn("[sandbox] cleanup failed:", err.message),
@@ -1241,7 +1291,7 @@ function toFailedEvent(
   runId: string,
   now: () => string,
   error: unknown,
-): StreamEvent {
+): Extract<StreamEvent, { type: "run.failed" }> {
   // Log full error detail server-side
   console.error(`[runtime] Agent run failed for run ${runId}:`, error);
 

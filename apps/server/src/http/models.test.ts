@@ -7,15 +7,27 @@ import { registerModelRoutes } from "./models.js";
 describe("registerModelRoutes", () => {
   const apps: Array<ReturnType<typeof Fastify>> = [];
   const fetchMock = vi.fn();
+  const emptyLocalAgentModelDiscovery = {
+    detect: vi.fn(async () => []),
+  };
 
   beforeEach(() => {
     fetchMock.mockReset();
+    emptyLocalAgentModelDiscovery.detect.mockClear();
     vi.stubGlobal("fetch", fetchMock);
   });
 
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
     vi.unstubAllGlobals();
+  });
+
+  it("loads trusted local agent mode from the environment", () => {
+    expect(
+      loadServerEnv({}, { AIMC_TRUSTED_LOCAL_AGENT_MODE: "false" })
+        .trustedLocalAgentMode,
+    ).toBe(false);
+    expect(loadServerEnv({}, {}).trustedLocalAgentMode).toBe(true);
   });
 
   it("includes Agnes models only when Agnes credentials are configured", async () => {
@@ -26,6 +38,8 @@ describe("registerModelRoutes", () => {
       loadServerEnv({
         agentModel: "openai:gpt-4.1",
       }, {}),
+      undefined,
+      { localAgentModelDiscovery: emptyLocalAgentModelDiscovery },
     );
 
     const withoutAgnes = await appWithoutAgnes.inject({
@@ -49,6 +63,8 @@ describe("registerModelRoutes", () => {
         agnesApiKey: "local-agnes-key",
         agnesBaseUrl: "https://agnes.example/v1",
       }, {}),
+      undefined,
+      { localAgentModelDiscovery: emptyLocalAgentModelDiscovery },
     );
 
     const withAgnes = await appWithAgnes.inject({
@@ -72,6 +88,8 @@ describe("registerModelRoutes", () => {
       loadServerEnv({
         agentModel: "openai:gpt-4.1",
       }, {}),
+      undefined,
+      { localAgentModelDiscovery: emptyLocalAgentModelDiscovery },
     );
 
     const withoutAnthropic = await appWithoutAnthropic.inject({
@@ -94,6 +112,8 @@ describe("registerModelRoutes", () => {
         agentModel: "anthropic:claude-sonnet-4-5",
         anthropicApiKey: "local-anthropic-key",
       }, {}),
+      undefined,
+      { localAgentModelDiscovery: emptyLocalAgentModelDiscovery },
     );
 
     const withAnthropic = await appWithAnthropic.inject({
@@ -129,6 +149,8 @@ describe("registerModelRoutes", () => {
         openAIApiKey: "local-openai-key",
         openAIApiBase: "https://gateway.example/v1",
       }, {}),
+      undefined,
+      { localAgentModelDiscovery: emptyLocalAgentModelDiscovery },
     );
 
     const response = await app.inject({
@@ -186,6 +208,8 @@ describe("registerModelRoutes", () => {
         openAIApiKey: "local-openai-key",
         openAIApiBase: "https://api.openai.com/v1",
       }, {}),
+      undefined,
+      { localAgentModelDiscovery: emptyLocalAgentModelDiscovery },
     );
 
     const response = await app.inject({
@@ -206,5 +230,122 @@ describe("registerModelRoutes", () => {
         provider: "openai",
       },
     ]);
+  });
+
+  it("includes local-agent models from package discovery", async () => {
+    const localAgentModelDiscovery = {
+      detect: vi.fn(async () => [
+        {
+          provider: "codex" as const,
+          displayName: "Codex CLI",
+          result: {
+            authState: "unknown" as const,
+            executablePath: "codex",
+            models: [
+              { id: "default", label: "Default (CLI config)" },
+              { id: "gpt-live", label: "gpt-live" },
+            ],
+            supported: true,
+            version: "1.0.0",
+          },
+        },
+        {
+          provider: "claude" as const,
+          displayName: "Claude Code",
+          result: {
+            authState: "unknown" as const,
+            executablePath: "claude",
+            models: [
+              { id: "sonnet", label: "Sonnet (alias)" },
+              { id: "claude:opus", label: "Scoped Opus" },
+            ],
+            supported: true,
+            version: "1.0.0",
+          },
+        },
+      ]),
+    };
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv({
+        agentModel: "openai:gpt-4.1",
+      }, {}),
+      undefined,
+      { localAgentModelDiscovery },
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/models",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().models).toEqual(
+      expect.arrayContaining([
+        {
+          id: "codex:default",
+          name: "Default (CLI config)",
+          provider: "codex",
+        },
+        {
+          id: "codex:gpt-live",
+          name: "gpt-live",
+          provider: "codex",
+        },
+        {
+          id: "claude:sonnet",
+          name: "Sonnet (alias)",
+          provider: "claude",
+        },
+        {
+          id: "claude:opus",
+          name: "Scoped Opus",
+          provider: "claude",
+        },
+      ]),
+    );
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits local-agent models when trusted local mode is disabled", async () => {
+    const localAgentModelDiscovery = {
+      detect: vi.fn(async () => [
+        {
+          provider: "codex" as const,
+          displayName: "Codex CLI",
+          result: {
+            authState: "unknown" as const,
+            executablePath: "codex",
+            models: [{ id: "gpt-live", label: "gpt-live" }],
+            supported: true,
+            version: "1.0.0",
+          },
+        },
+      ]),
+    };
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv({
+        agentModel: "openai:gpt-4.1",
+        trustedLocalAgentMode: false,
+      }, {}),
+      undefined,
+      { localAgentModelDiscovery },
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/models",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().models).not.toContainEqual(
+      expect.objectContaining({ provider: "codex" }),
+    );
+    expect(localAgentModelDiscovery.detect).not.toHaveBeenCalled();
   });
 });

@@ -14,7 +14,10 @@ import type {
 } from "@aimc/shared";
 import { useAgentModel } from "../hooks/use-agent-model";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
-import { useChatStream } from "../hooks/use-chat-stream";
+import {
+  materializeAssistantBlocksFromEvents,
+  useChatStream,
+} from "../hooks/use-chat-stream";
 import {
   INITIAL_AGENT_MODEL_KEY,
   INITIAL_ATTACHMENTS_KEY,
@@ -27,7 +30,11 @@ import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { fetchBrandKit } from "../lib/brand-kit-api";
-import { fetchImageModels, saveMessage } from "../lib/server-api";
+import {
+  fetchImageModels,
+  fetchRunEvents,
+  saveMessage,
+} from "../lib/server-api";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import {
   type BrandKitMentionItem,
@@ -128,6 +135,65 @@ export function ChatSidebar({
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
   selectedCanvasElementsRef.current = selectedCanvasElements;
   const prevConnectedRef = useRef(false);
+  const replayedArtifactKeysRef = useRef<Set<string>>(new Set());
+
+  const artifactReplayKey = useCallback(
+    (toolCallId: string, url: string) => `${toolCallId}:${url}`,
+    [],
+  );
+
+  const hasBackendInsertedElement = useCallback((block: ContentBlock) => {
+    if (block.type !== "tool" || !block.output) return false;
+    return typeof (block.output as Record<string, unknown>).elementId === "string";
+  }, []);
+
+  const recoverMediaArtifactsFromBlocks = useCallback(
+    (contentBlocks: ContentBlock[]) => {
+      const canvasUrls = new Set(
+        (onRequestCanvasImages ? onRequestCanvasImages() : [])
+          .map((item) => item.url)
+          .filter((url): url is string => typeof url === "string" && url.length > 0),
+      );
+
+      for (const block of contentBlocks) {
+        if (
+          block.type !== "tool" ||
+          block.status !== "completed" ||
+          block.toolName === "screenshot_canvas" ||
+          !block.artifacts
+        ) {
+          continue;
+        }
+
+        for (const artifact of block.artifacts) {
+          const replayKey = artifactReplayKey(block.toolCallId, artifact.url);
+          if (replayedArtifactKeysRef.current.has(replayKey)) continue;
+          if (hasBackendInsertedElement(block)) {
+            replayedArtifactKeysRef.current.add(replayKey);
+            continue;
+          }
+          if (canvasUrls.has(artifact.url)) {
+            replayedArtifactKeysRef.current.add(replayKey);
+            continue;
+          }
+          replayedArtifactKeysRef.current.add(replayKey);
+          onImageGenerated?.(artifact);
+        }
+      }
+    },
+	    [artifactReplayKey, hasBackendInsertedElement, onImageGenerated, onRequestCanvasImages],
+	  );
+
+  const recoverPersistedMediaArtifacts = useCallback(
+    (sessionMessages: Array<{ contentBlocks: ContentBlock[]; role: "user" | "assistant" }>) => {
+      const latestAssistantMessage = [...sessionMessages]
+        .reverse()
+        .find((message) => message.role === "assistant");
+      if (!latestAssistantMessage) return;
+      recoverMediaArtifactsFromBlocks(latestAssistantMessage.contentBlocks);
+    },
+    [recoverMediaArtifactsFromBlocks],
+  );
 
   const {
     attachments: imageAttachments,
@@ -375,6 +441,16 @@ export function ChatSidebar({
           };
         }
 
+        if (mention.mentionType === "skill") {
+          return {
+            type: "mention" as const,
+            mentionType: "skill" as const,
+            id: mention.id,
+            label: mention.label,
+            slug: mention.slug,
+          };
+        }
+
         return {
           type: "mention" as const,
           mentionType: "brand-kit-asset" as const,
@@ -417,10 +493,10 @@ export function ChatSidebar({
       autoTitleSession(text);
 
       // Create assistant placeholder
-      const assistantId = `assistant-${Date.now()}`;
+      const assistantIdRef = { current: `assistant-${Date.now()}` };
       updateSessionMessages(currentSessionId, (prev) => [
         ...prev,
-        { id: assistantId, role: "assistant" as const, contentBlocks: [] },
+        { id: assistantIdRef.current, role: "assistant" as const, contentBlocks: [] },
       ]);
       setStreaming(true);
       abortRef.current = false;
@@ -439,7 +515,8 @@ export function ChatSidebar({
         });
         const runIdRef = { current: "" };
 
-        const cleanup = ws.onEvent((event) => {
+        const cleanup = ws.onEvent((entry) => {
+          const event = entry.event;
           if (!runIdRef.current || event.runId !== runIdRef.current) return;
           if (abortRef.current) {
             resolveStream();
@@ -457,7 +534,7 @@ export function ChatSidebar({
           }
 
           // Apply event to messages (single source of truth — shared with reconnect)
-          applyStreamEvent(event, assistantId, currentSessionId);
+          applyStreamEvent(event, assistantIdRef.current, currentSessionId);
 
           // Forward event to parent for fallback job polling (timed-out generation recovery)
           onStreamEvent?.(event);
@@ -536,6 +613,12 @@ export function ChatSidebar({
               ...(agentModelRef.current
                 ? { model: agentModelRef.current }
                 : {}),
+              ...(agentModelRef.current?.startsWith("codex:")
+                ? {
+                    runtimeKind: "local-agent" as const,
+                    runtimeProvider: "codex" as const,
+                  }
+                : { runtimeKind: "server-deepagent" as const }),
             },
             (ack) => {
               clearTimeout(timeout);
@@ -543,7 +626,23 @@ export function ChatSidebar({
               console.log(
                 `[perf] send → ack: ${(perf.tAck - perf.t0Send).toFixed(0)}ms`,
               );
-              const id = ack.payload.runId as string;
+              const payloadRecord = ack.payload as Record<string, unknown>;
+              const id = payloadRecord.runId as string;
+              const assistantMessageId =
+                typeof payloadRecord.assistantMessageId === "string"
+                  ? payloadRecord.assistantMessageId
+                  : null;
+              if (assistantMessageId && assistantMessageId !== assistantIdRef.current) {
+                const previousAssistantId = assistantIdRef.current;
+                assistantIdRef.current = assistantMessageId;
+                updateSessionMessages(currentSessionId, (prev) =>
+                  prev.map((message) =>
+                    message.id === previousAssistantId
+                      ? { ...message, id: assistantMessageId }
+                      : message,
+                  ),
+                );
+              }
               runIdRef.current = id;
               resolve(id);
             },
@@ -557,7 +656,7 @@ export function ChatSidebar({
       } catch {
         updateSessionMessages(currentSessionId, (prev) =>
           prev.map((m) => {
-            if (m.id !== assistantId) return m;
+            if (m.id !== assistantIdRef.current) return m;
             const hasText = m.contentBlocks.some((b) => b.type === "text");
             if (hasText) return m;
             return {
@@ -742,19 +841,117 @@ export function ChatSidebar({
     // Skip if initialPrompt effect will handle binding
     if (initialPrompt && !initialPromptSent.current) return;
 
+    let canceled = false;
+    let resumeUnsub: (() => void) | null = null;
+
     void (async () => {
       // Reload messages from DB (server may have persisted while disconnected)
-      await reloadMessages(sessionId);
+      const reloadedMessages = await reloadMessages(sessionId);
+      if (canceled) return;
+      recoverPersistedMediaArtifacts(reloadedMessages);
+      const latestReloadedAssistantId =
+        [...reloadedMessages].reverse().find((message) => message.role === "assistant")?.id ??
+        null;
+
+      let resumedRunId: string | null = null;
+      let resumedAssistantId: string | null = null;
+      let hydratingActiveRun = false;
+      const hydratedRunEventIds = new Set<string>();
+      const queuedResumeEvents: Array<{
+        event: StreamEvent;
+        eventId?: string;
+        replayed?: boolean;
+        seq?: number;
+      }> = [];
+
+      const processResumedEntry = (
+        entry: {
+          event: StreamEvent;
+          eventId?: string;
+          replayed?: boolean;
+          seq?: number;
+        },
+        assistantId: string,
+      ) => {
+        const evt = entry.event;
+        applyStreamEvent(evt, assistantId, sessionId);
+        if (!entry.replayed) {
+          onStreamEvent?.(evt);
+        }
+
+        const backendInserted =
+          evt.type === "tool.completed" &&
+          evt.output &&
+          typeof (evt.output as Record<string, unknown>).elementId === "string";
+        if (
+          evt.type === "tool.completed" &&
+          evt.artifacts &&
+          evt.toolName !== "screenshot_canvas" &&
+          !backendInserted
+        ) {
+          for (const artifact of evt.artifacts) {
+            const replayKey = artifactReplayKey(evt.toolCallId, artifact.url);
+            if (replayedArtifactKeysRef.current.has(replayKey)) continue;
+            replayedArtifactKeysRef.current.add(replayKey);
+            onImageGenerated?.(artifact);
+          }
+        }
+
+        if (
+          evt.type === "run.completed" ||
+          evt.type === "run.failed" ||
+          evt.type === "run.canceled"
+        ) {
+          sendingRef.current = false;
+          setStreaming(false);
+        }
+      };
+
+      resumeUnsub = ws.onEvent((entry) => {
+        const evt = entry.event;
+
+        if (evt.type === "canvas.sync") {
+          onCanvasSync?.();
+        }
+
+        if (!resumedRunId || evt.runId !== resumedRunId || !resumedAssistantId) {
+          return;
+        }
+
+        if (hydratingActiveRun) {
+          queuedResumeEvents.push(entry);
+          return;
+        }
+
+        if (entry.eventId && hydratedRunEventIds.has(entry.eventId)) {
+          return;
+        }
+
+        processResumedEntry(entry, resumedAssistantId);
+      });
 
       // Resume canvas binding (after DB messages are set)
-      ws.resumeCanvas(canvasId, (ack) => {
+      ws.resumeCanvas(canvasId, sessionId, (ack) => {
         const activeRunId = (ack.payload as Record<string, unknown>)
           .activeRunId;
+        const assistantMessageId = (ack.payload as Record<string, unknown>)
+          .assistantMessageId;
         if (activeRunId && typeof activeRunId === "string") {
           sendingRef.current = true;
           setStreaming(true);
 
-          const assistantId = `resumed_${activeRunId}`;
+          resumedRunId = activeRunId;
+          resumedAssistantId =
+            typeof assistantMessageId === "string" && assistantMessageId.length > 0
+              ? assistantMessageId
+              : latestReloadedAssistantId;
+          const assistantId = resumedAssistantId
+            ?? `resumed_${activeRunId}`;
+          resumedAssistantId = assistantId;
+
+          hydratingActiveRun = true;
+          queuedResumeEvents.length = 0;
+
           // Must use updateSessionMessages (not setMessages) so the placeholder
           // lands in msgCacheRef as well as React state. applyStreamEvent reads
           // from the cache — if the placeholder only lives in React state, stream
@@ -772,48 +969,63 @@ export function ChatSidebar({
             ];
           });
 
-          // Reuse the shared stream event handler — eliminates ~70 lines of duplication
-          const unsub = ws.onEvent((evt) => {
-            if (evt.runId !== activeRunId) return;
+          void (async () => {
+            try {
+              let cursor = 0;
+              const entries: Awaited<ReturnType<typeof fetchRunEvents>>["events"] = [];
+              while (true) {
+                const response = await fetchRunEvents(activeRunId, cursor);
+                entries.push(...response.events);
+                if (response.done || response.nextCursor <= cursor) break;
+                cursor = response.nextCursor;
+              }
+              if (canceled || resumedRunId !== activeRunId) return;
 
-            applyStreamEvent(evt, assistantId, sessionId);
-            onStreamEvent?.(evt);
-
-            // Fire canvas insertion callbacks for artifacts arriving after reconnect.
-            // Skip if the backend already inserted the element (elementId in output).
-            const wsBackendInserted = evt.type === "tool.completed"
-              && evt.output
-              && typeof (evt.output as Record<string, unknown>).elementId === "string";
-            if (
-              evt.type === "tool.completed" &&
-              evt.artifacts &&
-              evt.toolName !== "screenshot_canvas" &&
-              !wsBackendInserted
-            ) {
-              for (const artifact of evt.artifacts) {
-                if (onImageGenerated) {
-                  onImageGenerated(artifact);
+              hydratedRunEventIds.clear();
+              for (const entry of entries) {
+                if (entry.eventId) {
+                  hydratedRunEventIds.add(entry.eventId);
                 }
               }
+              const hydratedBlocks = materializeAssistantBlocksFromEvents(
+                entries.map((item) => item.event),
+              );
+              updateSessionMessages(sessionId, (prev) =>
+                prev.map((message) =>
+                  message.id === assistantId
+                    ? { ...message, contentBlocks: hydratedBlocks }
+                    : message,
+                ),
+              );
+              recoverMediaArtifactsFromBlocks(hydratedBlocks);
+            } catch (error) {
+              console.warn("[chat] Failed to hydrate active run from durable events:", error);
+            } finally {
+              hydratingActiveRun = false;
+              const pending = [...queuedResumeEvents].sort(
+                (a, b) => (a.seq ?? Number.MAX_SAFE_INTEGER) - (b.seq ?? Number.MAX_SAFE_INTEGER),
+              );
+              queuedResumeEvents.length = 0;
+              for (const queuedEntry of pending) {
+	                if (
+	                  queuedEntry.eventId &&
+	                  hydratedRunEventIds.has(queuedEntry.eventId)
+	                ) {
+                  continue;
+                }
+                processResumedEntry(queuedEntry, assistantId);
+              }
             }
-
-            if (evt.type === "canvas.sync" && onCanvasSync) {
-              onCanvasSync();
-            }
-
-            if (
-              evt.type === "run.completed" ||
-              evt.type === "run.failed" ||
-              evt.type === "run.canceled"
-            ) {
-              sendingRef.current = false;
-              setStreaming(false);
-              unsub();
-            }
-          });
+          })();
         }
       });
+
     })();
+
+    return () => {
+      canceled = true;
+      resumeUnsub?.();
+    };
   }, [
     ws.connected,
     ws,
@@ -824,6 +1036,8 @@ export function ChatSidebar({
     onImageGenerated,
     onCanvasSync,
     activeSessionIdRef,
+    recoverPersistedMediaArtifacts,
+    onRequestCanvasImages,
     reloadMessages,
     updateSessionMessages,
     setStreaming,

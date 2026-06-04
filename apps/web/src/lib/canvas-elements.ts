@@ -1,4 +1,5 @@
 import type { ImageArtifact, VideoArtifact } from "@aimc/shared";
+import { getServerBaseUrl } from "./env";
 
 const VIDEO_EXTENSIONS = [".mp4", ".webm", ".ogg", ".mov"];
 const AUTO_PLACEMENT_GAP = 40;
@@ -191,7 +192,24 @@ export function createExcalidrawImageElement(opts: {
  * Routes through the server proxy to bypass browser CORS restrictions.
  */
 export async function fetchAsDataURL(url: string): Promise<string> {
-  const response = await fetch(url);
+  let fetchUrl = url;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const isSameOrigin = parsed.origin === window.location.origin;
+    if (!isSameOrigin) {
+      const proxyUrl = new URL("/api/asset-proxy", getServerBaseUrl());
+      proxyUrl.searchParams.set("url", url);
+      fetchUrl = proxyUrl.toString();
+    } else {
+      fetchUrl = parsed.toString();
+    }
+  } catch {
+    const proxyUrl = new URL("/api/asset-proxy", getServerBaseUrl());
+    proxyUrl.searchParams.set("url", url);
+    fetchUrl = proxyUrl.toString();
+  }
+
+  const response = await fetch(fetchUrl);
   if (!response.ok) {
     throw new Error(`Failed to fetch image: ${response.status}`);
   }

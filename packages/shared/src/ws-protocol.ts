@@ -7,6 +7,9 @@ import { runCreateRequestSchema } from "./contracts.js";
 export const wsServerEventSchema = z.object({
   type: z.literal("event"),
   event: streamEventSchema,
+  eventId: z.string().min(1).optional(),
+  replayed: z.boolean().optional(),
+  seq: z.number().int().min(0).optional(),
 });
 
 // --- Server → Client: RPC Request ---
@@ -45,7 +48,9 @@ export const wsResumeCommandSchema = z.object({
   action: z.literal("canvas.resume"),
   payload: z.object({
     canvasId: z.string().min(1),
+    sessionId: z.string().min(1),
     lastSeq: z.number().int().min(0).default(0),
+    skipReplay: z.boolean().optional(),
   }),
 });
 

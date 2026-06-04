@@ -94,7 +94,7 @@ export function createMainAgentTools(
   return tools;
 }
 
-/** @deprecated Use createMainAgentTools + sub-agents instead */
+/** @deprecated Use createMainAgentTools and provider-specific runtime adapters instead */
 export function createPhaseATools(backend: BackendProtocol | BackendFactory) {
   return [
     createProjectSearchTool(backend),

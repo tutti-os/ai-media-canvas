@@ -2,6 +2,7 @@ import type { StreamEvent } from "@aimc/shared";
 
 type BufferedEvent = {
   event: StreamEvent;
+  eventId?: string;
   timestamp: number;
   seq: number;
 };
@@ -22,7 +23,11 @@ export class CanvasEventBuffer {
     this.ttlMs = options?.ttlMs ?? 10 * 60 * 1000;
   }
 
-  push(canvasId: string, event: StreamEvent): void {
+  push(
+    canvasId: string,
+    event: StreamEvent,
+    metadata?: { eventId?: string; seq?: number },
+  ): void {
     let buf = this.buffers.get(canvasId);
     if (!buf) {
       buf = [];
@@ -30,9 +35,9 @@ export class CanvasEventBuffer {
       this.seqCounters.set(canvasId, 0);
     }
 
-    const seq = (this.seqCounters.get(canvasId) ?? 0) + 1;
+    const seq = metadata?.seq ?? ((this.seqCounters.get(canvasId) ?? 0) + 1);
     this.seqCounters.set(canvasId, seq);
-    buf.push({ event, timestamp: Date.now(), seq });
+    buf.push({ event, ...(metadata?.eventId ? { eventId: metadata.eventId } : {}), timestamp: Date.now(), seq });
 
     if (buf.length > this.maxPerCanvas) {
       buf.splice(0, buf.length - this.maxPerCanvas);

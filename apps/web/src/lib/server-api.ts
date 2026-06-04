@@ -22,6 +22,7 @@ import type {
   SkillToggleRequest,
   UploadResponse,
   AssetSignedUrlResponse,
+  StreamEvent,
 } from "@aimc/shared";
 
 import { getServerBaseUrl } from "./env";
@@ -270,6 +271,31 @@ export async function saveMessage(
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as MessageCreateResponse;
+}
+
+export type RunEventsResponse = {
+  done: boolean;
+  events: Array<{
+    event: StreamEvent;
+    eventId: string;
+    seq: number;
+  }>;
+  nextCursor: number;
+};
+
+export async function fetchRunEvents(
+  runId: string,
+  cursor = 0,
+): Promise<RunEventsResponse> {
+  const params = new URLSearchParams();
+  if (cursor > 0) {
+    params.set("cursor", String(cursor));
+  }
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/agent/runs/${runId}/events${params.size > 0 ? `?${params.toString()}` : ""}`,
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as RunEventsResponse;
 }
 
 // --- Upload API ---

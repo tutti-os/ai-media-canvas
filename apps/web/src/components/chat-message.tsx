@@ -123,7 +123,7 @@ const UserMessage = React.memo(function UserMessage({
                   kind={
                     (
                       block as {
-                        mentionType: "image-model" | "brand-kit-asset";
+                        mentionType: "image-model" | "brand-kit-asset" | "skill";
                       }
                     ).mentionType
                   }
@@ -159,7 +159,7 @@ const UserMessage = React.memo(function UserMessage({
               kind={
                 (
                   block as {
-                    mentionType: "image-model" | "brand-kit-asset";
+                    mentionType: "image-model" | "brand-kit-asset" | "skill";
                   }
                 ).mentionType
               }

@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
-import type { StreamEvent } from "@aimc/shared";
+import type {
+  AgentRuntimeProvider,
+  RuntimeKind,
+  StreamEvent,
+} from "@aimc/shared";
 
 type PendingRPC = {
   resolve: (value: any) => void;
@@ -22,8 +26,21 @@ export class ConnectionManager {
   private userIndex = new Map<string, Set<string>>();
   /** Canvas-level index: canvasId -> set of connectionIds */
   private canvasIndex = new Map<string, Set<string>>();
-  /** Tracks active runIds per canvas so reconnecting clients know if a run is in progress */
-  private activeRuns = new Map<string, { runId: string; startedAt: number }>();
+  /** Tracks active runs per canvas so reconnecting clients can rebind by session. */
+  private activeRuns = new Map<
+    string,
+    Map<
+      string,
+      {
+        assistantMessageId?: string;
+        runId: string;
+        runtimeKind?: RuntimeKind;
+        runtimeProvider?: AgentRuntimeProvider;
+        sessionId: string;
+        startedAt: number;
+      }
+    >
+  >();
   /** Pending RPC calls, keyed by unique request UUID (unchanged) */
   private pendingRPCs = new Map<string, PendingRPC>();
 
@@ -55,9 +72,10 @@ export class ConnectionManager {
   }
 
   /** Remove a connection from all indexes. */
-  remove(connectionId: string): void {
+  remove(connectionId: string, expectedSocket?: WebSocket): void {
     const entry = this.connections.get(connectionId);
     if (!entry) return;
+    if (expectedSocket && entry.ws !== expectedSocket) return;
     this.removeFromIndexes(connectionId, entry);
     this.connections.delete(connectionId);
   }
@@ -90,18 +108,83 @@ export class ConnectionManager {
   }
 
   /** Mark a run as active for a canvas. */
-  setActiveRun(canvasId: string, runId: string): void {
-    this.activeRuns.set(canvasId, { runId, startedAt: Date.now() });
+  setActiveRun(
+    canvasId: string,
+    runId: string,
+    sessionId: string,
+    assistantMessageId?: string,
+    runtimeKind?: RuntimeKind,
+    runtimeProvider?: AgentRuntimeProvider,
+  ): void {
+    const runsForCanvas = this.activeRuns.get(canvasId) ?? new Map();
+    runsForCanvas.set(runId, {
+      ...(assistantMessageId ? { assistantMessageId } : {}),
+      runId,
+      sessionId,
+      ...(runtimeKind ? { runtimeKind } : {}),
+      ...(runtimeProvider ? { runtimeProvider } : {}),
+      startedAt: Date.now(),
+    });
+    this.activeRuns.set(canvasId, runsForCanvas);
   }
 
-  /** Clear active run for a canvas. */
-  clearActiveRun(canvasId: string): void {
-    this.activeRuns.delete(canvasId);
+  /** Clear a specific active run for a canvas. */
+  clearActiveRun(canvasId: string, runId: string): void {
+    const runsForCanvas = this.activeRuns.get(canvasId);
+    if (!runsForCanvas) return;
+    runsForCanvas.delete(runId);
+    if (runsForCanvas.size === 0) {
+      this.activeRuns.delete(canvasId);
+    }
   }
 
-  /** Get active run info for a canvas, if any. */
-  getActiveRun(canvasId: string): { runId: string; startedAt: number } | null {
-    return this.activeRuns.get(canvasId) ?? null;
+  /** Get active run info for a canvas/session, if any. */
+  getActiveRun(
+    canvasId: string,
+    sessionId?: string,
+  ): {
+    assistantMessageId?: string;
+    runId: string;
+    runtimeKind?: RuntimeKind;
+    runtimeProvider?: AgentRuntimeProvider;
+    sessionId: string;
+    startedAt: number;
+  } | null {
+    const runsForCanvas = this.activeRuns.get(canvasId);
+    if (!runsForCanvas || runsForCanvas.size === 0) {
+      return null;
+    }
+
+    const candidates = Array.from(runsForCanvas.values()).filter(
+      (run) => !sessionId || run.sessionId === sessionId,
+    );
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    candidates.sort((a, b) => b.startedAt - a.startedAt);
+    return candidates[0] ?? null;
+  }
+
+  /** Get active run info by run id, including its canvas binding. */
+  getActiveRunById(runId: string): ({
+    assistantMessageId?: string;
+    canvasId: string;
+    runId: string;
+    runtimeKind?: RuntimeKind;
+    runtimeProvider?: AgentRuntimeProvider;
+    sessionId: string;
+    startedAt: number;
+  }) | null {
+    for (const [canvasId, runsForCanvas] of this.activeRuns.entries()) {
+      const run = runsForCanvas.get(runId);
+      if (!run) continue;
+      return {
+        ...run,
+        canvasId,
+      };
+    }
+    return null;
   }
 
   // ---------------------------------------------------------------------------
@@ -148,10 +231,19 @@ export class ConnectionManager {
   // ---------------------------------------------------------------------------
 
   /** Send a StreamEvent to ALL connections viewing a specific canvas. */
-  pushToCanvas(canvasId: string, event: StreamEvent): void {
+  pushToCanvas(
+    canvasId: string,
+    event: StreamEvent,
+    metadata?: { eventId?: string; seq?: number },
+  ): void {
     const ids = this.canvasIndex.get(canvasId);
     if (!ids) return;
-    const payload = JSON.stringify({ type: "event", event });
+    const payload = JSON.stringify({
+      type: "event",
+      event,
+      ...(metadata?.eventId ? { eventId: metadata.eventId } : {}),
+      ...(metadata?.seq != null ? { seq: metadata.seq } : {}),
+    });
     for (const cid of ids) {
       const entry = this.connections.get(cid);
       if (entry && entry.ws.readyState === 1) {
