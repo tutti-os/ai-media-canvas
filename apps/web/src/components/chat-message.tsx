@@ -194,24 +194,20 @@ const AssistantMessage = React.memo(function AssistantMessage({
   // Find the last text block index for streaming cursor placement
   const lastTextIdx = useMemo(() => {
     for (let i = contentBlocks.length - 1; i >= 0; i--) {
-      if (contentBlocks[i]!.type === "text") return i;
+      if (contentBlocks[i]?.type === "text") return i;
     }
     return -1;
   }, [contentBlocks]);
 
-  // Show thinking indicator when streaming but no content has arrived yet
-  const hasContent = useMemo(
-    () =>
-      contentBlocks.some(
-        (b) =>
-          (b.type === "text" && b.text.length > 0) ||
-          b.type === "tool" ||
-          b.type === "thinking",
-      ),
-    [contentBlocks],
-  );
-
-  const showThinking = isStreaming && !hasContent;
+  const pendingAfterBlock = useMemo(() => {
+    if (!isStreaming) return false;
+    const lastBlock = contentBlocks[contentBlocks.length - 1];
+    if (!lastBlock) return true;
+    if (lastBlock.type === "text" || lastBlock.type === "thinking") {
+      return false;
+    }
+    return lastBlock.type === "tool" && lastBlock.status !== "running";
+  }, [contentBlocks, isStreaming]);
 
   return (
     <motion.div
@@ -220,22 +216,8 @@ const AssistantMessage = React.memo(function AssistantMessage({
       transition={{ duration: 0.3, ease: "easeOut" }}
       className="flex w-full flex-col gap-2 pr-10"
     >
-      {showThinking && (
-        <div className="flex items-center gap-1 text-sm text-muted-foreground">
-          <span>{"\u601d\u8003\u4e2d"}</span>
-          <span
-            className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-bounce-dot"
-            style={{ animationDelay: "0ms" }}
-          />
-          <span
-            className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-bounce-dot"
-            style={{ animationDelay: "150ms" }}
-          />
-          <span
-            className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-bounce-dot"
-            style={{ animationDelay: "300ms" }}
-          />
-        </div>
+      {pendingAfterBlock && contentBlocks.length === 0 && (
+        <PendingThinkingIndicator />
       )}
       {contentBlocks.map((block, idx) => {
         if (block.type === "thinking") {
@@ -270,6 +252,31 @@ const AssistantMessage = React.memo(function AssistantMessage({
         // ImageBlock -- skip in assistant messages (user-side only)
         return null;
       })}
+      {pendingAfterBlock && contentBlocks.length > 0 && (
+        <PendingThinkingIndicator />
+      )}
     </motion.div>
   );
 });
+
+const PendingThinkingIndicator = React.memo(
+  function PendingThinkingIndicator() {
+    return (
+      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+        <span>{"\u601d\u8003\u4e2d"}</span>
+        <span
+          className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-bounce-dot"
+          style={{ animationDelay: "0ms" }}
+        />
+        <span
+          className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-bounce-dot"
+          style={{ animationDelay: "150ms" }}
+        />
+        <span
+          className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-bounce-dot"
+          style={{ animationDelay: "300ms" }}
+        />
+      </div>
+    );
+  },
+);
