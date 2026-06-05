@@ -141,7 +141,7 @@ describe("AgentModelSelector", () => {
     await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
 
     expect(
-      await screen.findByRole("button", { name: "Local CLI" }),
+      await screen.findByRole("button", { name: "Local agent" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.getByRole("button", { name: "API provider" }),
@@ -151,7 +151,7 @@ describe("AgentModelSelector", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "API provider" }));
 
-    expect(screen.getByRole("button", { name: "Local CLI" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Local agent" })).toHaveAttribute(
       "aria-pressed",
       "false",
     );

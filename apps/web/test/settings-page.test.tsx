@@ -596,7 +596,7 @@ describe("SettingsPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("switches the Agent settings between Local CLI and API provider setup", async () => {
+  it("switches the Agent settings between Local agent and API provider setup", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "codex:gpt-5.4",
@@ -635,7 +635,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     expect(
-      await screen.findByRole("button", { name: "Local CLI" }),
+      await screen.findByRole("button", { name: "Local agent" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect((await screen.findAllByText("Codex")).length).toBeGreaterThan(0);
     expect(screen.getByText("2 models")).toBeInTheDocument();
@@ -656,7 +656,7 @@ describe("SettingsPage", () => {
       await screen.findByRole("button", { name: "OpenAI-compatible" }),
     );
 
-    expect(screen.getByRole("button", { name: "Local CLI" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Local agent" })).toHaveAttribute(
       "aria-pressed",
       "false",
     );
@@ -669,7 +669,7 @@ describe("SettingsPage", () => {
     expect(screen.queryByText("Codex")).not.toBeInTheDocument();
   });
 
-  it("uses the first concrete Local CLI model instead of the CLI default option", async () => {
+  it("uses the first concrete Local agent model instead of the CLI default option", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "",
@@ -775,7 +775,7 @@ describe("SettingsPage", () => {
     );
   });
 
-  it("installs missing pinned Local CLI providers with a loading state", async () => {
+  it("installs missing pinned Local agent providers with a loading state", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "",
@@ -842,7 +842,7 @@ describe("SettingsPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not preselect a Local CLI provider when no local model is selected", async () => {
+  it("does not preselect a Local agent provider when no local model is selected", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "",

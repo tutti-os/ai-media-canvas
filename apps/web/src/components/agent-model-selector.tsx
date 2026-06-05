@@ -358,7 +358,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
               {[
                 {
                   id: "local-cli" as const,
-                  label: "Local CLI",
+                  label: "Local agent",
                   icon: Terminal,
                 },
                 {

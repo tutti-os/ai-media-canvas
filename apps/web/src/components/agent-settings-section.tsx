@@ -652,7 +652,7 @@ function LocalCliProviderModelPicker({
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold">Local CLI</h3>
+          <h3 className="text-base font-semibold">Local agent</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             Pick the CLI route generations should use.
           </p>
@@ -1032,7 +1032,7 @@ export function AgentSettingsSection({
             {[
               {
                 id: "local-cli" as const,
-                label: "Local CLI",
+                label: "Local agent",
                 description: `${localCliProviderCount} detected`,
                 icon: Terminal,
               },
