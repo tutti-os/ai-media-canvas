@@ -10,10 +10,12 @@ import SettingsPage from "../src/app/(workspace)/settings/page";
 const {
   fetchWorkspaceSettingsMock,
   fetchModelsMock,
+  installAgentProviderMock,
   updateWorkspaceSettingsMock,
 } = vi.hoisted(() => ({
   fetchWorkspaceSettingsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
+  installAgentProviderMock: vi.fn(),
   updateWorkspaceSettingsMock: vi.fn(),
 }));
 
@@ -24,6 +26,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("../src/lib/server-api", () => ({
   fetchModels: fetchModelsMock,
   fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
+  installAgentProvider: installAgentProviderMock,
   updateWorkspaceSettings: updateWorkspaceSettingsMock,
 }));
 
@@ -39,8 +42,16 @@ describe("SettingsPage", () => {
   beforeEach(() => {
     fetchWorkspaceSettingsMock.mockReset();
     fetchModelsMock.mockReset();
+    installAgentProviderMock.mockReset();
     updateWorkspaceSettingsMock.mockReset();
     fetchModelsMock.mockResolvedValue({ models: [] });
+    installAgentProviderMock.mockResolvedValue({
+      provider: "codex",
+      status: "succeeded",
+      availability: "ready",
+      reason: "ready",
+      message: "Codex is installed and ready.",
+    });
   });
 
   afterEach(() => {
@@ -629,7 +640,10 @@ describe("SettingsPage", () => {
     expect((await screen.findAllByText("Codex")).length).toBeGreaterThan(0);
     expect(screen.getByText("2 models")).toBeInTheDocument();
     expect(screen.getByLabelText("Model")).toHaveValue("codex:gpt-5.4");
-    await userEvent.selectOptions(screen.getByLabelText("Model"), "codex:gpt-5.5");
+    await userEvent.selectOptions(
+      screen.getByLabelText("Model"),
+      "codex:gpt-5.5",
+    );
     expect(screen.getByLabelText("Model")).toHaveValue("codex:gpt-5.5");
     await userEvent.selectOptions(screen.getByLabelText("Model"), "__custom__");
     expect(await screen.findByLabelText("Custom model id")).toBeInTheDocument();
@@ -748,9 +762,7 @@ describe("SettingsPage", () => {
       },
     });
     fetchModelsMock.mockResolvedValue({
-      models: [
-        { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
-      ],
+      models: [{ id: "codex:gpt-5.4", name: "Codex", provider: "codex" }],
     });
 
     render(<SettingsPage />);
@@ -763,7 +775,7 @@ describe("SettingsPage", () => {
     );
   });
 
-  it("shows disabled install-required cards for pinned Local CLI providers", async () => {
+  it("installs missing pinned Local CLI providers with a loading state", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "",
@@ -784,21 +796,50 @@ describe("SettingsPage", () => {
         volcesBaseUrl: "",
       },
     });
-    fetchModelsMock.mockResolvedValue({ models: [] });
+    let resolveInstall: (value: unknown) => void = () => {};
+    installAgentProviderMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveInstall = resolve;
+      }),
+    );
+    fetchModelsMock
+      .mockResolvedValueOnce({ models: [] })
+      .mockResolvedValueOnce({
+        models: [{ id: "codex:gpt-5.4", name: "gpt-5.4", provider: "codex" }],
+      });
 
     render(<SettingsPage />);
 
     const codexButton = await screen.findByRole("button", { name: /Codex/i });
     const claudeButton = screen.getByRole("button", { name: /Claude Code/i });
 
-    expect(codexButton).toBeDisabled();
-    expect(claudeButton).toBeDisabled();
+    expect(codexButton).toBeEnabled();
+    expect(claudeButton).toBeEnabled();
     expect(screen.getAllByText("Install required")).toHaveLength(2);
     expect(
       screen.getByText(/Install Codex or Claude Code/i),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Model")).toBeDisabled();
     expect(screen.getByLabelText("Model")).toHaveValue("");
+
+    await userEvent.click(codexButton);
+
+    expect(installAgentProviderMock).toHaveBeenCalledWith("codex");
+    expect(await screen.findByText("Installing...")).toBeInTheDocument();
+
+    resolveInstall({
+      provider: "codex",
+      status: "succeeded",
+      availability: "ready",
+      reason: "ready",
+      message: "Codex is installed and ready.",
+    });
+
+    await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("1 model")).toBeInTheDocument();
+    expect(
+      screen.getByText("Codex is installed and ready."),
+    ).toBeInTheDocument();
   });
 
   it("does not preselect a Local CLI provider when no local model is selected", async () => {

@@ -1,10 +1,3 @@
-import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import type { AIMessage, HumanMessage } from "@langchain/core/messages";
-import type {
-  AgentEvent,
-  LocalAgentRuntime,
-  LocalAgentProviderPlugin,
-} from "@nextop-os/agent-acp-kit";
 import type {
   AgentRuntimeProvider,
   ChatMessage,
@@ -15,6 +8,13 @@ import type {
   StreamEvent,
   VideoGenerationPreference,
 } from "@aimc/shared";
+import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import type { AIMessage, HumanMessage } from "@langchain/core/messages";
+import type {
+  AgentEvent,
+  LocalAgentProviderPlugin,
+  LocalAgentRuntime,
+} from "@nextop-os/agent-acp-kit";
 
 import type { UserDataClient } from "../../auth/request.js";
 import type { ServerEnv } from "../../config/env.js";
@@ -41,14 +41,16 @@ export type RuntimeRunRecord = {
   mentions?: MessageMention[] | undefined;
   modelOverride?: string | undefined;
   prompt: string;
-  resumeContext?: {
-    mode: "provider-local" | "handoff" | "fresh";
-    previousRunId?: string;
-    previousRuntimeKind?: RuntimeKind | null;
-    previousRuntimeProvider?: AgentRuntimeProvider | null;
-    providerSessionId?: string;
-    resumeToken?: string;
-  } | undefined;
+  resumeContext?:
+    | {
+        mode: "provider-local" | "handoff" | "fresh";
+        previousRunId?: string;
+        previousRuntimeKind?: RuntimeKind | null;
+        previousRuntimeProvider?: AgentRuntimeProvider | null;
+        providerSessionId?: string;
+        resumeToken?: string;
+      }
+    | undefined;
   runId: string;
   runtimeKind?: RuntimeKind | undefined;
   runtimeProvider?: AgentRuntimeProvider | undefined;
@@ -106,7 +108,13 @@ export type LocalAgentRuntimeProviderDeps = {
   buildUserMessage: BuildUserMessage;
   loadCanvasSummaryForRuntime: LoadCanvasSummaryForRuntime;
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
-  localAgentRuntime: Pick<LocalAgentRuntime<"local-agent", AgentRuntimeProvider>, "run">;
+  localAgentRuntime: Pick<
+    LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
+    "run"
+  > &
+    Partial<
+      Pick<LocalAgentRuntime<"local-agent", AgentRuntimeProvider>, "detect">
+    >;
   now: () => string;
   recordProviderResumeMetadata?: (input: {
     providerSessionId?: string;
@@ -118,7 +126,9 @@ export type LocalAgentRuntimeProviderDeps = {
 };
 
 export type LocalAgentToolRunner = (
-  params: Parameters<LocalAgentProviderPlugin<"local-agent", AgentRuntimeProvider>["run"]>[0],
+  params: Parameters<
+    LocalAgentProviderPlugin<"local-agent", AgentRuntimeProvider>["run"]
+  >[0],
 ) => AsyncGenerator<AgentEvent>;
 
 export type ServerDeepAgentRuntimeProviderDeps = {
@@ -141,9 +151,7 @@ export type ServerDeepAgentRuntimeProviderDeps = {
   resolvedAgentFactory: AimcAgentFactory;
 };
 
-export type PersistImageClientFactory = (
-  accessToken: string,
-) => UserDataClient;
+export type PersistImageClientFactory = (accessToken: string) => UserDataClient;
 
 export function assertLocalAgentRuntimeExecutionContext(
   context: RuntimeExecutionContext,

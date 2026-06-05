@@ -1,11 +1,14 @@
 import type { AgentRuntimeProvider, WorkspaceSettings } from "@aimc/shared";
 import {
-  type AgentDetection,
   type LocalAgentRuntime,
-  createDefaultLocalAgentProviderPlugins,
   createLocalAgentRuntime,
 } from "@nextop-os/agent-acp-kit";
 
+import {
+  type LocalAgentModelDiscovery,
+  resolveLocalAgentDefaultModel,
+} from "../../agent/local-agent-models.js";
+import { createAimcLocalAgentProviderPlugins } from "../../agent/local-agent-providers.js";
 import type { AuthenticatedUser } from "../../auth/types.js";
 import {
   DEFAULT_AGNES_AGENT_MODEL,
@@ -43,70 +46,14 @@ export const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   volcesBaseUrl: "",
 };
 
-const API_AGENT_MODEL_PROVIDERS = new Set([
-  "agnes",
-  "anthropic",
-  "google",
-  "openai",
-  "vertex",
-]);
-
-type LocalAgentModelDiscovery = Pick<
-  LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
-  "detect"
->;
-
 export type SettingsServiceOptions = {
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
 };
 
 function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
   return createLocalAgentRuntime({
-    providers: createDefaultLocalAgentProviderPlugins(),
+    providers: createAimcLocalAgentProviderPlugins(),
   });
-}
-
-function getModelProvider(modelId: string) {
-  return modelId.includes(":") ? (modelId.split(":", 1)[0] ?? "") : "";
-}
-
-function localAgentModelId(provider: string, modelId: string) {
-  const trimmed = modelId.trim();
-  if (!trimmed) return null;
-  return trimmed.startsWith(`${provider}:`)
-    ? trimmed
-    : `${provider}:${trimmed}`;
-}
-
-function isLocalAgentModelId(modelId: string) {
-  const provider = getModelProvider(modelId);
-  return Boolean(provider && !API_AGENT_MODEL_PROVIDERS.has(provider));
-}
-
-async function resolveLocalAgentDefaultModel(
-  modelId: string,
-  localAgentModelDiscovery: LocalAgentModelDiscovery,
-) {
-  if (!modelId.endsWith(":default") || !isLocalAgentModelId(modelId)) {
-    return modelId;
-  }
-
-  const provider = getModelProvider(modelId);
-  try {
-    const detections = await localAgentModelDiscovery.detect();
-    const detection = detections.find(
-      (entry) => String(entry.provider) === provider,
-    );
-    const result = detection?.result as AgentDetection | null | undefined;
-    if (!result || result.supported === false) return modelId;
-
-    const concreteModel = (result.models ?? [])
-      .map((model) => localAgentModelId(provider, model.id))
-      .find((id) => id && id !== modelId);
-    return concreteModel ?? modelId;
-  } catch {
-    return modelId;
-  }
 }
 
 function normalizeModelList(values: string[] | undefined): string[] {
@@ -278,11 +225,7 @@ export function applyEffectiveProviderEnv(
 
   assignEnvValue(target, "AIMC_GOOGLE_API_KEY", env.googleApiKey);
   assignEnvValue(target, "GOOGLE_API_KEY", env.googleApiKey);
-  assignEnvValue(
-    target,
-    "AIMC_GOOGLE_VERTEX_PROJECT",
-    env.googleVertexProject,
-  );
+  assignEnvValue(target, "AIMC_GOOGLE_VERTEX_PROJECT", env.googleVertexProject);
   assignEnvValue(target, "GOOGLE_VERTEX_PROJECT", env.googleVertexProject);
   assignEnvValue(
     target,

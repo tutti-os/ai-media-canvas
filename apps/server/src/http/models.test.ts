@@ -35,9 +35,12 @@ describe("registerModelRoutes", () => {
     apps.push(appWithoutAgnes);
     await registerModelRoutes(
       appWithoutAgnes,
-      loadServerEnv({
-        agentModel: "openai:gpt-4.1",
-      }, {}),
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+        },
+        {},
+      ),
       undefined,
       { localAgentModelDiscovery: emptyLocalAgentModelDiscovery },
     );
@@ -58,11 +61,14 @@ describe("registerModelRoutes", () => {
     apps.push(appWithAgnes);
     await registerModelRoutes(
       appWithAgnes,
-      loadServerEnv({
-        agentModel: "agnes:agnes-2.0-flash",
-        agnesApiKey: "local-agnes-key",
-        agnesBaseUrl: "https://agnes.example/v1",
-      }, {}),
+      loadServerEnv(
+        {
+          agentModel: "agnes:agnes-2.0-flash",
+          agnesApiKey: "local-agnes-key",
+          agnesBaseUrl: "https://agnes.example/v1",
+        },
+        {},
+      ),
       undefined,
       { localAgentModelDiscovery: emptyLocalAgentModelDiscovery },
     );
@@ -85,9 +91,12 @@ describe("registerModelRoutes", () => {
     apps.push(appWithoutAnthropic);
     await registerModelRoutes(
       appWithoutAnthropic,
-      loadServerEnv({
-        agentModel: "openai:gpt-4.1",
-      }, {}),
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+        },
+        {},
+      ),
       undefined,
       { localAgentModelDiscovery: emptyLocalAgentModelDiscovery },
     );
@@ -108,10 +117,13 @@ describe("registerModelRoutes", () => {
     apps.push(appWithAnthropic);
     await registerModelRoutes(
       appWithAnthropic,
-      loadServerEnv({
-        agentModel: "anthropic:claude-sonnet-4-5",
-        anthropicApiKey: "local-anthropic-key",
-      }, {}),
+      loadServerEnv(
+        {
+          agentModel: "anthropic:claude-sonnet-4-5",
+          anthropicApiKey: "local-anthropic-key",
+        },
+        {},
+      ),
       undefined,
       { localAgentModelDiscovery: emptyLocalAgentModelDiscovery },
     );
@@ -133,10 +145,7 @@ describe("registerModelRoutes", () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
-        data: [
-          { id: "deepseek-chat" },
-          { id: "qwen-plus" },
-        ],
+        data: [{ id: "deepseek-chat" }, { id: "qwen-plus" }],
       }),
     });
 
@@ -144,11 +153,14 @@ describe("registerModelRoutes", () => {
     apps.push(app);
     await registerModelRoutes(
       app,
-      loadServerEnv({
-        agentModel: "openai:deepseek-chat",
-        openAIApiKey: "local-openai-key",
-        openAIApiBase: "https://gateway.example/v1",
-      }, {}),
+      loadServerEnv(
+        {
+          agentModel: "openai:deepseek-chat",
+          openAIApiKey: "local-openai-key",
+          openAIApiBase: "https://gateway.example/v1",
+        },
+        {},
+      ),
       undefined,
       { localAgentModelDiscovery: emptyLocalAgentModelDiscovery },
     );
@@ -203,11 +215,14 @@ describe("registerModelRoutes", () => {
     apps.push(app);
     await registerModelRoutes(
       app,
-      loadServerEnv({
-        agentModel: "openai:gpt-5.4",
-        openAIApiKey: "local-openai-key",
-        openAIApiBase: "https://api.openai.com/v1",
-      }, {}),
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-5.4",
+          openAIApiKey: "local-openai-key",
+          openAIApiBase: "https://api.openai.com/v1",
+        },
+        {},
+      ),
       undefined,
       { localAgentModelDiscovery: emptyLocalAgentModelDiscovery },
     );
@@ -280,9 +295,12 @@ describe("registerModelRoutes", () => {
     apps.push(app);
     await registerModelRoutes(
       app,
-      loadServerEnv({
-        agentModel: "openai:gpt-4.1",
-      }, {}),
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+        },
+        {},
+      ),
       undefined,
       { localAgentModelDiscovery },
     );
@@ -345,10 +363,13 @@ describe("registerModelRoutes", () => {
     apps.push(app);
     await registerModelRoutes(
       app,
-      loadServerEnv({
-        agentModel: "openai:gpt-4.1",
-        trustedLocalAgentMode: false,
-      }, {}),
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+          trustedLocalAgentMode: false,
+        },
+        {},
+      ),
       undefined,
       { localAgentModelDiscovery },
     );
@@ -363,5 +384,90 @@ describe("registerModelRoutes", () => {
       expect.objectContaining({ provider: "codex" }),
     );
     expect(localAgentModelDiscovery.detect).not.toHaveBeenCalled();
+  });
+
+  it("installs a pinned local-agent provider through the installer", async () => {
+    const localAgentProviderInstaller = vi.fn(async () => ({
+      provider: "codex" as const,
+      status: "succeeded" as const,
+      command: "npm install -g @openai/codex @zed-industries/codex-acp",
+      before: {
+        availability: "not_installed" as const,
+        reason: "cli_not_found" as const,
+        cli: { binary: "codex", installed: false },
+        adapter: { binary: "codex-acp", installed: false },
+        auth: { ok: false, required: true },
+      },
+      after: {
+        availability: "ready" as const,
+        reason: "ready" as const,
+        cli: { binary: "codex", installed: true, path: "/usr/bin/codex" },
+        adapter: {
+          binary: "codex-acp",
+          installed: true,
+          path: "/usr/bin/codex-acp",
+        },
+        auth: { ok: true, required: false },
+      },
+    }));
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+        },
+        {},
+      ),
+      undefined,
+      {
+        localAgentModelDiscovery: emptyLocalAgentModelDiscovery,
+        localAgentProviderInstaller,
+      },
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/local-agent/providers/codex/install",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(localAgentProviderInstaller).toHaveBeenCalledWith("codex");
+    expect(response.json()).toEqual({
+      provider: "codex",
+      status: "succeeded",
+      availability: "ready",
+      reason: "ready",
+      message: "Codex is installed and ready.",
+    });
+  });
+
+  it("rejects unsupported local-agent provider installation requests", async () => {
+    const localAgentProviderInstaller = vi.fn();
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+        },
+        {},
+      ),
+      undefined,
+      {
+        localAgentModelDiscovery: emptyLocalAgentModelDiscovery,
+        localAgentProviderInstaller,
+      },
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/local-agent/providers/gemini/install",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(localAgentProviderInstaller).not.toHaveBeenCalled();
   });
 });

@@ -4,19 +4,19 @@ import { z } from "zod";
 import { applicationErrorResponseSchema } from "@aimc/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
+import type { ServerEnv } from "../config/env.js";
+import type { JobService } from "../features/jobs/job-service.js";
+import {
+  LOCAL_WORKSPACE_ID,
+  type SettingsService,
+  applyEffectiveProviderEnv,
+  refreshGenerationProviders,
+} from "../features/settings/settings-service.js";
+import type { UploadService } from "../features/uploads/upload-service.js";
 import { loadGeneratedAsset } from "../generation/generated-asset.js";
 import { generateImage } from "../generation/image-generation.js";
 import { resolveImageProviderName } from "../generation/providers/registry.js";
 import { GenerationError } from "../generation/utils.js";
-import type { JobService } from "../features/jobs/job-service.js";
-import {
-  applyEffectiveProviderEnv,
-  LOCAL_WORKSPACE_ID,
-  refreshGenerationProviders,
-  type SettingsService,
-} from "../features/settings/settings-service.js";
-import type { UploadService } from "../features/uploads/upload-service.js";
-import type { ServerEnv } from "../config/env.js";
 
 const generateImageRequestSchema = z.object({
   prompt: z.string().min(1),
@@ -24,7 +24,10 @@ const generateImageRequestSchema = z.object({
   aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
   inputImages: z.array(z.string()).max(4).optional(),
-  size: z.string().regex(/^\d+x\d+$/).optional(),
+  size: z
+    .string()
+    .regex(/^\d+x\d+$/)
+    .optional(),
   seed: z.number().int().optional(),
   projectId: z.string().optional(),
 });
@@ -48,6 +51,9 @@ const generateVideoRequestSchema = z.object({
   sessionId: z.string().optional(),
   threadId: z.string().optional(),
 });
+
+const VIDEO_GENERATION_POLL_INTERVAL_MS = 1_000;
+const VIDEO_GENERATION_MAX_WAIT_MS = 650_000;
 
 export async function registerGenerateRoutes(
   app: FastifyInstance,
@@ -77,7 +83,9 @@ export async function registerGenerateRoutes(
     const model = payload.model ?? "black-forest-labs/flux-kontext-pro";
     try {
       const effectiveEnv = options.settingsService
-        ? await options.settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID)
+        ? await options.settingsService.getEffectiveServerEnv(
+            LOCAL_WORKSPACE_ID,
+          )
         : options.env;
       applyEffectiveProviderEnv(effectiveEnv);
       refreshGenerationProviders(effectiveEnv);
@@ -98,13 +106,16 @@ export async function registerGenerateRoutes(
         generated.url,
         generated.mimeType || "image/png",
       );
-      const uploaded = await options.uploadService.uploadFile(options.localUser, {
-        bucket: "project-assets",
-        fileName: `${providerName}-${Date.now()}`,
-        fileBuffer: buffer,
-        mimeType,
-        ...(payload.projectId ? { projectId: payload.projectId } : {}),
-      });
+      const uploaded = await options.uploadService.uploadFile(
+        options.localUser,
+        {
+          bucket: "project-assets",
+          fileName: `${providerName}-${Date.now()}`,
+          fileBuffer: buffer,
+          mimeType,
+          ...(payload.projectId ? { projectId: payload.projectId } : {}),
+        },
+      );
 
       return reply.code(200).send({
         url: uploaded.url,
@@ -171,8 +182,8 @@ export async function registerGenerateRoutes(
         options.jobService,
         options.localUser,
         job.id,
-        1_000,
-        300_000,
+        VIDEO_GENERATION_POLL_INTERVAL_MS,
+        VIDEO_GENERATION_MAX_WAIT_MS,
       );
 
       if ("error" in result) {
@@ -232,9 +243,11 @@ async function pollJobUntilDone(
   }
 }
 
-function sendGenerationError(reply: { code: (statusCode: number) => { send: (body: unknown) => unknown } }, error: unknown) {
-  const message =
-    error instanceof Error ? error.message : "Generation failed.";
+function sendGenerationError(
+  reply: { code: (statusCode: number) => { send: (body: unknown) => unknown } },
+  error: unknown,
+) {
+  const message = error instanceof Error ? error.message : "Generation failed.";
   if (error instanceof GenerationError) {
     const statusCode = [
       "provider_not_found",

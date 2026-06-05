@@ -1,9 +1,13 @@
 "use client";
 
-import { Cloud, RefreshCw, Terminal } from "lucide-react";
+import { Cloud, Loader2, RefreshCw, Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { ModelInfo, WorkspaceSettings } from "@aimc/shared";
+import type {
+  InstallableAgentProviderId,
+  ModelInfo,
+  WorkspaceSettings,
+} from "@aimc/shared";
 
 import {
   type AgentModelSourceTab,
@@ -11,7 +15,7 @@ import {
   isApiProvider,
   isLocalCliProvider,
 } from "@/lib/agent-model-groups";
-import { fetchModels } from "@/lib/server-api";
+import { fetchModels, installAgentProvider } from "@/lib/server-api";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { LocalCliProviderIcon } from "./local-cli-provider-icon";
 import { Button } from "./ui/button";
@@ -252,6 +256,12 @@ function buildLocalCliModelId(provider: string, value: string) {
   return value.includes(":") ? value : `${provider}:${value}`;
 }
 
+function isInstallableLocalProvider(
+  provider: string,
+): provider is InstallableAgentProviderId {
+  return provider === "codex" || provider === "claude";
+}
+
 function groupLocalCliModels(models: ModelInfo[]): LocalCliProviderGroup[] {
   const groups = new Map<string, LocalCliProviderGroup>();
 
@@ -343,7 +353,8 @@ function withApiProviderBaseUrl(
   baseUrl: string,
 ): WorkspaceSettings {
   if (provider === "openai") return { ...settings, openAIApiBase: baseUrl };
-  if (provider === "anthropic") return { ...settings, anthropicBaseUrl: baseUrl };
+  if (provider === "anthropic")
+    return { ...settings, anthropicBaseUrl: baseUrl };
   return settings;
 }
 
@@ -407,15 +418,19 @@ function QuickFillProviderField({
         value={selectedPreset?.baseUrl ?? ""}
         onChange={(event) => {
           const preset =
-            presets.find((candidate) => candidate.baseUrl === event.target.value) ??
-            null;
+            presets.find(
+              (candidate) => candidate.baseUrl === event.target.value,
+            ) ?? null;
           onChange(preset);
         }}
         className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus:border-accent focus:ring-3 focus:ring-accent/20"
       >
         <option value="">Custom provider</option>
         {presets.map((preset) => (
-          <option key={`${preset.provider}-${preset.baseUrl}`} value={preset.baseUrl}>
+          <option
+            key={`${preset.provider}-${preset.baseUrl}`}
+            value={preset.baseUrl}
+          >
             {preset.label}
           </option>
         ))}
@@ -548,6 +563,8 @@ function LocalCliProviderModelPicker({
   onProviderChange,
   onSelect,
   onRescan,
+  onInstallProvider,
+  installingProvider,
 }: {
   providerGroups: LocalCliProviderGroup[];
   activeProvider: string;
@@ -555,12 +572,15 @@ function LocalCliProviderModelPicker({
   onProviderChange: (provider: string) => void;
   onSelect: (modelId: string) => void;
   onRescan: () => void;
+  onInstallProvider: (provider: InstallableAgentProviderId) => void;
+  installingProvider: InstallableAgentProviderId | null;
 }) {
   const effectiveActiveProvider =
     activeProvider || getModelProvider(selectedModel);
   const activeGroup =
-    providerGroups.find((group) => group.provider === effectiveActiveProvider) ??
-    null;
+    providerGroups.find(
+      (group) => group.provider === effectiveActiveProvider,
+    ) ?? null;
   const displayGroups = useMemo<LocalCliProviderDisplayGroup[]>(() => {
     const groups = new Map<string, LocalCliProviderDisplayGroup>();
 
@@ -597,11 +617,12 @@ function LocalCliProviderModelPicker({
     (model) => model.id === selectedModel,
   );
   const customSelectedModel =
-    activeGroup && selectedModelBelongsToActiveProvider && !selectedDetectedModel
+    activeGroup &&
+    selectedModelBelongsToActiveProvider &&
+    !selectedDetectedModel
       ? selectedModel.slice(activeModelPrefix.length)
       : "";
-  const [customModelDraft, setCustomModelDraft] =
-    useState(customSelectedModel);
+  const [customModelDraft, setCustomModelDraft] = useState(customSelectedModel);
   const [customProviderDrafting, setCustomProviderDrafting] = useState<
     string | null
   >(null);
@@ -651,15 +672,25 @@ function LocalCliProviderModelPicker({
             <div className="grid gap-3 md:grid-cols-2">
               {displayGroups.map((group) => {
                 const selected = activeGroup?.provider === group.provider;
+                const installing = installingProvider === group.provider;
+                const canInstall =
+                  !group.installed &&
+                  isInstallableLocalProvider(group.provider);
 
                 return (
                   <button
                     key={group.provider}
                     type="button"
                     aria-pressed={selected}
-                    disabled={!group.installed}
+                    aria-busy={installing}
+                    disabled={installing || (!group.installed && !canInstall)}
                     onClick={() => {
-                      if (!group.installed) return;
+                      if (!group.installed) {
+                        if (isInstallableLocalProvider(group.provider)) {
+                          onInstallProvider(group.provider);
+                        }
+                        return;
+                      }
                       onProviderChange(group.provider);
                       setCustomProviderDrafting(null);
                       setCustomModelDraft("");
@@ -671,7 +702,7 @@ function LocalCliProviderModelPicker({
                     }}
                     className={`flex min-h-20 w-full items-center gap-3 rounded-xl border bg-background p-3 text-left transition-colors ${
                       !group.installed
-                        ? "cursor-not-allowed border-border opacity-55"
+                        ? "border-border hover:border-accent/40 hover:bg-background/70"
                         : selected
                           ? "border-accent bg-accent/10 shadow-sm"
                           : "border-border hover:border-accent/40 hover:bg-background/70"
@@ -688,18 +719,24 @@ function LocalCliProviderModelPicker({
                         {group.label}
                       </span>
                       <span className="mt-1 block truncate text-xs text-muted-foreground">
-                        {group.installed
-                          ? `${group.models.length} ${
-                              group.models.length === 1 ? "model" : "models"
-                            }`
-                          : "Install required"}
+                        {installing
+                          ? "Installing..."
+                          : group.installed
+                            ? `${group.models.length} ${
+                                group.models.length === 1 ? "model" : "models"
+                              }`
+                            : "Install required"}
                       </span>
                     </span>
-                    <span
-                      className={`size-2.5 rounded-full ${
-                        selected ? "bg-accent" : "bg-muted-foreground/20"
-                      }`}
-                    />
+                    {installing ? (
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    ) : (
+                      <span
+                        className={`size-2.5 rounded-full ${
+                          selected ? "bg-accent" : "bg-muted-foreground/20"
+                        }`}
+                      />
+                    )}
                   </button>
                 );
               })}
@@ -819,6 +856,8 @@ export function AgentSettingsSection({
   const [activeSourceTab, setActiveSourceTab] =
     useState<AgentModelSourceTab>("local-cli");
   const [saving, setSaving] = useState(false);
+  const [installingLocalProvider, setInstallingLocalProvider] =
+    useState<InstallableAgentProviderId | null>(null);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
@@ -837,14 +876,17 @@ export function AgentSettingsSection({
     });
   }, [initialSettings]);
 
-  const refreshAvailableModels = useCallback(() => {
-    fetchModels()
-      .then((response) => setAvailableModels(response.models))
-      .catch(() => setAvailableModels([]));
+  const refreshAvailableModels = useCallback(async () => {
+    try {
+      const response = await fetchModels();
+      setAvailableModels(response.models);
+    } catch {
+      setAvailableModels([]);
+    }
   }, []);
 
   useEffect(() => {
-    refreshAvailableModels();
+    void refreshAvailableModels();
   }, [refreshAvailableModels]);
 
   const normalizedInitial = useMemo(
@@ -883,9 +925,7 @@ export function AgentSettingsSection({
     const selectedProviderGroup = localCliProviderGroups.find(
       (group) => group.provider === selectedLocalProvider,
     );
-    setActiveLocalProvider(
-      selectedProviderGroup?.provider ?? "",
-    );
+    setActiveLocalProvider(selectedProviderGroup?.provider ?? "");
   }, [activeLocalProvider, localCliProviderGroups, selectedLocalProvider]);
 
   const modelPickerGroups = useMemo(
@@ -918,6 +958,31 @@ export function AgentSettingsSection({
     setSettings((current) => ({ ...current, [key]: value }));
   }
 
+  async function handleInstallLocalProvider(
+    provider: InstallableAgentProviderId,
+  ) {
+    setFeedback(null);
+    setInstallingLocalProvider(provider);
+    try {
+      const result = await installAgentProvider(provider);
+      setFeedback({
+        type: result.status === "failed" ? "error" : "success",
+        message: result.message,
+      });
+      await refreshAvailableModels();
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to install local agent provider.",
+      });
+    } finally {
+      setInstallingLocalProvider(null);
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setSaving(true);
@@ -929,7 +994,7 @@ export function AgentSettingsSection({
         agnesDefaultModel:
           settings.providerModels.agnes[0] || settings.agnesDefaultModel,
       });
-      refreshAvailableModels();
+      void refreshAvailableModels();
       setFeedback({
         type: "success",
         message: "Local agent settings updated.",
@@ -954,9 +1019,7 @@ export function AgentSettingsSection({
 
       <form
         onSubmit={handleSubmit}
-        className={
-          isDialog ? "flex min-h-0 flex-1 flex-col" : "space-y-5"
-        }
+        className={isDialog ? "flex min-h-0 flex-1 flex-col" : "space-y-5"}
       >
         <div
           className={
@@ -1015,363 +1078,386 @@ export function AgentSettingsSection({
               onProviderChange={setActiveLocalProvider}
               onSelect={(modelId) => updateField("defaultModel", modelId)}
               onRescan={refreshAvailableModels}
+              onInstallProvider={handleInstallLocalProvider}
+              installingProvider={installingLocalProvider}
             />
           ) : null}
 
           {activeSourceTab === "api-provider" ? (
             <>
               <section className="rounded-2xl border bg-card p-5 shadow-sm">
-              <div className="mb-4">
-                <h3 className="text-base font-semibold">Default model</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Pick the workspace default from the model lists configured
-                  below.
-                </p>
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">
-                    Default LLM Model
-                  </p>
-                  <p className="mt-2 truncate text-sm text-foreground">
-                    {selectedModelName || "No API provider model selected"}
-                  </p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {selectedModelName
-                      ? settings.defaultModel
-                      : "Choose an API provider model below."}
+                <div className="mb-4">
+                  <h3 className="text-base font-semibold">Default model</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Pick the workspace default from the model lists configured
+                    below.
                   </p>
                 </div>
-                {modelPickerGroups.length > 0 ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="shrink-0"
-                        />
-                      }
-                      aria-label="Browse available models"
-                    >
-                      Choose model
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="end"
-                      sideOffset={6}
-                      className="w-72"
-                    >
-                      <div className="px-2 py-1.5">
-                        <p className="text-sm font-medium text-foreground">
-                          Workspace models
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Choose from the model lists configured under each
-                          provider.
-                        </p>
-                      </div>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuGroup>
-                        <DropdownMenuRadioGroup
-                          value={settings.defaultModel}
-                          onValueChange={(value) =>
-                            updateField("defaultModel", value as string)
-                          }
-                        >
-                          {modelPickerGroups.map((protocol, groupIndex) => (
-                            <div key={protocol.id}>
-                              <DropdownMenuLabel>
-                                {protocol.label}
-                              </DropdownMenuLabel>
-                              {protocol.models.map((model) => (
-                                <DropdownMenuRadioItem
-                                  key={model.id}
-                                  value={model.id}
-                                  aria-label={`Use ${model.name}`}
-                                >
-                                  <div className="min-w-0">
-                                    <div className="truncate font-medium">
-                                      {model.name}
+                <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">
+                      Default LLM Model
+                    </p>
+                    <p className="mt-2 truncate text-sm text-foreground">
+                      {selectedModelName || "No API provider model selected"}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                      {selectedModelName
+                        ? settings.defaultModel
+                        : "Choose an API provider model below."}
+                    </p>
+                  </div>
+                  {modelPickerGroups.length > 0 ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0"
+                          />
+                        }
+                        aria-label="Browse available models"
+                      >
+                        Choose model
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        sideOffset={6}
+                        className="w-72"
+                      >
+                        <div className="px-2 py-1.5">
+                          <p className="text-sm font-medium text-foreground">
+                            Workspace models
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Choose from the model lists configured under each
+                            provider.
+                          </p>
+                        </div>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup>
+                          <DropdownMenuRadioGroup
+                            value={settings.defaultModel}
+                            onValueChange={(value) =>
+                              updateField("defaultModel", value as string)
+                            }
+                          >
+                            {modelPickerGroups.map((protocol, groupIndex) => (
+                              <div key={protocol.id}>
+                                <DropdownMenuLabel>
+                                  {protocol.label}
+                                </DropdownMenuLabel>
+                                {protocol.models.map((model) => (
+                                  <DropdownMenuRadioItem
+                                    key={model.id}
+                                    value={model.id}
+                                    aria-label={`Use ${model.name}`}
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="truncate font-medium">
+                                        {model.name}
+                                      </div>
+                                      <div className="truncate text-xs text-muted-foreground">
+                                        {model.id}
+                                      </div>
                                     </div>
-                                    <div className="truncate text-xs text-muted-foreground">
-                                      {model.id}
-                                    </div>
-                                  </div>
-                                </DropdownMenuRadioItem>
-                              ))}
-                              {groupIndex < modelPickerGroups.length - 1 ? (
-                                <DropdownMenuSeparator />
-                              ) : null}
-                            </div>
-                          ))}
-                        </DropdownMenuRadioGroup>
-                      </DropdownMenuGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : (
-                  <Button type="button" size="sm" variant="outline" disabled>
-                    No models yet
-                  </Button>
-                )}
-              </div>
+                                  </DropdownMenuRadioItem>
+                                ))}
+                                {groupIndex < modelPickerGroups.length - 1 ? (
+                                  <DropdownMenuSeparator />
+                                ) : null}
+                              </div>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <Button type="button" size="sm" variant="outline" disabled>
+                      No models yet
+                    </Button>
+                  )}
+                </div>
               </section>
 
               <section className="rounded-2xl border bg-card p-5 shadow-sm">
-              <div className="mb-4">
-                <h3 className="text-base font-semibold">
-                  Protocol credentials
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Pick a protocol to edit its credentials.
-                </p>
-              </div>
-
-              <div className="mb-5 flex flex-wrap gap-2">
-                {AGENT_PROTOCOLS.map((protocol) => (
-                  <button
-                    key={protocol.id}
-                    type="button"
-                    onClick={() => setActiveProtocol(protocol.id)}
-                    className={`rounded-full border px-3 py-2 text-sm transition-colors ${
-                      activeProtocol === protocol.id
-                        ? "border-accent/40 bg-accent/10 text-foreground"
-                        : "border-border bg-background text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {protocol.label}
-                  </button>
-                ))}
-              </div>
-
-              {activeProtocol === "agnes" ? (
-                <div className="space-y-4">
-                  <AgnesQuickstartHint />
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="agnesApiKey">Agnes API Key</Label>
-                      <Input
-                        id="agnesApiKey"
-                        value={settings.agnesApiKey}
-                        onChange={(event) =>
-                          updateField("agnesApiKey", event.target.value)
-                        }
-                        placeholder="sk-..."
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="agnesBaseUrl">Agnes Base URL</Label>
-                      <Input
-                        id="agnesBaseUrl"
-                        value={settings.agnesBaseUrl}
-                        onChange={(event) =>
-                          updateField("agnesBaseUrl", event.target.value)
-                        }
-                        placeholder="https://apihub.agnes-ai.com/v1"
-                      />
-                    </div>
-                  </div>
-                  <ProviderModelListEditor
-                    provider="agnes"
-                    settings={settings}
-                    availableModels={availableModels}
-                    onChange={(nextValues) =>
-                      setSettings((current) =>
-                        applyProviderModelUpdate(current, "agnes", nextValues),
-                      )
-                    }
-                  />
+                <div className="mb-4">
+                  <h3 className="text-base font-semibold">
+                    Protocol credentials
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Pick a protocol to edit its credentials.
+                  </p>
                 </div>
-              ) : null}
 
-              {activeProtocol === "openai" ? (
-                <div className="space-y-4">
-                  <QuickFillProviderField
-                    provider="openai"
-                    settings={settings}
-                    onChange={(preset) =>
-                      setSettings((current) =>
-                        applyApiProviderPreset(current, "openai", preset),
-                      )
-                    }
-                  />
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="openAIApiKey">OpenAI API Key</Label>
-                      <Input
-                        id="openAIApiKey"
-                        value={settings.openAIApiKey}
-                        onChange={(event) =>
-                          updateField("openAIApiKey", event.target.value)
-                        }
-                        placeholder="sk-..."
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="openAIApiBase">OpenAI Base URL</Label>
-                      <Input
-                        id="openAIApiBase"
-                        value={settings.openAIApiBase}
-                        onChange={(event) =>
-                          updateField("openAIApiBase", event.target.value)
-                        }
-                        placeholder="http://127.0.0.1:4000/v1"
-                      />
-                    </div>
-                  </div>
-                  <ProviderModelListEditor
-                    provider="openai"
-                    settings={settings}
-                    availableModels={availableModels}
-                    onChange={(nextValues) =>
-                      setSettings((current) =>
-                        applyProviderModelUpdate(current, "openai", nextValues),
-                      )
-                    }
-                  />
+                <div className="mb-5 flex flex-wrap gap-2">
+                  {AGENT_PROTOCOLS.map((protocol) => (
+                    <button
+                      key={protocol.id}
+                      type="button"
+                      onClick={() => setActiveProtocol(protocol.id)}
+                      className={`rounded-full border px-3 py-2 text-sm transition-colors ${
+                        activeProtocol === protocol.id
+                          ? "border-accent/40 bg-accent/10 text-foreground"
+                          : "border-border bg-background text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {protocol.label}
+                    </button>
+                  ))}
                 </div>
-              ) : null}
 
-              {activeProtocol === "google" ? (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="googleApiKey">Google API Key</Label>
-                    <Input
-                      id="googleApiKey"
-                      value={settings.googleApiKey}
-                      onChange={(event) =>
-                        updateField("googleApiKey", event.target.value)
+                {activeProtocol === "agnes" ? (
+                  <div className="space-y-4">
+                    <AgnesQuickstartHint />
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="agnesApiKey">Agnes API Key</Label>
+                        <Input
+                          id="agnesApiKey"
+                          value={settings.agnesApiKey}
+                          onChange={(event) =>
+                            updateField("agnesApiKey", event.target.value)
+                          }
+                          placeholder="sk-..."
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="agnesBaseUrl">Agnes Base URL</Label>
+                        <Input
+                          id="agnesBaseUrl"
+                          value={settings.agnesBaseUrl}
+                          onChange={(event) =>
+                            updateField("agnesBaseUrl", event.target.value)
+                          }
+                          placeholder="https://apihub.agnes-ai.com/v1"
+                        />
+                      </div>
+                    </div>
+                    <ProviderModelListEditor
+                      provider="agnes"
+                      settings={settings}
+                      availableModels={availableModels}
+                      onChange={(nextValues) =>
+                        setSettings((current) =>
+                          applyProviderModelUpdate(
+                            current,
+                            "agnes",
+                            nextValues,
+                          ),
+                        )
                       }
-                      placeholder="AIza..."
                     />
                   </div>
-                  <ProviderModelListEditor
-                    provider="google"
-                    settings={settings}
-                    availableModels={availableModels}
-                    onChange={(nextValues) =>
-                      setSettings((current) =>
-                        applyProviderModelUpdate(current, "google", nextValues),
-                      )
-                    }
-                  />
-                </div>
-              ) : null}
+                ) : null}
 
-              {activeProtocol === "vertex" ? (
-                <div className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="googleVertexProject">
-                        Vertex Project
-                      </Label>
-                      <Input
-                        id="googleVertexProject"
-                        value={settings.googleVertexProject}
-                        onChange={(event) =>
-                          updateField("googleVertexProject", event.target.value)
-                        }
-                        placeholder="my-gcp-project"
-                      />
+                {activeProtocol === "openai" ? (
+                  <div className="space-y-4">
+                    <QuickFillProviderField
+                      provider="openai"
+                      settings={settings}
+                      onChange={(preset) =>
+                        setSettings((current) =>
+                          applyApiProviderPreset(current, "openai", preset),
+                        )
+                      }
+                    />
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="openAIApiKey">OpenAI API Key</Label>
+                        <Input
+                          id="openAIApiKey"
+                          value={settings.openAIApiKey}
+                          onChange={(event) =>
+                            updateField("openAIApiKey", event.target.value)
+                          }
+                          placeholder="sk-..."
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="openAIApiBase">OpenAI Base URL</Label>
+                        <Input
+                          id="openAIApiBase"
+                          value={settings.openAIApiBase}
+                          onChange={(event) =>
+                            updateField("openAIApiBase", event.target.value)
+                          }
+                          placeholder="http://127.0.0.1:4000/v1"
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="googleVertexLocation">
-                        Vertex Location
-                      </Label>
-                      <Input
-                        id="googleVertexLocation"
-                        value={settings.googleVertexLocation}
-                        onChange={(event) =>
-                          updateField(
-                            "googleVertexLocation",
-                            event.target.value,
-                          )
-                        }
-                        placeholder="global"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="googleVertexVideoLocation">
-                        Vertex Video Location
-                      </Label>
-                      <Input
-                        id="googleVertexVideoLocation"
-                        value={settings.googleVertexVideoLocation}
-                        onChange={(event) =>
-                          updateField(
-                            "googleVertexVideoLocation",
-                            event.target.value,
-                          )
-                        }
-                        placeholder="us-central1"
-                      />
-                    </div>
+                    <ProviderModelListEditor
+                      provider="openai"
+                      settings={settings}
+                      availableModels={availableModels}
+                      onChange={(nextValues) =>
+                        setSettings((current) =>
+                          applyProviderModelUpdate(
+                            current,
+                            "openai",
+                            nextValues,
+                          ),
+                        )
+                      }
+                    />
                   </div>
-                  <ProviderModelListEditor
-                    provider="vertex"
-                    settings={settings}
-                    availableModels={availableModels}
-                    onChange={(nextValues) =>
-                      setSettings((current) =>
-                        applyProviderModelUpdate(current, "vertex", nextValues),
-                      )
-                    }
-                  />
-                </div>
-              ) : null}
+                ) : null}
 
-              {activeProtocol === "anthropic" ? (
-                <div className="space-y-4">
-                  <QuickFillProviderField
-                    provider="anthropic"
-                    settings={settings}
-                    onChange={(preset) =>
-                      setSettings((current) =>
-                        applyApiProviderPreset(current, "anthropic", preset),
-                      )
-                    }
-                  />
-                  <div className="grid gap-4 md:grid-cols-2">
+                {activeProtocol === "google" ? (
+                  <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="anthropicApiKey">Anthropic API Key</Label>
+                      <Label htmlFor="googleApiKey">Google API Key</Label>
                       <Input
-                        id="anthropicApiKey"
-                        value={settings.anthropicApiKey}
+                        id="googleApiKey"
+                        value={settings.googleApiKey}
                         onChange={(event) =>
-                          updateField("anthropicApiKey", event.target.value)
+                          updateField("googleApiKey", event.target.value)
                         }
-                        placeholder="sk-ant-..."
+                        placeholder="AIza..."
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="anthropicBaseUrl">
-                        Anthropic Base URL
-                      </Label>
-                      <Input
-                        id="anthropicBaseUrl"
-                        value={settings.anthropicBaseUrl}
-                        onChange={(event) =>
-                          updateField("anthropicBaseUrl", event.target.value)
-                        }
-                        placeholder="https://api.anthropic.com"
-                      />
-                    </div>
+                    <ProviderModelListEditor
+                      provider="google"
+                      settings={settings}
+                      availableModels={availableModels}
+                      onChange={(nextValues) =>
+                        setSettings((current) =>
+                          applyProviderModelUpdate(
+                            current,
+                            "google",
+                            nextValues,
+                          ),
+                        )
+                      }
+                    />
                   </div>
-                  <ProviderModelListEditor
-                    provider="anthropic"
-                    settings={settings}
-                    availableModels={availableModels}
-                    onChange={(nextValues) =>
-                      setSettings((current) =>
-                        applyProviderModelUpdate(
-                          current,
-                          "anthropic",
-                          nextValues,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-              ) : null}
+                ) : null}
+
+                {activeProtocol === "vertex" ? (
+                  <div className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="googleVertexProject">
+                          Vertex Project
+                        </Label>
+                        <Input
+                          id="googleVertexProject"
+                          value={settings.googleVertexProject}
+                          onChange={(event) =>
+                            updateField(
+                              "googleVertexProject",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="my-gcp-project"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="googleVertexLocation">
+                          Vertex Location
+                        </Label>
+                        <Input
+                          id="googleVertexLocation"
+                          value={settings.googleVertexLocation}
+                          onChange={(event) =>
+                            updateField(
+                              "googleVertexLocation",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="global"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="googleVertexVideoLocation">
+                          Vertex Video Location
+                        </Label>
+                        <Input
+                          id="googleVertexVideoLocation"
+                          value={settings.googleVertexVideoLocation}
+                          onChange={(event) =>
+                            updateField(
+                              "googleVertexVideoLocation",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="us-central1"
+                        />
+                      </div>
+                    </div>
+                    <ProviderModelListEditor
+                      provider="vertex"
+                      settings={settings}
+                      availableModels={availableModels}
+                      onChange={(nextValues) =>
+                        setSettings((current) =>
+                          applyProviderModelUpdate(
+                            current,
+                            "vertex",
+                            nextValues,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                ) : null}
+
+                {activeProtocol === "anthropic" ? (
+                  <div className="space-y-4">
+                    <QuickFillProviderField
+                      provider="anthropic"
+                      settings={settings}
+                      onChange={(preset) =>
+                        setSettings((current) =>
+                          applyApiProviderPreset(current, "anthropic", preset),
+                        )
+                      }
+                    />
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="anthropicApiKey">
+                          Anthropic API Key
+                        </Label>
+                        <Input
+                          id="anthropicApiKey"
+                          value={settings.anthropicApiKey}
+                          onChange={(event) =>
+                            updateField("anthropicApiKey", event.target.value)
+                          }
+                          placeholder="sk-ant-..."
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="anthropicBaseUrl">
+                          Anthropic Base URL
+                        </Label>
+                        <Input
+                          id="anthropicBaseUrl"
+                          value={settings.anthropicBaseUrl}
+                          onChange={(event) =>
+                            updateField("anthropicBaseUrl", event.target.value)
+                          }
+                          placeholder="https://api.anthropic.com"
+                        />
+                      </div>
+                    </div>
+                    <ProviderModelListEditor
+                      provider="anthropic"
+                      settings={settings}
+                      availableModels={availableModels}
+                      onChange={(nextValues) =>
+                        setSettings((current) =>
+                          applyProviderModelUpdate(
+                            current,
+                            "anthropic",
+                            nextValues,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                ) : null}
               </section>
             </>
           ) : null}

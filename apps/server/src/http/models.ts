@@ -1,18 +1,26 @@
 import type { FastifyInstance } from "fastify";
 
 import {
-  modelListResponseSchema,
   type AgentRuntimeProvider,
+  type InstallableAgentProviderId,
   type ModelInfo,
   type WorkspaceSettings,
+  agentProviderInstallResponseSchema,
+  applicationErrorResponseSchema,
+  installableAgentProviderIdSchema,
+  modelListResponseSchema,
 } from "@aimc/shared";
 import {
   type AgentDetection,
   type LocalAgentRuntime,
-  createDefaultLocalAgentProviderPlugins,
   createLocalAgentRuntime,
 } from "@nextop-os/agent-acp-kit";
 
+import {
+  type AgentProviderInstallResult,
+  installAgentProvider,
+} from "../agent/local-agent-provider-installer.js";
+import { createAimcLocalAgentProviderPlugins } from "../agent/local-agent-providers.js";
 import type { ServerEnv } from "../config/env.js";
 import {
   LOCAL_WORKSPACE_ID,
@@ -45,8 +53,16 @@ const ANTHROPIC_MODELS: ModelInfo[] = [
 
 const GOOGLE_MODELS: ModelInfo[] = [
   { id: "google:gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "google" },
-  { id: "google:gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "google" },
-  { id: "google:gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite", provider: "google" },
+  {
+    id: "google:gemini-2.5-flash",
+    name: "Gemini 2.5 Flash",
+    provider: "google",
+  },
+  {
+    id: "google:gemini-2.5-flash-lite",
+    name: "Gemini 2.5 Flash Lite",
+    provider: "google",
+  },
 ];
 
 const AGNES_MODELS: ModelInfo[] = [
@@ -57,6 +73,9 @@ type LocalAgentModelDiscovery = Pick<
   LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
   "detect"
 >;
+type LocalAgentProviderInstaller = (
+  provider: InstallableAgentProviderId,
+) => Promise<AgentProviderInstallResult>;
 
 function buildConfiguredModels(
   provider: keyof WorkspaceSettings["providerModels"],
@@ -155,7 +174,10 @@ function normalizeOpenAICompatibleModels(payload: unknown): ModelInfo[] {
     ) {
       continue;
     }
-    const snapshotBaseId = modelId.replace(OPENAI_COMPATIBLE_SNAPSHOT_SUFFIX, "");
+    const snapshotBaseId = modelId.replace(
+      OPENAI_COMPATIBLE_SNAPSHOT_SUFFIX,
+      "",
+    );
     if (snapshotBaseId !== modelId && discoveredIds.has(snapshotBaseId)) {
       continue;
     }
@@ -189,14 +211,16 @@ async function fetchOpenAICompatibleModels(
 
 function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
   return createLocalAgentRuntime({
-    providers: createDefaultLocalAgentProviderPlugins(),
+    providers: createAimcLocalAgentProviderPlugins(),
   });
 }
 
 function localAgentModelId(provider: string, modelId: string) {
   const trimmed = modelId.trim();
   if (!trimmed) return null;
-  return trimmed.startsWith(`${provider}:`) ? trimmed : `${provider}:${trimmed}`;
+  return trimmed.startsWith(`${provider}:`)
+    ? trimmed
+    : `${provider}:${trimmed}`;
 }
 
 function buildLocalAgentModels(
@@ -224,16 +248,40 @@ function buildLocalAgentModels(
   return models;
 }
 
+function localAgentProviderInstallMessage(
+  result: AgentProviderInstallResult,
+): string {
+  const providerName = result.provider === "codex" ? "Codex" : "Claude Code";
+
+  if (result.after.availability === "ready") {
+    return `${providerName} is installed and ready.`;
+  }
+
+  if (result.after.availability === "auth_required") {
+    return `${providerName} is installed. Sign in to finish setup.`;
+  }
+
+  if (result.status === "failed") {
+    return `${providerName} installation failed.`;
+  }
+
+  return `${providerName} installation needs attention.`;
+}
+
 export async function registerModelRoutes(
   app: FastifyInstance,
   env: ServerEnv,
   settingsService?: SettingsService,
   options?: {
     localAgentModelDiscovery?: LocalAgentModelDiscovery;
+    localAgentProviderInstaller?: LocalAgentProviderInstaller;
   },
 ) {
   const localAgentModelDiscovery =
-    options?.localAgentModelDiscovery ?? createDefaultLocalAgentModelDiscovery();
+    options?.localAgentModelDiscovery ??
+    createDefaultLocalAgentModelDiscovery();
+  const localAgentProviderInstaller =
+    options?.localAgentProviderInstaller ?? installAgentProvider;
 
   app.get("/api/models", async (_request, reply) => {
     const workspaceSettings = settingsService
@@ -244,10 +292,12 @@ export async function registerModelRoutes(
       : env;
     const models: ModelInfo[] = [];
     if (effectiveEnv.openAIApiKey) {
-      let openAIModels =
-        workspaceSettings?.providerModels.openai.length
-          ? buildConfiguredModels("openai", workspaceSettings.providerModels.openai)
-          : OPENAI_MODELS;
+      let openAIModels = workspaceSettings?.providerModels.openai.length
+        ? buildConfiguredModels(
+            "openai",
+            workspaceSettings.providerModels.openai,
+          )
+        : OPENAI_MODELS;
 
       if (
         !workspaceSettings?.providerModels.openai.length &&
@@ -273,23 +323,22 @@ export async function registerModelRoutes(
     }
     if (effectiveEnv.anthropicApiKey) {
       models.push(
-        ...(
-          workspaceSettings?.providerModels.anthropic.length
-            ? buildConfiguredModels(
-                "anthropic",
-                workspaceSettings.providerModels.anthropic,
-              )
-            : ANTHROPIC_MODELS
-        ),
+        ...(workspaceSettings?.providerModels.anthropic.length
+          ? buildConfiguredModels(
+              "anthropic",
+              workspaceSettings.providerModels.anthropic,
+            )
+          : ANTHROPIC_MODELS),
       );
     }
     if (effectiveEnv.agnesApiKey) {
       models.push(
-        ...(
-          workspaceSettings?.providerModels.agnes.length
-            ? buildConfiguredModels("agnes", workspaceSettings.providerModels.agnes)
-            : AGNES_MODELS
-        ),
+        ...(workspaceSettings?.providerModels.agnes.length
+          ? buildConfiguredModels(
+              "agnes",
+              workspaceSettings.providerModels.agnes,
+            )
+          : AGNES_MODELS),
       );
     }
     if (
@@ -297,11 +346,12 @@ export async function registerModelRoutes(
       (effectiveEnv.googleVertexProject && effectiveEnv.googleVertexLocation)
     ) {
       models.push(
-        ...(
-          workspaceSettings?.providerModels.google.length
-            ? buildConfiguredModels("google", workspaceSettings.providerModels.google)
-            : GOOGLE_MODELS
-        ),
+        ...(workspaceSettings?.providerModels.google.length
+          ? buildConfiguredModels(
+              "google",
+              workspaceSettings.providerModels.google,
+            )
+          : GOOGLE_MODELS),
       );
     }
     if (
@@ -310,7 +360,10 @@ export async function registerModelRoutes(
       workspaceSettings?.providerModels.vertex.length
     ) {
       models.push(
-        ...buildConfiguredModels("vertex", workspaceSettings.providerModels.vertex),
+        ...buildConfiguredModels(
+          "vertex",
+          workspaceSettings.providerModels.vertex,
+        ),
       );
     }
     if (effectiveEnv.trustedLocalAgentMode !== false) {
@@ -327,4 +380,60 @@ export async function registerModelRoutes(
     }
     return reply.code(200).send(modelListResponseSchema.parse({ models }));
   });
+
+  app.post(
+    "/api/local-agent/providers/:provider/install",
+    async (request, reply) => {
+      if (env.trustedLocalAgentMode === false) {
+        return reply.code(403).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "application_error",
+              message: "Local agent installation is disabled.",
+            },
+          }),
+        );
+      }
+
+      const paramsResult = installableAgentProviderIdSchema.safeParse(
+        (request.params as { provider?: unknown }).provider,
+      );
+      if (!paramsResult.success) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "application_error",
+              message: "Unsupported local agent provider.",
+            },
+          }),
+        );
+      }
+
+      try {
+        const result = await localAgentProviderInstaller(paramsResult.data);
+        return reply.code(200).send(
+          agentProviderInstallResponseSchema.parse({
+            provider: result.provider,
+            status: result.status,
+            availability: result.after.availability,
+            reason: result.after.reason,
+            message: localAgentProviderInstallMessage(result),
+          }),
+        );
+      } catch (error) {
+        app.log.error(
+          { err: error },
+          "Failed to install local agent provider.",
+        );
+        return reply.code(500).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "application_error",
+              message: "Unable to install local agent provider.",
+            },
+          }),
+        );
+      }
+    },
+  );
 }
