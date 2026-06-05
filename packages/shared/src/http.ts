@@ -150,6 +150,16 @@ export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),
 });
 
+export const installableAgentProviderIdSchema = z.enum(["codex", "claude"]);
+
+export const agentProviderInstallResponseSchema = z.object({
+  provider: installableAgentProviderIdSchema,
+  status: z.enum(["succeeded", "failed", "skipped"]),
+  availability: z.enum(["ready", "not_installed", "auth_required", "unknown"]),
+  reason: z.string().min(1),
+  message: z.string().min(1),
+});
+
 export const sessionListResponseSchema = z.object({
   sessions: z.array(chatSessionSummarySchema),
 });
@@ -181,6 +191,12 @@ export type WorkspaceSettingsUpdateRequest = z.infer<
   typeof workspaceSettingsUpdateRequestSchema
 >;
 export type ModelListResponse = z.infer<typeof modelListResponseSchema>;
+export type InstallableAgentProviderId = z.infer<
+  typeof installableAgentProviderIdSchema
+>;
+export type AgentProviderInstallResponse = z.infer<
+  typeof agentProviderInstallResponseSchema
+>;
 
 export const uploadResponseSchema = z.object({
   asset: assetObjectSchema,
@@ -192,7 +208,9 @@ export const assetSignedUrlResponseSchema = z.object({
 });
 
 export type UploadResponse = z.infer<typeof uploadResponseSchema>;
-export type AssetSignedUrlResponse = z.infer<typeof assetSignedUrlResponseSchema>;
+export type AssetSignedUrlResponse = z.infer<
+  typeof assetSignedUrlResponseSchema
+>;
 
 export const projectUpdateRequestSchema = z.object({
   brandKitId: z.string().uuid().nullable().optional(),

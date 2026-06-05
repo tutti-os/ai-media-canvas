@@ -3,22 +3,42 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HomeExampleSelection } from "../src/lib/home-example-seeds";
 import { homeExampleSeedCategories } from "../src/lib/home-example-seeds";
 import { HomePrompt } from "../src/components/home-prompt";
 
+const {
+  agentModelRequirementMock,
+  settingsDialogSpy,
+} = vi.hoisted(() => ({
+  agentModelRequirementMock: vi.fn(),
+  settingsDialogSpy: vi.fn(),
+}));
+
 vi.mock("../src/components/agent-model-selector", () => ({
   AgentModelSelector: () => <div data-testid="agent-model-selector" />,
+}));
+
+vi.mock("../src/components/settings-dialog", () => ({
+  SettingsDialog: ({
+    open,
+  }: {
+    open: boolean;
+  }) => {
+    settingsDialogSpy({ open });
+    return open ? <div>Mock Agent Settings</div> : null;
+  },
 }));
 
 vi.mock("../src/components/image-model-preference", () => ({
   ImageModelPreferencePopover: () => null,
 }));
 
-vi.mock("../src/hooks/use-agent-model", () => ({
-  useAgentModel: () => ({ model: "local:assistant" }),
+vi.mock("../src/hooks/use-agent-model-requirement", () => ({
+  AGENT_MODEL_REQUIRED_MESSAGE: "请先配置或选择一个 Agent 模型。",
+  useAgentModelRequirement: () => agentModelRequirementMock(),
 }));
 
 vi.mock("../src/hooks/use-image-model-preference", () => ({
@@ -36,7 +56,22 @@ vi.mock("../src/hooks/use-video-model-preference", () => ({
 describe("HomePrompt", () => {
   afterEach(() => {
     cleanup();
+    agentModelRequirementMock.mockReset();
+    agentModelRequirementMock.mockReturnValue({
+      model: "local:assistant",
+      isAgentModelConfigured: true,
+      ensureAgentModelConfigured: vi.fn().mockResolvedValue(true),
+    });
+    settingsDialogSpy.mockClear();
     vi.clearAllMocks();
+  });
+
+  beforeEach(() => {
+    agentModelRequirementMock.mockReturnValue({
+      model: "local:assistant",
+      isAgentModelConfigured: true,
+      ensureAgentModelConfigured: vi.fn().mockResolvedValue(true),
+    });
   });
 
   it("sends selected example image mentions as initial attachments", async () => {
@@ -115,5 +150,45 @@ describe("HomePrompt", () => {
     expect(
       container.querySelector(".overflow-x-auto"),
     ).not.toBeInTheDocument();
+  });
+
+  it("opens agent settings instead of submitting when no agent model is configured", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    agentModelRequirementMock.mockReturnValue({
+      model: null,
+      ensureAgentModelConfigured: vi.fn().mockResolvedValue(false),
+    });
+
+    render(<HomePrompt onSubmit={onSubmit} />);
+
+    await user.type(
+      screen.getByPlaceholderText("让 AI Media Canvas 帮你设计..."),
+      "生成一张海报",
+    );
+    await user.click(screen.getByRole("button", { name: "提交 prompt" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByText("Mock Agent Settings")).toBeInTheDocument();
+    expect(
+      screen.getByText("请先配置或选择一个 Agent 模型。"),
+    ).toBeInTheDocument();
+  });
+
+  it("renders tooltip labels for prompt toolbar icon buttons", () => {
+    render(
+      <HomePrompt
+        onSubmit={vi.fn()}
+        onAddFiles={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Attach images")).toBeInTheDocument();
+    expect(screen.getByText("Attach images")).toHaveClass("top-full");
+    expect(screen.getByText("Image/Video model")).toBeInTheDocument();
+    expect(screen.getByText("Image/Video model")).toHaveClass("top-full");
+    expect(
+      screen.getByRole("button", { name: "Image/Video model" }),
+    ).toBeInTheDocument();
   });
 });

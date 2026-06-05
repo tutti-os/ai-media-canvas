@@ -1,32 +1,34 @@
 import type {
-  ViewerResponse,
-  ProjectListResponse,
+  AgentProviderInstallResponse,
+  AssetSignedUrlResponse,
+  CanvasDetail,
+  ChatMessageCreateRequest,
+  InstallableAgentProviderId,
+  MessageCreateResponse,
+  MessageListResponse,
+  ModelListResponse,
+  ProfileUpdateResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
   ProjectDetailResponse,
+  ProjectListResponse,
   ProjectUpdateRequest,
-  CanvasDetail,
-  ProfileUpdateResponse,
-  ModelListResponse,
-  WorkspaceSettingsResponse,
-  WorkspaceSettingsUpdateRequest,
-  SessionListResponse,
   SessionCreateResponse,
-  MessageListResponse,
-  MessageCreateResponse,
-  ChatMessageCreateRequest,
+  SessionListResponse,
   SkillCreateRequest,
   SkillDetailResponse,
   SkillImportRequest,
   SkillListResponse,
   SkillToggleRequest,
-  UploadResponse,
-  AssetSignedUrlResponse,
   StreamEvent,
+  UploadResponse,
+  ViewerResponse,
+  WorkspaceSettingsResponse,
+  WorkspaceSettingsUpdateRequest,
 } from "@aimc/shared";
 
-import { getServerBaseUrl } from "./env";
 import { dedupeRequest } from "./dedupe-request";
+import { getServerBaseUrl } from "./env";
 
 // --- Error types ---
 
@@ -72,9 +74,7 @@ export async function createProject(
   return (await response.json()) as ProjectCreateResponse;
 }
 
-export async function deleteProject(
-  projectId: string,
-): Promise<void> {
+export async function deleteProject(projectId: string): Promise<void> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/projects/${projectId}`,
     {
@@ -111,7 +111,9 @@ export async function updateProject(
 
 // --- Canvas API ---
 
-export async function fetchCanvas(canvasId: string): Promise<{ canvas: CanvasDetail }> {
+export async function fetchCanvas(
+  canvasId: string,
+): Promise<{ canvas: CanvasDetail }> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/canvases/${canvasId}`,
   );
@@ -121,7 +123,11 @@ export async function fetchCanvas(canvasId: string): Promise<{ canvas: CanvasDet
 
 export async function saveCanvas(
   canvasId: string,
-  content: { elements: Record<string, unknown>[]; appState: Record<string, unknown>; files: Record<string, Record<string, unknown>> },
+  content: {
+    elements: Record<string, unknown>[];
+    appState: Record<string, unknown>;
+    files: Record<string, Record<string, unknown>>;
+  },
 ): Promise<void> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/canvases/${canvasId}`,
@@ -152,9 +158,9 @@ export async function uploadThumbnail(
 
 // --- Settings API ---
 
-export async function updateProfile(
-  data: { displayName: string },
-): Promise<ProfileUpdateResponse> {
+export async function updateProfile(data: {
+  displayName: string;
+}): Promise<ProfileUpdateResponse> {
   const response = await fetch(`${getServerBaseUrl()}/api/viewer/profile`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
@@ -192,11 +198,20 @@ export async function fetchModels(): Promise<ModelListResponse> {
   return (await response.json()) as ModelListResponse;
 }
 
+export async function installAgentProvider(
+  provider: InstallableAgentProviderId,
+): Promise<AgentProviderInstallResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/local-agent/providers/${provider}/install`,
+    { method: "POST" },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as AgentProviderInstallResponse;
+}
+
 // --- Chat Session API ---
 
-export function fetchSessions(
-  canvasId: string,
-): Promise<SessionListResponse> {
+export function fetchSessions(canvasId: string): Promise<SessionListResponse> {
   return dedupeRequest(`sessions:${canvasId}`, async () => {
     const response = await fetch(
       `${getServerBaseUrl()}/api/canvases/${canvasId}/sessions`,
@@ -237,9 +252,7 @@ export async function updateSessionTitle(
   if (!response.ok) return handleErrorResponse(response);
 }
 
-export async function deleteSession(
-  sessionId: string,
-): Promise<void> {
+export async function deleteSession(sessionId: string): Promise<void> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/sessions/${sessionId}`,
     {
@@ -249,7 +262,9 @@ export async function deleteSession(
   if (!response.ok) return handleErrorResponse(response);
 }
 
-export async function fetchMessages(sessionId: string): Promise<MessageListResponse> {
+export async function fetchMessages(
+  sessionId: string,
+): Promise<MessageListResponse> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/sessions/${sessionId}/messages`,
   );
@@ -318,19 +333,20 @@ export async function uploadFile(
   return (await response.json()) as UploadResponse;
 }
 
-export async function getAssetUrl(assetId: string): Promise<AssetSignedUrlResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/uploads/${assetId}/url`);
+export async function getAssetUrl(
+  assetId: string,
+): Promise<AssetSignedUrlResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/uploads/${assetId}/url`,
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as AssetSignedUrlResponse;
 }
 
 export async function deleteAsset(assetId: string): Promise<void> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/uploads/${assetId}`,
-    {
-      method: "DELETE",
-    },
-  );
+  const response = await fetch(`${getServerBaseUrl()}/api/uploads/${assetId}`, {
+    method: "DELETE",
+  });
   if (!response.ok) return handleErrorResponse(response);
 }
 
@@ -348,7 +364,9 @@ export async function fetchSkillCatalog(): Promise<SkillListResponse> {
   return (await response.json()) as SkillListResponse;
 }
 
-export async function fetchSkillDetail(skillId: string): Promise<SkillDetailResponse> {
+export async function fetchSkillDetail(
+  skillId: string,
+): Promise<SkillDetailResponse> {
   const response = await fetch(`${getServerBaseUrl()}/api/skills/${skillId}`);
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as SkillDetailResponse;
@@ -378,7 +396,9 @@ export async function importSkill(
   return (await response.json()) as SkillDetailResponse;
 }
 
-export async function installSkill(skillId: string): Promise<SkillDetailResponse> {
+export async function installSkill(
+  skillId: string,
+): Promise<SkillDetailResponse> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/skills/catalog/${skillId}/install`,
     { method: "POST" },
@@ -428,7 +448,9 @@ export type ImageModelInfo = {
   minTier?: string;
 };
 
-export async function fetchImageModels(): Promise<{ models: ImageModelInfo[] }> {
+export async function fetchImageModels(): Promise<{
+  models: ImageModelInfo[];
+}> {
   const response = await fetch(`${getServerBaseUrl()}/api/image-models`);
   if (!response.ok) {
     throw new Error(`Failed to fetch image models: ${response.status}`);
@@ -445,7 +467,9 @@ export type VideoModelInfo = {
   accessible?: boolean;
 };
 
-export async function fetchVideoModels(): Promise<{ models: VideoModelInfo[] }> {
+export async function fetchVideoModels(): Promise<{
+  models: VideoModelInfo[];
+}> {
   const response = await fetch(`${getServerBaseUrl()}/api/video-models`);
   if (!response.ok) {
     throw new Error(`Failed to fetch video models: ${response.status}`);
@@ -474,7 +498,9 @@ export async function generateImageDirect(
         ...(options?.model ? { model: options.model } : {}),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
         ...(options?.quality ? { quality: options.quality } : {}),
-        ...(options?.inputImages?.length ? { inputImages: options.inputImages } : {}),
+        ...(options?.inputImages?.length
+          ? { inputImages: options.inputImages }
+          : {}),
         ...(options?.size ? { size: options.size } : {}),
         ...(options?.seed !== undefined ? { seed: options.seed } : {}),
       }),
@@ -522,7 +548,9 @@ export async function generateVideoDirect(
         ...(options?.duration != null ? { duration: options.duration } : {}),
         ...(options?.resolution ? { resolution: options.resolution } : {}),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
-        ...(options?.inputImages?.length ? { inputImages: options.inputImages } : {}),
+        ...(options?.inputImages?.length
+          ? { inputImages: options.inputImages }
+          : {}),
         ...(options?.videoMode ? { videoMode: options.videoMode } : {}),
         ...(options?.seed !== undefined ? { seed: options.seed } : {}),
         ...(options?.negativePrompt

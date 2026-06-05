@@ -4,7 +4,6 @@ import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
-  createDefaultLocalAgentProviderPlugins,
   createLocalAgentRuntime,
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
@@ -65,6 +64,7 @@ import { createServerDeepAgentRuntimeProvider } from "./runtimes/server-deepagen
 import type { RuntimeExecutionContext } from "./runtimes/types.js";
 import { adaptDeepAgentStream } from "./runtimes/deepagent-events.js";
 import { loadNormalizedSessionHistory } from "./runtimes/history.js";
+import { createAimcLocalAgentProviderPlugins } from "./local-agent-providers.js";
 
 /**
  * Build the text portion of a user message, appending <input_images> XML
@@ -449,7 +449,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
   const localAgentTrusted = options.env.trustedLocalAgentMode !== false;
   const localAgentProviderPlugins =
-    options.localAgentProviderPlugins ?? createDefaultLocalAgentProviderPlugins();
+    options.localAgentProviderPlugins ?? createAimcLocalAgentProviderPlugins();
   const localAgentRuntime =
     localAgentTrusted && options.toolGateway && options.toolGatewayBaseUrl
       ? options.localAgentRuntime ??

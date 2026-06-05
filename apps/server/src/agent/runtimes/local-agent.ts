@@ -10,9 +10,13 @@ import type {
 
 import { createAimcToolsMcpServerConfig } from "../local-agent-host/mcp-config.js";
 import { mapWorkspaceSkillsToLocalAgentManifest } from "../local-agent-host/skills.js";
+import { resolveLocalAgentDefaultModel } from "../local-agent-models.js";
 import { buildAimcSystemPrompt } from "../prompts/aimc-main.js";
 import { loadNormalizedSessionHistory } from "./history.js";
-import { adaptLocalAgentEvent, toAimcRunErrorCode } from "./local-agent-events.js";
+import {
+  adaptLocalAgentEvent,
+  toAimcRunErrorCode,
+} from "./local-agent-events.js";
 import type {
   LocalAgentRuntimeExecutionContext,
   LocalAgentRuntimeProviderDeps,
@@ -37,7 +41,9 @@ function mapResumeContext(
     ...(resumeContext.providerSessionId
       ? { providerSessionId: resumeContext.providerSessionId }
       : {}),
-    ...(resumeContext.resumeToken ? { resumeToken: resumeContext.resumeToken } : {}),
+    ...(resumeContext.resumeToken
+      ? { resumeToken: resumeContext.resumeToken }
+      : {}),
   };
 }
 
@@ -77,7 +83,8 @@ export function createLocalAgentRuntimeProvider(
         rlog,
       } = readyContext;
 
-      const canvasSummary = await deps.loadCanvasSummaryForRuntime(readyContext);
+      const canvasSummary =
+        await deps.loadCanvasSummaryForRuntime(readyContext);
 
       let attachmentDataMap: Record<string, string> = {};
       if (run.attachments?.length) {
@@ -164,7 +171,9 @@ export function createLocalAgentRuntimeProvider(
           ? { attachmentDataMap }
           : {}),
         backendFactory: readyContext.backendResult.factory,
-        ...(readyContext.brandKitId ? { brandKitId: readyContext.brandKitId } : {}),
+        ...(readyContext.brandKitId
+          ? { brandKitId: readyContext.brandKitId }
+          : {}),
         ...(run.canvasId ? { canvasId: run.canvasId } : {}),
         ...(run.connectionId ? { connectionId: run.connectionId } : {}),
         runId: run.runId,
@@ -182,8 +191,13 @@ export function createLocalAgentRuntimeProvider(
           : {}),
         sessionId: run.sessionId,
       });
-      const skillManifest = mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills);
+      const skillManifest =
+        mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills);
       const resume = mapResumeContext(run.resumeContext);
+      const executableModel = await resolveLocalAgentDefaultModel(
+        resolvedModel,
+        deps.localAgentRuntime,
+      );
       const mcpServers = [
         createAimcToolsMcpServerConfig({
           gatewayBaseUrl: deps.toolGatewayBaseUrl,
@@ -212,7 +226,10 @@ export function createLocalAgentRuntimeProvider(
           prompt,
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
-          model: stripLocalAgentProviderPrefix(resolvedModel, runtimeProvider),
+          model: stripLocalAgentProviderPrefix(
+            executableModel,
+            runtimeProvider,
+          ),
           runtimeKind: "local-agent",
           runtimeProvider,
           mcpServers,
@@ -223,12 +240,11 @@ export function createLocalAgentRuntimeProvider(
           if (event.type === "error") {
             lastError = event;
           }
-          if (
-            event.type === "done" &&
-            (event.sessionId || event.resumeToken)
-          ) {
+          if (event.type === "done" && (event.sessionId || event.resumeToken)) {
             deps.recordProviderResumeMetadata?.({
-              ...(event.sessionId ? { providerSessionId: event.sessionId } : {}),
+              ...(event.sessionId
+                ? { providerSessionId: event.sessionId }
+                : {}),
               runId: run.runId,
               ...(event.resumeToken ? { resumeToken: event.resumeToken } : {}),
             });

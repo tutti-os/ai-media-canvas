@@ -9,6 +9,7 @@ import {
   isLocalCliProvider,
 } from "@/lib/agent-model-groups";
 import { fetchModels, fetchWorkspaceSettings } from "@/lib/server-api";
+import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "@/lib/workspace-settings-events";
 import { Cloud, Settings2, Terminal } from "lucide-react";
 import {
   useCallback,
@@ -40,6 +41,23 @@ const PROVIDER_PRIORITY = [
   "local",
 ];
 
+const TRIGGER_PROVIDER_ACCENT_CLASSES: Record<string, string> = {
+  agnes: "border-[#111827] text-[#111827]",
+  anthropic: "border-[#D97757] text-[#C75F3B]",
+  claude: "border-[#D97757] text-[#C75F3B]",
+  codex: "border-[#6F7CFF] text-[#4F5DFF]",
+  google: "border-[#4285F4] text-[#2563EB]",
+  openai: "border-[#111827] text-[#111827]",
+  vertex: "border-[#4285F4] text-[#2563EB]",
+};
+
+function getTriggerAccentClasses(provider: string) {
+  return (
+    TRIGGER_PROVIDER_ACCENT_CLASSES[provider] ??
+    "border-foreground text-foreground"
+  );
+}
+
 function formatProviderLabel(provider: string) {
   switch (provider) {
     case "openai":
@@ -66,10 +84,36 @@ function formatDefaultModelLabel(
   models: ModelOption[],
 ) {
   if (!modelId) return null;
+  const provider = getModelProvider(modelId);
+  if (
+    provider &&
+    isLocalCliProvider(provider) &&
+    modelId === `${provider}:default`
+  ) {
+    const concreteModel = models.find(
+      (model) => model.provider === provider && model.id !== modelId,
+    );
+    if (concreteModel) return concreteModel.name;
+  }
   const matchingModel = models.find((model) => model.id === modelId);
   if (matchingModel) return matchingModel.name;
   const [, scopedId = modelId] = modelId.split(":");
   return scopedId;
+}
+
+function resolveExecutableModelId(modelId: string, models: ModelOption[]) {
+  const provider = getModelProvider(modelId);
+  if (
+    provider &&
+    isLocalCliProvider(provider) &&
+    modelId === `${provider}:default`
+  ) {
+    return (
+      models.find((item) => item.provider === provider && item.id !== modelId)
+        ?.id ?? modelId
+    );
+  }
+  return modelId;
 }
 
 function getModelProvider(modelId: string | null | undefined) {
@@ -77,22 +121,43 @@ function getModelProvider(modelId: string | null | undefined) {
 }
 
 function ProviderLogo({ provider }: { provider: string }) {
-  if (provider === "local" || provider === "codex") {
+  if (isLocalCliProvider(provider)) {
     return (
-      <svg
-        aria-hidden="true"
-        className="h-3.5 w-3.5 shrink-0"
-        viewBox="0 0 16 16"
-        fill="currentColor"
-      >
-        <path d="M8 1.5 9.91 5.37l4.27.62-3.09 3.01.73 4.25L8 11.24l-3.82 2.01.73-4.25-3.09-3.01 4.27-.62L8 1.5Z" />
-      </svg>
+      <LocalCliProviderIcon
+        provider={provider}
+        label={formatLocalCliProviderLabel(provider)}
+        className="size-4 rounded-sm"
+        iconSize={15}
+      />
     );
   }
   return null;
 }
 
-export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
+function ModelTriggerTooltip({
+  placement,
+}: {
+  placement: "top" | "bottom";
+}) {
+  const placementClass =
+    placement === "bottom" ? "top-full mt-2" : "bottom-full mb-2";
+  return (
+    <span
+      aria-hidden="true"
+      className={`pointer-events-none absolute left-1/2 z-50 ${placementClass} -translate-x-1/2 whitespace-nowrap rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100`}
+    >
+      Select agent model
+    </span>
+  );
+}
+
+export function AgentModelSelector({
+  compact,
+  tooltipPlacement = "top",
+}: {
+  compact?: boolean;
+  tooltipPlacement?: "top" | "bottom";
+} = {}) {
   const { model, setModel } = useAgentModel();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -122,6 +187,22 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
   // homepage selector stays in sync with recent settings changes.
   useEffect(() => {
     loadModels();
+  }, [loadModels]);
+
+  useEffect(() => {
+    const handleSettingsUpdated = () => {
+      loadModels();
+    };
+    window.addEventListener(
+      WORKSPACE_SETTINGS_UPDATED_EVENT,
+      handleSettingsUpdated,
+    );
+    return () => {
+      window.removeEventListener(
+        WORKSPACE_SETTINGS_UPDATED_EVENT,
+        handleSettingsUpdated,
+      );
+    };
   }, [loadModels]);
 
   useEffect(() => {
@@ -254,37 +335,40 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
         ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center justify-center gap-1 box-border rounded-full border-[0.5px] cursor-pointer font-inter transition-[border-color,background-color] duration-100 ease-in-out ${
+        className={`group relative flex items-center justify-center box-border rounded-full border-[0.5px] cursor-pointer bg-background font-inter transition-[border-color,background-color,color] duration-100 ease-in-out ${
           compact ? "h-8 px-2.5" : "h-8 px-3"
         } ${
           isTriggerActive
-            ? "border-accent bg-accent/10 text-foreground hover:bg-accent/20 active:bg-accent/30"
+            ? `${getTriggerAccentClasses(selectedProvider || triggerLocalProvider)} shadow-[0_1px_4px_rgba(0,0,0,0.06)]`
             : "border-border text-foreground hover:bg-muted"
-        } bg-transparent`}
+        }`}
       >
-        {triggerLocalProvider ? (
-          <LocalCliProviderIcon
-            provider={triggerLocalProvider}
-            label={triggerLocalProviderLabel ?? displayLabel}
-            className="size-4 rounded-sm"
-            iconSize={15}
-          />
-        ) : (
-          <svg
-            aria-hidden="true"
-            xmlns="http://www.w3.org/2000/svg"
-            width="14"
-            height="14"
-            fill="none"
-            viewBox="0 0 14 14"
-            className="[&_path]:fill-current"
-          >
-            <path fill="currentColor" d={SPARKLE_ICON_PATH} />
-          </svg>
-        )}
-        <span className={compact ? "text-[11px]" : "text-xs"}>
-          {displayLabel}
+        <span className="flex items-center justify-center gap-1">
+          {triggerLocalProvider ? (
+            <LocalCliProviderIcon
+              provider={triggerLocalProvider}
+              label={triggerLocalProviderLabel ?? displayLabel}
+              className="size-4 rounded-sm"
+              iconSize={15}
+            />
+          ) : (
+            <svg
+              aria-hidden="true"
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              fill="none"
+              viewBox="0 0 14 14"
+              className="[&_path]:fill-current"
+            >
+              <path fill="currentColor" d={SPARKLE_ICON_PATH} />
+            </svg>
+          )}
+          <span className={compact ? "text-[11px]" : "text-xs"}>
+            {displayLabel}
+          </span>
         </span>
+        <ModelTriggerTooltip placement={tooltipPlacement} />
       </button>
       {open &&
         typeof document !== "undefined" &&
@@ -315,7 +399,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
               {[
                 {
                   id: "local-cli" as const,
-                  label: "Local CLI",
+                  label: "Local agent",
                   icon: Terminal,
                 },
                 {
@@ -386,14 +470,16 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
                 <div key={provider} className="mt-2">
                   <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
                     <ProviderLogo provider={provider} />
-                    {formatProviderLabel(provider)}
+                    {isLocalCliProvider(provider)
+                      ? formatLocalCliProviderLabel(provider)
+                      : formatProviderLabel(provider)}
                   </div>
                   {providerModels.map((m) => (
                     <button
                       key={m.id}
                       type="button"
                       onClick={() => {
-                        setModel(m.id);
+                        setModel(resolveExecutableModelId(m.id, models));
                         setOpen(false);
                       }}
                       className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors ${

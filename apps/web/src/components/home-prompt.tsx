@@ -3,6 +3,7 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -20,7 +21,11 @@ import type { HomeExampleSelection } from "@/lib/home-example-seeds";
 import { AgentModelSelector } from "@/components/agent-model-selector";
 import { ImageAttachmentBar } from "@/components/image-attachment-bar";
 import { ImageModelPreferencePopover } from "@/components/image-model-preference";
-import { useAgentModel } from "@/hooks/use-agent-model";
+import { SettingsDialog } from "@/components/settings-dialog";
+import {
+  AGENT_MODEL_REQUIRED_MESSAGE,
+  useAgentModelRequirement,
+} from "@/hooks/use-agent-model-requirement";
 import { useImageModelPreference } from "@/hooks/use-image-model-preference";
 import { useVideoModelPreference } from "@/hooks/use-video-model-preference";
 
@@ -63,6 +68,17 @@ const submitIcon = {
   viewBox: "0 0 24 24",
   path: "M11.293 3.293a1 1 0 0 1 1.414 0l8 8a1 1 0 0 1-1.414 1.414L13 6.414V20a1 1 0 1 1-2 0V6.414l-6.293 6.293a1 1 0 0 1-1.414-1.414z",
 };
+
+function PromptToolbarTooltip({ label }: { label: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+    >
+      {label}
+    </span>
+  );
+}
 
 function buildSeedImageAttachments(
   selectedSeed: HomeExampleSelection | null | undefined,
@@ -111,13 +127,27 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [configurationError, setConfigurationError] = useState<string | null>(
+      null,
+    );
     const agentBtnRef = useRef<HTMLButtonElement>(null);
     const { preference } = useImageModelPreference();
     const { preference: videoPreference } = useVideoModelPreference();
-    const { model: agentModel } = useAgentModel();
+    const {
+      isAgentModelConfigured,
+      model: agentModel,
+      ensureAgentModelConfigured,
+    } = useAgentModelRequirement();
     const seedImageMentions = selectedSeed?.inputMentions.filter(
       (mention) => mention.type === "image",
     ) ?? [];
+
+    useEffect(() => {
+      if (configurationError && isAgentModelConfigured) {
+        setConfigurationError(null);
+      }
+    }, [configurationError, isAgentModelConfigured]);
 
     useImperativeHandle(ref, () => ({
       fill(text: string) {
@@ -135,13 +165,19 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const hasContent =
       value.trim().length > 0 || (attachments && attachments.length > 0);
 
-    const handleSubmit = useCallback(() => {
+    const handleSubmit = useCallback(async () => {
       const trimmed = value.trim();
       if (
         (!trimmed && (!attachments || attachments.length === 0) && !selectedSeed) ||
         disabled ||
         isUploading
       ) {
+        return;
+      }
+
+      if (!(await ensureAgentModelConfigured())) {
+        setConfigurationError(AGENT_MODEL_REQUIRED_MESSAGE);
+        setSettingsOpen(true);
         return;
       }
 
@@ -162,6 +198,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
           : undefined,
         agentModel ?? undefined,
       );
+      setConfigurationError(null);
       setValue("");
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
@@ -170,6 +207,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       agentModel,
       attachments,
       disabled,
+      ensureAgentModelConfigured,
       isUploading,
       onSubmit,
       preference,
@@ -216,7 +254,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     }, []);
 
     return (
-      <div className="overflow-hidden rounded-xl border-[0.5px] border-border bg-muted shadow-[0_4px_8px_rgba(0,0,0,0.04)] sm:rounded-2xl">
+      <div className="overflow-visible rounded-xl border-[0.5px] border-border bg-muted shadow-[0_4px_8px_rgba(0,0,0,0.04)] sm:rounded-2xl">
         {attachments && onRemoveAttachment ? (
           <ImageAttachmentBar
             attachments={attachments}
@@ -299,13 +337,14 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
                 />
                 <button
                   type="button"
-                  aria-label="添加图片附件"
+                  aria-label="Attach images"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                  className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                 >
                   <svg viewBox={toolbarButtons[0].viewBox} className="h-4 w-4 fill-current">
                     <path d={toolbarButtons[0].path} />
                   </svg>
+                  <PromptToolbarTooltip label="Attach images" />
                 </button>
               </>
             ) : null}
@@ -313,17 +352,18 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             <button
               ref={agentBtnRef}
               type="button"
-              aria-label="图片生成偏好"
+              aria-label="Image/Video model"
               onClick={() => setModelPopoverOpen((current) => !current)}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+              className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
             >
               <svg viewBox={toolbarButtons[1].viewBox} className="h-4 w-4 fill-current">
                 <path d={toolbarButtons[1].path} />
               </svg>
+              <PromptToolbarTooltip label="Image/Video model" />
             </button>
 
             <div className="ml-1">
-              <AgentModelSelector compact />
+              <AgentModelSelector compact tooltipPlacement="bottom" />
             </div>
           </div>
 
@@ -340,10 +380,24 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
           </button>
         </div>
 
+        {configurationError ? (
+          <p
+            role="alert"
+            className="px-3 pb-3 text-left text-xs text-destructive sm:px-4"
+          >
+            {configurationError}
+          </p>
+        ) : null}
+
         <ImageModelPreferencePopover
           open={modelPopoverOpen}
           onClose={() => setModelPopoverOpen(false)}
           anchorRef={agentBtnRef}
+        />
+        <SettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          initialTab="agent"
         />
       </div>
     );

@@ -25,7 +25,7 @@ test("createManifest returns the Nextop package manifest contract", () => {
     appId: "ai-media-canvas",
     version: "1.2.3",
     name: "AI Media Canvas",
-    description: "Local-first AI media canvas workspace app.",
+    description: "Local-first AI canvas for image and video generation.",
     icon: {
       type: "asset",
       src: "icon.svg",

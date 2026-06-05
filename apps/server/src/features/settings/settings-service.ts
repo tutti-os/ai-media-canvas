@@ -1,13 +1,22 @@
-import type { WorkspaceSettings } from "@aimc/shared";
+import type { AgentRuntimeProvider, WorkspaceSettings } from "@aimc/shared";
+import {
+  type LocalAgentRuntime,
+  createLocalAgentRuntime,
+} from "@nextop-os/agent-acp-kit";
 
+import {
+  type LocalAgentModelDiscovery,
+  resolveLocalAgentDefaultModel,
+} from "../../agent/local-agent-models.js";
+import { createAimcLocalAgentProviderPlugins } from "../../agent/local-agent-providers.js";
 import type { AuthenticatedUser } from "../../auth/types.js";
 import {
   DEFAULT_AGNES_AGENT_MODEL,
   DEFAULT_AGNES_BASE_URL,
   type ServerEnv,
 } from "../../config/env.js";
-import { clearProviders } from "../../generation/providers/registry.js";
 import { registerAllProviders } from "../../generation/providers/register-all.js";
+import { clearProviders } from "../../generation/providers/registry.js";
 import type { LocalStore } from "../../local/store.js";
 
 export const LOCAL_WORKSPACE_ID = "local-workspace";
@@ -36,6 +45,16 @@ export const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   volcesApiKey: "",
   volcesBaseUrl: "",
 };
+
+export type SettingsServiceOptions = {
+  localAgentModelDiscovery?: LocalAgentModelDiscovery;
+};
+
+function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
+  return createLocalAgentRuntime({
+    providers: createAimcLocalAgentProviderPlugins(),
+  });
+}
 
 function normalizeModelList(values: string[] | undefined): string[] {
   if (!Array.isArray(values)) return [];
@@ -206,11 +225,7 @@ export function applyEffectiveProviderEnv(
 
   assignEnvValue(target, "AIMC_GOOGLE_API_KEY", env.googleApiKey);
   assignEnvValue(target, "GOOGLE_API_KEY", env.googleApiKey);
-  assignEnvValue(
-    target,
-    "AIMC_GOOGLE_VERTEX_PROJECT",
-    env.googleVertexProject,
-  );
+  assignEnvValue(target, "AIMC_GOOGLE_VERTEX_PROJECT", env.googleVertexProject);
   assignEnvValue(target, "GOOGLE_VERTEX_PROJECT", env.googleVertexProject);
   assignEnvValue(
     target,
@@ -245,19 +260,32 @@ export function refreshGenerationProviders(env: ServerEnv) {
 export function createSettingsService(
   store: LocalStore,
   baseEnv: ServerEnv,
+  options: SettingsServiceOptions = {},
 ): SettingsService {
+  const localAgentModelDiscovery =
+    options.localAgentModelDiscovery ?? createDefaultLocalAgentModelDiscovery();
+
   return {
     async getWorkspaceSettings(_user, _workspaceId) {
       return normalizeWorkspaceSettings(store.getWorkspaceSettings());
     },
 
     async updateWorkspaceSettings(_user, _workspaceId, settings) {
-      return store.updateWorkspaceSettings(normalizeWorkspaceSettings(settings));
+      return store.updateWorkspaceSettings(
+        normalizeWorkspaceSettings(settings),
+      );
     },
 
     async getEffectiveServerEnv(_workspaceId = LOCAL_WORKSPACE_ID) {
       const settings = normalizeWorkspaceSettings(store.getWorkspaceSettings());
-      return resolveEffectiveServerEnv(baseEnv, settings);
+      const effectiveEnv = resolveEffectiveServerEnv(baseEnv, settings);
+      return {
+        ...effectiveEnv,
+        agentModel: await resolveLocalAgentDefaultModel(
+          effectiveEnv.agentModel,
+          localAgentModelDiscovery,
+        ),
+      };
     },
   };
 }

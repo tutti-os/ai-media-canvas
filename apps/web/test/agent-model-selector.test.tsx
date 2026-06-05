@@ -38,6 +38,7 @@ vi.mock("../src/components/settings-dialog", () => ({
 }));
 
 import { AgentModelSelector } from "../src/components/agent-model-selector";
+import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "../src/lib/workspace-settings-events";
 
 describe("AgentModelSelector", () => {
   beforeEach(() => {
@@ -88,6 +89,36 @@ describe("AgentModelSelector", () => {
     expect(screen.getByText("qwen-plus")).toBeInTheDocument();
   });
 
+  it("renders a tooltip label for the compact model trigger", async () => {
+    fetchModelsMock.mockResolvedValue({
+      models: [{ id: "codex:default", name: "Codex", provider: "codex" }],
+    });
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "codex:default",
+      },
+    });
+
+    render(<AgentModelSelector compact />);
+
+    expect(await screen.findByText("Select agent model")).toBeInTheDocument();
+  });
+
+  it("can place the compact model trigger tooltip below the trigger", async () => {
+    fetchModelsMock.mockResolvedValue({
+      models: [{ id: "codex:default", name: "Codex", provider: "codex" }],
+    });
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "codex:default",
+      },
+    });
+
+    render(<AgentModelSelector compact tooltipPlacement="bottom" />);
+
+    expect(await screen.findByText("Select agent model")).toHaveClass("top-full");
+  });
+
   it("shows the default-model hint, keeps Agnes above OpenAI, and exposes settings at the top", async () => {
     fetchModelsMock.mockResolvedValue({
       models: [
@@ -129,7 +160,7 @@ describe("AgentModelSelector", () => {
   it("switches the picker between local CLI and API provider models", async () => {
     fetchModelsMock.mockResolvedValue({
       models: [
-        { id: "codex:gpt-5.4", name: "Codex CLI", provider: "codex" },
+        { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
         { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
       ],
     });
@@ -140,17 +171,17 @@ describe("AgentModelSelector", () => {
     await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
 
     expect(
-      await screen.findByRole("button", { name: "Local CLI" }),
+      await screen.findByRole("button", { name: "Local agent" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.getByRole("button", { name: "API provider" }),
     ).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByText("Codex CLI")).toBeInTheDocument();
+    expect(screen.getAllByText("Codex").length).toBeGreaterThan(0);
     expect(screen.queryByText("gpt-5.4")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "API provider" }));
 
-    expect(screen.getByRole("button", { name: "Local CLI" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Local agent" })).toHaveAttribute(
       "aria-pressed",
       "false",
     );
@@ -158,7 +189,38 @@ describe("AgentModelSelector", () => {
       screen.getByRole("button", { name: "API provider" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(await screen.findByText("gpt-5.4")).toBeInTheDocument();
-    expect(screen.queryByText("Codex CLI")).not.toBeInTheDocument();
+    expect(screen.queryByText("Codex")).not.toBeInTheDocument();
+  });
+
+  it("shows local CLI provider icons in the model groups", async () => {
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        { id: "codex:gpt-5.5", name: "GPT-5.5", provider: "codex" },
+        {
+          id: "claude:default",
+          name: "Default (CLI config)",
+          provider: "claude",
+        },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
+
+    await screen.findByText("Claude Code");
+    const codexHeading = screen
+      .getAllByText("Codex")
+      .find((element) => element.tagName === "DIV");
+    const claudeHeading = await screen.findByText("Claude Code");
+
+    if (!codexHeading) {
+      throw new Error("Codex provider heading was not rendered.");
+    }
+    expect(codexHeading.firstElementChild?.tagName).toBe("SPAN");
+    expect(claudeHeading.firstElementChild?.tagName).toBe("SPAN");
+    expect(codexHeading.firstElementChild).toHaveClass("size-4");
+    expect(claudeHeading.firstElementChild).toHaveClass("size-4");
   });
 
   it("shows the default local CLI provider in the trigger", async () => {
@@ -169,14 +231,121 @@ describe("AgentModelSelector", () => {
     });
     fetchModelsMock.mockResolvedValue({
       models: [
-        { id: "codex:default", name: "Default (CLI config)", provider: "codex" },
+        {
+          id: "codex:default",
+          name: "Default (CLI config)",
+          provider: "codex",
+        },
+        { id: "codex:gpt-5.5", name: "gpt-5.5", provider: "codex" },
       ],
     });
 
     render(<AgentModelSelector compact />);
 
     expect(
-      await screen.findByRole("button", { name: /Codex CLI/i }),
+      await screen.findByRole("button", { name: /Codex/i }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Codex/i }));
+    expect(
+      await screen.findByText("Uses default model: gpt-5.5"),
+    ).toBeInTheDocument();
+  });
+
+  it("uses a static provider outline for the active local CLI trigger", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "codex:default",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "codex:default",
+          name: "Default (CLI config)",
+          provider: "codex",
+        },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    const trigger = await screen.findByRole("button", { name: /Codex/i });
+    expect(trigger).not.toHaveClass("agent-model-trigger-wave");
+    expect(trigger).toHaveClass("border-[#6F7CFF]");
+    expect(trigger).toHaveClass("text-[#4F5DFF]");
+    expect(trigger).toHaveClass("bg-background");
+    expect(trigger).not.toHaveClass("border-accent");
+    expect(
+      trigger.querySelector(".agent-model-trigger-mask"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("selects the first concrete local CLI model when Default CLI config is clicked", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "codex:default",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "codex:default",
+          name: "Default (CLI config)",
+          provider: "codex",
+        },
+        { id: "codex:gpt-5.5", name: "gpt-5.5", provider: "codex" },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Codex/i }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Default (CLI config)" }),
+    );
+
+    expect(setModelMock).toHaveBeenCalledWith("codex:gpt-5.5");
+  });
+
+  it("refreshes the trigger when workspace settings are saved elsewhere", async () => {
+    fetchWorkspaceSettingsMock
+      .mockResolvedValueOnce({
+        settings: {
+          defaultModel: "codex:default",
+        },
+      })
+      .mockResolvedValueOnce({
+        settings: {
+          defaultModel: "claude:default",
+        },
+      });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "codex:default",
+          name: "Default (CLI config)",
+          provider: "codex",
+        },
+        {
+          id: "claude:default",
+          name: "Default (CLI config)",
+          provider: "claude",
+        },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    expect(
+      await screen.findByRole("button", { name: /Codex/i }),
+    ).toBeInTheDocument();
+
+    window.dispatchEvent(new Event(WORKSPACE_SETTINGS_UPDATED_EVENT));
+
+    expect(
+      await screen.findByRole("button", { name: /Claude Code/i }),
     ).toBeInTheDocument();
   });
 

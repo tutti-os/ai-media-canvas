@@ -272,6 +272,69 @@ describe("createAgentRunService", () => {
     );
   });
 
+  it("resolves local CLI default overrides before invoking the host adapter", async () => {
+    localAgentRuntimeRunMock.mockClear();
+    const localAgentRuntimeDetectMock = vi.fn(async () => [
+      {
+        provider: "codex" as const,
+        displayName: "Codex",
+        result: {
+          supported: true as const,
+          models: [
+            { id: "default", label: "Default (CLI config)" },
+            { id: "gpt-5.5", label: "gpt-5.5" },
+          ],
+        },
+      },
+    ]);
+
+    const runs = createAgentRunService({
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        detect: localAgentRuntimeDetectMock,
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "继续",
+        sessionId: "session-1",
+      },
+      {
+        model: "codex:default",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the provider invocation.
+    }
+
+    expect(localAgentRuntimeDetectMock).toHaveBeenCalled();
+    expect(localAgentRuntimeRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-5.5",
+        provider: "codex",
+      }),
+    );
+  });
+
   it("passes non-Codex local-agent providers through the host adapter", async () => {
     const localRun = vi.fn(async function* (params) {
       yield {

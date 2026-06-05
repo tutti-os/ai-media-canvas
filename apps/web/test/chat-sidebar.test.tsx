@@ -170,7 +170,7 @@ describe("ChatSidebar", () => {
     fetchWorkspaceSettingsMock.mockReset();
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
-        defaultModel: "",
+        defaultModel: "local:assistant",
       },
     });
     fetchMessagesMock.mockReset();
@@ -278,6 +278,35 @@ describe("ChatSidebar", () => {
       }),
       expect.anything(),
     );
+  });
+
+  it("opens agent settings instead of starting a run when no agent model is configured", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+      },
+    });
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(/start with an idea/i);
+    await userEvent.type(input, "hello without model{Enter}");
+
+    await waitFor(() => expect(mockWs.startRun).not.toHaveBeenCalled());
+    expect(await screen.findByText("Mock Settings Dialog")).toBeInTheDocument();
+    expect(
+      screen.getByText("请先配置或选择一个 Agent 模型。"),
+    ).toBeInTheDocument();
   });
 
   it("ignores a rapid duplicate Enter press while a send is already starting", async () => {

@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, memo } from "react";
-import { createPortal } from "react-dom";
 import {
   ArrowUpRight,
   Circle,
   Hand,
+  Image as ImageIcon,
   ImageUp,
   Minus,
   MousePointer2,
@@ -15,25 +14,35 @@ import {
   Type,
   Video,
 } from "lucide-react";
-
 import {
-  createImageGeneratorElement,
-  isImageGeneratorElement,
-  getImageGeneratorData,
+  type MouseEvent,
+  type ReactNode,
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+
+import { useImageModelPreference } from "../hooks/use-image-model-preference";
+import { useVideoModelPreference } from "../hooks/use-video-model-preference";
+import { isVideoUrl } from "../lib/canvas-elements";
+import {
   type ImageGeneratorData,
+  createImageGeneratorElement,
+  getImageGeneratorData,
+  isImageGeneratorElement,
 } from "../lib/canvas-image-generator";
 import {
+  type VideoGeneratorData,
   createVideoGeneratorElement,
   getVideoGeneratorData,
   isVideoGeneratorElement,
-  type VideoGeneratorData,
 } from "../lib/canvas-video-generator";
-import { isVideoUrl } from "../lib/canvas-elements";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
 import { VideoPlayerPanel } from "./canvas/video-player-panel";
-import { useImageModelPreference } from "../hooks/use-image-model-preference";
-import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 
 type ToolType =
   | "hand"
@@ -49,6 +58,7 @@ type ToolType =
 const TOOL_GROUPS: (ToolType | null)[] = [
   "hand",
   "selection",
+  "image",
   null,
   "rectangle",
   "ellipse",
@@ -57,7 +67,6 @@ const TOOL_GROUPS: (ToolType | null)[] = [
   "freedraw",
   null,
   "text",
-  "image",
 ];
 
 const TOOL_ICONS: Record<ToolType, React.ComponentType<{ className?: string }>> = {
@@ -81,7 +90,7 @@ const TOOL_LABELS: Record<ToolType, string> = {
   line: "直线 (L)",
   freedraw: "画笔 (P)",
   text: "文字 (T)",
-  image: "图片 (9)",
+  image: "上传图片",
 };
 
 type CanvasToolMenuProps = {
@@ -90,6 +99,54 @@ type CanvasToolMenuProps = {
   leftPanelOpen?: boolean;
   projectId: string;
 };
+
+function ToolbarTooltip({ label }: { label: string }) {
+  return (
+    <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+      {label}
+    </span>
+  );
+}
+
+function ToolbarButton({
+  label,
+  active,
+  onClick,
+  onMouseDown,
+  children,
+}: {
+  label: string;
+  active?: boolean;
+  onClick?: () => void;
+  onMouseDown?: (event: MouseEvent<HTMLButtonElement>) => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      onMouseDown={onMouseDown}
+      className={`group relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
+        active
+          ? "bg-foreground/[0.08] text-foreground"
+          : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
+      }`}
+    >
+      {children}
+      <ToolbarTooltip label={label} />
+    </button>
+  );
+}
+
+function ImageGeneratorIcon() {
+  return (
+    <span className="relative flex size-[18px] items-center justify-center">
+      <ImageIcon className="size-[17px]" />
+      <Sparkles className="absolute -right-1 -top-1 size-[9px] stroke-[2.4]" />
+    </span>
+  );
+}
 
 /** Memoized shimmer overlay for a single generating element */
 const GeneratingOverlay = memo(function GeneratingOverlay({
@@ -488,23 +545,17 @@ export function CanvasToolMenu({
           const isActive = activeTool === tool;
 
           return (
-            <button
+            <ToolbarButton
               key={tool}
-              type="button"
-              title={TOOL_LABELS[tool]}
-              aria-label={TOOL_LABELS[tool]}
+              label={TOOL_LABELS[tool]}
+              active={isActive}
               onMouseDown={(e) => {
                 e.preventDefault();
                 handleToolChange(tool);
               }}
-              className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 outline-none ${
-                isActive
-                  ? "bg-foreground/[0.08] text-foreground"
-                  : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
-              }`}
             >
               <Icon className="size-[16px]" />
-            </button>
+            </ToolbarButton>
           );
         })}
 
@@ -512,34 +563,21 @@ export function CanvasToolMenu({
         <div className="mx-0.5 h-6 w-px bg-border" />
 
         {/* AI Image -- creates a placeholder on canvas */}
-        <button
-          type="button"
-          title="AI 生成图片"
-          aria-label="AI 生成图片"
+        <ToolbarButton
+          label="AI 生成图片"
+          active={Boolean(activeGeneratorId)}
           onClick={handleCreateImageGenerator}
-          className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 outline-none ${
-            activeGeneratorId
-              ? "bg-foreground/[0.08] text-foreground"
-              : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
-          }`}
         >
-          <Sparkles className="size-[16px]" />
-        </button>
+          <ImageGeneratorIcon />
+        </ToolbarButton>
 
-        <button
-          type="button"
-          title="AI 生成视频"
-          aria-label="AI 生成视频"
+        <ToolbarButton
+          label="AI 生成视频"
+          active={Boolean(activeVideoGenId)}
           onClick={handleCreateVideoGenerator}
-          className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 outline-none ${
-            activeVideoGenId
-              ? "bg-foreground/[0.08] text-foreground"
-              : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
-          }`}
         >
           <Video className="size-[16px]" />
-        </button>
-
+        </ToolbarButton>
       </div>
 
       {/* Image Generator Panel -- floats below the selected placeholder */}

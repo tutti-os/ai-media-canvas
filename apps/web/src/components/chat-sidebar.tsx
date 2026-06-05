@@ -12,7 +12,10 @@ import type {
   StreamEvent,
   ToolArtifact,
 } from "@aimc/shared";
-import { useAgentModel } from "../hooks/use-agent-model";
+import {
+  AGENT_MODEL_REQUIRED_MESSAGE,
+  useAgentModelRequirement,
+} from "../hooks/use-agent-model-requirement";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
 import {
   materializeAssistantBlocksFromEvents,
@@ -217,10 +220,16 @@ export function ChatSidebar({
   );
   activeVideoGenerationPreferenceRef.current = activeVideoGenerationPreference;
 
-  const { model: agentModel } = useAgentModel();
+  const {
+    model: agentModel,
+    ensureAgentModelConfigured,
+  } = useAgentModelRequirement();
   const agentModelRef = useRef(agentModel);
   agentModelRef.current = agentModel;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [configurationError, setConfigurationError] = useState<string | null>(
+    null,
+  );
 
   const { toast: showToast } = useToast();
 
@@ -391,6 +400,15 @@ export function ChatSidebar({
       const currentSessionId = activeSessionIdRef.current;
       if (sendingRef.current || !currentSessionId) return;
       sendingRef.current = true;
+
+      if (!(await ensureAgentModelConfigured())) {
+        sendingRef.current = false;
+        setConfigurationError(AGENT_MODEL_REQUIRED_MESSAGE);
+        setSettingsOpen(true);
+        return;
+      }
+
+      setConfigurationError(null);
 
       // Merge explicitly-attached images with auto-sensed canvas selection images
       let currentAttachments = attachmentsOverride ?? readyAttachments;
@@ -680,6 +698,7 @@ export function ChatSidebar({
       ws,
       autoTitleSession,
       activeSessionIdRef,
+      ensureAgentModelConfigured,
     ],
   );
 
@@ -1186,6 +1205,14 @@ export function ChatSidebar({
           onRemoveMention={handleRemoveMention}
           {...(selectedCanvasElements ? { selectedCanvasElements } : {})}
         />
+        {configurationError ? (
+          <p
+            role="alert"
+            className="border-t border-border px-4 py-2 text-xs text-destructive"
+          >
+            {configurationError}
+          </p>
+        ) : null}
       </div>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

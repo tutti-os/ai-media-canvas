@@ -11,7 +11,7 @@ const API_PROVIDER_IDS = new Set([
 ]);
 
 export const LOCAL_CLI_PROVIDER_LABELS: Record<string, string> = {
-  codex: "Codex CLI",
+  codex: "Codex",
   claude: "Claude Code",
   cursor: "Cursor Agent",
   devin: "Devin for Terminal",

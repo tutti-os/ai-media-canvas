@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, describe, expect, it } from "vitest";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AuthenticatedUser } from "../../auth/types.js";
 import { loadServerEnv } from "../../config/env.js";
@@ -165,6 +165,13 @@ describe("createSettingsService", () => {
 
     await service.updateWorkspaceSettings(LOCAL_USER, "local-workspace", {
       defaultModel: "",
+      providerModels: {
+        openai: [],
+        anthropic: [],
+        agnes: [],
+        google: [],
+        vertex: [],
+      },
       openAIApiKey: "",
       openAIApiBase: "",
       anthropicApiKey: "",
@@ -209,5 +216,68 @@ describe("createSettingsService", () => {
 
     expect(effectiveEnv.agentModel).toBe("openai:gpt-4.1");
     expect(effectiveEnv.agnesDefaultModel).toBe("agnes:agnes-2.0-flash");
+  });
+
+  it("resolves local CLI default models to the first concrete detected model", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-settings-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const service = createSettingsService(store, loadServerEnv({}, {}), {
+      localAgentModelDiscovery: {
+        detect: vi.fn().mockResolvedValue([
+          {
+            provider: "codex",
+            result: {
+              supported: true,
+              models: [
+                { id: "default", label: "Default (CLI config)" },
+                { id: "gpt-5.5", label: "gpt-5.5" },
+                { id: "gpt-5.4", label: "gpt-5.4" },
+              ],
+            },
+          },
+        ]),
+      },
+    });
+
+    await service.updateWorkspaceSettings(LOCAL_USER, "local-workspace", {
+      defaultModel: "codex:default",
+      providerModels: {
+        openai: [],
+        anthropic: [],
+        agnes: [],
+        google: [],
+        vertex: [],
+      },
+      openAIApiKey: "",
+      openAIApiBase: "",
+      anthropicApiKey: "",
+      anthropicBaseUrl: "",
+      agnesApiKey: "",
+      agnesBaseUrl: "",
+      agnesDefaultModel: "",
+      googleApiKey: "",
+      googleVertexProject: "",
+      googleVertexLocation: "",
+      googleVertexVideoLocation: "",
+      replicateApiToken: "",
+      volcesApiKey: "",
+      volcesBaseUrl: "",
+    });
+
+    await expect(
+      service.getWorkspaceSettings(LOCAL_USER, "local-workspace"),
+    ).resolves.toMatchObject({
+      defaultModel: "codex:default",
+    });
+    await expect(
+      service.getEffectiveServerEnv("local-workspace"),
+    ).resolves.toMatchObject({
+      agentModel: "codex:gpt-5.5",
+    });
   });
 });
