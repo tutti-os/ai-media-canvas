@@ -38,7 +38,7 @@ test("production Nextop app workflow publishes ai-media-canvas on main", async (
   assert.equal(publish.with.app_id, "ai-media-canvas");
   assert.equal(publish.with.package_command, "pnpm package:nextop");
   assert.equal(publish.with.package_dir, "build/nextop-app/package");
-  assert.equal(publish.with.icon_path, "build/nextop-app/package/icon.svg");
+  assert.equal(publish.with.icon_path, "build/nextop-app/package/icon.png");
   assert.match(source, /NEXTOP_APP_RELEASES_PRODUCTION_AWS_REGION/);
   assert.match(source, /NEXTOP_APP_RELEASES_AWS_ROLE_ARN/);
 });
@@ -59,7 +59,7 @@ test("staging Nextop app workflow publishes ai-media-canvas manually", async () 
   assert.equal(publish.with.app_id, "ai-media-canvas");
   assert.equal(publish.with.package_command, "pnpm package:nextop");
   assert.equal(publish.with.package_dir, "build/nextop-app/package");
-  assert.equal(publish.with.icon_path, "build/nextop-app/package/icon.svg");
+  assert.equal(publish.with.icon_path, "build/nextop-app/package/icon.png");
   assert.match(source, /NEXTOP_APP_RELEASES_STAGING_AWS_REGION/);
   assert.match(source, /nextop-app-releases-staging/);
 });
