@@ -30,6 +30,17 @@ export type ChatInputHandle = {
   clearAtQuery: () => void;
 };
 
+function PromptToolbarTooltip({ label }: { label: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+    >
+      {label}
+    </span>
+  );
+}
+
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({
   onSend,
   disabled,
@@ -286,8 +297,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  title="Attach images"
+                  aria-label="Attach images"
+                  className="group relative flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <svg
                     className="h-[14px] w-[14px]"
@@ -296,6 +307,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                   >
                     <path d="M16 1.1A4.9 4.9 0 0 1 20.9 6a4.9 4.9 0 0 1-1.429 3.457h.001l-8.414 8.587-.007.006a2.9 2.9 0 0 1-3.887.193l-.213-.192a2.9 2.9 0 0 1-.007-4.095l8.414-8.586a.9.9 0 0 1 1.286 1.26L8.23 15.216l-.007.006a1.1 1.1 0 0 0 1.556 1.555l8.407-8.579.007-.007a3.1 3.1 0 0 0 .105-4.271l-.105-.112a3.1 3.1 0 0 0-4.384 0L5.4 12.387l-.007.006a5.1 5.1 0 0 0 7.214 7.213l7.749-7.934a.9.9 0 0 1 1.288 1.256l-7.753 7.938q-.005.007-.012.014a6.9 6.9 0 0 1-9.758-9.76l8.408-8.578.007-.007A4.9 4.9 0 0 1 16 1.1" />
                   </svg>
+                  <PromptToolbarTooltip label="Attach images" />
                 </button>
               </>
             )}
@@ -307,8 +319,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 ref={modelBtnRef}
                 type="button"
                 onClick={() => setModelPopoverOpen((prev) => !prev)}
-                title="Image model"
-                className={`flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] transition-colors ${
+                aria-label="Image/Video model"
+                className={`group relative flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] transition-colors ${
                   preference.mode === "manual"
                     ? "border-accent bg-accent/20 text-accent-foreground"
                     : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -317,6 +329,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 <svg className="h-[14px] w-[14px]" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M10.8 1.307a2.33 2.33 0 0 1 2.4 0l7.67 4.602A2.33 2.33 0 0 1 22 7.907v8.361a2.33 2.33 0 0 1-1.13 1.998l-7.67 4.602-.141.078a2.33 2.33 0 0 1-2.258-.078l-7.67-4.602A2.33 2.33 0 0 1 2 16.268V7.907a2.33 2.33 0 0 1 1.003-1.915l.128-.083z" />
                 </svg>
+                <PromptToolbarTooltip label="Image/Video model" />
               </button>
               <ImageModelPreferencePopover
                 open={modelPopoverOpen}

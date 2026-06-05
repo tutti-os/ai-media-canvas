@@ -51,4 +51,19 @@ describe("ChatInput", () => {
     const buttons = screen.getAllByRole("button");
     expect(buttons.at(-1)).toBeDisabled();
   });
+
+  it("renders tooltip labels for prompt toolbar icon buttons", () => {
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        onAddFiles={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Attach images")).toBeInTheDocument();
+    expect(screen.getByText("Image/Video model")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Image/Video model" }),
+    ).toBeInTheDocument();
+  });
 });

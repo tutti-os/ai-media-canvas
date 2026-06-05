@@ -69,6 +69,17 @@ const submitIcon = {
   path: "M11.293 3.293a1 1 0 0 1 1.414 0l8 8a1 1 0 0 1-1.414 1.414L13 6.414V20a1 1 0 1 1-2 0V6.414l-6.293 6.293a1 1 0 0 1-1.414-1.414z",
 };
 
+function PromptToolbarTooltip({ label }: { label: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+    >
+      {label}
+    </span>
+  );
+}
+
 function buildSeedImageAttachments(
   selectedSeed: HomeExampleSelection | null | undefined,
 ): ReadyAttachment[] {
@@ -243,7 +254,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     }, []);
 
     return (
-      <div className="overflow-hidden rounded-xl border-[0.5px] border-border bg-muted shadow-[0_4px_8px_rgba(0,0,0,0.04)] sm:rounded-2xl">
+      <div className="overflow-visible rounded-xl border-[0.5px] border-border bg-muted shadow-[0_4px_8px_rgba(0,0,0,0.04)] sm:rounded-2xl">
         {attachments && onRemoveAttachment ? (
           <ImageAttachmentBar
             attachments={attachments}
@@ -326,13 +337,14 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
                 />
                 <button
                   type="button"
-                  aria-label="添加图片附件"
+                  aria-label="Attach images"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                  className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                 >
                   <svg viewBox={toolbarButtons[0].viewBox} className="h-4 w-4 fill-current">
                     <path d={toolbarButtons[0].path} />
                   </svg>
+                  <PromptToolbarTooltip label="Attach images" />
                 </button>
               </>
             ) : null}
@@ -340,17 +352,18 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             <button
               ref={agentBtnRef}
               type="button"
-              aria-label="图片生成偏好"
+              aria-label="Image/Video model"
               onClick={() => setModelPopoverOpen((current) => !current)}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+              className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
             >
               <svg viewBox={toolbarButtons[1].viewBox} className="h-4 w-4 fill-current">
                 <path d={toolbarButtons[1].path} />
               </svg>
+              <PromptToolbarTooltip label="Image/Video model" />
             </button>
 
             <div className="ml-1">
-              <AgentModelSelector compact />
+              <AgentModelSelector compact tooltipPlacement="bottom" />
             </div>
           </div>
 

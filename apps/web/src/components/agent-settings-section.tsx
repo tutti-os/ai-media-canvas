@@ -338,6 +338,30 @@ function applyProviderModelUpdate(
   };
 }
 
+function autoImportDetectedProviderModels(
+  current: WorkspaceSettings,
+  availableModels: ModelInfo[],
+): WorkspaceSettings {
+  let nextSettings = current;
+
+  for (const protocol of AGENT_PROTOCOLS) {
+    if (nextSettings.providerModels[protocol.id].length > 0) continue;
+
+    const detectedModels = availableModels
+      .filter((model) => model.provider === protocol.id)
+      .map((model) => model.id);
+    if (detectedModels.length === 0) continue;
+
+    nextSettings = applyProviderModelUpdate(
+      nextSettings,
+      protocol.id,
+      detectedModels,
+    );
+  }
+
+  return nextSettings;
+}
+
 function getApiProviderBaseUrl(
   settings: WorkspaceSettings,
   provider: AgentProtocolId,
@@ -888,6 +912,13 @@ export function AgentSettingsSection({
   useEffect(() => {
     void refreshAvailableModels();
   }, [refreshAvailableModels]);
+
+  useEffect(() => {
+    if (availableModels.length === 0) return;
+    setSettings((current) =>
+      autoImportDetectedProviderModels(current, availableModels),
+    );
+  }, [availableModels]);
 
   const normalizedInitial = useMemo(
     () => JSON.stringify(initialSettings),

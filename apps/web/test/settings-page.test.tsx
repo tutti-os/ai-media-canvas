@@ -134,6 +134,91 @@ describe("SettingsPage", () => {
     expect(screen.queryByLabelText("OpenAI API Key")).not.toBeInTheDocument();
   });
 
+  it("auto-imports detected API provider models when the provider has no configured models", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://agnes.example/v1",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "agnes:agnes-2.0-flash",
+          name: "Agnes 2.0 Flash",
+          provider: "agnes",
+        },
+      ],
+    });
+    updateWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "agnes:agnes-2.0-flash",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          agnes: ["agnes:agnes-2.0-flash"],
+        },
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://agnes.example/v1",
+        agnesDefaultModel: "agnes:agnes-2.0-flash",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+
+    await waitFor(
+      () =>
+        expect(screen.getByLabelText("Agnes model 1")).toHaveValue(
+          "agnes-2.0-flash",
+        ),
+      { timeout: 1000 },
+    );
+    expect(screen.queryByRole("button", { name: "Import detected" }))
+      .not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaultModel: "agnes:agnes-2.0-flash",
+          providerModels: expect.objectContaining({
+            agnes: ["agnes:agnes-2.0-flash"],
+          }),
+          agnesDefaultModel: "agnes:agnes-2.0-flash",
+        }),
+      ),
+    );
+  });
+
   it("loads and saves local agent provider settings from the Agent tab", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
@@ -353,8 +438,13 @@ describe("SettingsPage", () => {
     await waitFor(() =>
       expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
         expect.objectContaining({
+          defaultModel: "openai:deepseek-chat",
           providerModels: expect.objectContaining({
-            openai: ["openai:custom-gateway-model"],
+            openai: [
+              "openai:deepseek-chat",
+              "openai:qwen-plus",
+              "openai:custom-gateway-model",
+            ],
           }),
         }),
       ),

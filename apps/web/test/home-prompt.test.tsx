@@ -174,4 +174,21 @@ describe("HomePrompt", () => {
       screen.getByText("请先配置或选择一个 Agent 模型。"),
     ).toBeInTheDocument();
   });
+
+  it("renders tooltip labels for prompt toolbar icon buttons", () => {
+    render(
+      <HomePrompt
+        onSubmit={vi.fn()}
+        onAddFiles={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Attach images")).toBeInTheDocument();
+    expect(screen.getByText("Attach images")).toHaveClass("top-full");
+    expect(screen.getByText("Image/Video model")).toBeInTheDocument();
+    expect(screen.getByText("Image/Video model")).toHaveClass("top-full");
+    expect(
+      screen.getByRole("button", { name: "Image/Video model" }),
+    ).toBeInTheDocument();
+  });
 });
