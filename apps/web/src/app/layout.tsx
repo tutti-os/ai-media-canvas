@@ -15,7 +15,7 @@ const metadataBase = process.env.AIMC_SERVER_BASE_URL
 export const metadata: Metadata = {
   metadataBase,
   title: "AI Media Canvas",
-  description: "Local-first AI media canvas app",
+  description: "Local-first AI canvas for image and video generation.",
   icons: {
     icon: [
       { url: "/brand/aimc-logo-cloud-spark.svg", type: "image/svg+xml" },
@@ -25,13 +25,13 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "AI Media Canvas",
-    description: "Local-first AI media canvas app",
+    description: "Local-first AI canvas for image and video generation.",
     images: [{ url: "/og-image.png", width: 1200, height: 630 }],
   },
   twitter: {
     card: "summary_large_image",
     title: "AI Media Canvas",
-    description: "Local-first AI media canvas app",
+    description: "Local-first AI canvas for image and video generation.",
     images: ["/og-image.png"],
   },
 };

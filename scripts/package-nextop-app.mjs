@@ -27,7 +27,7 @@ export function createManifest({ version }) {
     appId: "ai-media-canvas",
     version,
     name: "AI Media Canvas",
-    description: "Local-first AI media canvas workspace app.",
+    description: "Local-first AI canvas for image and video generation.",
     icon: {
       type: "asset",
       src: "icon.svg",
