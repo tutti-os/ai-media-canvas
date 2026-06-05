@@ -24,6 +24,10 @@ vi.mock("../src/components/image-model-preference", () => ({
   ImageModelPreferencePopover: () => null,
 }));
 
+vi.mock("../src/components/settings-dialog", () => ({
+  SettingsDialog: () => null,
+}));
+
 describe("ChatInput", () => {
   afterEach(() => {
     cleanup();

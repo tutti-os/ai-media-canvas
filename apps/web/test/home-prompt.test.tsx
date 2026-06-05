@@ -24,16 +24,31 @@ vi.mock("../src/components/agent-model-selector", () => ({
 vi.mock("../src/components/settings-dialog", () => ({
   SettingsDialog: ({
     open,
+    initialTab,
   }: {
     open: boolean;
+    initialTab?: "agent" | "media";
   }) => {
-    settingsDialogSpy({ open });
-    return open ? <div>Mock Agent Settings</div> : null;
+    settingsDialogSpy({ open, initialTab });
+    return open ? (
+      <div>{initialTab === "media" ? "Mock Media Settings" : "Mock Agent Settings"}</div>
+    ) : null;
   },
 }));
 
 vi.mock("../src/components/image-model-preference", () => ({
-  ImageModelPreferencePopover: () => null,
+  ImageModelPreferencePopover: ({
+    open,
+    onOpenSettings,
+  }: {
+    open: boolean;
+    onOpenSettings?: () => void;
+  }) =>
+    open ? (
+      <button type="button" onClick={onOpenSettings}>
+        Open media settings
+      </button>
+    ) : null,
 }));
 
 vi.mock("../src/hooks/use-agent-model-requirement", () => ({
@@ -190,5 +205,20 @@ describe("HomePrompt", () => {
     expect(
       screen.getByRole("button", { name: "Image/Video model" }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the media settings tab from the image/video model popover", async () => {
+    const user = userEvent.setup();
+
+    render(<HomePrompt onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Image/Video model" }));
+    await user.click(screen.getByRole("button", { name: "Open media settings" }));
+
+    expect(await screen.findByText("Mock Media Settings")).toBeInTheDocument();
+    expect(settingsDialogSpy).toHaveBeenLastCalledWith({
+      open: true,
+      initialTab: "media",
+    });
   });
 });

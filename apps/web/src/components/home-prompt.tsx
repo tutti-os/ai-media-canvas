@@ -128,6 +128,9 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [settingsInitialTab, setSettingsInitialTab] = useState<"agent" | "media">(
+      "agent",
+    );
     const [configurationError, setConfigurationError] = useState<string | null>(
       null,
     );
@@ -177,6 +180,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
 
       if (!(await ensureAgentModelConfigured())) {
         setConfigurationError(AGENT_MODEL_REQUIRED_MESSAGE);
+        setSettingsInitialTab("agent");
         setSettingsOpen(true);
         return;
       }
@@ -230,6 +234,12 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       },
       [handleSubmit],
     );
+
+    const handleOpenMediaSettings = useCallback(() => {
+      setModelPopoverOpen(false);
+      setSettingsInitialTab("media");
+      setSettingsOpen(true);
+    }, []);
 
     const handlePaste = useCallback(
       (event: React.ClipboardEvent) => {
@@ -393,11 +403,12 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
           open={modelPopoverOpen}
           onClose={() => setModelPopoverOpen(false)}
           anchorRef={agentBtnRef}
+          onOpenSettings={handleOpenMediaSettings}
         />
         <SettingsDialog
           open={settingsOpen}
           onOpenChange={setSettingsOpen}
-          initialTab="agent"
+          initialTab={settingsInitialTab}
         />
       </div>
     );
