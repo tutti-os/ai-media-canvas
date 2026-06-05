@@ -9,6 +9,7 @@ import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { AgentModelSelector } from "./agent-model-selector";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
+import { SettingsDialog } from "./settings-dialog";
 
 type ChatInputProps = {
   onSend: (message: string) => void;
@@ -60,6 +61,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { preference } = useImageModelPreference();
   const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
 
   useImperativeHandle(ref, () => ({
@@ -83,6 +85,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       textareaRef.current.style.height = "auto";
     }
   }, [value, disabled, isUploading, onSend, attachments, canSendAttachments]);
+
+  const handleOpenMediaSettings = useCallback(() => {
+    setModelPopoverOpen(false);
+    setSettingsOpen(true);
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -335,6 +342,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 open={modelPopoverOpen}
                 onClose={() => setModelPopoverOpen(false)}
                 anchorRef={modelBtnRef}
+                onOpenSettings={handleOpenMediaSettings}
               />
             </div>
           </div>
@@ -358,6 +366,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           </button>
         </div>
       </div>
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        initialTab="media"
+      />
     </div>
   );
 });

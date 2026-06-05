@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Film } from "lucide-react";
+import { Film, Settings2 } from "lucide-react";
 
 import type { ImageModelInfo } from "../lib/server-api";
 import type { VideoModelInfo } from "../lib/server-api";
@@ -15,10 +15,12 @@ export function ImageModelPreferencePopover({
   open,
   onClose,
   anchorRef,
+  onOpenSettings,
 }: {
   open: boolean;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLElement | null>;
+  onOpenSettings?: () => void;
 }) {
   const { preference, setMode, toggleModel } = useImageModelPreference();
   const {
@@ -129,26 +131,41 @@ export function ImageModelPreferencePopover({
             <span className="text-sm font-semibold text-foreground">
               {activeTab === "image" ? "Image Renderer" : "Video Planner"}
             </span>
-            <button
-              type="button"
-              onClick={() =>
-                currentSetMode(currentPreference.mode === "auto" ? "manual" : "auto")
-              }
-              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                currentPreference.mode === "auto"
-                  ? "bg-accent/15 text-accent-foreground"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
-              }`}
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
+            <div className="flex items-center gap-1.5">
+              {onOpenSettings ? (
+                <button
+                  type="button"
+                  aria-label="Open media settings"
+                  onClick={() => {
+                    onClose();
+                    onOpenSettings();
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <Settings2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() =>
+                  currentSetMode(currentPreference.mode === "auto" ? "manual" : "auto")
+                }
+                className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                   currentPreference.mode === "auto"
-                    ? "bg-accent"
-                    : "bg-muted-foreground"
+                    ? "bg-accent/15 text-accent-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
                 }`}
-              />
-              {currentPreference.mode === "auto" ? "Auto" : "Manual"}
-            </button>
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    currentPreference.mode === "auto"
+                      ? "bg-accent"
+                      : "bg-muted-foreground"
+                  }`}
+                />
+                {currentPreference.mode === "auto" ? "Auto" : "Manual"}
+              </button>
+            </div>
           </div>
           <span className="text-[11px] text-muted-foreground">
             {currentPreference.mode === "auto"
