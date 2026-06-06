@@ -47,7 +47,9 @@ vi.mock("../src/hooks/use-image-attachments", () => ({
 vi.mock("../src/lib/server-api", () => ({
   fetchProjects: (...args: unknown[]) => fetchProjectsMock(...args),
   fetchModels: vi.fn().mockResolvedValue({
-    models: [{ id: "local:assistant", name: "Local Assistant", provider: "local" }],
+    models: [
+      { id: "local:assistant", name: "Local Assistant", provider: "local" },
+    ],
   }),
   fetchWorkspaceSettings: vi.fn().mockResolvedValue({
     settings: {
@@ -55,7 +57,12 @@ vi.mock("../src/lib/server-api", () => ({
     },
   }),
   fetchImageModels: vi.fn().mockResolvedValue({
-    models: [{ id: "local:placeholder-image", displayName: "Local Placeholder Image" }],
+    models: [
+      { id: "local:placeholder-image", displayName: "Local Placeholder Image" },
+    ],
+  }),
+  fetchVideoModels: vi.fn().mockResolvedValue({
+    models: [{ id: "agnes-video", displayName: "Agnes Video" }],
   }),
 }));
 
@@ -97,7 +104,9 @@ describe("Home page", () => {
     expect(await screen.findByText("Recent Project")).toBeInTheDocument();
     expect(screen.getByText("灵感发现")).toBeInTheDocument();
     expect(
-      screen.getByText("请基于文化艺术中心这个灵感方向，为我做一套品牌探索，输出品牌关键词、主视觉方向、海报延展和社交媒体视觉提案。"),
+      screen.getByText(
+        "请基于文化艺术中心这个灵感方向，为我做一套品牌探索，输出品牌关键词、主视觉方向、海报延展和社交媒体视觉提案。",
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/浏览$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/赞$/)).not.toBeInTheDocument();

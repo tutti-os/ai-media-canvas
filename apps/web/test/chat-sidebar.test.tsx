@@ -26,6 +26,7 @@ const {
   saveMessageMock,
   updateSessionTitleMock,
   fetchImageModelsMock,
+  fetchVideoModelsMock,
   fetchModelsMock,
   fetchWorkspaceSettingsMock,
 } = vi.hoisted(() => ({
@@ -34,6 +35,7 @@ const {
   fetchMessagesMock: vi.fn(),
   fetchRunEventsMock: vi.fn(),
   fetchImageModelsMock: vi.fn(),
+  fetchVideoModelsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
   fetchWorkspaceSettingsMock: vi.fn(),
   fetchSessionsMock: vi.fn(),
@@ -45,6 +47,7 @@ vi.mock("../src/lib/server-api", () => ({
   createSession: createSessionMock,
   deleteSession: deleteSessionMock,
   fetchImageModels: fetchImageModelsMock,
+  fetchVideoModels: fetchVideoModelsMock,
   fetchModels: fetchModelsMock,
   fetchRunEvents: fetchRunEventsMock,
   fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
@@ -155,6 +158,15 @@ describe("ChatSidebar", () => {
         },
       ],
     });
+    fetchVideoModelsMock.mockReset();
+    fetchVideoModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "agnes-video",
+          displayName: "Agnes Video",
+        },
+      ],
+    });
     fetchModelsMock.mockReset();
     fetchModelsMock.mockResolvedValue({
       models: [
@@ -236,6 +248,46 @@ describe("ChatSidebar", () => {
         sessionId: "session-canvas-1",
       }),
       expect.anything(),
+    );
+  });
+
+  it("waits for the user message to persist before starting the run", async () => {
+    let resolveSave: (() => void) | undefined;
+    saveMessageMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(/start with an idea/i);
+    await userEvent.type(input, "preserve order{Enter}");
+
+    await waitFor(() => expect(saveMessageMock).toHaveBeenCalledTimes(1));
+    expect(mockWs.startRun).not.toHaveBeenCalled();
+
+    resolveSave?.();
+
+    await waitFor(() =>
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: "session-real",
+          prompt: "preserve order",
+        }),
+        expect.any(Function),
+      ),
     );
   });
 

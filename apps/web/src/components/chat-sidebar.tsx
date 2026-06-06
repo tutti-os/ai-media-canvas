@@ -494,8 +494,7 @@ export function ChatSidebar({
       };
       updateSessionMessages(currentSessionId, (prev) => [...prev, userMsg]);
 
-      // Persist user message (fire-and-forget)
-      saveMessage(currentSessionId, {
+      const userMessageSave = saveMessage(currentSessionId, {
         role: "user",
         content: text,
         contentBlocks: [
@@ -503,9 +502,7 @@ export function ChatSidebar({
           ...mentionBlocks,
           ...imageBlocks,
         ],
-      }).catch((err) =>
-        console.error("[chat] Failed to save user message:", err),
-      );
+      });
 
       // Auto-title from first user message
       autoTitleSession(text);
@@ -520,6 +517,8 @@ export function ChatSidebar({
       abortRef.current = false;
 
       try {
+        await userMessageSave;
+
         const perf = {
           t0Send: performance.now(),
           tAck: 0,

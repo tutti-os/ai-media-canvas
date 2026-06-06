@@ -100,7 +100,7 @@ describe("createAimcDeepAgent", () => {
     expect(createDeepAgentMock).toHaveBeenCalledOnce();
   });
 
-  it("teaches the agent to avoid deletes without confirmation and prefer single-shot image editing for reference-image cover requests", () => {
+  it("teaches the agent that normal canvas tools cannot delete and prefer single-shot image editing for reference-image cover requests", () => {
     createAimcDeepAgent({
       canvasId: "canvas-1",
       env: {
@@ -114,7 +114,9 @@ describe("createAimcDeepAgent", () => {
     });
 
     const config = createDeepAgentMock.mock.calls.at(-1)?.[0];
-    expect(config?.systemPrompt).toContain("删除元素属于危险操作");
+    expect(config?.systemPrompt).toContain("常规画布工具不提供删除能力");
+    expect(config?.systemPrompt).toContain("不要在生成图片后自动添加标题、说明、按钮、装饰形状或分隔线");
+    expect(config?.systemPrompt).toContain("必须先 inspect_canvas 读取真实元素坐标和尺寸");
     expect(config?.systemPrompt).toContain("优先单次调用 generate_image");
   });
 });

@@ -66,7 +66,7 @@ function FrameUploadTile({
         type="button"
         disabled={disabled || loading}
         onClick={() => inputRef.current?.click()}
-        className="group relative flex h-[48px] w-[104px] shrink-0 items-center justify-center gap-2 overflow-hidden rounded-[18px] border border-transparent bg-muted/25 px-3 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:border-border/70 hover:bg-muted/45 disabled:cursor-not-allowed disabled:opacity-70"
+        className="group relative flex h-[48px] w-[104px] shrink-0 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-[18px] border border-border/55 bg-muted/25 px-3 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:border-border/80 hover:bg-muted/45 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {frame ? (
           <>
@@ -96,7 +96,7 @@ function FrameUploadTile({
           type="button"
           aria-label={`移除${label}`}
           onClick={onClear}
-          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/85 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition-opacity hover:text-foreground group-hover:opacity-100"
+          className="absolute right-1 top-1 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-background/85 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition-opacity hover:text-foreground group-hover:opacity-100"
         >
           <X className="h-3 w-3" />
         </button>
@@ -145,18 +145,6 @@ export function VideoGeneratorPanel({
       .then((response) => {
         if (cancelled) return;
         setModels(response.models);
-        setModel((currentModel) => {
-          if (response.models.some((item) => item.id === currentModel)) {
-            return currentModel;
-          }
-          const fallbackModel = response.models[0]?.id ?? currentModel;
-          if (fallbackModel !== currentModel) {
-            updateVideoGeneratorElement(excalidrawApi, elementId, {
-              model: fallbackModel,
-            });
-          }
-          return fallbackModel;
-        });
       })
       .catch((err) => {
         console.warn("[video-gen] Failed to fetch models:", err);
@@ -165,6 +153,19 @@ export function VideoGeneratorPanel({
       cancelled = true;
     };
   }, [excalidrawApi, elementId]);
+
+  useEffect(() => {
+    if (models.length === 0) return;
+    if (models.some((item) => item.id === model)) return;
+
+    const fallbackModel = models[0]?.id;
+    if (!fallbackModel || fallbackModel === model) return;
+
+    setModel(fallbackModel);
+    updateVideoGeneratorElement(excalidrawApi, elementId, {
+      model: fallbackModel,
+    });
+  }, [models, model, excalidrawApi, elementId]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -416,7 +417,7 @@ export function VideoGeneratorPanel({
               <button
                 type="button"
                 onClick={() => setShowModelDropdown((value) => !value)}
-                className="flex h-9 items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60"
+                className="flex h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60"
               >
                 <span className="truncate max-w-[180px]">
                   {currentModel
@@ -439,7 +440,7 @@ export function VideoGeneratorPanel({
                         key={item.id}
                         type="button"
                         onClick={() => handleModelChange(item.id)}
-                        className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+                        className="flex w-full cursor-pointer items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
                       >
                         <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-muted-foreground">
                           {(item.displayName || item.id).slice(0, 1)}
@@ -449,9 +450,6 @@ export function VideoGeneratorPanel({
                             <div className="truncate text-sm font-medium text-foreground">
                               {item.displayName}
                             </div>
-                            <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                              {formatProviderLabel(item.provider)}
-                            </span>
                           </div>
                           <div className="mt-0.5 text-xs text-muted-foreground">
                             {formatProviderLabel(item.provider)}
@@ -468,7 +466,7 @@ export function VideoGeneratorPanel({
               <button
                 type="button"
                 onClick={() => setShowParamsPopover((value) => !value)}
-                className="flex h-9 items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60"
+                className="flex h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60"
               >
                 <Zap className="h-3.5 w-3.5 text-muted-foreground" />
                 <span>{paramsLabel}</span>
@@ -486,7 +484,7 @@ export function VideoGeneratorPanel({
                             key={ratio}
                             type="button"
                             onClick={() => handleAspectRatioChange(ratio)}
-                            className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
+                            className={`cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
                               aspectRatio === ratio
                                 ? "bg-foreground text-background"
                                 : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -508,7 +506,7 @@ export function VideoGeneratorPanel({
                             key={value}
                             type="button"
                             onClick={() => handleDurationChange(value)}
-                            className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
+                            className={`cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
                               duration === value
                                 ? "bg-foreground text-background"
                                 : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -535,7 +533,7 @@ export function VideoGeneratorPanel({
                                 resolution: value,
                               });
                             }}
-                            className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
+                            className={`cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
                               resolution === value
                                 ? "bg-foreground text-background"
                                 : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -556,7 +554,7 @@ export function VideoGeneratorPanel({
             type="button"
             onClick={() => void handleGenerate()}
             disabled={loading || !prompt.trim()}
-            className="inline-flex h-10 items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? "生成中..." : "生成视频"}
           </button>

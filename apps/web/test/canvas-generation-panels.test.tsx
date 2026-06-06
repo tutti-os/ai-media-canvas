@@ -230,6 +230,39 @@ describe("canvas generation panels", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the video model provider only once in the model picker", async () => {
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Agnes Video v2.0 · Agnes Video",
+      }),
+    );
+
+    expect(screen.getAllByText("Agnes Video")).toHaveLength(1);
+  });
+
   it("centers the video generator panel below the selected generator", async () => {
     render(
       <ToastProvider>
@@ -383,11 +416,23 @@ describe("canvas generation panels", () => {
       "h-[48px]",
       "w-[104px]",
       "text-[11px]",
+      "border-border/55",
+      "hover:border-border/80",
+      "cursor-pointer",
     );
     expect(screen.getByRole("button", { name: "尾帧" })).toHaveClass(
       "h-[48px]",
       "w-[104px]",
       "text-[11px]",
+      "border-border/55",
+      "hover:border-border/80",
+      "cursor-pointer",
+    );
+    expect(
+      screen.getByRole("button", { name: "agnes-video/agnes-video-v2.0" }),
+    ).toHaveClass("cursor-pointer");
+    expect(screen.getByRole("button", { name: "16:9 · 5s" })).toHaveClass(
+      "cursor-pointer",
     );
   });
 });

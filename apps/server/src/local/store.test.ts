@@ -568,6 +568,15 @@ describe("createLocalStore", () => {
 
     expect(catalog.some((skill) => skill.installed)).toBe(true);
     expect(catalog.some((skill) => skill.name === "Canvas Design")).toBe(true);
+    const canvasDirectorSkill = catalog.find((skill) => skill.name === "Canvas Director");
+    expect(canvasDirectorSkill).toBeDefined();
+    const canvasDirectorDetail = store.getSkillDetail(canvasDirectorSkill!.id);
+    expect(canvasDirectorDetail?.skillContent).toContain(
+      "Inspect the real element bounds before any layout pass",
+    );
+    expect(canvasDirectorDetail?.skillContent).toContain(
+      "Do not add decorative labels, dividers, badges, buttons, or detail text around generated media unless the user explicitly asks for editable layered layout.",
+    );
 
     const bundled = catalog.find((skill) => skill.installed) ?? catalog[0];
     expect(bundled).toBeDefined();

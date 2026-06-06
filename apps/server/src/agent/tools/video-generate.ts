@@ -7,16 +7,17 @@ import {
   resolveVideoProviderName,
   type AvailableModel,
 } from "../../generation/providers/registry.js";
+import type { CanvasLayoutInspectionState } from "./inspect-canvas.js";
 
 const DEFAULT_MODEL = "google-official/veo-3.1-generate-preview";
 const AGNES_VIDEO_MODEL_PREFIX = "agnes-video/";
 
 function validateAgnesVideoInput(input: {
   model: string;
-  aspectRatio?: string;
-  frameRate?: number;
-  numFrames?: number;
-  resolution?: string;
+  aspectRatio?: string | undefined;
+  frameRate?: number | undefined;
+  numFrames?: number | undefined;
+  resolution?: string | undefined;
 }) {
   if (!input.model.startsWith(AGNES_VIDEO_MODEL_PREFIX)) {
     return;
@@ -399,6 +400,7 @@ export async function runVideoGenerate(
 
 export function createVideoGenerateTool(deps?: {
   submitVideoJob?: SubmitVideoJobFn;
+  layoutInspectionState?: CanvasLayoutInspectionState;
   availableModels?: AvailableModel[];
 }) {
   const models = deps?.availableModels ?? getAvailableVideoModels();
@@ -409,7 +411,12 @@ export function createVideoGenerateTool(deps?: {
 
   return tool(
     async (input: VideoGenerateInput) => {
-      return await runVideoGenerate(input, deps?.submitVideoJob);
+      const result = await runVideoGenerate(input, deps?.submitVideoJob);
+      if (!result.error && deps?.layoutInspectionState) {
+        delete deps.layoutInspectionState.canvasId;
+        delete deps.layoutInspectionState.inspectedAt;
+      }
+      return result;
     },
     {
       name: "generate_video",

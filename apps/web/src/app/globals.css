@@ -368,6 +368,34 @@
   display: none !important;
 }
 
+/* Hide advanced native Excalidraw context-menu actions for AIMC. */
+.excalidraw .context-menu .context-menu-item-separator,
+.excalidraw .context-menu li[data-testid="copyStyles"],
+.excalidraw .context-menu li[data-testid="pasteStyles"],
+.excalidraw .context-menu li[data-testid="wrapSelectionInFrame"],
+.excalidraw .context-menu li[data-testid="copyAsSvg"],
+.excalidraw .context-menu li[data-testid="addToLibrary"],
+.excalidraw .context-menu li[data-testid="sendBackward"],
+.excalidraw .context-menu li[data-testid="bringForward"],
+.excalidraw .context-menu li[data-testid="sendToBack"],
+.excalidraw .context-menu li[data-testid="bringToFront"],
+.excalidraw .context-menu li[data-testid="flipHorizontal"],
+.excalidraw .context-menu li[data-testid="flipVertical"],
+.excalidraw .context-menu li[data-testid="hyperlink"],
+.excalidraw .context-menu li[data-testid="copyElementLink"],
+.excalidraw .context-menu li[data-testid="toggleElementLock"] {
+  display: none !important;
+}
+
+.excalidraw .context-menu li[data-testid="copyAsPng"] .context-menu-item__label {
+  font-size: 0;
+}
+
+.excalidraw .context-menu li[data-testid="copyAsPng"] .context-menu-item__label::after {
+  content: "Copy image";
+  font-size: 1rem;
+}
+
 /* Image generator shimmer animation */
 @keyframes shimmer-scan {
   0% {

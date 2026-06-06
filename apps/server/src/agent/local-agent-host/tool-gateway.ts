@@ -14,7 +14,10 @@ import { refreshGenerationProviders } from "../../features/settings/settings-ser
 import type { UserDataClient } from "../../auth/request.js";
 import { createBrandKitTool } from "../tools/brand-kit.js";
 import { createImageGenerateTool, type SubmitImageJobFn } from "../tools/image-generate.js";
-import { createInspectCanvasTool } from "../tools/inspect-canvas.js";
+import {
+  createInspectCanvasTool,
+  type CanvasLayoutInspectionState,
+} from "../tools/inspect-canvas.js";
 import { createManipulateCanvasTool } from "../tools/manipulate-canvas.js";
 import { createPersistSandboxFileTool } from "../tools/persist-sandbox-file.js";
 import { createProjectSearchTool } from "../tools/project-search.js";
@@ -51,6 +54,7 @@ type LocalToolGatewaySession = {
   runId: string;
   runtimeEnv: ServerEnv;
   sandboxDir?: string;
+  layoutInspectionState?: CanvasLayoutInspectionState;
   submitImageJob?: SubmitImageJobFn;
   submitVideoJob?: SubmitVideoJobFn;
   userId?: string;
@@ -257,6 +261,7 @@ export function createLocalToolGatewayService(
     const createUserClient = options.createUserClient as (
       accessToken: string,
     ) => UserDataClient;
+    const layoutInspectionState = session.layoutInspectionState ?? {};
     const persistSessionImage = session.accessToken
       ? async (sourceUrl: string, mimeType?: string) => {
           const image = await readImageBytes(sourceUrl);
@@ -275,15 +280,23 @@ export function createLocalToolGatewayService(
         }
       : undefined;
     const tools: StructuredToolLike[] = [
-      createInspectCanvasTool({ createUserClient }) as unknown as StructuredToolLike,
-      createManipulateCanvasTool({ createUserClient }) as unknown as StructuredToolLike,
+      createInspectCanvasTool({
+        createUserClient,
+        layoutInspectionState,
+      }) as unknown as StructuredToolLike,
+      createManipulateCanvasTool({
+        createUserClient,
+        layoutInspectionState,
+      }) as unknown as StructuredToolLike,
       createImageGenerateTool({
+        layoutInspectionState,
         ...(persistSessionImage ? { persistImage: persistSessionImage } : {}),
         ...(session.submitImageJob
           ? { submitImageJob: session.submitImageJob }
           : {}),
       }) as unknown as StructuredToolLike,
       createVideoGenerateTool({
+        layoutInspectionState,
         ...(session.submitVideoJob
           ? { submitVideoJob: session.submitVideoJob }
           : {}),
@@ -336,7 +349,10 @@ export function createLocalToolGatewayService(
   return {
     createSession(input: Omit<LocalToolGatewaySession, "runId"> & { runId: string }) {
       const token = randomUUID();
-      sessions.set(token, input);
+      sessions.set(token, {
+        ...input,
+        layoutInspectionState: input.layoutInspectionState ?? {},
+      });
       return { token };
     },
 
