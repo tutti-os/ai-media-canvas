@@ -12,13 +12,41 @@ function getNativeContextMenu() {
   return document.querySelector<HTMLUListElement>(".excalidraw .context-menu");
 }
 
+const SECTION_START_LABELS = new Set(["Crop image", "Duplicate"]);
+
+function markContextMenuSections(menuElement: HTMLUListElement) {
+  for (const item of menuElement.querySelectorAll<HTMLLIElement>(
+    "li.aimc-context-menu-section-start",
+  )) {
+    if (item.dataset.testid !== "downloadImage") {
+      item.classList.remove("aimc-context-menu-section-start");
+    }
+  }
+
+  for (const item of menuElement.querySelectorAll<HTMLLIElement>("li")) {
+    const label = item
+      .querySelector<HTMLElement>(".context-menu-item__label")
+      ?.textContent?.trim();
+
+    if (label && SECTION_START_LABELS.has(label)) {
+      item.classList.add("aimc-context-menu-section-start");
+    }
+  }
+}
+
 export function CanvasContextMenuExtensions({
   excalidrawApi,
 }: CanvasContextMenuExtensionsProps) {
   const [menuElement, setMenuElement] = useState<HTMLUListElement | null>(null);
 
   useEffect(() => {
-    const syncMenuElement = () => setMenuElement(getNativeContextMenu());
+    const syncMenuElement = () => {
+      const nativeMenuElement = getNativeContextMenu();
+      if (nativeMenuElement) {
+        markContextMenuSections(nativeMenuElement);
+      }
+      setMenuElement(nativeMenuElement);
+    };
     syncMenuElement();
 
     const observer = new MutationObserver(syncMenuElement);
@@ -70,7 +98,7 @@ export function CanvasContextMenuExtensions({
   if (!menuElement) return null;
 
   return createPortal(
-    <li data-testid="downloadImage">
+    <li className="aimc-context-menu-section-start" data-testid="downloadImage">
       <button
         type="button"
         className="context-menu-item"

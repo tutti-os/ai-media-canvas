@@ -27,5 +27,48 @@ describe("CanvasContextMenuExtensions", () => {
         screen.getByRole("button", { name: "Download image" }),
       ).toBeInTheDocument();
     });
+
+    expect(
+      screen.getByRole("button", { name: "Download image" }).closest("li"),
+    ).toHaveClass("aimc-context-menu-section-start");
+  });
+
+  it("marks retained native menu groups with section dividers", async () => {
+    document.body.innerHTML = `
+      <div class="excalidraw">
+        <ul class="context-menu">
+          <li>
+            <button type="button" class="context-menu-item">
+              <div class="context-menu-item__label">Cut</div>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="context-menu-item">
+              <div class="context-menu-item__label">Crop image</div>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="context-menu-item">
+              <div class="context-menu-item__label">Duplicate</div>
+            </button>
+          </li>
+        </ul>
+      </div>
+    `;
+
+    render(<CanvasContextMenuExtensions excalidrawApi={{}} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Crop image").closest("li")).toHaveClass(
+        "aimc-context-menu-section-start",
+      );
+    });
+
+    expect(screen.getByText("Duplicate").closest("li")).toHaveClass(
+      "aimc-context-menu-section-start",
+    );
+    expect(screen.getByText("Cut").closest("li")).not.toHaveClass(
+      "aimc-context-menu-section-start",
+    );
   });
 });

@@ -36,4 +36,9 @@ describe("canvas context menu", () => {
     expect(contextMenuCss).toContain('li[data-testid="copyAsPng"]');
     expect(contextMenuCss).toContain('content: "Copy image"');
   });
+
+  it("draws AIMC section dividers for retained menu groups", () => {
+    expect(contextMenuCss).toContain("li.aimc-context-menu-section-start");
+    expect(contextMenuCss).toContain("border-top: 1px solid");
+  });
 });

@@ -396,6 +396,12 @@
   font-size: 1rem;
 }
 
+.excalidraw .context-menu li.aimc-context-menu-section-start {
+  border-top: 1px solid var(--default-border-color);
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+}
+
 /* Image generator shimmer animation */
 @keyframes shimmer-scan {
   0% {
