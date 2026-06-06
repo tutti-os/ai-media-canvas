@@ -11,10 +11,7 @@ import {
 } from "react";
 
 import type { MessageMention } from "@aimc/shared";
-import {
-  AGENT_MODEL_REQUIRED_MESSAGE,
-  useAgentModelRequirement,
-} from "../hooks/use-agent-model-requirement";
+import { useAgentModelRequirement } from "../hooks/use-agent-model-requirement";
 import type { ImageAttachmentState } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useMediaModelConfigurationStatus } from "../hooks/use-media-model-configuration-status";
@@ -89,9 +86,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const [settingsInitialTab, setSettingsInitialTab] = useState<
       "agent" | "media"
     >("agent");
-    const [configurationError, setConfigurationError] = useState<string | null>(
-      null,
-    );
     const modelBtnRef = useRef<HTMLButtonElement>(null);
     const isAgentModelConfigurationLoaded =
       agentRequirement.isAgentModelConfigurationLoaded ?? true;
@@ -129,14 +123,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       if ((!trimmed && !hasReadyAttachments) || disabled || isUploading) return;
 
       if (!(await agentRequirement.ensureAgentModelConfigured())) {
-        setConfigurationError(AGENT_MODEL_REQUIRED_MESSAGE);
         setSettingsInitialTab("agent");
         setSettingsOpen(true);
         return;
       }
 
       onSend(trimmed);
-      setConfigurationError(null);
       setValue("");
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
@@ -474,11 +466,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               </svg>
             </button>
           </div>
-          {configurationError ? (
-            <p role="alert" className="px-1 text-left text-xs text-destructive">
-              {configurationError}
-            </p>
-          ) : null}
         </div>
         <SettingsDialog
           open={settingsOpen}

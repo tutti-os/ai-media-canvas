@@ -10,10 +10,12 @@ const {
   agentModelRequirementMock,
   fetchImageModelsMock,
   fetchVideoModelsMock,
+  fetchWorkspaceSettingsMock,
 } = vi.hoisted(() => ({
   agentModelRequirementMock: vi.fn(),
   fetchImageModelsMock: vi.fn(),
   fetchVideoModelsMock: vi.fn(),
+  fetchWorkspaceSettingsMock: vi.fn(),
 }));
 
 vi.mock("../src/hooks/use-agent-model-requirement", () => ({
@@ -35,6 +37,7 @@ vi.mock("../src/hooks/use-video-model-preference", () => ({
 vi.mock("../src/lib/server-api", () => ({
   fetchImageModels: fetchImageModelsMock,
   fetchVideoModels: fetchVideoModelsMock,
+  fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
 }));
 
 vi.mock("../src/components/agent-model-selector", () => ({
@@ -66,6 +69,17 @@ describe("ChatInput", () => {
     fetchVideoModelsMock.mockResolvedValue({
       models: [{ id: "agnes-video", displayName: "Agnes Video" }],
     });
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        agnesApiKey: "sk-local-agnes",
+        replicateApiToken: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        openAIApiKey: "",
+        volcesApiKey: "",
+      },
+    });
   });
 
   afterEach(() => {
@@ -73,6 +87,7 @@ describe("ChatInput", () => {
     agentModelRequirementMock.mockReset();
     fetchImageModelsMock.mockReset();
     fetchVideoModelsMock.mockReset();
+    fetchWorkspaceSettingsMock.mockReset();
     vi.clearAllMocks();
   });
 
@@ -116,6 +131,17 @@ describe("ChatInput", () => {
     });
     fetchImageModelsMock.mockResolvedValueOnce({ models: [] });
     fetchVideoModelsMock.mockResolvedValueOnce({ models: [] });
+    fetchWorkspaceSettingsMock.mockResolvedValueOnce({
+      settings: {
+        agnesApiKey: "",
+        replicateApiToken: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        openAIApiKey: "",
+        volcesApiKey: "",
+      },
+    });
 
     render(<ChatInput onSend={vi.fn()} />);
 
@@ -130,6 +156,32 @@ describe("ChatInput", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "配置媒体模型" }),
+    ).toBeInTheDocument();
+  });
+
+  it("uses provider settings instead of model catalog entries when deciding media configuration", async () => {
+    fetchImageModelsMock.mockResolvedValueOnce({
+      models: [{ id: "agnes-image", displayName: "Agnes Image" }],
+    });
+    fetchVideoModelsMock.mockResolvedValueOnce({
+      models: [{ id: "agnes-video", displayName: "Agnes Video" }],
+    });
+    fetchWorkspaceSettingsMock.mockResolvedValueOnce({
+      settings: {
+        agnesApiKey: "",
+        replicateApiToken: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        openAIApiKey: "",
+        volcesApiKey: "",
+      },
+    });
+
+    render(<ChatInput onSend={vi.fn()} />);
+
+    expect(
+      await screen.findByText("未配置 图片模型、视频模型"),
     ).toBeInTheDocument();
   });
 });

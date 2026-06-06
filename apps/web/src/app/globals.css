@@ -68,8 +68,16 @@
     --secondary-foreground: oklch(0.205 0 0);
     --muted: oklch(0.97 0 0);
     --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.90 0.17 115);
+    --accent: rgb(161 184 224);
     --accent-foreground: oklch(0.205 0 0);
+    --aimc-notice-surface: linear-gradient(
+      108deg,
+      rgba(211, 227, 252, 0.26) 0%,
+      rgba(255, 255, 255, 0.96) 38%,
+      rgba(255, 225, 209, 0.44) 100%
+    );
+    --aimc-notice-border: rgba(161, 184, 224, 0.2);
+    --aimc-notice-shadow: 0 4px 20px rgba(17, 24, 39, 0.04);
     --destructive: oklch(0.577 0.245 27.325);
     --success: oklch(0.60 0.15 145);
     --success-foreground: oklch(0.985 0 0);
@@ -79,7 +87,7 @@
     --info-foreground: oklch(0.985 0 0);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: oklch(0.90 0.17 115);
+    --ring: rgb(96 130 190);
     --border-light: oklch(0.94 0 0);
     --input-border: oklch(0.84 0 0);
     --chart-1: oklch(0.87 0 0);
@@ -111,8 +119,16 @@
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.269 0 0);
     --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
+    --accent: rgb(78 96 124);
     --accent-foreground: oklch(0.985 0 0);
+    --aimc-notice-surface: linear-gradient(
+      108deg,
+      rgba(147, 169, 205, 0.24) 0%,
+      rgba(32, 32, 32, 0.96) 38%,
+      rgba(255, 152, 122, 0.22) 100%
+    );
+    --aimc-notice-border: rgba(147, 169, 205, 0.24);
+    --aimc-notice-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
     --destructive: oklch(0.704 0.191 22.216);
     --success: oklch(0.65 0.15 145);
     --success-foreground: oklch(0.145 0 0);
@@ -122,7 +138,7 @@
     --info-foreground: oklch(0.145 0 0);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --ring: rgb(147 169 205);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -164,9 +180,21 @@
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
 }
 
+@utility aimc-notice-surface {
+  background: var(--aimc-notice-surface);
+  border-color: var(--aimc-notice-border);
+  box-shadow: var(--aimc-notice-shadow);
+}
+
+@utility aimc-notice-badge {
+  background: color-mix(in srgb, var(--accent) 24%, white);
+  border-color: color-mix(in srgb, var(--accent) 46%, white);
+  color: var(--foreground);
+}
+
 /* ── Accent glow utility ── */
 @utility accent-glow {
-  box-shadow: 0 0 20px oklch(0.90 0.17 115 / 0.25);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 @keyframes shimmer {
@@ -396,6 +424,62 @@
   font-size: 1rem;
 }
 
+.excalidraw .context-menu {
+  --aimc-context-menu-hover: color-mix(
+    in oklch,
+    var(--muted),
+    var(--foreground) 4%
+  );
+  --aimc-context-menu-destructive-hover: color-mix(
+    in oklch,
+    var(--destructive),
+    transparent 90%
+  );
+
+  background: var(--popover) !important;
+  color: var(--popover-foreground) !important;
+}
+
+.excalidraw .context-menu .context-menu-item:hover,
+.excalidraw .context-menu .context-menu-item:focus,
+.excalidraw .context-menu .context-menu-item:focus-visible,
+.excalidraw .context-menu li:hover .context-menu-item,
+.excalidraw .context-menu li[data-selected="true"] .context-menu-item {
+  background: var(--aimc-context-menu-hover) !important;
+  color: var(--foreground) !important;
+  border-radius: var(--radius-md) !important;
+}
+
+.excalidraw .context-menu li[data-testid="deleteSelectedElements"] .context-menu-item,
+.excalidraw .context-menu .context-menu-item.dangerous {
+  color: var(--destructive) !important;
+}
+
+.excalidraw .context-menu li[data-testid="deleteSelectedElements"] .context-menu-item__label,
+.excalidraw .context-menu .context-menu-item.dangerous .context-menu-item__label {
+  color: var(--destructive) !important;
+}
+
+.excalidraw .context-menu li[data-testid="deleteSelectedElements"] .context-menu-item__shortcut,
+.excalidraw .context-menu .context-menu-item.dangerous .context-menu-item__shortcut {
+  color: var(--muted-foreground) !important;
+}
+
+.excalidraw .context-menu li[data-testid="deleteSelectedElements"]:hover
+  .context-menu-item,
+.excalidraw .context-menu li[data-testid="deleteSelectedElements"] .context-menu-item:hover,
+.excalidraw .context-menu li[data-testid="deleteSelectedElements"] .context-menu-item:focus,
+.excalidraw .context-menu li[data-testid="deleteSelectedElements"]
+  .context-menu-item:focus-visible,
+.excalidraw .context-menu li[data-testid="deleteSelectedElements"][data-selected="true"]
+  .context-menu-item,
+.excalidraw .context-menu .context-menu-item.dangerous:hover,
+.excalidraw .context-menu .context-menu-item.dangerous:focus,
+.excalidraw .context-menu .context-menu-item.dangerous:focus-visible {
+  background: var(--aimc-context-menu-destructive-hover) !important;
+  color: var(--destructive) !important;
+}
+
 .excalidraw .context-menu li.aimc-context-menu-section-start {
   border-top: 1px solid rgba(17, 24, 39, 0.22);
   margin-top: 0.55rem;
@@ -465,9 +549,9 @@
 
 /* Floating nav -- CTA glow pulse (one-shot) */
 @keyframes landing-nav-cta-glow {
-  0%   { box-shadow: 0 0 0 0 oklch(0.90 0.17 115 / 0.5); }
-  50%  { box-shadow: 0 0 16px 4px oklch(0.90 0.17 115 / 0.35); }
-  100% { box-shadow: 0 0 0 0 oklch(0.90 0.17 115 / 0); }
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); }
+  50%  { box-shadow: 0 0 16px 4px color-mix(in srgb, var(--accent) 35%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
 }
 .landing-nav-cta-glow {
   animation: landing-nav-cta-glow 1.5s ease-in-out 1;
@@ -475,17 +559,17 @@
 
 /* How it works -- icon pulse (one-shot on scroll) */
 @keyframes landing-icon-pulse {
-  0%   { box-shadow: 0 0 0 0 oklch(0.90 0.17 115 / 0.3); }
-  70%  { box-shadow: 0 0 0 10px oklch(0.90 0.17 115 / 0); }
-  100% { box-shadow: 0 0 0 0 oklch(0.90 0.17 115 / 0); }
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 30%, transparent); }
+  70%  { box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
 }
 
 /* Gradient border accent for elevated cards */
 @keyframes landing-border-shift {
-  0%   { border-color: oklch(0.90 0.17 115 / 0.6); }
-  33%  { border-color: oklch(0.82 0.14 125 / 0.6); }
-  66%  { border-color: oklch(0.85 0.16 110 / 0.6); }
-  100% { border-color: oklch(0.90 0.17 115 / 0.6); }
+  0%   { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+  33%  { border-color: color-mix(in srgb, var(--accent) 45%, white); }
+  66%  { border-color: color-mix(in srgb, var(--accent) 75%, transparent); }
+  100% { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
 }
 
 /* Final CTA -- background orb drift (GPU-composited) */

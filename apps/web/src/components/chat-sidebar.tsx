@@ -3,19 +3,16 @@
 import { Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useBreakpoint } from "../hooks/use-breakpoint";
 import type {
   ContentBlock,
   ImageGenerationPreference,
-  VideoGenerationPreference,
   MessageMention,
   StreamEvent,
   ToolArtifact,
+  VideoGenerationPreference,
 } from "@aimc/shared";
-import {
-  AGENT_MODEL_REQUIRED_MESSAGE,
-  useAgentModelRequirement,
-} from "../hooks/use-agent-model-requirement";
+import { useAgentModelRequirement } from "../hooks/use-agent-model-requirement";
+import { useBreakpoint } from "../hooks/use-breakpoint";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
 import {
   materializeAssistantBlocksFromEvents,
@@ -49,10 +46,10 @@ import {
 import { ChatInput } from "./chat-input";
 import { ChatMessage } from "./chat-message";
 import { ChatTemplates } from "./chat-templates";
-import { SettingsDialog } from "./settings-dialog";
-import { useToast } from "./toast";
 import { ErrorBoundary } from "./error-boundary";
 import { SessionSelector } from "./session-selector";
+import { SettingsDialog } from "./settings-dialog";
+import { useToast } from "./toast";
 
 type ChatSidebarProps = {
   canvasId: string;
@@ -147,7 +144,9 @@ export function ChatSidebar({
 
   const hasBackendInsertedElement = useCallback((block: ContentBlock) => {
     if (block.type !== "tool" || !block.output) return false;
-    return typeof (block.output as Record<string, unknown>).elementId === "string";
+    return (
+      typeof (block.output as Record<string, unknown>).elementId === "string"
+    );
   }, []);
 
   const recoverMediaArtifactsFromBlocks = useCallback(
@@ -155,7 +154,9 @@ export function ChatSidebar({
       const canvasUrls = new Set(
         (onRequestCanvasImages ? onRequestCanvasImages() : [])
           .map((item) => item.url)
-          .filter((url): url is string => typeof url === "string" && url.length > 0),
+          .filter(
+            (url): url is string => typeof url === "string" && url.length > 0,
+          ),
       );
 
       for (const block of contentBlocks) {
@@ -184,11 +185,21 @@ export function ChatSidebar({
         }
       }
     },
-	    [artifactReplayKey, hasBackendInsertedElement, onImageGenerated, onRequestCanvasImages],
-	  );
+    [
+      artifactReplayKey,
+      hasBackendInsertedElement,
+      onImageGenerated,
+      onRequestCanvasImages,
+    ],
+  );
 
   const recoverPersistedMediaArtifacts = useCallback(
-    (sessionMessages: Array<{ contentBlocks: ContentBlock[]; role: "user" | "assistant" }>) => {
+    (
+      sessionMessages: Array<{
+        contentBlocks: ContentBlock[];
+        role: "user" | "assistant";
+      }>,
+    ) => {
       const latestAssistantMessage = [...sessionMessages]
         .reverse()
         .find((message) => message.role === "assistant");
@@ -220,16 +231,11 @@ export function ChatSidebar({
   );
   activeVideoGenerationPreferenceRef.current = activeVideoGenerationPreference;
 
-  const {
-    model: agentModel,
-    ensureAgentModelConfigured,
-  } = useAgentModelRequirement();
+  const { model: agentModel, ensureAgentModelConfigured } =
+    useAgentModelRequirement();
   const agentModelRef = useRef(agentModel);
   agentModelRef.current = agentModel;
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [configurationError, setConfigurationError] = useState<string | null>(
-    null,
-  );
 
   const { toast: showToast } = useToast();
 
@@ -295,7 +301,9 @@ export function ChatSidebar({
         document.removeEventListener("touchcancel", handleTouchEnd);
       };
 
-      document.addEventListener("touchmove", handleTouchMove, { passive: false });
+      document.addEventListener("touchmove", handleTouchMove, {
+        passive: false,
+      });
       document.addEventListener("touchend", handleTouchEnd);
       document.addEventListener("touchcancel", handleTouchEnd);
     },
@@ -322,8 +330,9 @@ export function ChatSidebar({
   }, []);
 
   useEffect(() => {
+    void messages.length;
     scrollToBottom();
-  }, [messages, scrollToBottom]);
+  }, [messages.length, scrollToBottom]);
 
   // ── Fetch image models for @mention picker ──
   useEffect(() => {
@@ -403,12 +412,9 @@ export function ChatSidebar({
 
       if (!(await ensureAgentModelConfigured())) {
         sendingRef.current = false;
-        setConfigurationError(AGENT_MODEL_REQUIRED_MESSAGE);
         setSettingsOpen(true);
         return;
       }
-
-      setConfigurationError(null);
 
       // Merge explicitly-attached images with auto-sensed canvas selection images
       let currentAttachments = attachmentsOverride ?? readyAttachments;
@@ -421,13 +427,19 @@ export function ChatSidebar({
         const existingIds = new Set(currentAttachments.map((a) => a.assetId));
         const selectionAttachments: ReadyAttachment[] = selectedImageEls
           .filter((el) => !existingIds.has(el.id))
-          .map((el) => ({
-            assetId: el.id,
-            url: el.storageUrl ?? el.dataUrl!,
-            mimeType: "image/png",
-            source: "canvas-ref" as const,
-            name: `Canvas selection ${el.id.slice(0, 6)}`,
-          }));
+          .flatMap((el) => {
+            const url = el.storageUrl ?? el.dataUrl;
+            if (!url) return [];
+            return [
+              {
+                assetId: el.id,
+                url,
+                mimeType: "image/png",
+                source: "canvas-ref" as const,
+                name: `Canvas selection ${el.id.slice(0, 6)}`,
+              },
+            ];
+          });
         if (selectionAttachments.length > 0) {
           currentAttachments = [...currentAttachments, ...selectionAttachments];
         }
@@ -511,7 +523,11 @@ export function ChatSidebar({
       const assistantIdRef = { current: `assistant-${Date.now()}` };
       updateSessionMessages(currentSessionId, (prev) => [
         ...prev,
-        { id: assistantIdRef.current, role: "assistant" as const, contentBlocks: [] },
+        {
+          id: assistantIdRef.current,
+          role: "assistant" as const,
+          contentBlocks: [],
+        },
       ]);
       setStreaming(true);
       abortRef.current = false;
@@ -558,9 +574,11 @@ export function ChatSidebar({
 
           // Fire canvas insertion callbacks for image/video artifacts.
           // Skip if the backend already inserted the element (elementId in output).
-          const backendInserted = event.type === "tool.completed"
-            && event.output
-            && typeof (event.output as Record<string, unknown>).elementId === "string";
+          const backendInserted =
+            event.type === "tool.completed" &&
+            event.output &&
+            typeof (event.output as Record<string, unknown>).elementId ===
+              "string";
           if (
             event.type === "tool.completed" &&
             event.artifacts &&
@@ -643,7 +661,10 @@ export function ChatSidebar({
                 typeof payloadRecord.assistantMessageId === "string"
                   ? payloadRecord.assistantMessageId
                   : null;
-              if (assistantMessageId && assistantMessageId !== assistantIdRef.current) {
+              if (
+                assistantMessageId &&
+                assistantMessageId !== assistantIdRef.current
+              ) {
                 const previousAssistantId = assistantIdRef.current;
                 assistantIdRef.current = assistantMessageId;
                 updateSessionMessages(currentSessionId, (prev) =>
@@ -685,7 +706,6 @@ export function ChatSidebar({
       }
     },
     [
-      streaming,
       canvasId,
       applyStreamEvent,
       updateSessionMessages,
@@ -698,6 +718,8 @@ export function ChatSidebar({
       autoTitleSession,
       activeSessionIdRef,
       ensureAgentModelConfigured,
+      setStreaming,
+      showToast,
     ],
   );
 
@@ -723,7 +745,11 @@ export function ChatSidebar({
       setMessageMentions((prev) => {
         let nextMention: MessageMention;
         if (item.kind === "image-model") {
-          nextMention = { mentionType: "image-model", id: item.id, label: item.label };
+          nextMention = {
+            mentionType: "image-model",
+            id: item.id,
+            label: item.label,
+          };
         } else {
           nextMention = {
             mentionType: "brand-kit-asset",
@@ -733,9 +759,7 @@ export function ChatSidebar({
             ...(item.textContent !== undefined
               ? { textContent: item.textContent }
               : {}),
-            ...(item.fileUrl !== undefined
-              ? { fileUrl: item.fileUrl }
-              : {}),
+            ...(item.fileUrl !== undefined ? { fileUrl: item.fileUrl } : {}),
           };
         }
 
@@ -765,13 +789,7 @@ export function ChatSidebar({
 
   // ── Auto-send initial prompt ──
   useEffect(() => {
-    if (
-      !initialPrompt ||
-      sessionsLoading ||
-      !ws.connected ||
-      initialPromptSent.current
-    )
-      return;
+    if (sessionsLoading || !ws.connected || initialPromptSent.current) return;
 
     let storedAttachments: ReadyAttachment[] | undefined;
     let storedImageGenerationPreference: ImageGenerationPreference | undefined;
@@ -813,6 +831,10 @@ export function ChatSidebar({
       // Malformed JSON or unavailable storage
     }
 
+    const shouldSendInitial =
+      Boolean(initialPrompt) || Boolean(storedAttachments?.length);
+    if (!shouldSendInitial) return;
+
     if (storedAgentModel) {
       agentModelRef.current = storedAgentModel;
     }
@@ -821,7 +843,7 @@ export function ChatSidebar({
       if (!activeSessionIdRef.current) return;
       initialPromptSent.current = true;
       void handleSend(
-        initialPrompt,
+        initialPrompt ?? "",
         storedAttachments,
         storedImageGenerationPreference,
         storedVideoGenerationPreference,
@@ -862,8 +884,9 @@ export function ChatSidebar({
       if (canceled) return;
       recoverPersistedMediaArtifacts(reloadedMessages);
       const latestReloadedAssistantId =
-        [...reloadedMessages].reverse().find((message) => message.role === "assistant")?.id ??
-        null;
+        [...reloadedMessages]
+          .reverse()
+          .find((message) => message.role === "assistant")?.id ?? null;
 
       let resumedRunId: string | null = null;
       let resumedAssistantId: string | null = null;
@@ -926,7 +949,11 @@ export function ChatSidebar({
           onCanvasSync?.();
         }
 
-        if (!resumedRunId || evt.runId !== resumedRunId || !resumedAssistantId) {
+        if (
+          !resumedRunId ||
+          evt.runId !== resumedRunId ||
+          !resumedAssistantId
+        ) {
           return;
         }
 
@@ -954,11 +981,11 @@ export function ChatSidebar({
 
           resumedRunId = activeRunId;
           resumedAssistantId =
-            typeof assistantMessageId === "string" && assistantMessageId.length > 0
+            typeof assistantMessageId === "string" &&
+            assistantMessageId.length > 0
               ? assistantMessageId
               : latestReloadedAssistantId;
-          const assistantId = resumedAssistantId
-            ?? `resumed_${activeRunId}`;
+          const assistantId = resumedAssistantId ?? `resumed_${activeRunId}`;
           resumedAssistantId = assistantId;
 
           hydratingActiveRun = true;
@@ -984,7 +1011,9 @@ export function ChatSidebar({
           void (async () => {
             try {
               let cursor = 0;
-              const entries: Awaited<ReturnType<typeof fetchRunEvents>>["events"] = [];
+              const entries: Awaited<
+                ReturnType<typeof fetchRunEvents>
+              >["events"] = [];
               while (true) {
                 const response = await fetchRunEvents(activeRunId, cursor);
                 entries.push(...response.events);
@@ -1011,18 +1040,23 @@ export function ChatSidebar({
               );
               recoverMediaArtifactsFromBlocks(hydratedBlocks);
             } catch (error) {
-              console.warn("[chat] Failed to hydrate active run from durable events:", error);
+              console.warn(
+                "[chat] Failed to hydrate active run from durable events:",
+                error,
+              );
             } finally {
               hydratingActiveRun = false;
               const pending = [...queuedResumeEvents].sort(
-                (a, b) => (a.seq ?? Number.MAX_SAFE_INTEGER) - (b.seq ?? Number.MAX_SAFE_INTEGER),
+                (a, b) =>
+                  (a.seq ?? Number.MAX_SAFE_INTEGER) -
+                  (b.seq ?? Number.MAX_SAFE_INTEGER),
               );
               queuedResumeEvents.length = 0;
               for (const queuedEntry of pending) {
-	                if (
-	                  queuedEntry.eventId &&
-	                  hydratedRunEventIds.has(queuedEntry.eventId)
-	                ) {
+                if (
+                  queuedEntry.eventId &&
+                  hydratedRunEventIds.has(queuedEntry.eventId)
+                ) {
                   continue;
                 }
                 processResumedEntry(queuedEntry, assistantId);
@@ -1031,7 +1065,6 @@ export function ChatSidebar({
           })();
         }
       });
-
     })();
 
     return () => {
@@ -1048,8 +1081,9 @@ export function ChatSidebar({
     onImageGenerated,
     onCanvasSync,
     activeSessionIdRef,
+    artifactReplayKey,
+    recoverMediaArtifactsFromBlocks,
     recoverPersistedMediaArtifacts,
-    onRequestCanvasImages,
     reloadMessages,
     updateSessionMessages,
     setStreaming,
@@ -1065,7 +1099,12 @@ export function ChatSidebar({
           type="button"
           className="group inline-flex items-center gap-1 rounded-xl bg-card/80 backdrop-blur-sm border border-border px-2.5 py-1.5 text-xs text-foreground/60 shadow-sm hover:bg-card hover:text-foreground transition-colors cursor-pointer md:px-2.5 md:py-1.5 min-h-[36px] md:min-h-0"
         >
-          <svg className="size-4 md:size-3.5" viewBox="0 0 24 24" fill="none">
+          <svg
+            aria-hidden="true"
+            className="size-4 md:size-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
             <path
               fill="currentColor"
               fillOpacity={0.9}
@@ -1123,8 +1162,14 @@ export function ChatSidebar({
             onClick={onToggle}
             className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
             title="Collapse panel"
+            aria-label="Collapse panel"
           >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+            <svg
+              aria-hidden="true"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
               <path
                 d="M4 3.25a.75.75 0 0 1 .75.75v16a.75.75 0 0 1-1.5 0V4A.75.75 0 0 1 4 3.25m9.47 2.22a.75.75 0 0 1 1.06 0l6 6a.75.75 0 0 1 0 1.06l-6 6a.75.75 0 1 1-1.06-1.06l4.72-4.72H8a.75.75 0 0 1 0-1.5h10.19l-4.72-4.72a.75.75 0 0 1 0-1.06"
                 fill="currentColor"
@@ -1150,7 +1195,11 @@ export function ChatSidebar({
           console.error("[chat-sidebar] message area render crashed:", err)
         }
       >
-        <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 px-4 py-4" aria-live="polite" aria-relevant="additions">
+        <div
+          className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 px-4 py-4"
+          aria-live="polite"
+          aria-relevant="additions"
+        >
           {sessionsLoading || messagesLoading ? (
             <div className="flex h-full items-center justify-center">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
@@ -1204,14 +1253,6 @@ export function ChatSidebar({
           onRemoveMention={handleRemoveMention}
           {...(selectedCanvasElements ? { selectedCanvasElements } : {})}
         />
-        {configurationError ? (
-          <p
-            role="alert"
-            className="border-t border-border px-4 py-2 text-xs text-destructive"
-          >
-            {configurationError}
-          </p>
-        ) : null}
       </div>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
@@ -1226,7 +1267,14 @@ export function ChatSidebar({
         {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- backdrop is a non-interactive dismissal layer, keyboard close is handled via Escape */}
         <div
           className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] animate-in fade-in duration-200"
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            onToggle();
+          }}
           onClick={onToggle}
+          role="button"
+          tabIndex={0}
         />
         {/* Chat panel — full screen on mobile, fixed-width drawer on tablet */}
         <div
@@ -1264,9 +1312,7 @@ export function ChatSidebar({
         onTouchStart={handleTouchStart}
         onKeyDown={handleResizeKeyDown}
       />
-      <div className="flex flex-1 flex-col bg-card min-w-0">
-        {panelContent}
-      </div>
+      <div className="flex flex-1 flex-col bg-card min-w-0">{panelContent}</div>
     </div>
   );
 }

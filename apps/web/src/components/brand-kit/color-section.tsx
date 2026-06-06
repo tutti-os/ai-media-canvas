@@ -61,7 +61,10 @@ export function ColorSection({
       <div className="flex flex-wrap gap-3">
         {colors.map((color) => (
           <div key={color.id} className="flex flex-col items-center gap-1.5">
-            <div className="relative group" ref={editingAsset?.id === color.id ? editAnchorRef : undefined}>
+            <div
+              className="relative group"
+              ref={editingAsset?.id === color.id ? editAnchorRef : undefined}
+            >
               <button
                 type="button"
                 onClick={() => handleSwatchClick(color)}
@@ -75,11 +78,12 @@ export function ColorSection({
                 className={cn(
                   "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-background border shadow-sm",
                   "flex items-center justify-center",
-                  "opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer",
+                  "text-muted-foreground opacity-0 group-hover:opacity-100 transition-colors cursor-pointer",
+                  "hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive",
                 )}
                 aria-label={`Delete color ${color.display_name}`}
               >
-                <X className="h-3 w-3 text-muted-foreground" />
+                <X className="h-3 w-3" />
               </button>
               {/* Popover anchored to the swatch being edited */}
               {editingAsset?.id === color.id && (

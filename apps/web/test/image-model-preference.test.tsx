@@ -1,0 +1,127 @@
+// @vitest-environment jsdom
+
+import "@testing-library/jest-dom/vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useRef } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { ImageModelPreferencePopover } from "../src/components/image-model-preference";
+
+const {
+  fetchImageModelsMock,
+  fetchVideoModelsMock,
+  fetchWorkspaceSettingsMock,
+} = vi.hoisted(() => ({
+  fetchImageModelsMock: vi.fn(),
+  fetchVideoModelsMock: vi.fn(),
+  fetchWorkspaceSettingsMock: vi.fn(),
+}));
+
+vi.mock("../src/lib/server-api", () => ({
+  fetchImageModels: fetchImageModelsMock,
+  fetchVideoModels: fetchVideoModelsMock,
+  fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
+}));
+
+function OpenPopover({
+  onClose = () => {},
+  onOpenSettings,
+}: {
+  onClose?: () => void;
+  onOpenSettings?: () => void;
+}) {
+  const anchorRef = useRef<HTMLButtonElement | null>(null);
+  return (
+    <>
+      <button ref={anchorRef} type="button">
+        Anchor
+      </button>
+      <ImageModelPreferencePopover
+        anchorRef={anchorRef}
+        onClose={onClose}
+        onOpenSettings={onOpenSettings}
+        open
+      />
+    </>
+  );
+}
+
+describe("ImageModelPreferencePopover", () => {
+  beforeEach(() => {
+    fetchImageModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "agnes-image/agnes-image-2.1-flash",
+          displayName: "Agnes Image 2.1 Flash",
+          description: "Agnes image route.",
+          provider: "agnes-image",
+        },
+      ],
+    });
+    fetchVideoModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "agnes-video/agnes-video-v2.0",
+          displayName: "Agnes Video v2.0",
+          description: "Agnes video route.",
+          provider: "agnes-video",
+        },
+      ],
+    });
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "local:assistant",
+        providerModels: {
+          openai: [],
+          anthropic: [],
+          agnes: [],
+          google: [],
+          vertex: [],
+        },
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("hides provider models when the matching media provider is not configured in settings", async () => {
+    render(<OpenPopover />);
+
+    await waitFor(() => expect(fetchImageModelsMock).toHaveBeenCalledTimes(1));
+
+    expect(screen.queryByText("Agnes Image 2.1 Flash")).not.toBeInTheDocument();
+  });
+
+  it("opens media settings from the empty model state", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onOpenSettings = vi.fn();
+
+    render(<OpenPopover onClose={onClose} onOpenSettings={onOpenSettings} />);
+
+    await waitFor(() => expect(fetchImageModelsMock).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: "配置媒体模型" }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+});

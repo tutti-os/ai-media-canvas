@@ -54,6 +54,13 @@ vi.mock("../src/lib/server-api", () => ({
   fetchWorkspaceSettings: vi.fn().mockResolvedValue({
     settings: {
       defaultModel: "",
+      agnesApiKey: "sk-local-agnes",
+      replicateApiToken: "",
+      googleApiKey: "",
+      googleVertexProject: "",
+      googleVertexLocation: "",
+      openAIApiKey: "",
+      volcesApiKey: "",
     },
   }),
   fetchImageModels: vi.fn().mockResolvedValue({

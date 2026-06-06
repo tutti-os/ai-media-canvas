@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchImageModels, fetchVideoModels } from "@/lib/server-api";
+import {
+  hasConfiguredImageProvider,
+  hasConfiguredVideoProvider,
+} from "@/lib/media-provider-configuration";
+import { fetchWorkspaceSettings } from "@/lib/server-api";
 import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "@/lib/workspace-settings-events";
 
 type ModelAvailability = boolean | null;
@@ -12,21 +16,14 @@ export function useMediaModelConfigurationStatus() {
   const [hasVideoModels, setHasVideoModels] = useState<ModelAvailability>(null);
 
   const refresh = useCallback(async () => {
-    const [imageResult, videoResult] = await Promise.allSettled([
-      fetchImageModels(),
-      fetchVideoModels(),
-    ]);
-
-    setHasImageModels(
-      imageResult.status === "fulfilled"
-        ? imageResult.value.models.length > 0
-        : null,
-    );
-    setHasVideoModels(
-      videoResult.status === "fulfilled"
-        ? videoResult.value.models.length > 0
-        : null,
-    );
+    try {
+      const response = await fetchWorkspaceSettings();
+      setHasImageModels(hasConfiguredImageProvider(response.settings));
+      setHasVideoModels(hasConfiguredVideoProvider(response.settings));
+    } catch {
+      setHasImageModels(null);
+      setHasVideoModels(null);
+    }
   }, []);
 
   useEffect(() => {

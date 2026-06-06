@@ -1,0 +1,68 @@
+import type { WorkspaceSettings } from "@aimc/shared";
+
+export type MediaProviderSettings = Pick<
+  WorkspaceSettings,
+  | "agnesApiKey"
+  | "replicateApiToken"
+  | "googleApiKey"
+  | "googleVertexProject"
+  | "googleVertexLocation"
+  | "openAIApiKey"
+  | "volcesApiKey"
+>;
+
+function hasValue(value: string | undefined) {
+  return Boolean(value?.trim());
+}
+
+function hasVertexConfig(settings: MediaProviderSettings) {
+  return (
+    hasValue(settings.googleVertexProject) &&
+    hasValue(settings.googleVertexLocation)
+  );
+}
+
+export function hasConfiguredImageProvider(settings: MediaProviderSettings) {
+  return (
+    hasValue(settings.agnesApiKey) ||
+    hasValue(settings.replicateApiToken) ||
+    hasValue(settings.googleApiKey) ||
+    hasVertexConfig(settings) ||
+    hasValue(settings.openAIApiKey) ||
+    hasValue(settings.volcesApiKey)
+  );
+}
+
+export function hasConfiguredVideoProvider(settings: MediaProviderSettings) {
+  return (
+    hasValue(settings.agnesApiKey) ||
+    hasValue(settings.replicateApiToken) ||
+    hasValue(settings.googleApiKey) ||
+    hasVertexConfig(settings)
+  );
+}
+
+export function isMediaProviderConfigured(
+  provider: string,
+  mediaType: "image" | "video",
+  settings: MediaProviderSettings,
+) {
+  switch (provider) {
+    case "agnes":
+    case "agnes-image":
+    case "agnes-video":
+      return hasValue(settings.agnesApiKey);
+    case "replicate":
+      return hasValue(settings.replicateApiToken);
+    case "google":
+      return hasValue(settings.googleApiKey);
+    case "google-vertex":
+      return hasVertexConfig(settings);
+    case "openai":
+      return mediaType === "image" && hasValue(settings.openAIApiKey);
+    case "volces":
+      return mediaType === "image" && hasValue(settings.volcesApiKey);
+    default:
+      return false;
+  }
+}

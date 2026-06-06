@@ -13,11 +13,13 @@ const {
   agentModelRequirementMock,
   fetchImageModelsMock,
   fetchVideoModelsMock,
+  fetchWorkspaceSettingsMock,
   settingsDialogSpy,
 } = vi.hoisted(() => ({
   agentModelRequirementMock: vi.fn(),
   fetchImageModelsMock: vi.fn(),
   fetchVideoModelsMock: vi.fn(),
+  fetchWorkspaceSettingsMock: vi.fn(),
   settingsDialogSpy: vi.fn(),
 }));
 
@@ -60,6 +62,7 @@ vi.mock("../src/components/image-model-preference", () => ({
 vi.mock("../src/lib/server-api", () => ({
   fetchImageModels: fetchImageModelsMock,
   fetchVideoModels: fetchVideoModelsMock,
+  fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
 }));
 
 vi.mock("../src/hooks/use-agent-model-requirement", () => ({
@@ -103,6 +106,17 @@ describe("HomePrompt", () => {
     });
     fetchVideoModelsMock.mockResolvedValue({
       models: [{ id: "agnes-video", displayName: "Agnes Video" }],
+    });
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        agnesApiKey: "sk-local-agnes",
+        replicateApiToken: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        openAIApiKey: "",
+        volcesApiKey: "",
+      },
     });
   });
 
@@ -203,8 +217,8 @@ describe("HomePrompt", () => {
     expect(onSubmit).not.toHaveBeenCalled();
     expect(await screen.findByText("Mock Agent Settings")).toBeInTheDocument();
     expect(
-      screen.getByText("请先配置或选择一个 Agent 模型。"),
-    ).toBeInTheDocument();
+      screen.queryByText("请先配置或选择一个 Agent 模型。"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders a configuration banner above the prompt when agent and media models are missing", async () => {
@@ -215,6 +229,17 @@ describe("HomePrompt", () => {
     });
     fetchImageModelsMock.mockResolvedValueOnce({ models: [] });
     fetchVideoModelsMock.mockResolvedValueOnce({ models: [] });
+    fetchWorkspaceSettingsMock.mockResolvedValueOnce({
+      settings: {
+        agnesApiKey: "",
+        replicateApiToken: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        openAIApiKey: "",
+        volcesApiKey: "",
+      },
+    });
 
     render(<HomePrompt onSubmit={vi.fn()} />);
 
@@ -229,6 +254,32 @@ describe("HomePrompt", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "配置媒体模型" }),
+    ).toBeInTheDocument();
+  });
+
+  it("uses provider settings instead of model catalog entries when deciding media configuration", async () => {
+    fetchImageModelsMock.mockResolvedValueOnce({
+      models: [{ id: "agnes-image", displayName: "Agnes Image" }],
+    });
+    fetchVideoModelsMock.mockResolvedValueOnce({
+      models: [{ id: "agnes-video", displayName: "Agnes Video" }],
+    });
+    fetchWorkspaceSettingsMock.mockResolvedValueOnce({
+      settings: {
+        agnesApiKey: "",
+        replicateApiToken: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        openAIApiKey: "",
+        volcesApiKey: "",
+      },
+    });
+
+    render(<HomePrompt onSubmit={vi.fn()} />);
+
+    expect(
+      await screen.findByText("未配置 图片模型、视频模型"),
     ).toBeInTheDocument();
   });
 

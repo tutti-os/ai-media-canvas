@@ -22,10 +22,7 @@ import {
   ModelConfigurationBanner,
 } from "@/components/model-configuration-banner";
 import { SettingsDialog } from "@/components/settings-dialog";
-import {
-  AGENT_MODEL_REQUIRED_MESSAGE,
-  useAgentModelRequirement,
-} from "@/hooks/use-agent-model-requirement";
+import { useAgentModelRequirement } from "@/hooks/use-agent-model-requirement";
 import type {
   ImageAttachmentState,
   ReadyAttachment,
@@ -137,9 +134,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const [settingsInitialTab, setSettingsInitialTab] = useState<
       "agent" | "media"
     >("agent");
-    const [configurationError, setConfigurationError] = useState<string | null>(
-      null,
-    );
     const agentBtnRef = useRef<HTMLButtonElement>(null);
     const { preference } = useImageModelPreference();
     const { preference: videoPreference } = useVideoModelPreference();
@@ -172,12 +166,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
         (mention) => mention.type === "image",
       ) ?? [];
 
-    useEffect(() => {
-      if (configurationError && isAgentModelConfigured) {
-        setConfigurationError(null);
-      }
-    }, [configurationError, isAgentModelConfigured]);
-
     useImperativeHandle(ref, () => ({
       fill(text: string) {
         setValue(text);
@@ -207,7 +195,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       }
 
       if (!(await ensureAgentModelConfigured())) {
-        setConfigurationError(AGENT_MODEL_REQUIRED_MESSAGE);
         setSettingsInitialTab("agent");
         setSettingsOpen(true);
         return;
@@ -222,15 +209,18 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       onSubmit(
         trimmed,
         mergedAttachments.length > 0 ? mergedAttachments : undefined,
-        preference.mode === "manual" && preference.models.length > 0
+        !missingImageModel &&
+          preference.mode === "manual" &&
+          preference.models.length > 0
           ? preference
           : undefined,
-        videoPreference.mode === "manual" && videoPreference.models.length > 0
+        !missingVideoModel &&
+          videoPreference.mode === "manual" &&
+          videoPreference.models.length > 0
           ? videoPreference
           : undefined,
         agentModel ?? undefined,
       );
-      setConfigurationError(null);
       setValue("");
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
@@ -247,6 +237,8 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       selectedSeed,
       videoPreference,
       value,
+      missingImageModel,
+      missingVideoModel,
     ]);
 
     const handleKeyDown = useCallback(
@@ -441,15 +433,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
               </svg>
             </button>
           </div>
-
-          {configurationError ? (
-            <p
-              role="alert"
-              className="px-3 pb-3 text-left text-xs text-destructive sm:px-4"
-            >
-              {configurationError}
-            </p>
-          ) : null}
 
           <ImageModelPreferencePopover
             open={modelPopoverOpen}
