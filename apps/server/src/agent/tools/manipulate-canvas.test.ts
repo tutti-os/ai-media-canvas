@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createInspectCanvasTool } from "./inspect-canvas.js";
 import { createManipulateCanvasTool } from "./manipulate-canvas.js";
 
 function createUserClientWithElements(elements: Array<Record<string, unknown>>) {
@@ -37,38 +38,51 @@ function createUserClientWithElements(elements: Array<Record<string, unknown>>) 
 }
 
 describe("manipulate_canvas", () => {
-  it("describes delete as a dangerous operation requiring current user confirmation", () => {
+  it("does not expose delete as a normal canvas manipulation action", async () => {
     const tool = createManipulateCanvasTool({
       createUserClient: () => createUserClientWithElements([]),
     });
 
-    expect(tool.description).toContain("delete (dangerous");
-    expect(tool.description).toContain("explicitly confirmed deletion");
-    expect(tool.description).toContain("user_confirmed=true");
+    expect(tool.description).not.toContain("delete");
+    expect(tool.description).toContain("Do not add text, shapes, lines, buttons, or decorative labels around generated media");
+    expect(tool.description).toContain("read real element bounds with inspect_canvas");
+
+    await expect(
+      (tool.invoke as (input: unknown, config?: unknown) => Promise<string>)(
+        {
+          operations: [
+            {
+              action: "delete",
+              element_id: "shape-1",
+              user_confirmed: true,
+            },
+          ],
+        },
+        {
+          configurable: {
+            canvas_id: "canvas-1",
+            access_token: "token-1",
+          },
+        },
+      ),
+    ).rejects.toThrow();
   });
 
-  it("refuses delete operations unless they were explicitly confirmed by the user", async () => {
+  it("requires inspect_canvas before layout-changing operations", async () => {
+    const layoutInspectionState = {};
     const tool = createManipulateCanvasTool({
-      createUserClient: () =>
-        createUserClientWithElements([
-          {
-            id: "shape-1",
-            type: "rectangle",
-            x: 0,
-            y: 0,
-            width: 160,
-            height: 80,
-            isDeleted: false,
-          },
-        ]),
+      createUserClient: () => createUserClientWithElements([]),
+      layoutInspectionState,
     });
 
     const result = await (tool.invoke as (input: unknown, config?: unknown) => Promise<string>)(
       {
         operations: [
           {
-            action: "delete",
-            element_id: "shape-1",
+            action: "add_text",
+            text: "产品说明",
+            x: 100,
+            y: 100,
           },
         ],
       },
@@ -81,11 +95,69 @@ describe("manipulate_canvas", () => {
     );
 
     expect(JSON.parse(result)).toMatchObject({
+      success: false,
+      error: "layout_inspection_required",
+    });
+  });
+
+  it("allows layout-changing operations after inspect_canvas in the same run", async () => {
+    const layoutInspectionState = {};
+    const createUserClient = () => createUserClientWithElements([]);
+    const inspectTool = createInspectCanvasTool({
+      createUserClient,
+      layoutInspectionState,
+    });
+    const manipulateTool = createManipulateCanvasTool({
+      createUserClient,
+      layoutInspectionState,
+    });
+    const config = {
+      configurable: {
+        canvas_id: "canvas-1",
+        access_token: "token-1",
+      },
+    };
+
+    await (inspectTool.invoke as (input: unknown, config?: unknown) => Promise<string>)(
+      { detail_level: "summary" },
+      config,
+    );
+    const result = await (manipulateTool.invoke as (input: unknown, config?: unknown) => Promise<string>)(
+      {
+        operations: [
+          {
+            action: "add_text",
+            text: "产品说明",
+            x: 100,
+            y: 100,
+          },
+        ],
+      },
+      config,
+    );
+
+    expect(JSON.parse(result)).toMatchObject({
       success: true,
-      applied: 0,
-      errors: [
-        "[skip] delete requires explicit user confirmation in the current request",
-      ],
+      applied: 1,
+    });
+
+    const nextResult = await (manipulateTool.invoke as (input: unknown, config?: unknown) => Promise<string>)(
+      {
+        operations: [
+          {
+            action: "add_text",
+            text: "第二段说明",
+            x: 140,
+            y: 140,
+          },
+        ],
+      },
+      config,
+    );
+
+    expect(JSON.parse(nextResult)).toMatchObject({
+      success: false,
+      error: "layout_inspection_required",
     });
   });
 });

@@ -3,7 +3,10 @@ import type { BackendFactory, BackendProtocol } from "deepagents";
 
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { createBrandKitTool } from "./brand-kit.js";
-import { createInspectCanvasTool } from "./inspect-canvas.js";
+import {
+  createInspectCanvasTool,
+  type CanvasLayoutInspectionState,
+} from "./inspect-canvas.js";
 import { createManipulateCanvasTool } from "./manipulate-canvas.js";
 import {
   createImageGenerateTool,
@@ -63,15 +66,18 @@ export function createMainAgentTools(
     submitVideoJob?: SubmitVideoJobFn;
   },
 ) {
+  const layoutInspectionState: CanvasLayoutInspectionState = {};
   const tools: StructuredTool[] = [
     createProjectSearchTool(backend),
-    createInspectCanvasTool(deps),
-    createManipulateCanvasTool(deps),
+    createInspectCanvasTool({ ...deps, layoutInspectionState }),
+    createManipulateCanvasTool({ ...deps, layoutInspectionState }),
     createImageGenerateTool({
+      layoutInspectionState,
       ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
       ...(deps.submitImageJob ? { submitImageJob: deps.submitImageJob } : {}),
     }),
     createVideoGenerateTool({
+      layoutInspectionState,
       ...(deps.submitVideoJob ? { submitVideoJob: deps.submitVideoJob } : {}),
     }),
     createPersistSandboxFileTool({

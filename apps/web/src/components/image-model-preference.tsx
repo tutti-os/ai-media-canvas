@@ -1,15 +1,22 @@
 "use client";
 
+import { Film, Settings2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Film, Settings2 } from "lucide-react";
 
-import type { ImageModelInfo } from "../lib/server-api";
-import type { VideoModelInfo } from "../lib/server-api";
-import { fetchImageModels, fetchVideoModels } from "../lib/server-api";
-import { formatProviderLabel } from "../lib/provider-labels";
+import { Button } from "@/components/ui/button";
+
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
+import { isMediaProviderConfigured } from "../lib/media-provider-configuration";
+import { formatProviderLabel } from "../lib/provider-labels";
+import type { ImageModelInfo } from "../lib/server-api";
+import type { VideoModelInfo } from "../lib/server-api";
+import {
+  fetchImageModels,
+  fetchVideoModels,
+  fetchWorkspaceSettings,
+} from "../lib/server-api";
 
 export function ImageModelPreferencePopover({
   open,
@@ -32,16 +39,54 @@ export function ImageModelPreferencePopover({
   const [videoModels, setVideoModels] = useState<VideoModelInfo[]>([]);
   const [activeTab, setActiveTab] = useState<"image" | "video">("image");
   const popoverRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
+  const [pos, setPos] = useState<{
+    top: number;
+    left: number;
+    above: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    fetchImageModels()
-      .then((data) => setModels(data.models))
-      .catch(() => {});
-    fetchVideoModels()
-      .then((data) => setVideoModels(data.models))
-      .catch(() => {});
+
+    let cancelled = false;
+    async function refreshModels() {
+      try {
+        const [imageData, videoData, settingsData] = await Promise.all([
+          fetchImageModels(),
+          fetchVideoModels(),
+          fetchWorkspaceSettings(),
+        ]);
+        if (cancelled) return;
+
+        setModels(
+          imageData.models.filter((model) =>
+            isMediaProviderConfigured(
+              model.provider,
+              "image",
+              settingsData.settings,
+            ),
+          ),
+        );
+        setVideoModels(
+          videoData.models.filter((model) =>
+            isMediaProviderConfigured(
+              model.provider,
+              "video",
+              settingsData.settings,
+            ),
+          ),
+        );
+      } catch {
+        if (cancelled) return;
+        setModels([]);
+        setVideoModels([]);
+      }
+    }
+
+    void refreshModels();
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   // Calculate position — auto-detect direction based on available space
@@ -94,6 +139,10 @@ export function ImageModelPreferencePopover({
   const currentSetMode = activeTab === "image" ? setMode : setVideoMode;
   const currentToggleModel =
     activeTab === "image" ? toggleModel : toggleVideoModel;
+  const handleOpenSettings = () => {
+    onClose();
+    onOpenSettings?.();
+  };
 
   return createPortal(
     <div
@@ -136,10 +185,7 @@ export function ImageModelPreferencePopover({
                 <button
                   type="button"
                   aria-label="Open media settings"
-                  onClick={() => {
-                    onClose();
-                    onOpenSettings();
-                  }}
+                  onClick={handleOpenSettings}
                   className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <Settings2 className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -148,7 +194,9 @@ export function ImageModelPreferencePopover({
               <button
                 type="button"
                 onClick={() =>
-                  currentSetMode(currentPreference.mode === "auto" ? "manual" : "auto")
+                  currentSetMode(
+                    currentPreference.mode === "auto" ? "manual" : "auto",
+                  )
                 }
                 className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                   currentPreference.mode === "auto"
@@ -180,6 +228,26 @@ export function ImageModelPreferencePopover({
 
         {/* Model list */}
         <div className="scrollbar-hidden max-h-[300px] space-y-0.5 overflow-y-auto px-1">
+          {currentModels.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 px-2 py-6 text-center text-xs leading-relaxed text-muted-foreground">
+              <span>
+                {activeTab === "image"
+                  ? "未配置可用的图片模型"
+                  : "未配置可用的视频模型"}
+              </span>
+              {onOpenSettings ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={handleOpenSettings}
+                >
+                  <Settings2 data-icon="inline-start" />
+                  配置媒体模型
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
           {currentModels.map((m) => {
             const selected = currentPreference.models.includes(m.id);
             return (
@@ -188,7 +256,9 @@ export function ImageModelPreferencePopover({
                 type="button"
                 onClick={() => currentToggleModel(m.id)}
                 className={`group flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors ${
-                  selected ? "bg-accent/10 hover:bg-accent/15" : "hover:bg-muted"
+                  selected
+                    ? "bg-accent/10 hover:bg-accent/15"
+                    : "hover:bg-muted"
                 }`}
               >
                 {m.iconUrl && (
@@ -208,12 +278,15 @@ export function ImageModelPreferencePopover({
                     </span>
                   </div>
                   <span className="flex items-center gap-1 text-[11px] leading-tight text-muted-foreground">
-                    {activeTab === "video" ? <Film className="h-3 w-3 shrink-0" /> : null}
+                    {activeTab === "video" ? (
+                      <Film className="h-3 w-3 shrink-0" />
+                    ) : null}
                     {m.description}
                   </span>
                 </div>
                 {selected && (
                   <svg
+                    aria-hidden="true"
                     className="h-3.5 w-3.5 shrink-0 text-accent-foreground"
                     viewBox="0 0 14 14"
                     fill="currentColor"

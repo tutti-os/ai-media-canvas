@@ -9,6 +9,7 @@ import {
   resolveImageProviderName,
   type AvailableModel,
 } from "../../generation/providers/registry.js";
+import type { CanvasLayoutInspectionState } from "./inspect-canvas.js";
 
 const DEFAULT_MODEL = "black-forest-labs/flux-kontext-pro";
 
@@ -323,6 +324,7 @@ export async function runImageGenerate(
 export function createImageGenerateTool(deps?: {
   persistImage?: PersistImageFn;
   submitImageJob?: SubmitImageJobFn;
+  layoutInspectionState?: CanvasLayoutInspectionState;
   /** Override for testing — defaults to querying the provider registry. */
   availableModels?: AvailableModel[];
 }) {
@@ -337,12 +339,17 @@ export function createImageGenerateTool(deps?: {
       const attachmentMap =
         (config as any)?.configurable?.user_attachment_map as
           Record<string, string> | undefined;
-      return await runImageGenerate(
+      const result = await runImageGenerate(
         input,
         deps?.persistImage,
         deps?.submitImageJob,
         attachmentMap,
       );
+      if (!result.error && deps?.layoutInspectionState) {
+        delete deps.layoutInspectionState.canvasId;
+        delete deps.layoutInspectionState.inspectedAt;
+      }
+      return result;
     },
     {
       name: "generate_image",

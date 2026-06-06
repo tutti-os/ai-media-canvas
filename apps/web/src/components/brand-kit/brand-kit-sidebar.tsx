@@ -48,40 +48,37 @@ export function BrandKitSidebar({
           const isSelected = kit.id === selectedKitId;
           return (
             <div
-              role="button"
-              tabIndex={0}
               key={kit.id}
-              onClick={() => onSelectKit(kit.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onSelectKit(kit.id);
-                }
-              }}
               className={cn(
                 "group flex min-h-[44px] w-auto shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer md:w-full md:min-h-0 md:shrink",
                 isSelected ? "bg-muted" : "hover:bg-muted/60",
               )}
             >
-              {/* Thumbnail placeholder */}
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                <span className="text-xs font-medium text-muted-foreground">
-                  {kit.name.charAt(0).toUpperCase()}
-                </span>
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate text-sm font-medium text-foreground">
-                    {kit.name}
+              <button
+                type="button"
+                onClick={() => onSelectKit(kit.id)}
+                className="flex min-w-0 flex-1 items-center gap-2.5 text-left outline-none"
+              >
+                {/* Thumbnail placeholder */}
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {kit.name.charAt(0).toUpperCase()}
                   </span>
-                  {kit.is_default && (
-                    <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                      Default
-                    </span>
-                  )}
                 </div>
-              </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {kit.name}
+                    </span>
+                    {kit.is_default && (
+                      <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                        Default
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </button>
 
               {/* Hover delete -- hidden on mobile to save space */}
               <button
@@ -90,10 +87,10 @@ export function BrandKitSidebar({
                   e.stopPropagation();
                   onDeleteKit(kit.id);
                 }}
-                className="hidden shrink-0 rounded p-1 opacity-0 transition-all cursor-pointer hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 md:block"
+                className="hidden shrink-0 rounded p-1 opacity-0 transition-all cursor-pointer text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 md:block"
                 aria-label={`Delete ${kit.name}`}
               >
-                <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
           );

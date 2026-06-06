@@ -7,14 +7,15 @@ import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "@/lib/workspace-settings-event
 
 import { useAgentModel } from "./use-agent-model";
 
-export const AGENT_MODEL_REQUIRED_MESSAGE =
-  "请先配置或选择一个 Agent 模型。";
+export const AGENT_MODEL_REQUIRED_MESSAGE = "请先配置或选择一个 Agent 模型。";
 
 export function useAgentModelRequirement() {
   const { model } = useAgentModel();
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
     string | null
   >(null);
+  const [isAgentModelConfigurationLoaded, setIsAgentModelConfigurationLoaded] =
+    useState(false);
 
   const refreshWorkspaceDefaultModel = useCallback(async () => {
     const response = await fetchWorkspaceSettings();
@@ -33,6 +34,9 @@ export function useAgentModelRequirement() {
       })
       .catch(() => {
         if (!cancelled) setWorkspaceDefaultModel(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsAgentModelConfigurationLoaded(true);
       });
 
     return () => {
@@ -42,9 +46,14 @@ export function useAgentModelRequirement() {
 
   useEffect(() => {
     const handleSettingsUpdated = () => {
-      void refreshWorkspaceDefaultModel().catch(() => {
-        setWorkspaceDefaultModel(null);
-      });
+      setIsAgentModelConfigurationLoaded(false);
+      void refreshWorkspaceDefaultModel()
+        .catch(() => {
+          setWorkspaceDefaultModel(null);
+        })
+        .finally(() => {
+          setIsAgentModelConfigurationLoaded(true);
+        });
     };
     window.addEventListener(
       WORKSPACE_SETTINGS_UPDATED_EVENT,
@@ -73,6 +82,7 @@ export function useAgentModelRequirement() {
     model,
     workspaceDefaultModel,
     isAgentModelConfigured: Boolean(model?.trim() || workspaceDefaultModel),
+    isAgentModelConfigurationLoaded,
     ensureAgentModelConfigured,
   };
 }

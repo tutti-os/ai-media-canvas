@@ -12,6 +12,7 @@ import { saveCanvas, uploadThumbnail } from "../lib/server-api";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { isVideoUrl } from "../lib/canvas-elements";
 import { CanvasToolMenu } from "./canvas-tool-menu";
+import { CanvasContextMenuExtensions } from "./canvas-context-menu-extensions";
 import { normalizeCanvasElements } from "../lib/canvas-normalize";
 import { ErrorBoundary } from "./error-boundary";
 
@@ -65,7 +66,7 @@ type CanvasEditorProps = {
 
 const SAVE_DEBOUNCE_MS = 1500;
 const THUMBNAIL_DEBOUNCE_MS = 10_000;
-const THUMBNAIL_MAX_SIZE = 400;
+const THUMBNAIL_MAX_SIZE = 800;
 
 export function CanvasEditor({
   canvasId,
@@ -564,12 +565,15 @@ export function CanvasEditor({
           validateEmbeddable={validateEmbeddable}
         />
         {excalidrawApi && (
-          <MemoizedCanvasToolMenu
-            canvasId={canvasId}
-            excalidrawApi={excalidrawApi}
-            leftPanelOpen={leftPanelOpen ?? false}
-            projectId={projectId}
-          />
+          <>
+            <CanvasContextMenuExtensions excalidrawApi={excalidrawApi} />
+            <MemoizedCanvasToolMenu
+              canvasId={canvasId}
+              excalidrawApi={excalidrawApi}
+              leftPanelOpen={leftPanelOpen ?? false}
+              projectId={projectId}
+            />
+          </>
         )}
       </div>
     </ErrorBoundary>

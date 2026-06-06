@@ -27,6 +27,11 @@ const inspectCanvasSchema = z.object({
 
 type CanvasElement = Record<string, unknown>;
 
+export type CanvasLayoutInspectionState = {
+  canvasId?: string;
+  inspectedAt?: number;
+};
+
 const DEFAULT_STROKE_COLOR = "#1e1e1e";
 const DEFAULT_BACKGROUND_COLOR = "transparent";
 const SHAPE_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
@@ -151,6 +156,7 @@ export function buildCanvasSummaryForContext(
 
 export function createInspectCanvasTool(deps: {
   createUserClient: (accessToken: string) => any;
+  layoutInspectionState?: CanvasLayoutInspectionState;
 }) {
   return tool(
     async (input, config) => {
@@ -196,6 +202,10 @@ export function createInspectCanvasTool(deps: {
             message: `Element ${input.element_id} not found on canvas.`,
           });
         }
+        if (deps.layoutInspectionState) {
+          deps.layoutInspectionState.canvasId = canvasId;
+          deps.layoutInspectionState.inspectedAt = Date.now();
+        }
         return JSON.stringify(
           input.detail_level === "full" ? found : summarizeElement(found),
         );
@@ -231,6 +241,11 @@ export function createInspectCanvasTool(deps: {
         input.detail_level === "full"
           ? filtered
           : filtered.map(summarizeElement);
+
+      if (deps.layoutInspectionState) {
+        deps.layoutInspectionState.canvasId = canvasId;
+        deps.layoutInspectionState.inspectedAt = Date.now();
+      }
 
       return JSON.stringify({
         canvasId,

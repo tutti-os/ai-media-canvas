@@ -5,15 +5,21 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { HomePrompt } from "../src/components/home-prompt";
 import type { HomeExampleSelection } from "../src/lib/home-example-seeds";
 import { homeExampleSeedCategories } from "../src/lib/home-example-seeds";
-import { HomePrompt } from "../src/components/home-prompt";
 
 const {
   agentModelRequirementMock,
+  fetchImageModelsMock,
+  fetchVideoModelsMock,
+  fetchWorkspaceSettingsMock,
   settingsDialogSpy,
 } = vi.hoisted(() => ({
   agentModelRequirementMock: vi.fn(),
+  fetchImageModelsMock: vi.fn(),
+  fetchVideoModelsMock: vi.fn(),
+  fetchWorkspaceSettingsMock: vi.fn(),
   settingsDialogSpy: vi.fn(),
 }));
 
@@ -31,7 +37,9 @@ vi.mock("../src/components/settings-dialog", () => ({
   }) => {
     settingsDialogSpy({ open, initialTab });
     return open ? (
-      <div>{initialTab === "media" ? "Mock Media Settings" : "Mock Agent Settings"}</div>
+      <div>
+        {initialTab === "media" ? "Mock Media Settings" : "Mock Agent Settings"}
+      </div>
     ) : null;
   },
 }));
@@ -49,6 +57,12 @@ vi.mock("../src/components/image-model-preference", () => ({
         Open media settings
       </button>
     ) : null,
+}));
+
+vi.mock("../src/lib/server-api", () => ({
+  fetchImageModels: fetchImageModelsMock,
+  fetchVideoModels: fetchVideoModelsMock,
+  fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
 }));
 
 vi.mock("../src/hooks/use-agent-model-requirement", () => ({
@@ -86,6 +100,23 @@ describe("HomePrompt", () => {
       model: "local:assistant",
       isAgentModelConfigured: true,
       ensureAgentModelConfigured: vi.fn().mockResolvedValue(true),
+    });
+    fetchImageModelsMock.mockResolvedValue({
+      models: [{ id: "agnes-image", displayName: "Agnes Image" }],
+    });
+    fetchVideoModelsMock.mockResolvedValue({
+      models: [{ id: "agnes-video", displayName: "Agnes Video" }],
+    });
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        agnesApiKey: "sk-local-agnes",
+        replicateApiToken: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        openAIApiKey: "",
+        volcesApiKey: "",
+      },
     });
   });
 
@@ -143,9 +174,11 @@ describe("HomePrompt", () => {
 
   it("does not render an empty preview strip when the selected seed has no image mentions", () => {
     const onSubmit = vi.fn();
-    const designSeed = homeExampleSeedCategories
-      .find((category) => category.key === "design")!
-      .examples[0]!;
+    const designSeed = homeExampleSeedCategories.find(
+      (category) => category.key === "design",
+    )?.examples[0];
+
+    expect(designSeed).toBeDefined();
 
     const { container } = render(
       <HomePrompt
@@ -153,18 +186,16 @@ describe("HomePrompt", () => {
         selectedSeed={{
           categoryKey: "design",
           categoryLabel: "Design",
-          title: designSeed.title,
-          prompt: designSeed.prompt,
-          previewImages: designSeed.previewImages,
-          inputMentions: designSeed.inputMentions,
+          title: designSeed?.title ?? "",
+          prompt: designSeed?.prompt ?? "",
+          previewImages: designSeed?.previewImages ?? [],
+          inputMentions: designSeed?.inputMentions ?? [],
         }}
       />,
     );
 
     expect(screen.getByText("Design")).toBeInTheDocument();
-    expect(
-      container.querySelector(".overflow-x-auto"),
-    ).not.toBeInTheDocument();
+    expect(container.querySelector(".overflow-x-auto")).not.toBeInTheDocument();
   });
 
   it("opens agent settings instead of submitting when no agent model is configured", async () => {
@@ -186,17 +217,74 @@ describe("HomePrompt", () => {
     expect(onSubmit).not.toHaveBeenCalled();
     expect(await screen.findByText("Mock Agent Settings")).toBeInTheDocument();
     expect(
-      screen.getByText("请先配置或选择一个 Agent 模型。"),
+      screen.queryByText("请先配置或选择一个 Agent 模型。"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders a configuration banner above the prompt when agent and media models are missing", async () => {
+    agentModelRequirementMock.mockReturnValue({
+      model: null,
+      isAgentModelConfigured: false,
+      ensureAgentModelConfigured: vi.fn().mockResolvedValue(false),
+    });
+    fetchImageModelsMock.mockResolvedValueOnce({ models: [] });
+    fetchVideoModelsMock.mockResolvedValueOnce({ models: [] });
+    fetchWorkspaceSettingsMock.mockResolvedValueOnce({
+      settings: {
+        agnesApiKey: "",
+        replicateApiToken: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        openAIApiKey: "",
+        volcesApiKey: "",
+      },
+    });
+
+    render(<HomePrompt onSubmit={vi.fn()} />);
+
+    expect(
+      await screen.findByText("未配置 Agent 模型、图片模型、视频模型"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Agnes 提供免费的文本、生图、生视频模型能力/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "配置 Agent" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "配置媒体模型" }),
+    ).toBeInTheDocument();
+  });
+
+  it("uses provider settings instead of model catalog entries when deciding media configuration", async () => {
+    fetchImageModelsMock.mockResolvedValueOnce({
+      models: [{ id: "agnes-image", displayName: "Agnes Image" }],
+    });
+    fetchVideoModelsMock.mockResolvedValueOnce({
+      models: [{ id: "agnes-video", displayName: "Agnes Video" }],
+    });
+    fetchWorkspaceSettingsMock.mockResolvedValueOnce({
+      settings: {
+        agnesApiKey: "",
+        replicateApiToken: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        openAIApiKey: "",
+        volcesApiKey: "",
+      },
+    });
+
+    render(<HomePrompt onSubmit={vi.fn()} />);
+
+    expect(
+      await screen.findByText("未配置 图片模型、视频模型"),
     ).toBeInTheDocument();
   });
 
   it("renders tooltip labels for prompt toolbar icon buttons", () => {
-    render(
-      <HomePrompt
-        onSubmit={vi.fn()}
-        onAddFiles={vi.fn()}
-      />,
-    );
+    render(<HomePrompt onSubmit={vi.fn()} onAddFiles={vi.fn()} />);
 
     expect(screen.getByText("Attach images")).toBeInTheDocument();
     expect(screen.getByText("Attach images")).toHaveClass("top-full");
@@ -213,7 +301,9 @@ describe("HomePrompt", () => {
     render(<HomePrompt onSubmit={vi.fn()} />);
 
     await user.click(screen.getByRole("button", { name: "Image/Video model" }));
-    await user.click(screen.getByRole("button", { name: "Open media settings" }));
+    await user.click(
+      screen.getByRole("button", { name: "Open media settings" }),
+    );
 
     expect(await screen.findByText("Mock Media Settings")).toBeInTheDocument();
     expect(settingsDialogSpy).toHaveBeenLastCalledWith({

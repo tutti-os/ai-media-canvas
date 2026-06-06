@@ -1,33 +1,36 @@
 "use client";
 
+import type {
+  ImageGenerationPreference,
+  VideoGenerationPreference,
+} from "@aimc/shared";
 import {
   forwardRef,
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
-import type {
-  ImageGenerationPreference,
-  VideoGenerationPreference,
-} from "@aimc/shared";
 
+import { AgentModelSelector } from "@/components/agent-model-selector";
+import { ImageAttachmentBar } from "@/components/image-attachment-bar";
+import { ImageModelPreferencePopover } from "@/components/image-model-preference";
+import {
+  type MissingModelConfiguration,
+  ModelConfigurationBanner,
+} from "@/components/model-configuration-banner";
+import { SettingsDialog } from "@/components/settings-dialog";
+import { useAgentModelRequirement } from "@/hooks/use-agent-model-requirement";
 import type {
   ImageAttachmentState,
   ReadyAttachment,
 } from "@/hooks/use-image-attachments";
-import type { HomeExampleSelection } from "@/lib/home-example-seeds";
-import { AgentModelSelector } from "@/components/agent-model-selector";
-import { ImageAttachmentBar } from "@/components/image-attachment-bar";
-import { ImageModelPreferencePopover } from "@/components/image-model-preference";
-import { SettingsDialog } from "@/components/settings-dialog";
-import {
-  AGENT_MODEL_REQUIRED_MESSAGE,
-  useAgentModelRequirement,
-} from "@/hooks/use-agent-model-requirement";
 import { useImageModelPreference } from "@/hooks/use-image-model-preference";
+import { useMediaModelConfigurationStatus } from "@/hooks/use-media-model-configuration-status";
 import { useVideoModelPreference } from "@/hooks/use-video-model-preference";
+import type { HomeExampleSelection } from "@/lib/home-example-seeds";
 
 export type HomePromptHandle = {
   fill: (text: string) => void;
@@ -128,29 +131,40 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [settingsInitialTab, setSettingsInitialTab] = useState<"agent" | "media">(
-      "agent",
-    );
-    const [configurationError, setConfigurationError] = useState<string | null>(
-      null,
-    );
+    const [settingsInitialTab, setSettingsInitialTab] = useState<
+      "agent" | "media"
+    >("agent");
     const agentBtnRef = useRef<HTMLButtonElement>(null);
     const { preference } = useImageModelPreference();
     const { preference: videoPreference } = useVideoModelPreference();
+    const agentRequirement = useAgentModelRequirement();
     const {
       isAgentModelConfigured,
       model: agentModel,
       ensureAgentModelConfigured,
-    } = useAgentModelRequirement();
-    const seedImageMentions = selectedSeed?.inputMentions.filter(
-      (mention) => mention.type === "image",
-    ) ?? [];
-
-    useEffect(() => {
-      if (configurationError && isAgentModelConfigured) {
-        setConfigurationError(null);
+    } = agentRequirement;
+    const { missingImageModel, missingVideoModel } =
+      useMediaModelConfigurationStatus();
+    const isAgentModelConfigurationLoaded =
+      agentRequirement.isAgentModelConfigurationLoaded ?? true;
+    const missingModelConfiguration = useMemo(() => {
+      const missing: MissingModelConfiguration[] = [];
+      if (isAgentModelConfigurationLoaded && !isAgentModelConfigured) {
+        missing.push("agent");
       }
-    }, [configurationError, isAgentModelConfigured]);
+      if (missingImageModel) missing.push("image");
+      if (missingVideoModel) missing.push("video");
+      return missing;
+    }, [
+      isAgentModelConfigurationLoaded,
+      isAgentModelConfigured,
+      missingImageModel,
+      missingVideoModel,
+    ]);
+    const seedImageMentions =
+      selectedSeed?.inputMentions.filter(
+        (mention) => mention.type === "image",
+      ) ?? [];
 
     useImperativeHandle(ref, () => ({
       fill(text: string) {
@@ -171,7 +185,9 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const handleSubmit = useCallback(async () => {
       const trimmed = value.trim();
       if (
-        (!trimmed && (!attachments || attachments.length === 0) && !selectedSeed) ||
+        (!trimmed &&
+          (!attachments || attachments.length === 0) &&
+          !selectedSeed) ||
         disabled ||
         isUploading
       ) {
@@ -179,7 +195,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       }
 
       if (!(await ensureAgentModelConfigured())) {
-        setConfigurationError(AGENT_MODEL_REQUIRED_MESSAGE);
         setSettingsInitialTab("agent");
         setSettingsOpen(true);
         return;
@@ -194,15 +209,18 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       onSubmit(
         trimmed,
         mergedAttachments.length > 0 ? mergedAttachments : undefined,
-        preference.mode === "manual" && preference.models.length > 0
+        !missingImageModel &&
+          preference.mode === "manual" &&
+          preference.models.length > 0
           ? preference
           : undefined,
-        videoPreference.mode === "manual" && videoPreference.models.length > 0
+        !missingVideoModel &&
+          videoPreference.mode === "manual" &&
+          videoPreference.models.length > 0
           ? videoPreference
           : undefined,
         agentModel ?? undefined,
       );
-      setConfigurationError(null);
       setValue("");
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
@@ -219,6 +237,8 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       selectedSeed,
       videoPreference,
       value,
+      missingImageModel,
+      missingVideoModel,
     ]);
 
     const handleKeyDown = useCallback(
@@ -238,6 +258,12 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const handleOpenMediaSettings = useCallback(() => {
       setModelPopoverOpen(false);
       setSettingsInitialTab("media");
+      setSettingsOpen(true);
+    }, []);
+
+    const handleOpenAgentSettings = useCallback(() => {
+      setModelPopoverOpen(false);
+      setSettingsInitialTab("agent");
       setSettingsOpen(true);
     }, []);
 
@@ -264,152 +290,162 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     }, []);
 
     return (
-      <div className="overflow-visible rounded-xl border-[0.5px] border-border bg-muted shadow-[0_4px_8px_rgba(0,0,0,0.04)] sm:rounded-2xl">
-        {attachments && onRemoveAttachment ? (
-          <ImageAttachmentBar
-            attachments={attachments}
-            onRemove={onRemoveAttachment}
-          />
-        ) : null}
+      <div className="space-y-2">
+        <ModelConfigurationBanner
+          missing={missingModelConfiguration}
+          onConfigureAgent={handleOpenAgentSettings}
+          onConfigureMedia={handleOpenMediaSettings}
+        />
+        <div className="overflow-visible rounded-xl border-[0.5px] border-border bg-muted shadow-[0_4px_8px_rgba(0,0,0,0.04)] sm:rounded-2xl">
+          {attachments && onRemoveAttachment ? (
+            <ImageAttachmentBar
+              attachments={attachments}
+              onRemove={onRemoveAttachment}
+            />
+          ) : null}
 
-        {selectedSeed ? (
-          <div className="flex flex-col gap-3 border-b border-border/80 px-4 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 text-left">
-                <div className="inline-flex w-fit items-center rounded-full border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground">
-                  {selectedSeed.categoryLabel}
+          {selectedSeed ? (
+            <div className="flex flex-col gap-3 border-b border-border/80 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 text-left">
+                  <div className="inline-flex w-fit items-center rounded-full border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                    {selectedSeed.categoryLabel}
+                  </div>
+                  <p className="mt-2 text-sm font-medium text-foreground">
+                    {selectedSeed.title}
+                  </p>
                 </div>
-                <p className="mt-2 text-sm font-medium text-foreground">
-                  {selectedSeed.title}
-                </p>
+
+                {onClearSelectedSeed ? (
+                  <button
+                    type="button"
+                    onClick={onClearSelectedSeed}
+                    className="shrink-0 rounded-full border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    清除
+                  </button>
+                ) : null}
               </div>
 
-              {onClearSelectedSeed ? (
-                <button
-                  type="button"
-                  onClick={onClearSelectedSeed}
-                  className="shrink-0 rounded-full border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  清除
-                </button>
+              {seedImageMentions.length > 0 ? (
+                <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+                  {seedImageMentions.map((mention) => (
+                    <div
+                      key={`${selectedSeed.title}-${mention.imgSrc}`}
+                      className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-border bg-background"
+                    >
+                      <img
+                        src={mention.imgSrc}
+                        alt={mention.name}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
               ) : null}
             </div>
+          ) : null}
 
-            {seedImageMentions.length > 0 ? (
-              <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
-                {seedImageMentions.map((mention) => (
-                  <div
-                    key={`${selectedSeed.title}-${mention.imgSrc}`}
-                    className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-border bg-background"
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            onInput={handleInput}
+            placeholder="让 AI Media Canvas 帮你设计..."
+            disabled={disabled}
+            rows={2}
+            className="w-full resize-none bg-transparent px-3 pt-3 pb-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50 sm:px-4 sm:pt-4"
+          />
+
+          <div className="flex items-center justify-between px-2 pb-2 sm:px-3 sm:pb-3">
+            <div className="flex items-center gap-0.5">
+              {onAddFiles ? (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    multiple
+                    className="hidden"
+                    onChange={(event) => {
+                      const files = event.target.files;
+                      if (files && files.length > 0) {
+                        onAddFiles(Array.from(files));
+                        event.target.value = "";
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    aria-label="Attach images"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                   >
-                    <img
-                      src={mention.imgSrc}
-                      alt={mention.name}
-                      className="h-full w-full object-cover"
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+                    <svg
+                      aria-hidden="true"
+                      viewBox={toolbarButtons[0].viewBox}
+                      className="h-4 w-4 fill-current"
+                    >
+                      <path d={toolbarButtons[0].path} />
+                    </svg>
+                    <PromptToolbarTooltip label="Attach images" />
+                  </button>
+                </>
+              ) : null}
 
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          onInput={handleInput}
-          placeholder="让 AI Media Canvas 帮你设计..."
-          disabled={disabled}
-          rows={2}
-          className="w-full resize-none bg-transparent px-3 pt-3 pb-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50 sm:px-4 sm:pt-4"
-        />
-
-        <div className="flex items-center justify-between px-2 pb-2 sm:px-3 sm:pb-3">
-          <div className="flex items-center gap-0.5">
-            {onAddFiles ? (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif"
-                  multiple
-                  className="hidden"
-                  onChange={(event) => {
-                    const files = event.target.files;
-                    if (files && files.length > 0) {
-                      onAddFiles(Array.from(files));
-                      event.target.value = "";
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  aria-label="Attach images"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+              <button
+                ref={agentBtnRef}
+                type="button"
+                aria-label="Image/Video model"
+                onClick={() => setModelPopoverOpen((current) => !current)}
+                className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox={toolbarButtons[1].viewBox}
+                  className="h-4 w-4 fill-current"
                 >
-                  <svg viewBox={toolbarButtons[0].viewBox} className="h-4 w-4 fill-current">
-                    <path d={toolbarButtons[0].path} />
-                  </svg>
-                  <PromptToolbarTooltip label="Attach images" />
-                </button>
-              </>
-            ) : null}
+                  <path d={toolbarButtons[1].path} />
+                </svg>
+                <PromptToolbarTooltip label="Image/Video model" />
+              </button>
+
+              <div className="ml-1">
+                <AgentModelSelector compact tooltipPlacement="bottom" />
+              </div>
+            </div>
 
             <button
-              ref={agentBtnRef}
               type="button"
-              aria-label="Image/Video model"
-              onClick={() => setModelPopoverOpen((current) => !current)}
-              className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+              onClick={handleSubmit}
+              disabled={disabled || isUploading || !hasContent}
+              aria-label="提交 prompt"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:bg-foreground/25"
             >
-              <svg viewBox={toolbarButtons[1].viewBox} className="h-4 w-4 fill-current">
-                <path d={toolbarButtons[1].path} />
+              <svg
+                aria-hidden="true"
+                viewBox={submitIcon.viewBox}
+                className="h-4 w-4 fill-current"
+              >
+                <path d={submitIcon.path} />
               </svg>
-              <PromptToolbarTooltip label="Image/Video model" />
             </button>
-
-            <div className="ml-1">
-              <AgentModelSelector compact tooltipPlacement="bottom" />
-            </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={disabled || isUploading || !hasContent}
-            aria-label="提交 prompt"
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:bg-foreground/25"
-          >
-            <svg viewBox={submitIcon.viewBox} className="h-4 w-4 fill-current">
-              <path d={submitIcon.path} />
-            </svg>
-          </button>
+          <ImageModelPreferencePopover
+            open={modelPopoverOpen}
+            onClose={() => setModelPopoverOpen(false)}
+            anchorRef={agentBtnRef}
+            onOpenSettings={handleOpenMediaSettings}
+          />
+          <SettingsDialog
+            open={settingsOpen}
+            onOpenChange={setSettingsOpen}
+            initialTab={settingsInitialTab}
+          />
         </div>
-
-        {configurationError ? (
-          <p
-            role="alert"
-            className="px-3 pb-3 text-left text-xs text-destructive sm:px-4"
-          >
-            {configurationError}
-          </p>
-        ) : null}
-
-        <ImageModelPreferencePopover
-          open={modelPopoverOpen}
-          onClose={() => setModelPopoverOpen(false)}
-          anchorRef={agentBtnRef}
-          onOpenSettings={handleOpenMediaSettings}
-        />
-        <SettingsDialog
-          open={settingsOpen}
-          onOpenChange={setSettingsOpen}
-          initialTab={settingsInitialTab}
-        />
       </div>
     );
   },

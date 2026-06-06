@@ -17,6 +17,7 @@ import {
   computeEdgePoint,
   computeFixedPoint,
 } from "./canvas-element-helpers.js";
+import type { CanvasLayoutInspectionState } from "./inspect-canvas.js";
 
 // Re-export for consumers that import measureTextWidth from this module
 // (e.g. the test suite). New code should import directly from canvas-element-helpers.
@@ -43,18 +44,14 @@ const labelSchema = z
 const operationSchema = z.object({
   action: z
     .enum([
-      "move", "resize", "delete", "update_style",
+      "move", "resize", "update_style",
       "add_text", "add_shape", "add_line",
       "reorder", "align", "distribute", "update_text",
     ])
     .describe("The operation to perform"),
 
-  // Common: target element ID (move, resize, delete, update_style, reorder)
+  // Common: target element ID (move, resize, update_style, reorder)
   element_id: z.string().optional().describe("ID of element to operate on"),
-  user_confirmed: z
-    .boolean()
-    .optional()
-    .describe("For delete only. Set true only when the user explicitly confirmed deletion in the current request."),
 
   // Position / size
   x: z.number().optional().describe("X coordinate"),
@@ -108,6 +105,21 @@ const manipulateCanvasSchema = z.object({
 // Flat operation type — all fields optional except `action`.
 type Operation = z.infer<typeof operationSchema>;
 
+const LAYOUT_CHANGING_ACTIONS = new Set<Operation["action"]>([
+  "move",
+  "resize",
+  "add_text",
+  "add_shape",
+  "add_line",
+  "reorder",
+  "align",
+  "distribute",
+]);
+
+function requiresLayoutInspection(operations: Operation[]) {
+  return operations.some((op) => LAYOUT_CHANGING_ACTIONS.has(op.action));
+}
+
 // ---------------------------------------------------------------------------
 // Operation handlers
 // ---------------------------------------------------------------------------
@@ -136,62 +148,6 @@ function applyResize(
   return {
     description: `resized ${shortLabel(el)} to ${op.width}x${op.height}`,
   };
-}
-
-/**
- * Delete an element with full cascade:
- * - Marks the target as deleted
- * - Cascades deletion to bound text elements (label cleanup)
- * - Clears startBinding / endBinding on arrows pointing to deleted element
- */
-function applyDelete(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  if (op.user_confirmed !== true) {
-    return {
-      description:
-        "[skip] delete requires explicit user confirmation in the current request",
-    };
-  }
-  const el = findElement(elements, op.element_id!);
-  if (!el) return { description: `[skip] element ${op.element_id} not found` };
-  el.isDeleted = true;
-  bumpVersion(el);
-
-  const cascaded: string[] = [];
-
-  // Cascade to bound text children (labels)
-  if (Array.isArray(el.boundElements)) {
-    for (const bound of el.boundElements as Array<{ type: string; id: string }>) {
-      if (bound.type === "text") {
-        const textEl = findElement(elements, bound.id);
-        if (textEl) {
-          textEl.isDeleted = true;
-          bumpVersion(textEl);
-          cascaded.push(`text(${bound.id})`);
-        }
-      }
-    }
-  }
-
-  // Clean up arrow bindings pointing at the deleted element
-  for (const other of elements) {
-    if (other.isDeleted) continue;
-    const startBinding = other.startBinding as { elementId: string } | null;
-    const endBinding = other.endBinding as { elementId: string } | null;
-    if (startBinding?.elementId === op.element_id) {
-      other.startBinding = null;
-      bumpVersion(other);
-    }
-    if (endBinding?.elementId === op.element_id) {
-      other.endBinding = null;
-      bumpVersion(other);
-    }
-  }
-
-  const cascadeInfo = cascaded.length > 0 ? ` (cascaded: ${cascaded.join(", ")})` : "";
-  return { description: `deleted ${shortLabel(el)}${cascadeInfo}` };
 }
 
 function applyUpdateStyle(
@@ -722,7 +678,6 @@ const handlers: Record<
 > = {
   move: applyMove,
   resize: applyResize,
-  delete: applyDelete,
   update_style: applyUpdateStyle,
   add_text: applyAddText,
   add_shape: applyAddShape,
@@ -739,6 +694,7 @@ const handlers: Record<
 
 export function createManipulateCanvasTool(deps: {
   createUserClient: (accessToken: string) => any;
+  layoutInspectionState?: CanvasLayoutInspectionState;
 }) {
   return tool(
     async (input, config) => {
@@ -750,6 +706,21 @@ export function createManipulateCanvasTool(deps: {
           error: "no_canvas_context",
           message:
             "This tool requires a canvas context. Ensure the conversation is linked to a canvas.",
+        });
+      }
+
+      const layoutInspectionState = deps.layoutInspectionState;
+      if (
+        requiresLayoutInspection(input.operations) &&
+        (!layoutInspectionState ||
+          layoutInspectionState.canvasId !== canvasId ||
+          layoutInspectionState.inspectedAt == null)
+      ) {
+        return JSON.stringify({
+          success: false,
+          error: "layout_inspection_required",
+          message:
+            "Run inspect_canvas before layout-changing manipulate_canvas operations so placement uses real element bounds.",
         });
       }
 
@@ -814,6 +785,10 @@ export function createManipulateCanvasTool(deps: {
           message: `Failed to save canvas: ${writeError.message}`,
         });
       }
+      if (deps.layoutInspectionState) {
+        delete deps.layoutInspectionState.canvasId;
+        delete deps.layoutInspectionState.inspectedAt;
+      }
 
       // --- Build result --------------------------------------------------------
       const result: Record<string, unknown> = {
@@ -832,7 +807,7 @@ export function createManipulateCanvasTool(deps: {
     {
       name: "manipulate_canvas",
       description:
-        "Manipulate elements on the canvas. Supports: move, resize, delete (dangerous; only use when the user explicitly confirmed deletion in the current request and set user_confirmed=true; cascades to bound text), update_style, update_text (modify text content of any element or its label), add_text, add_shape (with optional label for centered text), add_line (with optional element binding for auto-connected arrows), align, distribute, reorder. Use inspect_canvas first to understand the current layout. Returns created element IDs for subsequent binding.",
+        "Manipulate elements on the canvas. Supports: move, resize, update_style, update_text (modify text content of any element or its label), add_text, add_shape (with optional label for centered text), add_line (with optional element binding for auto-connected arrows), align, distribute, reorder. It cannot remove elements; destructive removal requires a separate explicit user-confirmed flow. Do not add text, shapes, lines, buttons, or decorative labels around generated media unless the user explicitly asks for editable layered layout; read real element bounds with inspect_canvas before placing anything near existing media. Returns created element IDs for subsequent binding.",
       schema: manipulateCanvasSchema,
     },
   );

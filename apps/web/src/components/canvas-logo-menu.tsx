@@ -3,6 +3,7 @@
 import {
   Copy,
   FolderOpen,
+  House,
   ImagePlus,
   Maximize2,
   Plus,
@@ -14,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 
 import { AimcLogo } from "@/components/icons/aimc-logo";
+import { useToast } from "@/components/toast";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,14 +25,20 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useCreateProject } from "@/hooks/use-create-project";
 import {
   createExcalidrawImageElement,
   getViewportCenter,
   scaleToFit,
 } from "@/lib/canvas-elements";
 import { deleteProject } from "@/lib/server-api";
-import { useToast } from "@/components/toast";
-import { useCreateProject } from "@/hooks/use-create-project";
+
+type DuplicableCanvasElement = {
+  id: string;
+  isDeleted?: boolean;
+  x: number;
+  y: number;
+};
 
 interface CanvasLogoMenuProps {
   projectId: string;
@@ -80,16 +88,17 @@ export function CanvasLogoMenu({
     const appState = excalidrawApi.getAppState();
     const selectedIds: Record<string, boolean> =
       appState.selectedElementIds ?? {};
-    const allElements = excalidrawApi.getSceneElements();
+    const allElements =
+      excalidrawApi.getSceneElements() as DuplicableCanvasElement[];
     const selected = allElements.filter(
-      (el: any) => selectedIds[el.id] && !el.isDeleted,
+      (el) => selectedIds[el.id] && !el.isDeleted,
     );
 
     if (!selected.length) return;
 
     const OFFSET = 10;
     const newSelectedIds: Record<string, boolean> = {};
-    const clones = selected.map((el: any) => {
+    const clones = selected.map((el) => {
       const newId = generateFileId();
       newSelectedIds[newId] = true;
       return { ...el, id: newId, x: el.x + OFFSET, y: el.y + OFFSET };
@@ -185,6 +194,10 @@ export function CanvasLogoMenu({
         <DropdownMenuContent align="start" sideOffset={6} className="w-56">
           {/* Group 1 — Navigation */}
           <DropdownMenuGroup>
+            <DropdownMenuItem onClick={() => router.push("/home")}>
+              <House className="size-4" />
+              首页
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/projects")}>
               <FolderOpen className="size-4" />
               项目库
@@ -201,6 +214,7 @@ export function CanvasLogoMenu({
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
+              closeOnClick={confirmingDelete}
               onClick={handleDeleteProject}
             >
               <Trash2 className="size-4" />

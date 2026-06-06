@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChatSidebar } from "../src/components/chat-sidebar";
 import { ToastProvider } from "../src/components/toast";
+import { INITIAL_ATTACHMENTS_KEY } from "../src/hooks/use-create-project";
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
 
 const settingsDialogSpy = vi.fn();
@@ -26,6 +27,7 @@ const {
   saveMessageMock,
   updateSessionTitleMock,
   fetchImageModelsMock,
+  fetchVideoModelsMock,
   fetchModelsMock,
   fetchWorkspaceSettingsMock,
 } = vi.hoisted(() => ({
@@ -34,6 +36,7 @@ const {
   fetchMessagesMock: vi.fn(),
   fetchRunEventsMock: vi.fn(),
   fetchImageModelsMock: vi.fn(),
+  fetchVideoModelsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
   fetchWorkspaceSettingsMock: vi.fn(),
   fetchSessionsMock: vi.fn(),
@@ -45,6 +48,7 @@ vi.mock("../src/lib/server-api", () => ({
   createSession: createSessionMock,
   deleteSession: deleteSessionMock,
   fetchImageModels: fetchImageModelsMock,
+  fetchVideoModels: fetchVideoModelsMock,
   fetchModels: fetchModelsMock,
   fetchRunEvents: fetchRunEventsMock,
   fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
@@ -155,6 +159,15 @@ describe("ChatSidebar", () => {
         },
       ],
     });
+    fetchVideoModelsMock.mockReset();
+    fetchVideoModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "agnes-video",
+          displayName: "Agnes Video",
+        },
+      ],
+    });
     fetchModelsMock.mockReset();
     fetchModelsMock.mockResolvedValue({
       models: [
@@ -171,6 +184,13 @@ describe("ChatSidebar", () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "local:assistant",
+        agnesApiKey: "sk-local-agnes",
+        replicateApiToken: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        openAIApiKey: "",
+        volcesApiKey: "",
       },
     });
     fetchMessagesMock.mockReset();
@@ -193,6 +213,7 @@ describe("ChatSidebar", () => {
 
   afterEach(() => {
     cleanup();
+    sessionStorage.clear();
     settingsDialogSpy.mockClear();
     vi.clearAllMocks();
     vi.restoreAllMocks();
@@ -236,6 +257,88 @@ describe("ChatSidebar", () => {
         sessionId: "session-canvas-1",
       }),
       expect.anything(),
+    );
+  });
+
+  it("auto-starts image-only initial runs from stored home attachments", async () => {
+    const attachments = [
+      {
+        assetId: "asset-upload-1",
+        url: "https://example.com/ref.png",
+        mimeType: "image/png",
+        source: "upload" as const,
+        name: "ref.png",
+      },
+    ];
+    sessionStorage.setItem(
+      INITIAL_ATTACHMENTS_KEY,
+      JSON.stringify(attachments),
+    );
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() =>
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: "session-real",
+          conversationId: "canvas-1",
+          prompt: "",
+          canvasId: "canvas-1",
+          attachments,
+        }),
+        expect.any(Function),
+      ),
+    );
+    expect(sessionStorage.getItem(INITIAL_ATTACHMENTS_KEY)).toBeNull();
+  });
+
+  it("waits for the user message to persist before starting the run", async () => {
+    let resolveSave: (() => void) | undefined;
+    saveMessageMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(/start with an idea/i);
+    await userEvent.type(input, "preserve order{Enter}");
+
+    await waitFor(() => expect(saveMessageMock).toHaveBeenCalledTimes(1));
+    expect(mockWs.startRun).not.toHaveBeenCalled();
+
+    resolveSave?.();
+
+    await waitFor(() =>
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: "session-real",
+          prompt: "preserve order",
+        }),
+        expect.any(Function),
+      ),
     );
   });
 
@@ -284,6 +387,13 @@ describe("ChatSidebar", () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "",
+        agnesApiKey: "sk-local-agnes",
+        replicateApiToken: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        openAIApiKey: "",
+        volcesApiKey: "",
       },
     });
 
@@ -305,8 +415,8 @@ describe("ChatSidebar", () => {
     await waitFor(() => expect(mockWs.startRun).not.toHaveBeenCalled());
     expect(await screen.findByText("Mock Settings Dialog")).toBeInTheDocument();
     expect(
-      screen.getByText("请先配置或选择一个 Agent 模型。"),
-    ).toBeInTheDocument();
+      screen.queryByText("请先配置或选择一个 Agent 模型。"),
+    ).not.toBeInTheDocument();
   });
 
   it("ignores a rapid duplicate Enter press while a send is already starting", async () => {

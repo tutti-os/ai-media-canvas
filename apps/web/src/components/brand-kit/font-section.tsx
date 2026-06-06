@@ -65,7 +65,11 @@ export function FontSection({
     setMenuOpen(false);
     const name = window.prompt("输入字体名称");
     if (!name?.trim()) return;
-    onAddFont({ family: name.trim(), variant: "regular", category: "sans-serif" });
+    onAddFont({
+      family: name.trim(),
+      variant: "regular",
+      category: "sans-serif",
+    });
   }, [onAddFont]);
 
   const handlePickerSelect = useCallback(
@@ -100,11 +104,12 @@ export function FontSection({
                 className={cn(
                   "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-background border shadow-sm",
                   "flex items-center justify-center",
-                  "opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer",
+                  "text-muted-foreground opacity-0 group-hover:opacity-100 transition-colors cursor-pointer",
+                  "hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive",
                 )}
                 aria-label={`Delete font ${font.display_name}`}
               >
-                <X className="h-3 w-3 text-muted-foreground" />
+                <X className="h-3 w-3" />
               </button>
             </div>
             <InlineInput

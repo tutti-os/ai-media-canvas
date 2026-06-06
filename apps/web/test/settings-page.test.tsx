@@ -201,8 +201,9 @@ describe("SettingsPage", () => {
         ),
       { timeout: 1000 },
     );
-    expect(screen.queryByRole("button", { name: "Import detected" }))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Import detected" }),
+    ).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -802,9 +803,7 @@ describe("SettingsPage", () => {
       "aria-pressed",
       "false",
     );
-    expect(
-      await screen.findByText("Default LLM Model"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Default LLM Model")).toBeInTheDocument();
   });
 
   it("uses the first concrete Local agent model instead of the CLI default option", async () => {
