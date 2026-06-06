@@ -832,7 +832,7 @@ export function createManipulateCanvasTool(deps: {
     {
       name: "manipulate_canvas",
       description:
-        "Manipulate elements on the canvas. Supports: move, resize, delete (cascades to bound text), update_style, update_text (modify text content of any element or its label), add_text, add_shape (with optional label for centered text), add_line (with optional element binding for auto-connected arrows), align, distribute, reorder. Use inspect_canvas first to understand the current layout. Returns created element IDs for subsequent binding.",
+        "Manipulate elements on the canvas. Supports: move, resize, delete (dangerous; only use when the user explicitly confirmed deletion in the current request and set user_confirmed=true; cascades to bound text), update_style, update_text (modify text content of any element or its label), add_text, add_shape (with optional label for centered text), add_line (with optional element binding for auto-connected arrows), align, distribute, reorder. Use inspect_canvas first to understand the current layout. Returns created element IDs for subsequent binding.",
       schema: manipulateCanvasSchema,
     },
   );
