@@ -397,9 +397,9 @@
 }
 
 .excalidraw .context-menu li.aimc-context-menu-section-start {
-  border-top: 1px solid var(--default-border-color);
-  margin-top: 0.45rem;
-  padding-top: 0.45rem;
+  border-top: 1px solid rgba(17, 24, 39, 0.22);
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
 }
 
 /* Image generator shimmer animation */

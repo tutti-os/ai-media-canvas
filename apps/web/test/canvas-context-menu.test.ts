@@ -39,6 +39,6 @@ describe("canvas context menu", () => {
 
   it("draws AIMC section dividers for retained menu groups", () => {
     expect(contextMenuCss).toContain("li.aimc-context-menu-section-start");
-    expect(contextMenuCss).toContain("border-top: 1px solid");
+    expect(contextMenuCss).toContain("rgba(17, 24, 39, 0.22)");
   });
 });
