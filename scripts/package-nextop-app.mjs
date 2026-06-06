@@ -30,7 +30,7 @@ export function createManifest({ version }) {
     description: "Local-first AI canvas for image and video generation.",
     icon: {
       type: "asset",
-      src: "icon.svg",
+      src: "icon.png",
     },
     runtime: {
       kind: "custom",
@@ -83,7 +83,7 @@ This package runs AI Media Canvas as a Nextop workspace app.
 - \`dist/\`: static frontend files from \`apps/web/out\`.
 - \`server/server.js\`: bundled Fastify server.
 - \`skills/\`: packaged local skills used by the app runtime.
-- \`icon.svg\`: App Center icon with its own contrast-safe background.
+- \`icon.png\`: App Center icon with its own contrast-safe background.
 
 ## Runtime
 
@@ -178,8 +178,8 @@ async function writePackageFiles(version) {
   await chmod(path.join(packageRoot, "bootstrap.sh"), 0o755);
 
   await cp(
-    path.join(rootDir, "apps", "web", "public", "brand", "aimc-nextop-app-icon.svg"),
-    path.join(packageRoot, "icon.svg"),
+    path.join(rootDir, "apps", "web", "public", "brand", "aimc-nextop-app-icon.png"),
+    path.join(packageRoot, "icon.png"),
   );
   await cp(path.join(rootDir, "apps", "web", "out"), path.join(packageRoot, "dist"), {
     recursive: true,

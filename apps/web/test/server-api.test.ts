@@ -7,6 +7,8 @@ import {
   fetchProjects,
   createProject,
   updateWorkspaceSettings,
+  generateImageDirect,
+  generateVideoDirect,
 } from "../src/lib/server-api";
 
 const mockFetch = vi.fn();
@@ -166,5 +168,143 @@ describe("local server API", () => {
     expect(result.settings.googleApiKey).toBe("google-local-key");
     expect(result.settings.anthropicApiKey).toBe("sk-local-anthropic");
     expect(result.settings.agnesApiKey).toBe("sk-local-agnes");
+  });
+
+  it("generateImageDirect creates an image job and polls for the stored result", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          job: {
+            id: "job-image-1",
+            status: "queued",
+            result: null,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          job: {
+            id: "job-image-1",
+            status: "succeeded",
+            result: {
+              signed_url: "http://localhost:3001/assets/image.png",
+              asset_id: "asset-image-1",
+              mime_type: "image/png",
+              width: 1024,
+              height: 1024,
+            },
+          },
+        }),
+      });
+
+    const result = await generateImageDirect("生成一张海报", {
+      model: "agnes-image/agnes-image-2.1-flash",
+      aspectRatio: "1:1",
+      quality: "hd",
+    });
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:3001/api/jobs/image-generation",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "生成一张海报",
+          model: "agnes-image/agnes-image-2.1-flash",
+          aspect_ratio: "1:1",
+          quality: "hd",
+        }),
+      },
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:3001/api/jobs/job-image-1",
+    );
+    expect(result).toEqual({
+      url: "http://localhost:3001/assets/image.png",
+      assetId: "asset-image-1",
+      prompt: "生成一张海报",
+      mimeType: "image/png",
+      width: 1024,
+      height: 1024,
+    });
+  });
+
+  it("generateVideoDirect creates a video job and polls for the stored result", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          job: {
+            id: "job-video-1",
+            status: "queued",
+            result: null,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          job: {
+            id: "job-video-1",
+            status: "succeeded",
+            result: {
+              signed_url: "http://localhost:3001/assets/video.mp4",
+              asset_id: "asset-video-1",
+              mime_type: "video/mp4",
+              width: 1280,
+              height: 720,
+              duration_seconds: 5,
+            },
+          },
+        }),
+      });
+
+    const result = await generateVideoDirect("生成一段产品视频", {
+      model: "agnes-video/agnes-video-v2.0",
+      duration: 5,
+      resolution: "720p",
+      aspectRatio: "16:9",
+      projectId: "project-1",
+      canvasId: "canvas-1",
+    });
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:3001/api/jobs/video-generation",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "生成一段产品视频",
+          model: "agnes-video/agnes-video-v2.0",
+          duration: 5,
+          resolution: "720p",
+          aspect_ratio: "16:9",
+          project_id: "project-1",
+          canvas_id: "canvas-1",
+        }),
+      },
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:3001/api/jobs/job-video-1",
+    );
+    expect(result).toEqual({
+      url: "http://localhost:3001/assets/video.mp4",
+      assetId: "asset-video-1",
+      prompt: "生成一段产品视频",
+      mimeType: "video/mp4",
+      width: 1280,
+      height: 720,
+      durationSeconds: 5,
+    });
   });
 });

@@ -34,7 +34,7 @@ describe("ChatMessage", () => {
     expect(screen.getByText("思考中")).toBeInTheDocument();
   });
 
-  it("does not add the generic thinking indicator while a tool is running", () => {
+  it("keeps the generic thinking indicator below a running tool", () => {
     const blocks: ContentBlock[] = [
       {
         type: "tool",
@@ -46,12 +46,31 @@ describe("ChatMessage", () => {
 
     renderAssistantMessage(blocks);
 
-    expect(screen.queryByText("思考中")).not.toBeInTheDocument();
+    expect(screen.getByText("思考中")).toBeInTheDocument();
+  });
+
+  it("uses the bottom thinking indicator instead of a markdown cursor while a tool is running", () => {
+    const blocks: ContentBlock[] = [
+      { type: "text", text: "我会先生成一张图。" },
+      {
+        type: "tool",
+        toolCallId: "tool-1",
+        toolName: "Agnes Image 2.1 Flash",
+        status: "running",
+      },
+    ];
+
+    const { container } = renderAssistantMessage(blocks);
+
+    expect(screen.getByText("思考中")).toBeInTheDocument();
+    expect(
+      container.querySelector(".markdown-content .animate-pulse"),
+    ).toBeNull();
   });
 });
 
 function renderAssistantMessage(contentBlocks: ContentBlock[]) {
-  render(
+  return render(
     <ChatMessage
       contentBlocks={contentBlocks}
       isStreaming

@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Zap } from "lucide-react";
+import { ImageIcon, Loader2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -12,6 +12,7 @@ import {
   resizeVideoGeneratorElement,
   type VideoGeneratorData,
 } from "../../lib/canvas-video-generator";
+import { calculateCenteredGeneratorPanelPosition } from "../../lib/canvas-generator-panel-position";
 import { formatProviderLabel } from "../../lib/provider-labels";
 
 type VideoGeneratorPanelProps = {
@@ -27,6 +28,82 @@ type VideoGeneratorPanelProps = {
 
 const ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const DURATIONS = [4, 5, 6, 8] as const;
+const PANEL_WIDTH = 520;
+type FrameSlot = "first" | "last";
+type FrameData = { dataUrl: string; file: File };
+
+function FrameUploadTile({
+  label,
+  inputLabel,
+  frame,
+  loading,
+  disabled,
+  inputRef,
+  onUpload,
+  onClear,
+}: {
+  label: string;
+  inputLabel: string;
+  frame: FrameData | null;
+  loading: boolean;
+  disabled: boolean;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="group relative">
+      <input
+        ref={inputRef}
+        aria-label={inputLabel}
+        type="file"
+        accept="image/*"
+        hidden
+        disabled={disabled}
+        onChange={onUpload}
+      />
+      <button
+        type="button"
+        disabled={disabled || loading}
+        onClick={() => inputRef.current?.click()}
+        className="group relative flex h-[48px] w-[104px] shrink-0 items-center justify-center gap-2 overflow-hidden rounded-[18px] border border-transparent bg-muted/25 px-3 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:border-border/70 hover:bg-muted/45 disabled:cursor-not-allowed disabled:opacity-70"
+      >
+        {frame ? (
+          <>
+            <img
+              src={frame.dataUrl}
+              alt={`${label}预览`}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            <div className="absolute inset-x-0 bottom-0 bg-background/80 px-1.5 py-1 text-center text-[11px] font-medium text-foreground backdrop-blur">
+              {label}
+            </div>
+          </>
+        ) : loading ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/70" />
+            <span className="whitespace-nowrap">{label}上传中</span>
+          </>
+        ) : (
+          <>
+            <ImageIcon className="h-4 w-4 text-muted-foreground/55" />
+            <span className="whitespace-nowrap">{label}</span>
+          </>
+        )}
+      </button>
+      {frame && !disabled && (
+        <button
+          type="button"
+          aria-label={`移除${label}`}
+          onClick={onClear}
+          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/85 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition-opacity hover:text-foreground group-hover:opacity-100"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function VideoGeneratorPanel({
   elementId,
@@ -48,14 +125,12 @@ export function VideoGeneratorPanel({
   const [models, setModels] = useState<VideoModelInfo[]>([]);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showParamsPopover, setShowParamsPopover] = useState(false);
-  const [firstFrame, setFirstFrame] = useState<{
-    dataUrl: string;
-    file: File;
-  } | null>(null);
-  const [lastFrame, setLastFrame] = useState<{
-    dataUrl: string;
-    file: File;
-  } | null>(null);
+  const [firstFrame, setFirstFrame] = useState<FrameData | null>(null);
+  const [lastFrame, setLastFrame] = useState<FrameData | null>(null);
+  const [frameLoading, setFrameLoading] = useState<Record<FrameSlot, boolean>>({
+    first: false,
+    last: false,
+  });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -115,10 +190,11 @@ export function VideoGeneratorPanel({
     ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
   }, [prompt]);
 
-  const { scrollX, scrollY, zoom } = canvasScrollZoom;
-  const screenX = (elementBounds.x + scrollX) * zoom;
-  const screenY =
-    (elementBounds.y + elementBounds.height + scrollY) * zoom + 8;
+  const panelPosition = calculateCenteredGeneratorPanelPosition({
+    elementBounds,
+    canvasScrollZoom,
+    panelWidth: PANEL_WIDTH,
+  });
 
   const currentModel = models.find((item) => item.id === model);
 
@@ -154,17 +230,21 @@ export function VideoGeneratorPanel({
 
   const handleFrameUpload = useCallback(
     (
-      _type: "first" | "last",
-      setter: React.Dispatch<
-        React.SetStateAction<{ dataUrl: string; file: File } | null>
-      >,
+      type: FrameSlot,
+      setter: React.Dispatch<React.SetStateAction<FrameData | null>>,
     ) => {
       return (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        setFrameLoading((current) => ({ ...current, [type]: true }));
         const reader = new FileReader();
         reader.onload = () => {
           setter({ dataUrl: reader.result as string, file });
+          setFrameLoading((current) => ({ ...current, [type]: false }));
+        };
+        reader.onerror = () => {
+          setFrameLoading((current) => ({ ...current, [type]: false }));
+          setError("图片上传失败，请重新选择。");
         };
         reader.readAsDataURL(file);
         e.target.value = "";
@@ -207,6 +287,7 @@ export function VideoGeneratorPanel({
         ...(videoMode ? { videoMode } : {}),
         projectId,
         canvasId,
+        signal: controller.signal,
       });
 
       if (controller.signal.aborted) return;
@@ -278,12 +359,35 @@ export function VideoGeneratorPanel({
   return createPortal(
     <div
       ref={panelRef}
-      style={{ left: screenX, top: screenY }}
+      style={{ left: panelPosition.left, top: panelPosition.top }}
       className="fixed z-[100] w-[520px] rounded-[24px] border border-border bg-card/95 shadow-card backdrop-blur-lg"
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
       <div className="px-5 pb-3 pt-4">
+        <div className="mb-4 flex items-center gap-2.5">
+          <FrameUploadTile
+            label="首帧"
+            inputLabel="上传首帧"
+            frame={firstFrame}
+            loading={frameLoading.first}
+            disabled={loading}
+            inputRef={firstFrameInputRef}
+            onUpload={handleFrameUpload("first", setFirstFrame)}
+            onClear={() => setFirstFrame(null)}
+          />
+          <FrameUploadTile
+            label="尾帧"
+            inputLabel="上传尾帧"
+            frame={lastFrame}
+            loading={frameLoading.last}
+            disabled={loading}
+            inputRef={lastFrameInputRef}
+            onUpload={handleFrameUpload("last", setLastFrame)}
+            onClear={() => setLastFrame(null)}
+          />
+        </div>
+
         <textarea
           ref={textareaRef}
           value={prompt}
@@ -455,39 +559,6 @@ export function VideoGeneratorPanel({
             className="inline-flex h-10 items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? "生成中..." : "生成视频"}
-          </button>
-        </div>
-
-        <div className="mt-4 flex items-center gap-2">
-          <input
-            ref={firstFrameInputRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={handleFrameUpload("first", setFirstFrame)}
-          />
-          <input
-            ref={lastFrameInputRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={handleFrameUpload("last", setLastFrame)}
-          />
-          <button
-            type="button"
-            onClick={() => firstFrameInputRef.current?.click()}
-            className="inline-flex h-9 items-center gap-2 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground transition-colors hover:bg-muted/60"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            首帧
-          </button>
-          <button
-            type="button"
-            onClick={() => lastFrameInputRef.current?.click()}
-            className="inline-flex h-9 items-center gap-2 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground transition-colors hover:bg-muted/60"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            尾帧
           </button>
         </div>
       </div>

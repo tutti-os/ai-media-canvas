@@ -4,6 +4,7 @@ import type {
   CanvasDetail,
   ChatMessageCreateRequest,
   InstallableAgentProviderId,
+  JobResponse,
   MessageCreateResponse,
   MessageListResponse,
   ModelListResponse,
@@ -431,6 +432,7 @@ export async function uninstallSkill(skillId: string): Promise<void> {
 
 export type GenerateImageResponse = {
   url: string;
+  assetId: string;
   prompt: string;
   mimeType: string;
   width: number;
@@ -486,28 +488,37 @@ export async function generateImageDirect(
     inputImages?: string[];
     size?: string;
     seed?: number;
+    projectId?: string;
+    canvasId?: string;
+    signal?: AbortSignal;
   },
 ): Promise<GenerateImageResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/agent/generate-image`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt,
-        ...(options?.model ? { model: options.model } : {}),
-        ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
-        ...(options?.quality ? { quality: options.quality } : {}),
-        ...(options?.inputImages?.length
-          ? { inputImages: options.inputImages }
-          : {}),
-        ...(options?.size ? { size: options.size } : {}),
-        ...(options?.seed !== undefined ? { seed: options.seed } : {}),
-      }),
-    },
+  const { job } = await createGenerationJob("/api/jobs/image-generation", {
+    prompt,
+    ...(options?.model ? { model: options.model } : {}),
+    ...(options?.aspectRatio ? { aspect_ratio: options.aspectRatio } : {}),
+    ...(options?.quality ? { quality: options.quality } : {}),
+    ...(options?.inputImages?.length
+      ? { input_images: options.inputImages }
+      : {}),
+    ...(options?.size ? { size: options.size } : {}),
+    ...(options?.seed !== undefined ? { seed: options.seed } : {}),
+    ...(options?.projectId ? { project_id: options.projectId } : {}),
+    ...(options?.canvasId ? { canvas_id: options.canvasId } : {}),
+  }, options?.signal);
+  const result = await waitForGenerationJobResult(
+    job.id,
+    IMAGE_GENERATION_MAX_WAIT_MS,
+    options?.signal,
   );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as GenerateImageResponse;
+  return {
+    url: readStringResult(result, "signed_url"),
+    assetId: readStringResult(result, "asset_id"),
+    prompt,
+    mimeType: readStringResult(result, "mime_type"),
+    width: readNumberResult(result, "width"),
+    height: readNumberResult(result, "height"),
+  };
 }
 
 export type GenerateVideoResponse = {
@@ -535,38 +546,159 @@ export async function generateVideoDirect(
     numFrames?: number;
     projectId?: string;
     canvasId?: string;
+    signal?: AbortSignal;
   },
 ): Promise<GenerateVideoResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/agent/generate-video`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt,
-        ...(options?.model ? { model: options.model } : {}),
-        ...(options?.duration != null ? { duration: options.duration } : {}),
-        ...(options?.resolution ? { resolution: options.resolution } : {}),
-        ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
-        ...(options?.inputImages?.length
-          ? { inputImages: options.inputImages }
-          : {}),
-        ...(options?.videoMode ? { videoMode: options.videoMode } : {}),
-        ...(options?.seed !== undefined ? { seed: options.seed } : {}),
-        ...(options?.negativePrompt
-          ? { negativePrompt: options.negativePrompt }
-          : {}),
-        ...(options?.frameRate !== undefined
-          ? { frameRate: options.frameRate }
-          : {}),
-        ...(options?.numFrames !== undefined
-          ? { numFrames: options.numFrames }
-          : {}),
-        ...(options?.projectId ? { projectId: options.projectId } : {}),
-        ...(options?.canvasId ? { canvasId: options.canvasId } : {}),
-      }),
-    },
+  const { job } = await createGenerationJob("/api/jobs/video-generation", {
+    prompt,
+    ...(options?.model ? { model: options.model } : {}),
+    ...(options?.duration != null ? { duration: options.duration } : {}),
+    ...(options?.resolution ? { resolution: options.resolution } : {}),
+    ...(options?.aspectRatio ? { aspect_ratio: options.aspectRatio } : {}),
+    ...(options?.inputImages?.length
+      ? { input_images: options.inputImages }
+      : {}),
+    ...(options?.videoMode ? { video_mode: options.videoMode } : {}),
+    ...(options?.seed !== undefined ? { seed: options.seed } : {}),
+    ...(options?.negativePrompt
+      ? { negative_prompt: options.negativePrompt }
+      : {}),
+    ...(options?.frameRate !== undefined ? { frame_rate: options.frameRate } : {}),
+    ...(options?.numFrames !== undefined ? { num_frames: options.numFrames } : {}),
+    ...(options?.projectId ? { project_id: options.projectId } : {}),
+    ...(options?.canvasId ? { canvas_id: options.canvasId } : {}),
+  }, options?.signal);
+  const result = await waitForGenerationJobResult(
+    job.id,
+    VIDEO_GENERATION_MAX_WAIT_MS,
+    options?.signal,
   );
+  return {
+    url: readStringResult(result, "signed_url"),
+    assetId: readStringResult(result, "asset_id"),
+    prompt,
+    mimeType: readStringResult(result, "mime_type"),
+    width: readNumberResult(result, "width"),
+    height: readNumberResult(result, "height"),
+    durationSeconds: readNumberResult(result, "duration_seconds"),
+  };
+}
+
+const GENERATION_JOB_POLL_INTERVAL_MS = 1_000;
+const IMAGE_GENERATION_MAX_WAIT_MS = 180_000;
+const VIDEO_GENERATION_MAX_WAIT_MS = 650_000;
+
+async function createGenerationJob(
+  endpoint: "/api/jobs/image-generation" | "/api/jobs/video-generation",
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<JobResponse> {
+  const init: RequestInit = {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  };
+  if (signal) init.signal = signal;
+  const response = await fetch(`${getServerBaseUrl()}${endpoint}`, init);
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as GenerateVideoResponse;
+  return (await response.json()) as JobResponse;
+}
+
+async function fetchGenerationJob(
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<JobResponse> {
+  const url = `${getServerBaseUrl()}/api/jobs/${jobId}`;
+  const response = signal ? await fetch(url, { signal }) : await fetch(url);
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as JobResponse;
+}
+
+async function waitForGenerationJobResult(
+  jobId: string,
+  maxWaitMs: number,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> {
+  const startedAt = Date.now();
+
+  for (;;) {
+    const { job } = await fetchGenerationJob(jobId, signal);
+    if (job.status === "succeeded") {
+      if (!job.result) {
+        throw new ApiApplicationError(
+          "generation_failed",
+          "Generation completed without a result.",
+        );
+      }
+      return job.result;
+    }
+
+    if (job.status === "dead_letter") {
+      throw new ApiApplicationError(
+        job.error_code ?? "generation_failed",
+        job.error_message ?? "Generation failed.",
+      );
+    }
+
+    if (job.status === "canceled") {
+      throw new ApiApplicationError(
+        "generation_canceled",
+        "Generation was canceled.",
+      );
+    }
+
+    if (Date.now() - startedAt >= maxWaitMs) {
+      throw new ApiApplicationError(
+        "generation_timeout",
+        `Generation job ${jobId} timed out.`,
+      );
+    }
+
+    await delay(GENERATION_JOB_POLL_INTERVAL_MS, signal);
+  }
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(signal.reason);
+  }
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        window.clearTimeout(timeoutId);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
+}
+
+function readStringResult(
+  result: Record<string, unknown>,
+  key: string,
+): string {
+  const value = result[key];
+  if (typeof value !== "string") {
+    throw new ApiApplicationError(
+      "generation_failed",
+      `Generation result is missing ${key}.`,
+    );
+  }
+  return value;
+}
+
+function readNumberResult(
+  result: Record<string, unknown>,
+  key: string,
+): number {
+  const value = result[key];
+  if (typeof value !== "number") {
+    throw new ApiApplicationError(
+      "generation_failed",
+      `Generation result is missing ${key}.`,
+    );
+  }
+  return value;
 }

@@ -37,6 +37,16 @@ function createUserClientWithElements(elements: Array<Record<string, unknown>>) 
 }
 
 describe("manipulate_canvas", () => {
+  it("describes delete as a dangerous operation requiring current user confirmation", () => {
+    const tool = createManipulateCanvasTool({
+      createUserClient: () => createUserClientWithElements([]),
+    });
+
+    expect(tool.description).toContain("delete (dangerous");
+    expect(tool.description).toContain("explicitly confirmed deletion");
+    expect(tool.description).toContain("user_confirmed=true");
+  });
+
   it("refuses delete operations unless they were explicitly confirmed by the user", async () => {
     const tool = createManipulateCanvasTool({
       createUserClient: () =>

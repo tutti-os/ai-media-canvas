@@ -22,7 +22,7 @@ jobs:
       app_id: ai-media-canvas
       package_command: pnpm package:nextop
       package_dir: build/nextop-app/package
-      icon_path: build/nextop-app/package/icon.svg
+      icon_path: build/nextop-app/package/icon.png
       release_version: ${{ inputs.release_version || '' }}
       runner: macos-latest
       pnpm_version: 10.26.2

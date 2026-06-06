@@ -15,6 +15,7 @@ import {
   createExcalidrawImageElement,
   fetchAsDataURL,
 } from "../../lib/canvas-elements";
+import { calculateCenteredGeneratorPanelPosition } from "../../lib/canvas-generator-panel-position";
 import { formatProviderLabel } from "../../lib/provider-labels";
 
 type ImageGeneratorPanelProps = {
@@ -27,6 +28,7 @@ type ImageGeneratorPanelProps = {
 };
 
 const ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
+const PANEL_WIDTH = 450;
 
 function generateId(): string {
   return (
@@ -125,10 +127,11 @@ export function ImageGeneratorPanel({
   }, [prompt]);
 
   // Calculate panel screen position from canvas coordinates
-  const { scrollX, scrollY, zoom } = canvasScrollZoom;
-  const screenX = (elementBounds.x + scrollX) * zoom;
-  const screenY =
-    (elementBounds.y + elementBounds.height + scrollY) * zoom + 8;
+  const panelPosition = calculateCenteredGeneratorPanelPosition({
+    elementBounds,
+    canvasScrollZoom,
+    panelWidth: PANEL_WIDTH,
+  });
   const currentModel = models.find((item) => item.id === model);
 
   const handleModelChange = useCallback(
@@ -175,6 +178,7 @@ export function ImageGeneratorPanel({
         model,
         aspectRatio,
         quality: data.quality,
+        signal: controller.signal,
       });
 
       // Check if this generation was cancelled while awaiting
@@ -247,7 +251,7 @@ export function ImageGeneratorPanel({
   return createPortal(
     <div
       ref={panelRef}
-      style={{ left: screenX, top: screenY }}
+      style={{ left: panelPosition.left, top: panelPosition.top }}
       className="fixed z-[100] w-[450px] rounded-xl border-[0.5px] border-border bg-card/95 p-2 shadow-card backdrop-blur-lg"
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -28,7 +28,7 @@ test("createManifest returns the Nextop package manifest contract", () => {
     description: "Local-first AI canvas for image and video generation.",
     icon: {
       type: "asset",
-      src: "icon.svg",
+      src: "icon.png",
     },
     runtime: {
       kind: "custom",
@@ -69,21 +69,17 @@ test("renderAgentsGuide is non-empty and documents package layout", () => {
   assert.match(guide, /AI Media Canvas/);
   assert.match(guide, /nextop\.app\.json/);
   assert.match(guide, /bootstrap\.sh/);
-  assert.match(guide, /icon\.svg/);
+  assert.match(guide, /icon\.png/);
   assert.match(guide, /NEXTOP_APP_DATA_DIR/);
 });
 
-test("Nextop icon asset keeps the original logo style with a contrast-safe tile", async () => {
-  const icon = await readFile(
-    path.resolve("apps/web/public/brand/aimc-nextop-app-icon.svg"),
-    "utf8",
-  );
+test("Nextop icon asset is a generated PNG with a contrast-safe tile", async () => {
+  const iconPath = path.resolve("apps/web/public/brand/aimc-nextop-app-icon.png");
+  const icon = await readFile(iconPath);
+  const iconStat = await stat(iconPath);
 
-  assert.match(icon, /<svg/);
-  assert.match(icon, /<rect/);
-  assert.match(icon, /fill="#F8FAFC"/);
-  assert.match(icon, /stroke="#E5E7EB"/);
-  assert.match(icon, /fill="#000"/);
+  assert.ok(iconStat.size > 0);
+  assert.equal(icon.subarray(1, 4).toString("ascii"), "PNG");
 });
 
 test("createWebBuildEnv prevents local dev server URLs from being baked into package dist", () => {
