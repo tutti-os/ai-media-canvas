@@ -146,7 +146,9 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const config = getToolConfig(block.toolName);
+  const isRunning = block.status === "running";
   const isCompleted = block.status === "completed";
+  const isFailed = block.status === "failed";
   const hasOutput = block.output && Object.keys(block.output).length > 0;
   const hasInput = block.input && Object.keys(block.input).length > 0;
   const hasDetails = hasOutput || hasInput;
@@ -177,11 +179,11 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const isMediaTool = isImageTool || isVideoTool;
   const mediaError =
     isMediaTool &&
-    isCompleted &&
+    (isFailed || isCompleted) &&
     !imageArtifact &&
     !videoArtifact
-      ? ((block.output as Record<string, unknown> | undefined)
-          ?.error as string | undefined)
+      ? (((block.output as Record<string, unknown> | undefined)
+          ?.error as string | undefined) ?? block.outputSummary)
       : undefined;
   const inputData = block.input as Record<string, unknown> | undefined;
   const modelName = inputData?.model as string | undefined;
@@ -202,8 +204,16 @@ export const ToolBlockView = React.memo(function ToolBlockView({
     <div ref={containerRef} className="space-y-1.5">
       {/* Layer 1: Status line */}
       <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-        {block.status === "running" ? (
+        {isRunning ? (
           <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-muted-foreground/30 border-t-muted-foreground" />
+        ) : isFailed ? (
+          <svg
+            className="h-3.5 w-3.5 text-destructive"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+          >
+            <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM7.25 4.75a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0v-3.5ZM8 11.75a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75Z" />
+          </svg>
         ) : (
           <svg
             className="h-3.5 w-3.5 text-muted-foreground"
@@ -221,7 +231,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       </div>
 
       {/* Layer 2a: Media generation shimmer placeholder */}
-      {isMediaTool && !isCompleted && (
+      {isMediaTool && isRunning && (
         <MediaShimmer
           isVideoTool={isVideoTool}
           aspectRatio={aspectRatio}
@@ -230,11 +240,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       )}
 
       {/* Layer 2b-err: Media generation failed */}
-      {isMediaTool &&
-        isCompleted &&
-        !imageArtifact &&
-        !videoArtifact &&
-        mediaError && (
+      {isMediaTool && mediaError && (
         <MediaErrorCard
           isVideoTool={isVideoTool}
           error={mediaError}

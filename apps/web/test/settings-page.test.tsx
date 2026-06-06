@@ -759,6 +759,54 @@ describe("SettingsPage", () => {
     expect(screen.queryByText("Codex")).not.toBeInTheDocument();
   });
 
+  it("defaults Agent settings to the selected model source tab", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "openai:gpt-5.4",
+        providerModels: {
+          openai: ["openai:gpt-5.4"],
+          anthropic: [],
+          agnes: [],
+          google: [],
+          vertex: [],
+        },
+        openAIApiKey: "sk-local-openai",
+        openAIApiBase: "https://gateway.example/v1",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
+        { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
+      ],
+    });
+
+    render(<SettingsPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "API provider" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Local agent" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(
+      await screen.findByText("Default LLM Model"),
+    ).toBeInTheDocument();
+  });
+
   it("uses the first concrete Local agent model instead of the CLI default option", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {

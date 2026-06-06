@@ -191,23 +191,13 @@ const AssistantMessage = React.memo(function AssistantMessage({
   contentBlocks: ContentBlock[];
   isStreaming: boolean;
 }) {
-  // Find the last text block index for streaming cursor placement
-  const lastTextIdx = useMemo(() => {
-    for (let i = contentBlocks.length - 1; i >= 0; i--) {
-      if (contentBlocks[i]?.type === "text") return i;
-    }
-    return -1;
-  }, [contentBlocks]);
+  const lastBlock = contentBlocks[contentBlocks.length - 1];
 
   const pendingAfterBlock = useMemo(() => {
     if (!isStreaming) return false;
-    const lastBlock = contentBlocks[contentBlocks.length - 1];
     if (!lastBlock) return true;
-    if (lastBlock.type === "text" || lastBlock.type === "thinking") {
-      return false;
-    }
-    return lastBlock.type === "tool" && lastBlock.status !== "running";
-  }, [contentBlocks, isStreaming]);
+    return lastBlock.type !== "thinking";
+  }, [lastBlock, isStreaming]);
 
   return (
     <motion.div
@@ -233,14 +223,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
         }
 
         if (block.type === "text") {
-          const showCursor = isStreaming && idx === lastTextIdx;
-          return (
-            <MarkdownRenderer
-              key={idx}
-              text={block.text}
-              showCursor={showCursor}
-            />
-          );
+          return <MarkdownRenderer key={idx} text={block.text} />;
         }
 
         if (block.type === "tool") {

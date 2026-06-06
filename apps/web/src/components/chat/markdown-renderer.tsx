@@ -53,8 +53,6 @@ const remarkPlugins = [remarkGfm];
 type MarkdownRendererProps = {
   /** Raw markdown text to render */
   text: string;
-  /** Whether to show the streaming cursor after this block */
-  showCursor?: boolean;
 };
 
 /**
@@ -67,7 +65,6 @@ type MarkdownRendererProps = {
  */
 export const MarkdownRenderer = React.memo(function MarkdownRenderer({
   text,
-  showCursor,
 }: MarkdownRendererProps) {
   // Guard against empty/whitespace-only text producing empty markdown output
   const safeText = text || "";
@@ -80,9 +77,6 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
       >
         {safeText}
       </ReactMarkdown>
-      {showCursor && (
-        <span className="inline-block w-[2px] h-[14px] ml-0.5 -mb-[2px] bg-foreground animate-pulse rounded-full" />
-      )}
     </div>
   );
 });

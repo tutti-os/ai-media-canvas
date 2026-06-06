@@ -12,6 +12,7 @@ import type {
 import {
   type AgentModelSourceTab,
   formatLocalCliProviderLabel,
+  getAgentModelSourceTab,
   isApiProvider,
   isLocalCliProvider,
 } from "@/lib/agent-model-groups";
@@ -877,8 +878,9 @@ export function AgentSettingsSection({
   const [activeLocalProvider, setActiveLocalProvider] = useState(() =>
     getModelProvider(initialSettings.defaultModel),
   );
-  const [activeSourceTab, setActiveSourceTab] =
-    useState<AgentModelSourceTab>("local-cli");
+  const [activeSourceTab, setActiveSourceTab] = useState<AgentModelSourceTab>(
+    () => getAgentModelSourceTab(initialSettings.defaultModel),
+  );
   const [saving, setSaving] = useState(false);
   const [installingLocalProvider, setInstallingLocalProvider] =
     useState<InstallableAgentProviderId | null>(null);
