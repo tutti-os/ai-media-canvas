@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { createAgentBackendMock } = vi.hoisted(() => ({
   createAgentBackendMock: vi.fn(() => ({ factory: { kind: "backend" } })),
@@ -18,8 +22,18 @@ vi.mock("./backends/index.js", () => ({
   createAgentBackend: createAgentBackendMock,
 }));
 
+import { createLocalStore } from "../local/store.js";
+import { createLocalUserClient } from "../local/user-client.js";
 import { AIMC_SYSTEM_PROMPT } from "./prompts/aimc-main.js";
 import { createAgentRunService } from "./runtime.js";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 describe("createAgentRunService", () => {
   it("prepends saved session messages and avoids duplicating the current user prompt", async () => {
@@ -727,6 +741,75 @@ describe("createAgentRunService", () => {
     expect(localRun).toHaveBeenCalledWith(
       expect.objectContaining({
         systemPrompt: AIMC_SYSTEM_PROMPT,
+      }),
+    );
+  });
+
+  it("passes enabled local workspace skills to local-agent providers", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-runtime-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = store.createProject({ name: "Runtime Skills" });
+    const localRun = vi.fn(async function* () {
+      yield {
+        type: "done" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+
+    const runs = createAgentRunService({
+      createUserClient: () => createLocalUserClient(store),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        run: localRun,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: project.primaryCanvas.id,
+        conversationId: project.primaryCanvas.id,
+        prompt: "有看到 Canvas Director 这一个 skill 吗",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the provider invocation.
+    }
+
+    expect(localRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skillManifest: expect.arrayContaining([
+          expect.objectContaining({
+            content: expect.stringContaining("Inspect the real element bounds"),
+            skillId: "canvas-director",
+            slug: "canvas-director",
+          }),
+        ]),
       }),
     );
   });

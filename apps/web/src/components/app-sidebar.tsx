@@ -3,9 +3,11 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 
 import { AimcLogo } from "@/components/icons/aimc-logo";
 import { SidebarSettingsMenu } from "@/components/sidebar-settings-menu";
+import { SHOW_BRAND_KIT_ENTRY_POINTS } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -48,6 +50,10 @@ const TOP_NAV_ITEMS: NavItem[] = [
   },
 ];
 
+const VISIBLE_TOP_NAV_ITEMS = TOP_NAV_ITEMS.filter(
+  (item) => SHOW_BRAND_KIT_ENTRY_POINTS || item.href !== "/brand-kit",
+);
+
 // ---------------------------------------------------------------------------
 // Reusable nav-button with active indicator
 // Touch target: min 44px on mobile, 36px on desktop (md+)
@@ -61,13 +67,19 @@ function NavButton({
   active: boolean;
 }) {
   const vb = `0 0 ${item.viewBox} ${item.viewBox}`;
+  const tooltipId = `sidebar-tooltip-${item.href.replace("/", "") || "home"}`;
+  const [tooltipVisible, setTooltipVisible] = useState(false);
 
   return (
     <Link
       href={item.href}
-      title={item.label}
       aria-label={item.label}
-      className="relative flex h-11 w-11 items-center justify-center rounded-full md:h-9 md:w-9"
+      aria-describedby={tooltipId}
+      onBlur={() => setTooltipVisible(false)}
+      onFocus={() => setTooltipVisible(true)}
+      onMouseEnter={() => setTooltipVisible(true)}
+      onMouseLeave={() => setTooltipVisible(false)}
+      className="group relative flex h-11 w-11 items-center justify-center rounded-full md:h-9 md:w-9"
     >
       {/* Animated active background */}
       {active && (
@@ -91,6 +103,16 @@ function NavButton({
       >
         <path d={item.icon} />
       </motion.svg>
+      <span
+        id={tooltipId}
+        role="tooltip"
+        className={cn(
+          "pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus:opacity-100",
+          tooltipVisible ? "opacity-100" : "opacity-0",
+        )}
+      >
+        {item.label}
+      </span>
     </Link>
   );
 }
@@ -112,7 +134,7 @@ function MobileBottomBar() {
       role="navigation"
       aria-label="Main navigation"
     >
-      {TOP_NAV_ITEMS.map((item) => {
+      {VISIBLE_TOP_NAV_ITEMS.map((item) => {
         const active = isActive(item.href);
         const vb = `0 0 ${item.viewBox} ${item.viewBox}`;
         return (
@@ -173,12 +195,8 @@ export function AppSidebar() {
         </Link>
 
         {/* Top nav items */}
-        {TOP_NAV_ITEMS.map((item) => (
-          <NavButton
-            key={item.href}
-            item={item}
-            active={isActive(item.href)}
-          />
+        {VISIBLE_TOP_NAV_ITEMS.map((item) => (
+          <NavButton key={item.href} item={item} active={isActive(item.href)} />
         ))}
 
         {/* Spacer pushes bottom section down */}

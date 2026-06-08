@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 
-import { ApiApplicationError } from "@/lib/server-api";
+import { ApiApplicationError } from "@/lib/api-errors";
 import { useToast } from "@/components/toast";
 
 /**

@@ -40,6 +40,12 @@ describe("AppSidebar", () => {
 
     expect(screen.getAllByLabelText("Home").length).toBeGreaterThan(0);
     expect(screen.getAllByLabelText("Skills").length).toBeGreaterThan(0);
+    expect(screen.queryAllByLabelText("Brand Kit")).toHaveLength(0);
+    expect(screen.getByRole("tooltip", { name: "Home" })).toBeInTheDocument();
+    const skillsTooltip = screen.getByRole("tooltip", { name: "Skills" });
+    expect(skillsTooltip).toHaveClass("opacity-0");
+    await userEvent.hover(screen.getAllByLabelText("Skills")[0]!);
+    expect(skillsTooltip).toHaveClass("opacity-100");
     const trigger = screen.getByLabelText("Open settings menu");
     expect(trigger).toBeInTheDocument();
 

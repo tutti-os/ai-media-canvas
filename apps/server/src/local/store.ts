@@ -48,6 +48,7 @@ const DEFAULT_PROJECT_NAME = "My First Project";
 const DEFAULT_CANVAS_NAME = "Main Canvas";
 const DEFAULT_EMAIL = "local@aimc.app";
 const DEFAULT_DISPLAY_NAME = "Local User";
+const DEFAULT_STALE_RUNNING_JOB_MS = 35 * 60 * 1_000;
 const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   defaultModel: "",
   providerModels: {
@@ -124,6 +125,10 @@ type BackgroundJobRow = {
   next_run_at: string | null;
   locked_at: string | null;
   locked_by: string | null;
+  remote_provider: string | null;
+  remote_task_id: string | null;
+  remote_status: string | null;
+  remote_updated_at: string | null;
 };
 
 type AgentRunStatus = "accepted" | "canceled" | "completed" | "failed" | "running";
@@ -373,7 +378,11 @@ export function createLocalStore(options: {
       canceled_at TEXT,
       next_run_at TEXT,
       locked_at TEXT,
-      locked_by TEXT
+      locked_by TEXT,
+      remote_provider TEXT,
+      remote_task_id TEXT,
+      remote_status TEXT,
+      remote_updated_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_background_jobs_status_next_run
       ON background_jobs(status, next_run_at, created_at);
@@ -418,6 +427,7 @@ export function createLocalStore(options: {
 
   ensureWorkspaceSettingsSchema();
   ensureAgentRunSchema();
+  ensureBackgroundJobSchema();
   seedBaseData();
   seedBundledSkills();
   ensureDefaultProject();
@@ -578,6 +588,26 @@ export function createLocalStore(options: {
         ON agent_run_events(canvas_id, canvas_seq)
         WHERE canvas_id IS NOT NULL AND canvas_seq IS NOT NULL;
     `);
+  }
+
+  function ensureBackgroundJobSchema() {
+    const columns = db
+      .prepare(`PRAGMA table_info(background_jobs)`)
+      .all() as Array<{ name: string }>;
+    const columnNames = new Set(columns.map((column) => column.name));
+    const missingColumns: Array<[string, string]> = [
+      ["remote_provider", "TEXT"],
+      ["remote_task_id", "TEXT"],
+      ["remote_status", "TEXT"],
+      ["remote_updated_at", "TEXT"],
+    ];
+
+    for (const [columnName, columnSql] of missingColumns) {
+      if (columnNames.has(columnName)) continue;
+      db.exec(
+        `ALTER TABLE background_jobs ADD COLUMN ${columnName} ${columnSql}`,
+      );
+    }
   }
 
   function seedBundledSkills() {
@@ -1007,6 +1037,10 @@ export function createLocalStore(options: {
       completed_at: row.completed_at,
       failed_at: row.failed_at,
       canceled_at: row.canceled_at,
+      remote_provider: row.remote_provider,
+      remote_task_id: row.remote_task_id,
+      remote_status: row.remote_status,
+      remote_updated_at: row.remote_updated_at,
     };
   }
 
@@ -1017,7 +1051,8 @@ export function createLocalStore(options: {
           SELECT id, workspace_id, project_id, canvas_id, session_id, thread_id,
             queue_name, job_type, status, payload, result, error_code, error_message,
             attempt_count, max_attempts, created_by, created_at, updated_at,
-            started_at, completed_at, failed_at, canceled_at, next_run_at, locked_at, locked_by
+            started_at, completed_at, failed_at, canceled_at, next_run_at, locked_at, locked_by,
+            remote_provider, remote_task_id, remote_status, remote_updated_at
           FROM background_jobs
           WHERE id = ?
         `,
@@ -2866,6 +2901,36 @@ export function createLocalStore(options: {
     return row ? mapBackgroundJobRow(row) : null;
   }
 
+  function updateBackgroundJobRemote(
+    jobId: string,
+    input: {
+      remoteProvider?: string | null;
+      remoteTaskId?: string | null;
+      remoteStatus?: string | null;
+    },
+  ) {
+    const updatedAt = nowIso();
+    db.prepare(
+      `
+        UPDATE background_jobs
+        SET remote_provider = COALESCE(?, remote_provider),
+            remote_task_id = COALESCE(?, remote_task_id),
+            remote_status = COALESCE(?, remote_status),
+            remote_updated_at = ?,
+            updated_at = ?
+        WHERE id = ?
+      `,
+    ).run(
+      input.remoteProvider ?? null,
+      input.remoteTaskId ?? null,
+      input.remoteStatus ?? null,
+      updatedAt,
+      updatedAt,
+      jobId,
+    );
+    return getBackgroundJob(jobId);
+  }
+
   function listBackgroundJobs(filters?: {
     status?: BackgroundJobStatus;
     jobType?: BackgroundJobType;
@@ -2887,7 +2952,8 @@ export function createLocalStore(options: {
           SELECT id, workspace_id, project_id, canvas_id, session_id, thread_id,
             queue_name, job_type, status, payload, result, error_code, error_message,
             attempt_count, max_attempts, created_by, created_at, updated_at,
-            started_at, completed_at, failed_at, canceled_at, next_run_at, locked_at, locked_by
+            started_at, completed_at, failed_at, canceled_at, next_run_at, locked_at, locked_by,
+            remote_provider, remote_task_id, remote_status, remote_updated_at
           FROM background_jobs
           WHERE ${conditions.join(" AND ")}
           ORDER BY created_at DESC
@@ -2923,25 +2989,39 @@ export function createLocalStore(options: {
   function claimBackgroundJobs(input: {
     workerId: string;
     limit?: number;
+    staleAfterMs?: number;
   }) {
     const now = nowIso();
+    const staleCutoff = new Date(
+      Date.now() - (input.staleAfterMs ?? DEFAULT_STALE_RUNNING_JOB_MS),
+    ).toISOString();
     const rows = db
       .prepare(
         `
           SELECT id, workspace_id, project_id, canvas_id, session_id, thread_id,
             queue_name, job_type, status, payload, result, error_code, error_message,
             attempt_count, max_attempts, created_by, created_at, updated_at,
-            started_at, completed_at, failed_at, canceled_at, next_run_at, locked_at, locked_by
+            started_at, completed_at, failed_at, canceled_at, next_run_at, locked_at, locked_by,
+            remote_provider, remote_task_id, remote_status, remote_updated_at
           FROM background_jobs
-          WHERE status IN ('queued', 'failed')
+          WHERE (
+              (
+                status IN ('queued', 'failed')
+                AND (next_run_at IS NULL OR next_run_at <= ?)
+                AND locked_at IS NULL
+              )
+              OR (
+                status = 'running'
+                AND locked_at IS NOT NULL
+                AND locked_at <= ?
+              )
+            )
             AND canceled_at IS NULL
-            AND (next_run_at IS NULL OR next_run_at <= ?)
-            AND locked_at IS NULL
           ORDER BY created_at ASC
           LIMIT ?
         `,
       )
-      .all(now, input.limit ?? 5) as BackgroundJobRow[];
+      .all(now, staleCutoff, input.limit ?? 5) as BackgroundJobRow[];
 
     const claimed: BackgroundJob[] = [];
     for (const row of rows) {
@@ -2950,7 +3030,10 @@ export function createLocalStore(options: {
         `
           UPDATE background_jobs
           SET status = 'running',
-              attempt_count = attempt_count + 1,
+              attempt_count = CASE
+                WHEN status = 'running' THEN attempt_count
+                ELSE attempt_count + 1
+              END,
               updated_at = ?,
               started_at = COALESCE(started_at, ?),
               failed_at = NULL,
@@ -2959,10 +3042,26 @@ export function createLocalStore(options: {
               locked_at = ?,
               locked_by = ?
           WHERE id = ?
-            AND locked_at IS NULL
-            AND status IN ('queued', 'failed')
+            AND (
+              (
+                status IN ('queued', 'failed')
+                AND locked_at IS NULL
+              )
+              OR (
+                status = 'running'
+                AND locked_at IS NOT NULL
+                AND locked_at <= ?
+              )
+            )
         `,
-      ).run(updatedAt, updatedAt, updatedAt, input.workerId, row.id);
+      ).run(
+        updatedAt,
+        updatedAt,
+        updatedAt,
+        input.workerId,
+        row.id,
+        staleCutoff,
+      );
       if (result.changes > 0) {
         const claimedRow = getBackgroundJobRow(row.id);
         if (claimedRow) {
@@ -3243,6 +3342,7 @@ export function createLocalStore(options: {
     recoverInterruptedAgentRuns,
     createBackgroundJob,
     getBackgroundJob,
+    updateBackgroundJobRemote,
     listBackgroundJobs,
     cancelBackgroundJob,
     claimBackgroundJobs,

@@ -138,6 +138,7 @@ export function VideoGeneratorPanel({
   const lastFrameInputRef = useRef<HTMLInputElement>(null);
   const { handleGenerationError } = useGenerationErrorHandler();
   const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -180,7 +181,7 @@ export function VideoGeneratorPanel({
 
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
+      mountedRef.current = false;
     };
   }, []);
 
@@ -288,6 +289,12 @@ export function VideoGeneratorPanel({
         ...(videoMode ? { videoMode } : {}),
         projectId,
         canvasId,
+        onJobCreated: (jobId) => {
+          updateVideoGeneratorElement(excalidrawApi, elementId, {
+            jobId,
+            status: "generating",
+          });
+        },
         signal: controller.signal,
       });
 
@@ -330,10 +337,12 @@ export function VideoGeneratorPanel({
 
       console.error("[video-gen] Generation error:", err);
       const handled = handleGenerationError(err);
-      if (!handled) {
+      if (!handled && mountedRef.current) {
         setError("视频生成失败，请重试或更换模型。");
       }
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
       updateVideoGeneratorElement(excalidrawApi, elementId, {
         status: "error",
         errorMessage: "生成失败",

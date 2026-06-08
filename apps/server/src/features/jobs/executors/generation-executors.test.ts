@@ -1,10 +1,13 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { executeImageGenerationJob } from "./image-generation.js";
-import { executeVideoGenerationJob } from "./video-generation.js";
+import {
+  executeVideoGenerationJob,
+  isRetryableVideoGenerationError,
+} from "./video-generation.js";
 import { createLocalStore } from "../../../local/store.js";
 import {
   clearProviders,
@@ -12,6 +15,7 @@ import {
   registerVideoProvider,
 } from "../../../generation/providers/registry.js";
 import type { ImageProvider, VideoProvider } from "../../../generation/types.js";
+import { GenerationError } from "../../../generation/utils.js";
 
 const tempDirs: string[] = [];
 
@@ -233,6 +237,100 @@ describe("generation executors", () => {
         "data:image/png;base64,AAAA",
         "data:image/png;base64,BBBB",
       ],
+    });
+  });
+
+  it("does not retry Agnes poll timeout after the remote video task was created", () => {
+    expect(
+      isRetryableVideoGenerationError(
+        new GenerationError(
+          "agnes-video",
+          "poll_timeout",
+          "Agnes video polling timed out.",
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("continues polling a saved remote video task without creating a duplicate", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-job-video-resume-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const videoBytes = Buffer.from("resumed-video-binary");
+    const generate = vi.fn();
+    const resume = vi.fn(async () => ({
+      url: `data:video/mp4;base64,${videoBytes.toString("base64")}`,
+      mimeType: "video/mp4",
+      width: 1280,
+      height: 720,
+      durationSeconds: 5,
+    }));
+    const videoProvider: VideoProvider = {
+      name: "agnes-video",
+      models: [
+        {
+          id: "agnes-video/agnes-video-v2.0",
+          displayName: "Agnes Video",
+          description: "Agnes video provider",
+          capabilities: {
+            textToVideo: true,
+            imageToVideo: true,
+            videoToVideo: false,
+            audio: false,
+          },
+          limits: {
+            maxDuration: 16,
+            maxResolution: "1080p",
+            maxInputImages: 8,
+          },
+        },
+      ],
+      generate,
+      resume,
+    };
+
+    registerVideoProvider(videoProvider);
+
+    const project = store.createProject({ name: "Executor Resume Video Project" });
+    const job = store.createBackgroundJob({
+      jobType: "video_generation",
+      queueName: "video_generation_jobs",
+      projectId: project.id,
+      payload: {
+        prompt: "Resume this Agnes video",
+        model: "agnes-video/agnes-video-v2.0",
+        duration: 5,
+        aspect_ratio: "16:9",
+      },
+    });
+    store.updateBackgroundJobRemote(job.id, {
+      remoteProvider: "agnes-video",
+      remoteTaskId: "task_resume_123",
+      remoteStatus: "queued",
+    });
+    const resumedJob = store.getBackgroundJob(job.id)!;
+
+    const result = await executeVideoGenerationJob(store, resumedJob);
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(resume).toHaveBeenCalledWith(
+      "task_resume_123",
+      expect.objectContaining({
+        model: "agnes-video/agnes-video-v2.0",
+        prompt: "Resume this Agnes video",
+      }),
+    );
+    expect(result).toMatchObject({
+      asset_id: expect.any(String),
+      mime_type: "video/mp4",
+      width: 1280,
+      height: 720,
+      duration_seconds: 5,
     });
   });
 });

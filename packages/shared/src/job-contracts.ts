@@ -112,6 +112,10 @@ export const backgroundJobSchema = z.object({
   completed_at: timestampSchema.nullable(),
   failed_at: timestampSchema.nullable(),
   canceled_at: timestampSchema.nullable(),
+  remote_provider: z.string().nullable().optional(),
+  remote_task_id: z.string().nullable().optional(),
+  remote_status: z.string().nullable().optional(),
+  remote_updated_at: timestampSchema.nullable().optional(),
 });
 export type BackgroundJob = z.infer<typeof backgroundJobSchema>;
 

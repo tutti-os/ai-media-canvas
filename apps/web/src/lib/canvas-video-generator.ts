@@ -4,6 +4,10 @@ const RATIO_DIMENSIONS: Record<string, { w: number; h: number }> = {
   "16:9": { w: 1024, h: 576 },
   "9:16": { w: 576, h: 1024 },
 };
+const VIDEO_GENERATOR_STROKE = "#D1D5DB";
+const VIDEO_GENERATOR_BACKGROUND = "#F3F4F6";
+const VIDEO_GENERATOR_ERROR_STROKE = "#FCA5A5";
+const VIDEO_GENERATOR_ERROR_BACKGROUND = "#FDECEE";
 
 export type VideoGeneratorStatus =
   | "idle"
@@ -20,6 +24,7 @@ export type VideoGeneratorData = {
   duration: number;
   resolution: string;
   inputImages?: string[];
+  jobId?: string;
   errorMessage?: string;
 };
 
@@ -78,8 +83,8 @@ export function createVideoGeneratorElement(
     width,
     height,
     angle: 0,
-    strokeColor: "#93C5FD",
-    backgroundColor: "#EFF6FF",
+    strokeColor: VIDEO_GENERATOR_STROKE,
+    backgroundColor: VIDEO_GENERATOR_BACKGROUND,
     fillStyle: "solid",
     strokeWidth: 1,
     strokeStyle: "solid",
@@ -131,6 +136,14 @@ export function updateVideoGeneratorElement(
     if (el.id !== elementId || !isVideoGeneratorElement(el)) return el;
     return {
       ...el,
+      strokeColor:
+        updates.status === "error"
+          ? VIDEO_GENERATOR_ERROR_STROKE
+          : VIDEO_GENERATOR_STROKE,
+      backgroundColor:
+        updates.status === "error"
+          ? VIDEO_GENERATOR_ERROR_BACKGROUND
+          : VIDEO_GENERATOR_BACKGROUND,
       customData: { ...el.customData, ...updates },
       version: ((el.version as number | undefined) ?? 1) + 1,
       versionNonce: Math.floor(Math.random() * 2_000_000_000),
@@ -159,6 +172,8 @@ export function resizeVideoGeneratorElement(
       y: cy - height / 2,
       width,
       height,
+      strokeColor: VIDEO_GENERATOR_STROKE,
+      backgroundColor: VIDEO_GENERATOR_BACKGROUND,
       customData: { ...el.customData, aspectRatio },
       version: (el.version ?? 1) + 1,
       versionNonce: Math.floor(Math.random() * 2_000_000_000),

@@ -17,6 +17,7 @@ import {
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { loadServerEnv } from "./config/env.js";
 import { createLocalStore } from "./local/store.js";
+import { createWorkerRunner } from "./worker-runner.js";
 
 const host = process.env.HOST ?? "127.0.0.1";
 const env = loadServerEnv();
@@ -32,25 +33,27 @@ const store = createLocalStore({
 const jobService = createJobService(store);
 const settingsService = createSettingsService(store, env);
 
-async function tick() {
-  const jobs = await jobService.claimPendingJobs(
-    workerId,
-    env.workerMaxBatchSize ?? 4,
-  );
-  for (const job of jobs) {
+const runner = createWorkerRunner({
+  workerId,
+  maxBatchSize: env.workerMaxBatchSize ?? 4,
+  jobService,
+  async executeJob(job) {
     const effectiveEnv = await settingsService.getEffectiveServerEnv(
       LOCAL_WORKSPACE_ID,
     );
     applyEffectiveProviderEnv(effectiveEnv);
     await executeBackgroundJob(store, jobService, job, effectiveEnv);
-  }
-}
+  },
+  onJobError(error, job) {
+    console.error(`[aimc-worker] job ${job.id} failed outside executor`, error);
+  },
+});
 
 async function loop() {
   console.log(`[aimc-worker] polling local jobs as ${workerId}`);
   for (;;) {
     try {
-      await tick();
+      await runner.tick();
     } catch (error) {
       console.error("[aimc-worker] tick failed", error);
     }
