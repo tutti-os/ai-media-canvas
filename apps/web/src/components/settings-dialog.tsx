@@ -1,6 +1,7 @@
 "use client";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { useAppTranslation } from "@/i18n";
 import { SettingsPanel, type SettingsTab } from "./settings-panel";
 
 interface SettingsDialogProps {
@@ -14,6 +15,8 @@ export function SettingsDialog({
   onOpenChange,
   initialTab = "agent",
 }: SettingsDialogProps) {
+  const { t } = useAppTranslation("settings");
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -22,7 +25,7 @@ export function SettingsDialog({
       >
         <DialogHeader className="border-b px-6 py-4">
           <DialogTitle className="text-sm font-semibold tracking-[0.18em] uppercase text-muted-foreground">
-            Settings
+            {t("dialogTitle")}
           </DialogTitle>
         </DialogHeader>
         <SettingsPanel initialTab={initialTab} surface="dialog" />

@@ -6,6 +6,7 @@ import Link from "next/link";
 
 import { DeleteProjectDialog } from "./delete-project-dialog";
 import { useDeleteProject } from "@/hooks/use-delete-project";
+import { useAppTranslation } from "@/i18n";
 import { formatDate } from "@/lib/utils";
 
 interface ProjectListProps {
@@ -21,6 +22,7 @@ export function ProjectList({
   onCreateClick,
   onDeleted,
 }: ProjectListProps) {
+  const { t } = useAppTranslation("projects");
   const { pendingId, deleting, requestDelete, confirmDelete, cancelDelete } =
     useDeleteProject(onDeleted ? { onDeleted } : undefined);
 
@@ -29,7 +31,7 @@ export function ProjectList({
       {/* Header */}
       <div className="mb-4 sm:mb-6">
         <h1 className="text-base font-medium text-foreground sm:text-lg">
-          项目
+          {t("title")}
         </h1>
       </div>
 
@@ -63,7 +65,7 @@ export function ProjectList({
               />
             </svg>
             <span className="text-xs font-semibold text-foreground sm:text-sm">
-              新建项目
+              {t("create")}
             </span>
           </div>
         </div>
@@ -85,7 +87,7 @@ export function ProjectList({
                 e.stopPropagation();
                 requestDelete(project.id);
               }}
-              aria-label={`Archive ${project.name}`}
+              aria-label={t("archive", { name: project.name })}
               className="absolute right-3 top-3 z-10 flex size-8 items-center justify-center rounded-[4px] bg-foreground/70 text-background opacity-0 transition-all duration-300 hover:bg-foreground/80 group-hover:opacity-100 sm:right-5 sm:top-5 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:opacity-100"
             >
               <Trash2 size={14} />
@@ -100,7 +102,8 @@ export function ProjectList({
                   className="h-full w-full object-cover"
                   loading="lazy"
                   onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                    (e.currentTarget as HTMLImageElement).style.display =
+                      "none";
                   }}
                 />
               )}
@@ -112,7 +115,7 @@ export function ProjectList({
               </div>
             </div>
             <div className="mt-0.5 text-[10px] text-muted-foreground sm:text-[11px]">
-              更新于 {formatDate(project.updatedAt)}
+              {t("updatedAt", { date: formatDate(project.updatedAt) })}
             </div>
           </Link>
         ))}

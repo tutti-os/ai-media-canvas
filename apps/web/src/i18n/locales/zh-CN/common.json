@@ -1,0 +1,19 @@
+{
+  "actions": {
+    "add": "添加",
+    "cancel": "取消",
+    "clear": "清空",
+    "close": "关闭",
+    "continue": "继续",
+    "copy": "复制",
+    "delete": "删除",
+    "download": "下载",
+    "import": "导入",
+    "loading": "加载中...",
+    "retry": "重试",
+    "save": "保存",
+    "search": "搜索",
+    "upload": "上传"
+  },
+  "productName": "AI Media Canvas"
+}

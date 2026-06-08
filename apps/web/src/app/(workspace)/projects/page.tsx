@@ -7,12 +7,12 @@ import { LoadingScreen } from "@/components/loading-screen";
 import { ProjectList } from "@/components/project-list";
 import { ProjectsSkeleton } from "@/components/skeletons/projects-skeleton";
 import { useCreateProject } from "@/hooks/use-create-project";
-import {
-  fetchProjects,
-} from "@/lib/server-api";
+import { fetchProjects } from "@/lib/server-api";
 import { Button } from "@/components/ui/button";
+import { useAppTranslation } from "@/i18n";
 
 export default function ProjectsPage() {
+  const { t } = useAppTranslation("projects");
   const { create: createNewProject, creating } = useCreateProject();
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -30,11 +30,11 @@ export default function ProjectsPage() {
       const data = await fetchProjects();
       setProjects(data.projects);
     } catch {
-      setLoadError("Failed to load local projects. Please try again.");
+      setLoadError(t("loadFailed"));
     } finally {
       setPageLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (hasInitialized.current) return;
@@ -56,7 +56,7 @@ export default function ProjectsPage() {
         <div className="text-center space-y-4">
           <p className="text-sm text-destructive">{loadError}</p>
           <Button variant="outline" onClick={loadData}>
-            Retry
+            {t("errors:retry")}
           </Button>
         </div>
       </div>

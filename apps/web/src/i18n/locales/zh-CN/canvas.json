@@ -1,0 +1,24 @@
+{
+  "closeFiles": "关闭生成文件面板",
+  "closeLayers": "关闭图层面板",
+  "empty": "输入你的想法开始创作",
+  "files": {
+    "download": "下载 {{name}}",
+    "empty": "暂无生成文件",
+    "end": "到底了",
+    "noPreview": "无预览",
+    "title": "已生成文件列表"
+  },
+  "layers": {
+    "empty": "画布为空",
+    "title": "图层"
+  },
+  "logoMenu": {
+    "archive": "归档当前项目",
+    "archiveConfirm": "确认归档?",
+    "home": "首页",
+    "importImage": "导入图片",
+    "newProject": "新建项目",
+    "projects": "项目库"
+  }
+}

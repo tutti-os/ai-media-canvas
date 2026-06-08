@@ -1,0 +1,9 @@
+{
+  "conversation": "对话",
+  "input": {
+    "ariaLabel": "输入消息",
+    "send": "发送消息"
+  },
+  "reconnecting": "连接已断开，正在重连...",
+  "thinking": "思考中"
+}

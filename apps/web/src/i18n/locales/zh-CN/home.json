@@ -1,0 +1,60 @@
+{
+  "discovery": {
+    "all": "全部",
+    "cases": {
+      "disc-architecture-01": {
+        "prompt": "请以建筑工作室网站概念为起点，设计网站结构、首页视觉、项目展示模块和整体建筑感风格建议。"
+      },
+      "disc-brand-01": {
+        "prompt": "请基于文化艺术中心这个灵感方向，为我做一套品牌探索，输出品牌关键词、主视觉方向、海报延展和社交媒体视觉提案。"
+      },
+      "disc-character-01": {
+        "prompt": "请围绕诡异马戏团角色做一套角色设计，包含角色设定、表情变化、服装元素和场景氛围建议。"
+      },
+      "disc-illustration-01": {
+        "prompt": "参考猫咪塔罗牌这个主题，帮我扩展一套插画系列，给出角色设定、牌面视觉语言、配色建议和延展方向。"
+      },
+      "disc-poster-01": {
+        "prompt": "请围绕复古汽车海报方向设计一组主海报、社媒方图版本和标题排版方案，整体偏胶片感和复古色调。"
+      },
+      "disc-product-01": {
+        "prompt": "围绕机器人机械手产品视觉，帮我设计主视觉构图、材质方向、电商展示图和卖点表达方式。"
+      },
+      "disc-story-01": {
+        "prompt": "基于音乐情绪短片这个方向，帮我做一组 15 到 30 秒分镜，拆出镜头节奏、情绪转场、标题卡和视觉风格建议。"
+      },
+      "disc-ui-01": {
+        "prompt": "请以末日废土风蛋糕店官网为灵感，帮我设计首页信息架构、首屏视觉、商品卡片样式和核心配色建议。"
+      }
+    },
+    "categories": {
+      "architecture-design": "建筑设计",
+      "branding-design": "品牌设计",
+      "character-design": "角色设计",
+      "illustration": "插画",
+      "poster-and-ads": "海报与广告",
+      "product-design": "产品设计",
+      "storyboard-video": "影片与分镜",
+      "ui-design": "UI设计"
+    },
+    "title": "灵感发现"
+  },
+  "hero": {
+    "subtitle": "你的本地 AI 设计助手，从想法到作品。",
+    "title": "让创意设计更简单"
+  },
+  "prompt": {
+    "attachImages": "添加图片",
+    "clear": "清除",
+    "modelPreference": "图片/视频模型",
+    "placeholder": "让 AI Media Canvas 帮你设计...",
+    "submit": "提交 prompt"
+  },
+  "recentProjects": {
+    "archive": "归档 {{name}}",
+    "newProject": "新建项目",
+    "title": "最近项目",
+    "updatedAt": "更新于 {{date}}",
+    "viewAll": "查看全部"
+  }
+}

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useAppTranslation } from "@/i18n";
+
 type CanvasEmptyHintProps = {
   excalidrawApi: any;
   onOpenChat: () => void;
@@ -16,6 +18,7 @@ export function CanvasEmptyHint({
   excalidrawApi,
   onOpenChat,
 }: CanvasEmptyHintProps) {
+  const { t } = useAppTranslation("canvas");
   const [hasElements, setHasElements] = useState(false);
   const onOpenChatRef = useRef(onOpenChat);
   onOpenChatRef.current = onOpenChat;
@@ -64,9 +67,7 @@ export function CanvasEmptyHint({
             // Sidebar might animate open; retry once more.
             setTimeout(() => {
               document
-                .querySelector<HTMLTextAreaElement>(
-                  "textarea[data-chat-input]",
-                )
+                .querySelector<HTMLTextAreaElement>("textarea[data-chat-input]")
                 ?.focus();
             }, 100);
           }
@@ -82,9 +83,7 @@ export function CanvasEmptyHint({
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-      <p className="text-base text-muted-foreground/50">
-        {"输入你的想法开始创作"}
-      </p>
+      <p className="text-base text-muted-foreground/50">{t("empty")}</p>
     </div>
   );
 }

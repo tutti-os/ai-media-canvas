@@ -1,0 +1,8 @@
+{
+  "title": "Skills",
+  "tabs": {
+    "import": "Import",
+    "installed": "Installed",
+    "marketplace": "Marketplace"
+  }
+}

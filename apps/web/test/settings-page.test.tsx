@@ -6,6 +6,11 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import SettingsPage from "../src/app/(workspace)/settings/page";
+import {
+  AIMC_LOCALE_COOKIE_NAME,
+  AIMC_LOCALE_STORAGE_KEY,
+  i18n,
+} from "../src/i18n";
 
 const {
   fetchWorkspaceSettingsMock,
@@ -40,6 +45,10 @@ const EMPTY_PROVIDER_MODELS = {
 
 describe("SettingsPage", () => {
   beforeEach(() => {
+    installMemoryLocalStorage();
+    document.cookie = `${AIMC_LOCALE_COOKIE_NAME}=; Max-Age=0; path=/`;
+    document.documentElement.lang = "";
+    void i18n.changeLanguage("en");
     fetchWorkspaceSettingsMock.mockReset();
     fetchModelsMock.mockReset();
     installAgentProviderMock.mockReset();
@@ -56,7 +65,45 @@ describe("SettingsPage", () => {
 
   afterEach(() => {
     cleanup();
+    window.localStorage.clear();
     vi.clearAllMocks();
+  });
+
+  it("switches language from the General tab and persists the preference", async () => {
+    void i18n.changeLanguage("zh-CN");
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /通用/ }));
+    await userEvent.selectOptions(
+      screen.getByLabelText("语言"),
+      screen.getByRole("option", { name: "English" }),
+    );
+
+    expect(await screen.findByText("Language")).toBeInTheDocument();
+    expect(window.localStorage.getItem(AIMC_LOCALE_STORAGE_KEY)).toBe("en");
+    expect(document.cookie).toContain(`${AIMC_LOCALE_COOKIE_NAME}=en`);
+    expect(document.documentElement.lang).toBe("en");
   });
 
   it("shows a retry state instead of rendering blank when the initial load fails", async () => {
@@ -1023,3 +1070,16 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("Model")).toHaveValue("");
   });
 });
+
+function installMemoryLocalStorage() {
+  const values = new Map<string, string>();
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: {
+      clear: () => values.clear(),
+      getItem: (key: string) => values.get(key) ?? null,
+      removeItem: (key: string) => values.delete(key),
+      setItem: (key: string, value: string) => values.set(key, value),
+    },
+  });
+}

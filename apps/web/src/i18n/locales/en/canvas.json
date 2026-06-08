@@ -1,0 +1,24 @@
+{
+  "closeFiles": "Close files panel",
+  "closeLayers": "Close layers panel",
+  "empty": "Type an idea to start creating",
+  "files": {
+    "download": "Download {{name}}",
+    "empty": "No generated files",
+    "end": "End of list",
+    "noPreview": "No preview",
+    "title": "Generated files"
+  },
+  "layers": {
+    "empty": "Canvas is empty",
+    "title": "Layers"
+  },
+  "logoMenu": {
+    "archive": "Archive current project",
+    "archiveConfirm": "Confirm archive?",
+    "home": "Home",
+    "importImage": "Import image",
+    "newProject": "New project",
+    "projects": "Projects"
+  }
+}

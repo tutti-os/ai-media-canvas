@@ -1,0 +1,15 @@
+{
+  "errors": {
+    "failed": "Generation failed",
+    "imageFailed": "Image generation failed. Try again or switch models.",
+    "videoFailed": "Video generation failed. Try again or switch models."
+  },
+  "image": {
+    "button": "Generate image",
+    "placeholder": "What are we creating today?"
+  },
+  "video": {
+    "button": "Generate video",
+    "placeholder": "Describe the shot, motion, rhythm, and visual mood"
+  }
+}

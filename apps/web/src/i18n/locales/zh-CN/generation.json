@@ -1,0 +1,15 @@
+{
+  "errors": {
+    "failed": "生成失败",
+    "imageFailed": "图片生成失败，请重试或更换模型。",
+    "videoFailed": "视频生成失败，请重试或更换模型。"
+  },
+  "image": {
+    "button": "生成图片",
+    "placeholder": "今天我们要创作什么"
+  },
+  "video": {
+    "button": "生成视频",
+    "placeholder": "描述你想要的视频镜头、动作、节奏与画面氛围"
+  }
+}

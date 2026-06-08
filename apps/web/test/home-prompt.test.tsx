@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HomePrompt } from "../src/components/home-prompt";
+import { i18n } from "../src/i18n";
 import type { HomeExampleSelection } from "../src/lib/home-example-seeds";
 import { homeExampleSeedCategories } from "../src/lib/home-example-seeds";
 
@@ -96,6 +97,7 @@ describe("HomePrompt", () => {
   });
 
   beforeEach(() => {
+    void i18n.changeLanguage("zh-CN");
     agentModelRequirementMock.mockReturnValue({
       model: "local:assistant",
       isAgentModelConfigured: true,
@@ -286,12 +288,12 @@ describe("HomePrompt", () => {
   it("renders tooltip labels for prompt toolbar icon buttons", () => {
     render(<HomePrompt onSubmit={vi.fn()} onAddFiles={vi.fn()} />);
 
-    expect(screen.getByText("Attach images")).toBeInTheDocument();
-    expect(screen.getByText("Attach images")).toHaveClass("top-full");
-    expect(screen.getByText("Image/Video model")).toBeInTheDocument();
-    expect(screen.getByText("Image/Video model")).toHaveClass("top-full");
+    expect(screen.getByText("添加图片")).toBeInTheDocument();
+    expect(screen.getByText("添加图片")).toHaveClass("top-full");
+    expect(screen.getByText("图片/视频模型")).toBeInTheDocument();
+    expect(screen.getByText("图片/视频模型")).toHaveClass("top-full");
     expect(
-      screen.getByRole("button", { name: "Image/Video model" }),
+      screen.getByRole("button", { name: "图片/视频模型" }),
     ).toBeInTheDocument();
   });
 
@@ -300,7 +302,7 @@ describe("HomePrompt", () => {
 
     render(<HomePrompt onSubmit={vi.fn()} />);
 
-    await user.click(screen.getByRole("button", { name: "Image/Video model" }));
+    await user.click(screen.getByRole("button", { name: "图片/视频模型" }));
     await user.click(
       screen.getByRole("button", { name: "Open media settings" }),
     );

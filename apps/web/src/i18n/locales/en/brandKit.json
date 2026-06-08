@@ -1,0 +1,8 @@
+{
+  "empty": "No brand kits",
+  "selector": {
+    "invalid": "Brand kit: unavailable",
+    "none": "Brand kit: none"
+  },
+  "title": "Brand Kit"
+}

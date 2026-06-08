@@ -1,0 +1,9 @@
+{
+  "conversation": "Conversation",
+  "input": {
+    "ariaLabel": "Message input",
+    "send": "Send message"
+  },
+  "reconnecting": "Connection lost, reconnecting...",
+  "thinking": "Thinking"
+}

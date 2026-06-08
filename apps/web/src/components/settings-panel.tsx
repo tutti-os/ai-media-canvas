@@ -8,28 +8,34 @@ import { AgentSettingsSection } from "@/components/agent-settings-section";
 import { MediaSettingsSection } from "@/components/media-settings-section";
 import { SettingsSkeleton } from "@/components/skeletons/settings-skeleton";
 import { Button } from "@/components/ui/button";
+import { supportedLocales, type AppLocale, useAppTranslation } from "@/i18n";
 import {
   fetchWorkspaceSettings,
   updateWorkspaceSettings,
 } from "@/lib/server-api";
 import { notifyWorkspaceSettingsUpdated } from "@/lib/workspace-settings-events";
 
-export type SettingsTab = "agent" | "media";
+export type SettingsTab = "general" | "agent" | "media";
 
 const SETTINGS_TABS: Array<{
   id: SettingsTab;
-  label: string;
-  description: string;
+  labelKey: string;
+  descriptionKey: string;
 }> = [
   {
+    id: "general",
+    labelKey: "tabs.general.label",
+    descriptionKey: "tabs.general.description",
+  },
+  {
     id: "agent",
-    label: "Agent",
-    description: "LLM protocols and default model",
+    labelKey: "tabs.agent.label",
+    descriptionKey: "tabs.agent.description",
   },
   {
     id: "media",
-    label: "Media",
-    description: "Image and video provider routing",
+    labelKey: "tabs.media.label",
+    descriptionKey: "tabs.media.description",
   },
 ];
 
@@ -46,6 +52,7 @@ export function SettingsPanel({
   initialTab = "agent",
   surface = "page",
 }: SettingsPanelProps) {
+  const { t } = useAppTranslation("settings");
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [workspaceSettings, setWorkspaceSettings] =
     useState<WorkspaceSettings | null>(null);
@@ -65,11 +72,11 @@ export function SettingsPanel({
       setWorkspaceSettings(settingsResponse.settings);
       setLoadError(null);
     } catch {
-      setLoadError("Failed to load local settings. Please try again.");
+      setLoadError(t("status.loadFailed"));
     } finally {
       setPanelLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (hasInitialized.current) return;
@@ -89,6 +96,8 @@ export function SettingsPanel({
   const activeSection = useMemo(() => {
     if (!workspaceSettings) return null;
     switch (activeTab) {
+      case "general":
+        return <GeneralSettingsSection />;
       case "agent":
         return (
           <AgentSettingsSection
@@ -114,12 +123,14 @@ export function SettingsPanel({
   if (!workspaceSettings) {
     return (
       <div className="rounded-2xl border bg-card p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-foreground">Settings</h2>
+        <h2 className="text-base font-semibold text-foreground">
+          {t("title")}
+        </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          {loadError ?? "Unable to load local settings right now."}
+          {loadError ?? t("status.loadUnavailable")}
         </p>
         <Button className="mt-4" onClick={() => void loadData()} size="sm">
-          Retry
+          {t("common:actions.retry")}
         </Button>
       </div>
     );
@@ -147,10 +158,10 @@ export function SettingsPanel({
               }`}
             >
               <div className="text-sm font-medium text-foreground">
-                {tab.label}
+                {t(tab.labelKey)}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {tab.description}
+                {t(tab.descriptionKey)}
               </div>
             </button>
           ))}
@@ -178,6 +189,58 @@ export function SettingsPanel({
           activeSection
         )}
       </section>
+    </div>
+  );
+}
+
+function GeneralSettingsSection() {
+  const { i18n, t } = useAppTranslation("settings");
+  const currentLocale =
+    i18n.language === "en" || i18n.language === "zh-CN"
+      ? i18n.language
+      : "zh-CN";
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-base font-semibold text-foreground">
+          {t("general.title")}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {t("general.description")}
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-2xl border border-border bg-background p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <label
+            htmlFor="aimc-language-select"
+            className="text-sm font-medium text-foreground"
+          >
+            {t("general.languageLabel")}
+          </label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("general.languageDescription")}
+          </p>
+        </div>
+        <select
+          id="aimc-language-select"
+          aria-label={t("general.languageLabel")}
+          className="h-9 min-w-48 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          value={currentLocale}
+          onChange={(event) =>
+            void i18n.changeLanguage(event.target.value as AppLocale)
+          }
+        >
+          {supportedLocales.map((locale) => (
+            <option key={locale} value={locale}>
+              {locale === "en"
+                ? t("general.languageOptions.en")
+                : t("general.languageOptions.zhCN")}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }

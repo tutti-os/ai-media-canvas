@@ -1,0 +1,15 @@
+{
+  "canvas": {
+    "loadFailed": "本地画布加载失败。",
+    "missingId": "未指定画布 ID。",
+    "projectLoadFailed": "项目信息加载失败，请重试。"
+  },
+  "generic": "出错了",
+  "notFound": {
+    "backToProjects": "返回项目",
+    "message": "页面不存在"
+  },
+  "pageComponent": "页面组件发生异常，请重试或刷新页面",
+  "refresh": "刷新页面",
+  "retry": "重试"
+}

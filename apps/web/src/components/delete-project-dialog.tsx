@@ -3,11 +3,9 @@
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 
-import {
-  Dialog,
-  DialogContent,
-} from "./ui/dialog";
+import { Dialog, DialogContent } from "./ui/dialog";
 import { Button } from "./ui/button";
+import { useAppTranslation } from "@/i18n";
 
 interface DeleteProjectDialogProps {
   open: boolean;
@@ -22,11 +20,18 @@ export function DeleteProjectDialog({
   onConfirm,
   onCancel,
 }: DeleteProjectDialogProps) {
+  const { t } = useAppTranslation("projects");
+
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onCancel();
+      }}
+    >
       <DialogContent className="sm:max-w-sm" showCloseButton={false}>
         <p className="text-sm font-medium text-foreground">
-          确定归档此项目？它会从项目列表中移除，但本地数据仍会保留。
+          {t("archiveConfirmDescription")}
         </p>
         <div className="mt-4 flex items-center justify-end gap-3">
           <Button
@@ -35,7 +40,7 @@ export function DeleteProjectDialog({
             disabled={deleting}
             className="rounded-xl"
           >
-            取消
+            {t("common:actions.cancel")}
           </Button>
           <Button
             onClick={onConfirm}
@@ -50,7 +55,9 @@ export function DeleteProjectDialog({
               >
                 <Loader2 size={16} />
               </motion.span>
-            ) : "归档项目"}
+            ) : (
+              t("archiveAction")
+            )}
           </Button>
         </div>
       </DialogContent>

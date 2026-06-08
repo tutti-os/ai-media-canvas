@@ -30,6 +30,7 @@ import type {
 import { useImageModelPreference } from "@/hooks/use-image-model-preference";
 import { useMediaModelConfigurationStatus } from "@/hooks/use-media-model-configuration-status";
 import { useVideoModelPreference } from "@/hooks/use-video-model-preference";
+import { useAppTranslation } from "@/i18n";
 import type { HomeExampleSelection } from "@/lib/home-example-seeds";
 
 export type HomePromptHandle = {
@@ -134,6 +135,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const [settingsInitialTab, setSettingsInitialTab] = useState<
       "agent" | "media"
     >("agent");
+    const { t } = useAppTranslation("home");
     const agentBtnRef = useRef<HTMLButtonElement>(null);
     const { preference } = useImageModelPreference();
     const { preference: videoPreference } = useVideoModelPreference();
@@ -322,7 +324,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
                     onClick={onClearSelectedSeed}
                     className="shrink-0 rounded-full border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
                   >
-                    清除
+                    {t("prompt.clear")}
                   </button>
                 ) : null}
               </div>
@@ -353,7 +355,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             onInput={handleInput}
-            placeholder="让 AI Media Canvas 帮你设计..."
+            placeholder={t("prompt.placeholder")}
             disabled={disabled}
             rows={2}
             className="w-full resize-none bg-transparent px-3 pt-3 pb-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50 sm:px-4 sm:pt-4"
@@ -379,7 +381,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
                   />
                   <button
                     type="button"
-                    aria-label="Attach images"
+                    aria-label={t("prompt.attachImages")}
                     onClick={() => fileInputRef.current?.click()}
                     className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                   >
@@ -390,7 +392,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
                     >
                       <path d={toolbarButtons[0].path} />
                     </svg>
-                    <PromptToolbarTooltip label="Attach images" />
+                    <PromptToolbarTooltip label={t("prompt.attachImages")} />
                   </button>
                 </>
               ) : null}
@@ -398,7 +400,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
               <button
                 ref={agentBtnRef}
                 type="button"
-                aria-label="Image/Video model"
+                aria-label={t("prompt.modelPreference")}
                 onClick={() => setModelPopoverOpen((current) => !current)}
                 className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
               >
@@ -409,7 +411,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
                 >
                   <path d={toolbarButtons[1].path} />
                 </svg>
-                <PromptToolbarTooltip label="Image/Video model" />
+                <PromptToolbarTooltip label={t("prompt.modelPreference")} />
               </button>
 
               <div className="ml-1">
@@ -421,7 +423,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
               type="button"
               onClick={handleSubmit}
               disabled={disabled || isUploading || !hasContent}
-              aria-label="提交 prompt"
+              aria-label={t("prompt.submit")}
               className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:bg-foreground/25"
             >
               <svg

@@ -1,0 +1,46 @@
+{
+  "dialogTitle": "设置",
+  "general": {
+    "description": "控制界面语言与本地显示偏好。",
+    "languageDescription": "会保存到本地浏览器，并在后续打开时继续使用。",
+    "languageLabel": "语言",
+    "languageOptions": {
+      "en": "English",
+      "zhCN": "简体中文"
+    },
+    "title": "通用"
+  },
+  "modelConfiguration": {
+    "configureAgent": "配置 Agent",
+    "configureMedia": "配置媒体模型",
+    "description": "Agnes 提供免费的文本、生图、生视频模型能力，可以申请 API Key 后配置。",
+    "getAgnesKey": "申请 Agnes API Key",
+    "missing": "未配置 {{models}}",
+    "models": {
+      "agent": "Agent 模型",
+      "image": "图片模型",
+      "video": "视频模型"
+    }
+  },
+  "status": {
+    "loadFailed": "本地设置加载失败，请重试。",
+    "loadUnavailable": "当前无法加载本地设置。",
+    "unsaved": "有未保存更改",
+    "upToDate": "设置已是最新"
+  },
+  "tabs": {
+    "agent": {
+      "description": "LLM 协议与默认模型",
+      "label": "Agent"
+    },
+    "general": {
+      "description": "语言与界面偏好",
+      "label": "通用"
+    },
+    "media": {
+      "description": "图片与视频 provider 路由",
+      "label": "媒体"
+    }
+  },
+  "title": "设置"
+}

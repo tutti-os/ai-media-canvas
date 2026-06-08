@@ -22,6 +22,7 @@ import { HomeProjectsSkeleton } from "@/components/skeletons/home-skeleton";
 import { useCreateProject } from "@/hooks/use-create-project";
 import { useDeleteProject } from "@/hooks/use-delete-project";
 import { useImageAttachments } from "@/hooks/use-image-attachments";
+import { useAppTranslation } from "@/i18n";
 import { loadHomeDiscoveryCategories } from "@/lib/home-discovery-library";
 import {
   homeDiscoverySeedCategories,
@@ -70,6 +71,7 @@ const cardItem = {
 
 export default function HomePage() {
   const router = useRouter();
+  const { t } = useAppTranslation("home");
   const { create: createNewProject, creating } = useCreateProject();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
@@ -152,12 +154,8 @@ export default function HomePage() {
       createNewProject({
         prompt,
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
-        ...(imageGenerationPreference
-          ? { imageGenerationPreference }
-          : {}),
-        ...(videoGenerationPreference
-          ? { videoGenerationPreference }
-          : {}),
+        ...(imageGenerationPreference ? { imageGenerationPreference } : {}),
+        ...(videoGenerationPreference ? { videoGenerationPreference } : {}),
         ...(model ? { model } : {}),
       });
     },
@@ -198,7 +196,7 @@ export default function HomePage() {
         >
           <AimcLogo className="size-7 text-foreground md:size-8" />
           <span className="text-lg font-semibold text-foreground md:text-xl">
-            AI Media Canvas
+            {t("common:productName")}
           </span>
         </motion.div>
 
@@ -207,14 +205,14 @@ export default function HomePage() {
           custom={1}
           className="mb-1.5 text-xl font-bold text-foreground sm:text-2xl md:mb-2"
         >
-          让创意设计更简单
+          {t("hero.title")}
         </motion.h1>
         <motion.p
           variants={fadeUp}
           custom={2}
           className="mb-6 text-sm text-muted-foreground sm:text-base md:mb-8"
         >
-          你的本地 AI 设计助手，从想法到作品。
+          {t("hero.subtitle")}
         </motion.p>
 
         <motion.div variants={fadeUp} custom={3} className="w-full">
@@ -249,13 +247,13 @@ export default function HomePage() {
           className="mb-3 flex items-center justify-between md:mb-4"
         >
           <h2 className="text-base font-medium text-foreground sm:text-lg">
-            最近项目
+            {t("recentProjects.title")}
           </h2>
           <Link
             href="/projects"
             className="flex min-h-[44px] items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground sm:text-base"
           >
-            查看全部
+            {t("recentProjects.viewAll")}
             <span className="flex h-6 w-6 -rotate-90 items-center justify-center">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -305,7 +303,7 @@ export default function HomePage() {
                   />
                 </svg>
                 <span className="text-xs font-semibold text-foreground sm:text-sm">
-                  新建项目
+                  {t("recentProjects.newProject")}
                 </span>
               </div>
             </motion.button>
@@ -316,7 +314,9 @@ export default function HomePage() {
                 variants={cardItem}
                 whileHover={{ y: -4 }}
                 className="group relative aspect-[286/208] cursor-pointer rounded-lg bg-card p-2 text-left shadow-card transition-shadow duration-300 hover:shadow-md sm:p-3"
-                onClick={() => router.push(`/canvas?id=${project.primaryCanvas.id}`)}
+                onClick={() =>
+                  router.push(`/canvas?id=${project.primaryCanvas.id}`)
+                }
               >
                 <button
                   type="button"
@@ -324,7 +324,9 @@ export default function HomePage() {
                     event.stopPropagation();
                     requestDelete(project.id);
                   }}
-                  aria-label={`Archive ${project.name}`}
+                  aria-label={t("recentProjects.archive", {
+                    name: project.name,
+                  })}
                   className="absolute right-3 top-3 z-10 flex size-8 items-center justify-center rounded-[4px] bg-foreground/70 text-background opacity-0 transition-all duration-300 hover:bg-foreground/80 group-hover:opacity-100 sm:right-5 sm:top-5"
                 >
                   <Trash2 size={14} />
@@ -338,7 +340,9 @@ export default function HomePage() {
                       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                       loading="lazy"
                       onError={(event) => {
-                        (event.currentTarget as HTMLImageElement).style.display = "none";
+                        (
+                          event.currentTarget as HTMLImageElement
+                        ).style.display = "none";
                       }}
                     />
                   ) : null}
@@ -350,7 +354,9 @@ export default function HomePage() {
                   </div>
                 </div>
                 <div className="mt-0.5 text-[10px] text-muted-foreground sm:text-[11px]">
-                  更新于 {formatDate(project.updatedAt)}
+                  {t("recentProjects.updatedAt", {
+                    date: formatDate(project.updatedAt),
+                  })}
                 </div>
               </motion.div>
             ))}

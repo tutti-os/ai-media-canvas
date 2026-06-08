@@ -1,0 +1,46 @@
+{
+  "dialogTitle": "Settings",
+  "general": {
+    "description": "Control interface language and local display preferences.",
+    "languageDescription": "Saved in this browser and reused the next time you open the app.",
+    "languageLabel": "Language",
+    "languageOptions": {
+      "en": "English",
+      "zhCN": "Simplified Chinese"
+    },
+    "title": "General"
+  },
+  "modelConfiguration": {
+    "configureAgent": "Configure Agent",
+    "configureMedia": "Configure media models",
+    "description": "Agnes provides free text, image, and video model routes. Apply for an API key before configuring it.",
+    "getAgnesKey": "Get Agnes API Key",
+    "missing": "Missing {{models}}",
+    "models": {
+      "agent": "Agent model",
+      "image": "image model",
+      "video": "video model"
+    }
+  },
+  "status": {
+    "loadFailed": "Failed to load local settings. Please try again.",
+    "loadUnavailable": "Unable to load local settings right now.",
+    "unsaved": "Unsaved changes",
+    "upToDate": "Settings are up to date"
+  },
+  "tabs": {
+    "agent": {
+      "description": "LLM protocols and default model",
+      "label": "Agent"
+    },
+    "general": {
+      "description": "Language and interface preferences",
+      "label": "General"
+    },
+    "media": {
+      "description": "Image and video provider routing",
+      "label": "Media"
+    }
+  },
+  "title": "Settings"
+}
