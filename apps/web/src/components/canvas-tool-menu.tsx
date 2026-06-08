@@ -27,7 +27,11 @@ import { createPortal } from "react-dom";
 
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
-import { isVideoUrl } from "../lib/canvas-elements";
+import {
+  createExcalidrawImageElement,
+  fetchAsDataURL,
+  isVideoUrl,
+} from "../lib/canvas-elements";
 import {
   type ImageGeneratorData,
   createImageGeneratorElement,
@@ -40,6 +44,10 @@ import {
   getVideoGeneratorData,
   isVideoGeneratorElement,
 } from "../lib/canvas-video-generator";
+import {
+  type GenerationJobSubscription,
+  generationJobService,
+} from "../lib/generation-job-service";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
 import { VideoPlayerPanel } from "./canvas/video-player-panel";
@@ -146,6 +154,13 @@ function ImageGeneratorIcon() {
       <Sparkles className="absolute -right-1 -top-1 size-[9px] stroke-[2.4]" />
     </span>
   );
+}
+
+function generateRecoveryFileId(): string {
+  return (
+    Math.random().toString(36).slice(2) +
+    Math.random().toString(36).slice(2)
+  ).slice(0, 20);
 }
 
 /** Memoized shimmer overlay for a single generating element */
@@ -279,6 +294,8 @@ export function CanvasToolMenu({
 
   // Track previous generating element IDs to avoid re-renders when nothing changed
   const prevGeneratingKeyRef = useRef("");
+  const didInitialRecoveryScanRef = useRef(false);
+  const recoverySubscriptionsRef = useRef<GenerationJobSubscription[]>([]);
 
   // Helper: close all generator / player panels
   const closeAllPanels = useCallback(() => {
@@ -293,6 +310,224 @@ export function CanvasToolMenu({
     setVideoPlayerBounds(null);
   }, []);
 
+  const replaceRecoveredImageGenerator = useCallback(
+    async (
+      element: any,
+      result: Record<string, unknown>,
+      jobId: string,
+    ) => {
+      const url = result.signed_url;
+      const mimeType = result.mime_type;
+      const width = result.width;
+      const height = result.height;
+      if (
+        !excalidrawApi ||
+        typeof url !== "string" ||
+        typeof mimeType !== "string" ||
+        typeof width !== "number" ||
+        typeof height !== "number"
+      ) {
+        return;
+      }
+
+      const current = excalidrawApi
+        .getSceneElements()
+        .find((item: any) => item.id === element.id);
+      if (
+        !current ||
+        current.isDeleted ||
+        current.customData?.jobId !== jobId ||
+        current.customData?.status !== "generating"
+      ) {
+        return;
+      }
+
+      const dataURL = await fetchAsDataURL(url);
+      const fileId = generateRecoveryFileId();
+      excalidrawApi.addFiles([
+        {
+          id: fileId,
+          dataURL,
+          mimeType,
+          created: Date.now(),
+        },
+      ]);
+
+      const imageElement = createExcalidrawImageElement({
+        fileId,
+        x: current.x,
+        y: current.y,
+        width: current.width,
+        height: current.height,
+        title: String(current.customData?.prompt ?? "").slice(0, 60),
+        source: "generated",
+        storageUrl: url,
+      });
+      const elements = excalidrawApi.getSceneElements().map((item: any) =>
+        item.id === current.id ? { ...item, isDeleted: true } : item,
+      );
+      excalidrawApi.updateScene({
+        elements: [...elements, imageElement],
+        captureUpdate: "IMMEDIATELY",
+      });
+    },
+    [excalidrawApi],
+  );
+
+  const replaceRecoveredVideoGenerator = useCallback(
+    async (
+      element: any,
+      result: Record<string, unknown>,
+      jobId: string,
+    ) => {
+      const url = result.signed_url;
+      const mimeType = result.mime_type;
+      const width = result.width;
+      const height = result.height;
+      if (
+        !excalidrawApi ||
+        typeof url !== "string" ||
+        typeof mimeType !== "string" ||
+        typeof width !== "number" ||
+        typeof height !== "number"
+      ) {
+        return;
+      }
+
+      const current = excalidrawApi
+        .getSceneElements()
+        .find((item: any) => item.id === element.id);
+      if (
+        !current ||
+        current.isDeleted ||
+        current.customData?.jobId !== jobId ||
+        current.customData?.status !== "generating"
+      ) {
+        return;
+      }
+
+      const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+      const durationSeconds = result.duration_seconds;
+      const newElements = convertToExcalidrawElements([
+        {
+          type: "embeddable",
+          link: url,
+          x: current.x,
+          y: current.y,
+          width: current.width,
+          height: current.height,
+          customData: {
+            isVideo: true,
+            mimeType,
+            ...(typeof durationSeconds === "number"
+              ? { durationSeconds }
+              : {}),
+            title: String(current.customData?.prompt ?? "").slice(0, 60),
+            prompt: current.customData?.prompt,
+          },
+        } as any,
+      ]);
+      const elements = excalidrawApi.getSceneElements().map((item: any) =>
+        item.id === current.id ? { ...item, isDeleted: true } : item,
+      );
+      excalidrawApi.updateScene({
+        elements: [...elements, ...newElements],
+        captureUpdate: "IMMEDIATELY",
+      });
+    },
+    [excalidrawApi],
+  );
+
+  const markRecoveredGeneratorFailed = useCallback(
+    (elementId: string, jobId: string) => {
+      if (!excalidrawApi) return;
+      const elements = excalidrawApi.getSceneElements().map((item: any) => {
+        if (item.id !== elementId) return item;
+        if (
+          item.customData?.jobId !== jobId ||
+          item.customData?.status !== "generating"
+        ) {
+          return item;
+        }
+        return {
+          ...item,
+          customData: {
+            ...item.customData,
+            status: "error",
+            errorMessage: "生成失败",
+          },
+        };
+      });
+      excalidrawApi.updateScene({ elements, captureUpdate: "IMMEDIATELY" });
+    },
+    [excalidrawApi],
+  );
+
+  const recoverInitialGeneratingJobs = useCallback(
+    (elements: readonly any[]) => {
+      if (!excalidrawApi || didInitialRecoveryScanRef.current) return;
+      if (elements.length === 0) return;
+      didInitialRecoveryScanRef.current = true;
+
+      for (const element of elements) {
+        if (element.isDeleted || element.customData?.status !== "generating") {
+          continue;
+        }
+        const jobId = element.customData?.jobId;
+        if (typeof jobId !== "string") continue;
+        const isVideo = isVideoGeneratorElement(element);
+        const isImage = isImageGeneratorElement(element);
+        if (!isVideo && !isImage) continue;
+
+        const subscription = generationJobService.watch(jobId, {
+          jobType: isVideo ? "video_generation" : "image_generation",
+          onSucceeded: (result) => {
+            const recovery = isVideo
+              ? replaceRecoveredVideoGenerator(element, result, jobId)
+              : replaceRecoveredImageGenerator(element, result, jobId);
+            void recovery.catch((error) => {
+              console.warn(
+                "[canvas-tool-menu] recovered generation replacement failed:",
+                error,
+              );
+              markRecoveredGeneratorFailed(element.id as string, jobId);
+            });
+          },
+          onFailed: (error) => {
+            console.warn("[canvas-tool-menu] recovered generation failed:", error);
+            markRecoveredGeneratorFailed(element.id as string, jobId);
+          },
+        });
+        void subscription.promise.catch(() => {
+          // Failure is handled through onFailed so the placeholder can stay visible.
+        });
+        recoverySubscriptionsRef.current.push(subscription);
+      }
+    },
+    [
+      excalidrawApi,
+      markRecoveredGeneratorFailed,
+      replaceRecoveredImageGenerator,
+      replaceRecoveredVideoGenerator,
+    ],
+  );
+
+  useEffect(() => {
+    didInitialRecoveryScanRef.current = false;
+    recoverySubscriptionsRef.current.forEach((subscription) =>
+      subscription.unsubscribe(),
+    );
+    recoverySubscriptionsRef.current = [];
+    if (!excalidrawApi) return;
+    recoverInitialGeneratingJobs(excalidrawApi.getSceneElements());
+    return () => {
+      recoverySubscriptionsRef.current.forEach((subscription) =>
+        subscription.unsubscribe(),
+      );
+      recoverySubscriptionsRef.current = [];
+    };
+  }, [excalidrawApi, recoverInitialGeneratingJobs]);
+
   // Subscribe to Excalidraw changes.
   // This fires on every frame during drag / drawing, so we must be very
   // careful to avoid unnecessary state updates that trigger re-renders.
@@ -301,6 +536,8 @@ export function CanvasToolMenu({
 
     const unsubscribe = excalidrawApi.onChange(
       (elements: any[], appState: any) => {
+        recoverInitialGeneratingJobs(elements);
+
         // --- Tool sync (cheap string comparison, skip if unchanged) ---
         const tool = appState?.activeTool?.type;
         if (tool) setActiveTool((prev: string) => prev === tool ? prev : tool);

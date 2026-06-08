@@ -12,10 +12,13 @@ type SupportedTable =
   | "brand_kits"
   | "canvases"
   | "projects"
+  | "skill_files"
+  | "workspace_skills"
   | "workspaces";
 
 class LocalQueryBuilder {
   private filters = new Map<string, unknown>();
+  private inFilters = new Map<string, unknown[]>();
   private limitCount: number | null = null;
   private patch: Record<string, unknown> | null = null;
   private selection = "*";
@@ -32,6 +35,11 @@ class LocalQueryBuilder {
 
   eq(field: string, value: unknown) {
     this.filters.set(field, value);
+    return this;
+  }
+
+  in(field: string, values: unknown[]) {
+    this.inFilters.set(field, values);
     return this;
   }
 
@@ -64,13 +72,16 @@ class LocalQueryBuilder {
     return this.execute(true);
   }
 
-  then<TResult1 = Awaited<ReturnType<LocalQueryBuilder["execute"]>>, TResult2 = never>(
+  then<
+    TResult1 = Awaited<ReturnType<LocalQueryBuilder["execute"]>>,
+    TResult2 = never,
+  >(
     onfulfilled?:
-      | ((value: Awaited<ReturnType<LocalQueryBuilder["execute"]>>) => TResult1 | PromiseLike<TResult1>)
+      | ((
+          value: Awaited<ReturnType<LocalQueryBuilder["execute"]>>,
+        ) => TResult1 | PromiseLike<TResult1>)
       | null,
-    onrejected?:
-      | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
-      | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ) {
     return this.execute(false).then(onfulfilled, onrejected);
   }
@@ -90,8 +101,7 @@ class LocalQueryBuilder {
     }
 
     return {
-      data:
-        this.limitCount != null ? rows.slice(0, this.limitCount) : rows,
+      data: this.limitCount != null ? rows.slice(0, this.limitCount) : rows,
       error: null,
     };
   }
@@ -106,7 +116,11 @@ class LocalQueryBuilder {
 
     const canvasId = this.filters.get("id");
     const content = this.patch?.content;
-    if (typeof canvasId !== "string" || !content || typeof content !== "object") {
+    if (
+      typeof canvasId !== "string" ||
+      !content ||
+      typeof content !== "object"
+    ) {
       return {
         data: null,
         error: { message: "Invalid canvas update payload." },
@@ -126,6 +140,10 @@ class LocalQueryBuilder {
         return this.readCanvases();
       case "projects":
         return this.readProjects();
+      case "workspace_skills":
+        return this.readWorkspaceSkills();
+      case "skill_files":
+        return this.readSkillFiles();
       case "brand_kits":
         return this.readBrandKits();
       case "brand_kit_assets":
@@ -182,6 +200,60 @@ class LocalQueryBuilder {
 
     const project = this.store.getProject(projectId);
     return project ? [project] : [];
+  }
+
+  private readWorkspaceSkills() {
+    const workspaceId = this.filters.get("workspace_id");
+    if (workspaceId !== LOCAL_WORKSPACE_ID) {
+      return [];
+    }
+
+    const enabled = this.filters.get("enabled");
+    if (enabled !== true && enabled !== 1) {
+      return [];
+    }
+
+    return this.store.listEnabledSkills().flatMap((skill) => {
+      const detail = this.store.getSkillDetail(skill.id);
+      if (!detail) {
+        return [];
+      }
+
+      return [
+        {
+          skill: {
+            id: detail.id,
+            slug: detail.slug,
+            name: detail.name,
+            description: detail.description,
+            skill_content: detail.skillContent,
+            metadata: detail.metadata,
+          },
+        },
+      ];
+    });
+  }
+
+  private readSkillFiles() {
+    const skillIds = this.inFilters.get("skill_id");
+    if (!skillIds?.length) {
+      return [];
+    }
+
+    return skillIds.flatMap((skillId) => {
+      if (typeof skillId !== "string") {
+        return [];
+      }
+
+      const detail = this.store.getSkillDetail(skillId);
+      return (
+        detail?.files?.map((file) => ({
+          skill_id: skillId,
+          file_path: file.filePath,
+          content: file.content,
+        })) ?? []
+      );
+    });
   }
 
   private readBrandKits() {

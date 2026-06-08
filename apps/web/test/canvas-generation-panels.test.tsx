@@ -198,6 +198,43 @@ describe("canvas generation panels", () => {
     expect(screen.getByRole("button", { name: "生成图片" })).toBeDisabled();
   });
 
+  it("keeps a submitted image generation polling after the panel unmounts", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    generateImageDirectMock.mockImplementation(
+      (_prompt: string, options: { signal?: AbortSignal }) => {
+        capturedSignal = options.signal;
+        return new Promise(() => {});
+      },
+    );
+
+    const { unmount } = render(
+      <ToastProvider>
+        <ImageGeneratorPanel
+          elementId="el-image"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 320 }}
+          data={{
+            type: "image-generator",
+            status: "idle",
+            prompt: "生成一张跳舞图片",
+            model: "agnes-image/agnes-image-2.1-flash",
+            aspectRatio: "1:1",
+            quality: "hd",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "生成图片" }));
+    expect(generateImageDirectMock).toHaveBeenCalledTimes(1);
+
+    unmount();
+
+    expect(capturedSignal?.aborted).toBe(false);
+  });
+
   it("omits the hard-coded storage copy in the video generator", async () => {
     render(
       <ToastProvider>
@@ -434,5 +471,45 @@ describe("canvas generation panels", () => {
     expect(screen.getByRole("button", { name: "16:9 · 5s" })).toHaveClass(
       "cursor-pointer",
     );
+  });
+
+  it("keeps a submitted video generation polling after the panel unmounts", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    generateVideoDirectMock.mockImplementation(
+      (_prompt: string, options: { signal?: AbortSignal }) => {
+        capturedSignal = options.signal;
+        return new Promise(() => {});
+      },
+    );
+
+    const { unmount } = render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "生成一段跳舞视频",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "生成视频" }));
+    expect(generateVideoDirectMock).toHaveBeenCalledTimes(1);
+
+    unmount();
+
+    expect(capturedSignal?.aborted).toBe(false);
   });
 });

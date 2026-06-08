@@ -28,19 +28,12 @@ import type {
   WorkspaceSettingsUpdateRequest,
 } from "@aimc/shared";
 
+import { ApiApplicationError } from "./api-errors";
 import { dedupeRequest } from "./dedupe-request";
 import { getServerBaseUrl } from "./env";
+import { generationJobService } from "./generation-job-service";
 
-// --- Error types ---
-
-export class ApiApplicationError extends Error {
-  code: string;
-  constructor(code: string, message: string) {
-    super(message);
-    this.name = "ApiApplicationError";
-    this.code = code;
-  }
-}
+export { ApiApplicationError } from "./api-errors";
 
 // --- Local app API ---
 
@@ -490,6 +483,7 @@ export async function generateImageDirect(
     seed?: number;
     projectId?: string;
     canvasId?: string;
+    onJobCreated?: (jobId: string) => void;
     signal?: AbortSignal;
   },
 ): Promise<GenerateImageResponse> {
@@ -506,11 +500,11 @@ export async function generateImageDirect(
     ...(options?.projectId ? { project_id: options.projectId } : {}),
     ...(options?.canvasId ? { canvas_id: options.canvasId } : {}),
   }, options?.signal);
-  const result = await waitForGenerationJobResult(
-    job.id,
-    IMAGE_GENERATION_MAX_WAIT_MS,
-    options?.signal,
-  );
+  options?.onJobCreated?.(job.id);
+  const result = await generationJobService.watch(job.id, {
+    jobType: "image_generation",
+    ...(options?.signal ? { signal: options.signal } : {}),
+  }).promise;
   return {
     url: readStringResult(result, "signed_url"),
     assetId: readStringResult(result, "asset_id"),
@@ -546,6 +540,7 @@ export async function generateVideoDirect(
     numFrames?: number;
     projectId?: string;
     canvasId?: string;
+    onJobCreated?: (jobId: string) => void;
     signal?: AbortSignal;
   },
 ): Promise<GenerateVideoResponse> {
@@ -568,11 +563,11 @@ export async function generateVideoDirect(
     ...(options?.projectId ? { project_id: options.projectId } : {}),
     ...(options?.canvasId ? { canvas_id: options.canvasId } : {}),
   }, options?.signal);
-  const result = await waitForGenerationJobResult(
-    job.id,
-    VIDEO_GENERATION_MAX_WAIT_MS,
-    options?.signal,
-  );
+  options?.onJobCreated?.(job.id);
+  const result = await generationJobService.watch(job.id, {
+    jobType: "video_generation",
+    ...(options?.signal ? { signal: options.signal } : {}),
+  }).promise;
   return {
     url: readStringResult(result, "signed_url"),
     assetId: readStringResult(result, "asset_id"),
@@ -583,10 +578,6 @@ export async function generateVideoDirect(
     durationSeconds: readNumberResult(result, "duration_seconds"),
   };
 }
-
-const GENERATION_JOB_POLL_INTERVAL_MS = 1_000;
-const IMAGE_GENERATION_MAX_WAIT_MS = 180_000;
-const VIDEO_GENERATION_MAX_WAIT_MS = 650_000;
 
 async function createGenerationJob(
   endpoint: "/api/jobs/image-generation" | "/api/jobs/video-generation",
@@ -602,77 +593,6 @@ async function createGenerationJob(
   const response = await fetch(`${getServerBaseUrl()}${endpoint}`, init);
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as JobResponse;
-}
-
-async function fetchGenerationJob(
-  jobId: string,
-  signal?: AbortSignal,
-): Promise<JobResponse> {
-  const url = `${getServerBaseUrl()}/api/jobs/${jobId}`;
-  const response = signal ? await fetch(url, { signal }) : await fetch(url);
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as JobResponse;
-}
-
-async function waitForGenerationJobResult(
-  jobId: string,
-  maxWaitMs: number,
-  signal?: AbortSignal,
-): Promise<Record<string, unknown>> {
-  const startedAt = Date.now();
-
-  for (;;) {
-    const { job } = await fetchGenerationJob(jobId, signal);
-    if (job.status === "succeeded") {
-      if (!job.result) {
-        throw new ApiApplicationError(
-          "generation_failed",
-          "Generation completed without a result.",
-        );
-      }
-      return job.result;
-    }
-
-    if (job.status === "dead_letter") {
-      throw new ApiApplicationError(
-        job.error_code ?? "generation_failed",
-        job.error_message ?? "Generation failed.",
-      );
-    }
-
-    if (job.status === "canceled") {
-      throw new ApiApplicationError(
-        "generation_canceled",
-        "Generation was canceled.",
-      );
-    }
-
-    if (Date.now() - startedAt >= maxWaitMs) {
-      throw new ApiApplicationError(
-        "generation_timeout",
-        `Generation job ${jobId} timed out.`,
-      );
-    }
-
-    await delay(GENERATION_JOB_POLL_INTERVAL_MS, signal);
-  }
-}
-
-function delay(ms: number, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) {
-    return Promise.reject(signal.reason);
-  }
-  return new Promise((resolve, reject) => {
-    const timeoutId = window.setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        window.clearTimeout(timeoutId);
-        reject(signal.reason);
-      },
-      { once: true },
-    );
-  });
 }
 
 function readStringResult(

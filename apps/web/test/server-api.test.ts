@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 import {
   fetchWorkspaceSettings,
@@ -10,14 +10,28 @@ import {
   generateImageDirect,
   generateVideoDirect,
 } from "../src/lib/server-api";
+import { generationJobService } from "../src/lib/generation-job-service";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
+async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 describe("local server API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    generationJobService.clearForTest();
     vi.stubEnv("AIMC_SERVER_BASE_URL", "http://localhost:3001");
+  });
+
+  afterEach(() => {
+    generationJobService.clearForTest();
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
   });
 
   it("fetchViewer calls the local viewer endpoint and returns the viewer", async () => {
@@ -235,6 +249,115 @@ describe("local server API", () => {
     });
   });
 
+  it("generateImageDirect waits the image poll interval before retrying queued jobs", async () => {
+    vi.useFakeTimers();
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          job: {
+            id: "job-image-queued",
+            status: "queued",
+            result: null,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          job: {
+            id: "job-image-queued",
+            status: "queued",
+            result: null,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          job: {
+            id: "job-image-queued",
+            status: "succeeded",
+            result: {
+              signed_url: "http://localhost:3001/assets/image.png",
+              asset_id: "asset-image-1",
+              mime_type: "image/png",
+              width: 1024,
+              height: 1024,
+            },
+          },
+        }),
+      });
+
+    const resultPromise = generateImageDirect("生成一张海报", {
+      model: "agnes-image/agnes-image-2.1-flash",
+    });
+
+    await flushPromises();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2_999);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(resultPromise).resolves.toEqual({
+      url: "http://localhost:3001/assets/image.png",
+      assetId: "asset-image-1",
+      prompt: "生成一张海报",
+      mimeType: "image/png",
+      width: 1024,
+      height: 1024,
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("generateImageDirect exposes the created job id before waiting for image completion", async () => {
+    vi.useFakeTimers();
+    const onJobCreated = vi.fn();
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          job: {
+            id: "job-image-resume",
+            status: "queued",
+            result: null,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          job: {
+            id: "job-image-resume",
+            status: "queued",
+            result: null,
+          },
+        }),
+      });
+
+    const resultPromise = generateImageDirect("生成一张可恢复的图片", {
+      model: "agnes-image/agnes-image-2.1-flash",
+      onJobCreated,
+    });
+
+    await flushPromises();
+
+    expect(onJobCreated).toHaveBeenCalledWith("job-image-resume");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    await expect(
+      Promise.race([
+        resultPromise.then(() => "completed"),
+        Promise.resolve("still-waiting"),
+      ]),
+    ).resolves.toBe("still-waiting");
+  });
+
   it("generateVideoDirect creates a video job and polls for the stored result", async () => {
     mockFetch
       .mockResolvedValueOnce({
@@ -301,6 +424,193 @@ describe("local server API", () => {
       url: "http://localhost:3001/assets/video.mp4",
       assetId: "asset-video-1",
       prompt: "生成一段产品视频",
+      mimeType: "video/mp4",
+      width: 1280,
+      height: 720,
+      durationSeconds: 5,
+    });
+  });
+
+  it("generateVideoDirect waits the slower video poll interval before retrying queued jobs", async () => {
+    vi.useFakeTimers();
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          job: {
+            id: "job-video-queued",
+            status: "queued",
+            result: null,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          job: {
+            id: "job-video-queued",
+            status: "queued",
+            result: null,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          job: {
+            id: "job-video-queued",
+            status: "succeeded",
+            result: {
+              signed_url: "http://localhost:3001/assets/video.mp4",
+              asset_id: "asset-video-1",
+              mime_type: "video/mp4",
+              width: 1280,
+              height: 720,
+              duration_seconds: 5,
+            },
+          },
+        }),
+      });
+
+    const resultPromise = generateVideoDirect("生成一段产品视频", {
+      model: "agnes-video/agnes-video-v2.0",
+    });
+
+    await flushPromises();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(resultPromise).resolves.toEqual({
+      url: "http://localhost:3001/assets/video.mp4",
+      assetId: "asset-video-1",
+      prompt: "生成一段产品视频",
+      mimeType: "video/mp4",
+      width: 1280,
+      height: 720,
+      durationSeconds: 5,
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("generateVideoDirect exposes the created job id before waiting for video completion", async () => {
+    vi.useFakeTimers();
+    const onJobCreated = vi.fn();
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          job: {
+            id: "job-video-resume",
+            status: "queued",
+            result: null,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          job: {
+            id: "job-video-resume",
+            status: "queued",
+            result: null,
+          },
+        }),
+      });
+
+    const resultPromise = generateVideoDirect("生成一段可恢复的视频", {
+      model: "agnes-video/agnes-video-v2.0",
+      onJobCreated,
+    });
+
+    await flushPromises();
+
+    expect(onJobCreated).toHaveBeenCalledWith("job-video-resume");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    await expect(
+      Promise.race([
+        resultPromise.then(() => "completed"),
+        Promise.resolve("still-waiting"),
+      ]),
+    ).resolves.toBe("still-waiting");
+  });
+
+  it("generateVideoDirect keeps waiting beyond the initial Agnes queue window", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    mockFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            job: {
+              id: "job-video-long-queue",
+              status: "queued",
+              result: null,
+            },
+          }),
+        };
+      }
+
+      if (url === "http://localhost:3001/api/jobs/job-video-long-queue") {
+        if (Date.now() < 660_000) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              job: {
+                id: "job-video-long-queue",
+                status: "queued",
+                result: null,
+              },
+            }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            job: {
+              id: "job-video-long-queue",
+              status: "succeeded",
+              result: {
+                signed_url: "http://localhost:3001/assets/video.mp4",
+                asset_id: "asset-video-1",
+                mime_type: "video/mp4",
+                width: 1280,
+                height: 720,
+                duration_seconds: 5,
+              },
+            },
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const resultPromise = generateVideoDirect("生成一段排队较久的视频", {
+      model: "agnes-video/agnes-video-v2.0",
+    });
+
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(650_000);
+    await flushPromises();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    await expect(resultPromise).resolves.toEqual({
+      url: "http://localhost:3001/assets/video.mp4",
+      assetId: "asset-video-1",
+      prompt: "生成一段排队较久的视频",
       mimeType: "video/mp4",
       width: 1280,
       height: 720,

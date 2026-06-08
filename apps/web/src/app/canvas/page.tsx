@@ -1,29 +1,34 @@
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
-import type { ToolArtifact } from "@aimc/shared";
-import type { CanvasImageItem } from "../../components/canvas-image-picker";
-import type { CanvasSelectedElement } from "../../components/canvas-editor";
-import { LoadingScreen } from "../../components/loading-screen";
-import { useWebSocket } from "../../hooks/use-websocket";
+import type { StreamEvent, ToolArtifact } from "@aimc/shared";
+import { BrandKitSelector } from "../../components/brand-kit-selector";
+import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
 import { CanvasEditor } from "../../components/canvas-editor";
-import { ChatSidebar } from "../../components/chat-sidebar";
+import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
+import { CanvasFilesPanel } from "../../components/canvas-files-panel";
+import type { CanvasImageItem } from "../../components/canvas-image-picker";
+import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
+import { ChatSidebar } from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
+import { LoadingScreen } from "../../components/loading-screen";
+import { useToast } from "../../components/toast";
+import { Button } from "../../components/ui/button";
+import { useWebSocket } from "../../hooks/use-websocket";
 import {
   insertImageOnCanvas,
   insertVideoOnCanvas,
 } from "../../lib/canvas-elements";
+import { SHOW_BRAND_KIT_ENTRY_POINTS } from "../../lib/feature-flags";
+import {
+  type GenerationJobSubscription,
+  generationJobService,
+} from "../../lib/generation-job-service";
 import { fetchCanvas, fetchProject } from "../../lib/server-api";
-import { BrandKitSelector } from "../../components/brand-kit-selector";
-import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
-import { CanvasFilesPanel } from "../../components/canvas-files-panel";
-import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
-import { Button } from "../../components/ui/button";
-import { useToast } from "../../components/toast";
 
 function CanvasPageContent() {
   const searchParams = useSearchParams();
@@ -59,6 +64,7 @@ function CanvasPageContent() {
   const { error: toastError } = useToast();
 
   const excalidrawApiRef = useRef<any>(null);
+  const fallbackSubscriptionsRef = useRef<GenerationJobSubscription[]>([]);
   const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
 
   const routerRef = useRef(router);
@@ -89,6 +95,90 @@ function CanvasPageContent() {
     task.catch((err) => {
       console.warn("Failed to insert generated media on canvas:", err);
     });
+  }, []);
+
+  const handleStreamEvent = useCallback(
+    (event: StreamEvent) => {
+      if (event.type !== "tool.completed") return;
+      const output = event.output as
+        | {
+            jobId?: unknown;
+            jobType?: unknown;
+            videoUrl?: unknown;
+            url?: unknown;
+            elementId?: unknown;
+          }
+        | undefined;
+      const jobId = typeof output?.jobId === "string" ? output.jobId : null;
+      const jobType =
+        output?.jobType === "image_generation" ||
+        output?.jobType === "video_generation"
+          ? output.jobType
+          : null;
+      if (!jobId || !jobType) return;
+      if (typeof output?.elementId === "string") return;
+      if (typeof output?.videoUrl === "string" || typeof output?.url === "string") {
+        return;
+      }
+      const isVideo = jobType === "video_generation";
+      const subscription = generationJobService.watch(jobId, {
+        jobType,
+        onSucceeded: (result) => {
+          const url = result.signed_url;
+          const mimeType = result.mime_type;
+          const width = result.width;
+          const height = result.height;
+          if (
+            typeof url !== "string" ||
+            typeof mimeType !== "string" ||
+            typeof width !== "number" ||
+            typeof height !== "number"
+          ) {
+            return;
+          }
+          if (isVideo) {
+            const durationSeconds = result.duration_seconds;
+            handleImageGenerated({
+              type: "video",
+              url,
+              mimeType,
+              width,
+              height,
+              ...(typeof durationSeconds === "number"
+                ? { durationSeconds }
+                : {}),
+              jobId,
+            });
+          } else {
+            handleImageGenerated({
+              type: "image",
+              url,
+              mimeType,
+              width,
+              height,
+              jobId,
+            });
+          }
+        },
+        onFailed: (err) => {
+          console.warn("[canvas] fallback generation polling failed:", err);
+        },
+      });
+      void subscription.promise.catch(() => {
+        // Failure is surfaced through onFailed; no UI state lives in this page path.
+      });
+      fallbackSubscriptionsRef.current.push(subscription);
+    },
+    [handleImageGenerated],
+  );
+
+  useEffect(() => {
+    return () => {
+      fallbackSubscriptionsRef.current.forEach((subscription) =>
+        subscription.unsubscribe(),
+      );
+      fallbackSubscriptionsRef.current = [];
+    };
   }, []);
 
   // Must be defined BEFORE useJobFallbackPolling which references it
@@ -229,11 +319,13 @@ function CanvasPageContent() {
           projectId={canvasData.projectId}
           initialName={projectName}
         />
-        <BrandKitSelector
-          projectId={canvasData.projectId}
-          currentBrandKitId={brandKitId}
-          onBrandKitChange={(kitId) => setBrandKitId(kitId)}
-        />
+        {SHOW_BRAND_KIT_ENTRY_POINTS && (
+          <BrandKitSelector
+            projectId={canvasData.projectId}
+            currentBrandKitId={brandKitId}
+            onBrandKitChange={(kitId) => setBrandKitId(kitId)}
+          />
+        )}
       </div>
       {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
       <div className="flex-1 relative min-w-0 overflow-hidden">
@@ -276,11 +368,12 @@ function CanvasPageContent() {
         onToggle={handleToggleChat}
         onImageGenerated={handleImageGenerated}
         onCanvasSync={handleCanvasSync}
+        onStreamEvent={handleStreamEvent}
         initialPrompt={initialPrompt}
         initialSessionId={initialSessionId}
         onSessionChange={handleSessionChange}
         onRequestCanvasImages={handleRequestCanvasImages}
-        currentBrandKitId={brandKitId}
+        currentBrandKitId={SHOW_BRAND_KIT_ENTRY_POINTS ? brandKitId : null}
         ws={ws}
         selectedCanvasElements={selectedCanvasElements}
       />

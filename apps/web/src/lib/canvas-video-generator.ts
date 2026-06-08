@@ -20,6 +20,7 @@ export type VideoGeneratorData = {
   duration: number;
   resolution: string;
   inputImages?: string[];
+  jobId?: string;
   errorMessage?: string;
 };
 

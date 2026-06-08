@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, stat, symlink, writeFile } from "node:
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { inflateSync } from "node:zlib";
 
 import {
   assertNoSymlinks,
@@ -15,6 +16,98 @@ import {
 
 async function makeTempPackageRoot() {
   return mkdtemp(path.join(os.tmpdir(), "aimc-nextop-package-test-"));
+}
+
+function readPngAlphaBounds(png) {
+  assert.equal(png.subarray(1, 4).toString("ascii"), "PNG");
+
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let colorType = 0;
+  const idatChunks = [];
+
+  while (offset < png.length) {
+    const length = png.readUInt32BE(offset);
+    const type = png.subarray(offset + 4, offset + 8).toString("ascii");
+    const data = png.subarray(offset + 8, offset + 8 + length);
+    offset += length + 12;
+
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      colorType = data[9];
+    } else if (type === "IDAT") {
+      idatChunks.push(data);
+    } else if (type === "IEND") {
+      break;
+    }
+  }
+
+  assert.equal(colorType, 6, "icon PNG must be RGBA so alpha bounds can be checked");
+
+  const bytesPerPixel = 4;
+  const stride = width * bytesPerPixel;
+  const inflated = inflateSync(Buffer.concat(idatChunks));
+  const pixels = Buffer.alloc(stride * height);
+  let sourceOffset = 0;
+
+  for (let y = 0; y < height; y += 1) {
+    const filter = inflated[sourceOffset];
+    sourceOffset += 1;
+
+    for (let x = 0; x < stride; x += 1) {
+      const raw = inflated[sourceOffset + x];
+      const left = x >= bytesPerPixel ? pixels[y * stride + x - bytesPerPixel] : 0;
+      const up = y > 0 ? pixels[(y - 1) * stride + x] : 0;
+      const upLeft = y > 0 && x >= bytesPerPixel ? pixels[(y - 1) * stride + x - bytesPerPixel] : 0;
+
+      if (filter === 0) {
+        pixels[y * stride + x] = raw;
+      } else if (filter === 1) {
+        pixels[y * stride + x] = (raw + left) & 0xff;
+      } else if (filter === 2) {
+        pixels[y * stride + x] = (raw + up) & 0xff;
+      } else if (filter === 3) {
+        pixels[y * stride + x] = (raw + Math.floor((left + up) / 2)) & 0xff;
+      } else if (filter === 4) {
+        const p = left + up - upLeft;
+        const pa = Math.abs(p - left);
+        const pb = Math.abs(p - up);
+        const pc = Math.abs(p - upLeft);
+        const predictor = pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft;
+        pixels[y * stride + x] = (raw + predictor) & 0xff;
+      } else {
+        throw new Error(`Unsupported PNG filter: ${filter}`);
+      }
+    }
+
+    sourceOffset += stride;
+  }
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const alpha = pixels[y * stride + x * bytesPerPixel + 3];
+      if (alpha > 8) {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+
+  return {
+    height,
+    width,
+    contentHeight: maxY - minY + 1,
+    contentWidth: maxX - minX + 1,
+  };
 }
 
 test("createManifest returns the Nextop package manifest contract", () => {
@@ -77,9 +170,15 @@ test("Nextop icon asset is a generated PNG with a contrast-safe tile", async () 
   const iconPath = path.resolve("apps/web/public/brand/aimc-nextop-app-icon.png");
   const icon = await readFile(iconPath);
   const iconStat = await stat(iconPath);
+  const bounds = readPngAlphaBounds(icon);
 
   assert.ok(iconStat.size > 0);
-  assert.equal(icon.subarray(1, 4).toString("ascii"), "PNG");
+  assert.equal(bounds.width, 1024);
+  assert.equal(bounds.height, 1024);
+  assert.ok(
+    bounds.contentWidth >= 900 && bounds.contentHeight >= 900,
+    `icon content should fill most of the canvas, got ${bounds.contentWidth}x${bounds.contentHeight}`,
+  );
 });
 
 test("createWebBuildEnv prevents local dev server URLs from being baked into package dist", () => {

@@ -8,8 +8,8 @@ import type {
   BrandKitAssetResponse,
 } from "@aimc/shared";
 
+import { ApiApplicationError } from "./api-errors";
 import { getServerBaseUrl } from "./env";
-import { ApiApplicationError } from "./server-api";
 import { dedupeRequest } from "./dedupe-request";
 
 async function handleErrorResponse(response: Response): Promise<never> {

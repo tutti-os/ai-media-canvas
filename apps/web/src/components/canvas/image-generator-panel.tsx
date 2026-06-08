@@ -56,8 +56,9 @@ export function ImageGeneratorPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const { handleGenerationError } = useGenerationErrorHandler();
-  // AbortController for in-flight generation requests so we can cancel on unmount
+  // AbortController for canceling only when a newer generation supersedes this one.
   const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,10 +112,9 @@ export function ImageGeneratorPanel({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Cancel in-flight generation on unmount to prevent memory leaks
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
+      mountedRef.current = false;
     };
   }, []);
 
@@ -178,6 +178,12 @@ export function ImageGeneratorPanel({
         model,
         aspectRatio,
         quality: data.quality,
+        onJobCreated: (jobId) => {
+          updateImageGeneratorElement(excalidrawApi, elementId, {
+            jobId,
+            status: "generating",
+          });
+        },
         signal: controller.signal,
       });
 
@@ -226,10 +232,12 @@ export function ImageGeneratorPanel({
 
       console.error("[image-gen] Generation error:", err);
       const handled = handleGenerationError(err);
-      if (!handled) {
+      if (!handled && mountedRef.current) {
         setError("图片生成失败，请重试或更换模型。");
       }
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
       updateImageGeneratorElement(excalidrawApi, elementId, {
         status: "error",
         errorMessage: "生成失败",

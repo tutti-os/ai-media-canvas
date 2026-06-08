@@ -11,6 +11,8 @@ import { GenerationError } from "../utils.js";
 const ICON_AGNES = "https://agnes-cdn.kiwiar.com/logo/agnes-icon-400x400.jpg";
 const DEFAULT_FRAME_RATE = 24;
 const DEFAULT_AGNES_MEDIA_TTL = "1h" as const;
+const AGNES_VIDEO_POLL_INTERVAL_SECONDS = 10;
+const AGNES_VIDEO_POLL_TIMEOUT_SECONDS = 1_800;
 const AGNES_VIDEO_MODEL_IDS = ["agnes-video-v2.0"] as const;
 const AGNES_VIDEO_ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const MAX_AGNES_NUM_FRAMES = 441;
@@ -262,8 +264,8 @@ export class AgnesVideoProvider implements VideoProvider {
               });
 
       const result = await this.client.video.poll(task.taskId, {
-        intervalSeconds: 3,
-        timeoutSeconds: 600,
+        intervalSeconds: AGNES_VIDEO_POLL_INTERVAL_SECONDS,
+        timeoutSeconds: AGNES_VIDEO_POLL_TIMEOUT_SECONDS,
       });
 
       return {
@@ -276,6 +278,13 @@ export class AgnesVideoProvider implements VideoProvider {
       };
     } catch (error) {
       if (error instanceof GenerationError) throw error;
+      if (isAgnesPollTimeoutError(error)) {
+        throw new GenerationError(
+          this.name,
+          "poll_timeout",
+          "Agnes video polling timed out after the remote task was created.",
+        );
+      }
       throw new GenerationError(
         this.name,
         "api_error",
@@ -283,4 +292,13 @@ export class AgnesVideoProvider implements VideoProvider {
       );
     }
   }
+}
+
+function isAgnesPollTimeoutError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "POLL_TIMEOUT"
+  );
 }

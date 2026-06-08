@@ -69,8 +69,8 @@ describe("AgnesVideoProvider", () => {
       frameRate: 24,
     });
     expect(videoPollMock).toHaveBeenCalledWith("task_123", {
-      intervalSeconds: 3,
-      timeoutSeconds: 600,
+      intervalSeconds: 10,
+      timeoutSeconds: 1_800,
     });
     expect(result).toMatchObject({
       url: "https://cdn.agnes.example/generated.mp4",
@@ -269,6 +269,27 @@ describe("AgnesVideoProvider", () => {
       numFrames: 97,
       frameRate: 24,
       ttl: "1h",
+    });
+  });
+
+  it("maps Agnes poll timeouts to a non-duplicateable provider timeout", async () => {
+    const provider = new AgnesVideoProvider("agnes-test-key");
+    videoPollMock.mockRejectedValueOnce(
+      Object.assign(new Error("Agnes video polling timed out."), {
+        code: "POLL_TIMEOUT",
+      }),
+    );
+
+    await expect(
+      provider.generate({
+        prompt: "A long-running queued video",
+        model: "agnes-video/agnes-video-v2.0",
+        aspectRatio: "16:9",
+        resolution: "720p",
+      }),
+    ).rejects.toMatchObject({
+      code: "poll_timeout",
+      provider: "agnes-video",
     });
   });
 });

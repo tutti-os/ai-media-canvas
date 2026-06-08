@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { loadWorkspaceSkills } from "../agent/workspace-skills.js";
 import { createLocalStore } from "./store.js";
+import { createLocalUserClient } from "./user-client.js";
 
 const tempDirs: string[] = [];
 
@@ -620,6 +622,33 @@ Help the assistant break an idea into storyboard beats.
 
     expect(store.uninstallSkill(imported!.id)).toBe(true);
     expect(store.getSkillDetail(imported!.id)).toBeNull();
+  });
+
+  it("exposes enabled local skills through the workspace skills query path", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = store.createProject({ name: "Local Agent Skills" });
+    const client = createLocalUserClient(store);
+
+    const workspaceSkills = await loadWorkspaceSkills(
+      client as never,
+      project.primaryCanvas.id,
+    );
+
+    expect(workspaceSkills).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "canvas-director",
+          path: "/workspace-skills/canvas-director/SKILL.md",
+          content: expect.stringContaining("Inspect the real element bounds"),
+        }),
+      ]),
+    );
   });
 
   it("persists local workspace model and provider settings across store reloads", () => {

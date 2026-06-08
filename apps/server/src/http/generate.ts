@@ -52,8 +52,8 @@ const generateVideoRequestSchema = z.object({
   threadId: z.string().optional(),
 });
 
-const VIDEO_GENERATION_POLL_INTERVAL_MS = 1_000;
-const VIDEO_GENERATION_MAX_WAIT_MS = 650_000;
+const VIDEO_GENERATION_POLL_INTERVAL_MS = 10_000;
+const VIDEO_GENERATION_MAX_WAIT_MS = 1_950_000;
 
 export async function registerGenerateRoutes(
   app: FastifyInstance,

@@ -6,7 +6,7 @@ import type { SkillCategory } from "@aimc/shared";
 
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast";
-import { ApiApplicationError } from "@/lib/server-api";
+import { ApiApplicationError } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
 
 const CATEGORY_OPTIONS: Array<{ value: SkillCategory; label: string }> = [

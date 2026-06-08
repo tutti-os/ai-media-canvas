@@ -75,6 +75,7 @@ export function isRetryableVideoGenerationError(error: unknown) {
         "invalid_input",
         "input_fetch_error",
         "safety_filter",
+        "poll_timeout",
       ].includes(error.code)
     : true;
 }
