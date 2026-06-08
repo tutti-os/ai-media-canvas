@@ -64,6 +64,7 @@ export interface VideoGenerateParams {
   numFrames?: number;
   /** Enable audio generation (only supported by some providers). */
   enableAudio?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 export interface GeneratedVideo {
@@ -78,6 +79,10 @@ export interface VideoProvider {
   readonly name: string;
   readonly models: readonly VideoModelInfo[];
   generate(params: VideoGenerateParams): Promise<GeneratedVideo>;
+  resume?(
+    remoteTaskId: string,
+    params: VideoGenerateParams,
+  ): Promise<GeneratedVideo>;
 }
 
 /** Extended model info with video-specific capabilities metadata. */

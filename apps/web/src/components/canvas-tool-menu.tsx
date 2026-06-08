@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   ArrowUpRight,
   Circle,
   Hand,
@@ -76,6 +77,17 @@ const TOOL_GROUPS: (ToolType | null)[] = [
   null,
   "text",
 ];
+
+type GeneratorOverlayItem = {
+  id: string;
+  screenX: number;
+  screenY: number;
+  screenW: number;
+  screenH: number;
+  zoom: number;
+  model?: string;
+  errorMessage?: string;
+};
 
 const TOOL_ICONS: Record<ToolType, React.ComponentType<{ className?: string }>> = {
   hand: Hand,
@@ -163,6 +175,51 @@ function generateRecoveryFileId(): string {
   ).slice(0, 20);
 }
 
+function getGeneratorOverlayRadius(width: number, height: number) {
+  return Math.max(6, Math.min(32, Math.min(width, height) * 0.08));
+}
+const GENERATOR_OVERLAY_BLEED = 2;
+const GENERATOR_DEFAULT_STYLE = {
+  backgroundColor: "#F3F4F6",
+  strokeColor: "#D1D5DB",
+};
+const GENERATOR_ERROR_STYLE = {
+  backgroundColor: "#FDECEE",
+  strokeColor: "#FCA5A5",
+};
+
+function getGeneratorElementStyle(status: unknown) {
+  return status === "error" ? GENERATOR_ERROR_STYLE : GENERATOR_DEFAULT_STYLE;
+}
+
+function normalizeGeneratorElementStyles(elements: readonly any[]) {
+  let changed = false;
+  const normalized = elements.map((element: any) => {
+    if (
+      element.isDeleted ||
+      (!isImageGeneratorElement(element) && !isVideoGeneratorElement(element))
+    ) {
+      return element;
+    }
+    const style = getGeneratorElementStyle(element.customData?.status);
+    if (
+      element.strokeColor === style.strokeColor &&
+      element.backgroundColor === style.backgroundColor
+    ) {
+      return element;
+    }
+    changed = true;
+    return {
+      ...element,
+      ...style,
+      version: ((element.version as number | undefined) ?? 1) + 1,
+      versionNonce: Math.floor(Math.random() * 2_000_000_000),
+      updated: Date.now(),
+    };
+  });
+  return changed ? normalized : null;
+}
+
 /** Memoized shimmer overlay for a single generating element */
 const GeneratingOverlay = memo(function GeneratingOverlay({
   id,
@@ -171,44 +228,60 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
   screenW,
   screenH,
   model,
+  zoom,
 }: {
   id: string;
   screenX: number;
   screenY: number;
   screenW: number;
   screenH: number;
+  zoom: number;
   model?: string;
 }) {
+  const contentScale = Math.min(1, Math.max(0.25, zoom));
+  const showIcon = screenH >= 56 && screenW >= 72;
+  const borderRadius = getGeneratorOverlayRadius(screenW, screenH);
   return (
     <div
       key={id}
-      className="pointer-events-none fixed overflow-hidden rounded-lg"
+      className="pointer-events-none fixed overflow-hidden"
       style={{
-        left: screenX,
-        top: screenY,
-        width: screenW,
-        height: screenH,
+        left: screenX - GENERATOR_OVERLAY_BLEED,
+        top: screenY - GENERATOR_OVERLAY_BLEED,
+        width: screenW + GENERATOR_OVERLAY_BLEED * 2,
+        height: screenH + GENERATOR_OVERLAY_BLEED * 2,
+        borderRadius: borderRadius + GENERATOR_OVERLAY_BLEED,
         // Keep generation shimmer above canvas content, but below app chrome
         // such as the chat sidebar, top bar, and floating shell UI.
         zIndex: 10,
       }}
     >
-      <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted">
-        <svg
-          className="h-12 w-12 text-muted-foreground/40"
-          viewBox="0 0 24 24"
-          fill="currentColor"
+      <div
+        className="absolute inset-0 flex flex-col items-center justify-center bg-muted"
+        style={{ borderRadius: borderRadius + GENERATOR_OVERLAY_BLEED }}
+      >
+        <div
+          className="flex flex-col items-center justify-center"
+          style={{ transform: `scale(${contentScale})` }}
         >
-          <path d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
-        </svg>
-        {model && (
-          <span className="mt-2 rounded-full bg-foreground/5 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+        {showIcon && (
+          <svg
+            className="h-12 w-12 text-muted-foreground/40"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <path d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+          </svg>
+        )}
+        {showIcon && model && (
+          <span className="mt-2 whitespace-nowrap rounded-full bg-foreground/5 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
             {model.split("/").pop()?.split("-").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
           </span>
         )}
-        <span className="mt-1 text-[11px] text-muted-foreground">
+        <span className={`${showIcon ? "mt-1" : "mt-0"} whitespace-nowrap text-[11px] text-muted-foreground`}>
           Generating...
         </span>
+        </div>
       </div>
       <div className="absolute inset-0 animate-shimmer-scan">
         <div
@@ -218,6 +291,53 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
               "linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)",
           }}
         />
+      </div>
+    </div>
+  );
+});
+
+const GeneratorErrorOverlay = memo(function GeneratorErrorOverlay({
+  id,
+  screenX,
+  screenY,
+  screenW,
+  screenH,
+  zoom,
+  errorMessage,
+}: GeneratorOverlayItem) {
+  const contentScale = Math.min(1, Math.max(0.25, zoom));
+  const showIcon = screenH >= 48 && screenW >= 72;
+  const borderRadius = getGeneratorOverlayRadius(screenW, screenH);
+  return (
+    <div
+      key={id}
+      className="pointer-events-none fixed overflow-hidden"
+      style={{
+        left: screenX - GENERATOR_OVERLAY_BLEED,
+        top: screenY - GENERATOR_OVERLAY_BLEED,
+        width: screenW + GENERATOR_OVERLAY_BLEED * 2,
+        height: screenH + GENERATOR_OVERLAY_BLEED * 2,
+        borderRadius: borderRadius + GENERATOR_OVERLAY_BLEED,
+        zIndex: 10,
+      }}
+    >
+      <div
+        className="absolute flex items-center justify-center px-2 text-center"
+        style={{
+          inset: 0,
+          borderRadius: borderRadius + GENERATOR_OVERLAY_BLEED,
+          backgroundColor: GENERATOR_ERROR_STYLE.backgroundColor,
+        }}
+      >
+        <div
+          className="flex flex-col items-center justify-center"
+          style={{ transform: `scale(${contentScale})` }}
+        >
+          {showIcon && <AlertTriangle className="h-7 w-7 text-destructive/80" />}
+          <span className={`${showIcon ? "mt-2" : "mt-0"} whitespace-nowrap rounded-full bg-background/85 px-2.5 py-1 text-[11px] font-medium text-destructive shadow-sm`}>
+            {errorMessage || "生成失败"}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -274,15 +394,9 @@ export function CanvasToolMenu({
 
   // Track generating elements for shimmer overlay
   const [generatingElements, setGeneratingElements] = useState<
-    Array<{
-      id: string;
-      screenX: number;
-      screenY: number;
-      screenW: number;
-      screenH: number;
-      model?: string;
-    }>
+    GeneratorOverlayItem[]
   >([]);
+  const [errorElements, setErrorElements] = useState<GeneratorOverlayItem[]>([]);
 
   // Keep activeGeneratorId accessible inside onChange without causing re-subscription
   const activeGeneratorIdRef = useRef(activeGeneratorId);
@@ -294,6 +408,7 @@ export function CanvasToolMenu({
 
   // Track previous generating element IDs to avoid re-renders when nothing changed
   const prevGeneratingKeyRef = useRef("");
+  const prevErrorKeyRef = useRef("");
   const didInitialRecoveryScanRef = useRef(false);
   const recoverySubscriptionsRef = useRef<GenerationJobSubscription[]>([]);
 
@@ -451,6 +566,8 @@ export function CanvasToolMenu({
         }
         return {
           ...item,
+          strokeColor: "#FCA5A5",
+          backgroundColor: "#FDECEE",
           customData: {
             ...item.customData,
             status: "error",
@@ -528,6 +645,42 @@ export function CanvasToolMenu({
     };
   }, [excalidrawApi, recoverInitialGeneratingJobs]);
 
+  useEffect(() => {
+    if (!excalidrawApi) return;
+    const normalized = normalizeGeneratorElementStyles(
+      excalidrawApi.getSceneElements(),
+    );
+    if (normalized) {
+      excalidrawApi.updateScene({
+        elements: normalized,
+        captureUpdate: "IMMEDIATELY",
+      });
+    }
+    const { scrollX, scrollY, zoom } = excalidrawApi.getAppState();
+    const errorRaw = excalidrawApi.getSceneElements().filter(
+      (el: any) =>
+        !el.isDeleted &&
+        (isImageGeneratorElement(el) || isVideoGeneratorElement(el)) &&
+        el.customData?.status === "error",
+    );
+    prevErrorKeyRef.current = errorRaw.map((el: any) =>
+      `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${el.customData?.errorMessage ?? ""}`
+    ).join("|") + `@${scrollX}:${scrollY}:${zoom}`;
+    setErrorElements(
+      errorRaw.map((el: any) => ({
+        id: el.id as string,
+        screenX: ((el.x as number) + scrollX) * zoom,
+        screenY: ((el.y as number) + scrollY) * zoom,
+        screenW: (el.width as number) * zoom,
+        screenH: (el.height as number) * zoom,
+        zoom,
+        ...(typeof el.customData?.errorMessage === "string"
+          ? { errorMessage: el.customData.errorMessage }
+          : {}),
+      })),
+    );
+  }, [excalidrawApi]);
+
   // Subscribe to Excalidraw changes.
   // This fires on every frame during drag / drawing, so we must be very
   // careful to avoid unnecessary state updates that trigger re-renders.
@@ -536,6 +689,14 @@ export function CanvasToolMenu({
 
     const unsubscribe = excalidrawApi.onChange(
       (elements: any[], appState: any) => {
+        const normalized = normalizeGeneratorElementStyles(elements);
+        if (normalized) {
+          excalidrawApi.updateScene({
+            elements: normalized,
+            captureUpdate: "IMMEDIATELY",
+          });
+          return;
+        }
         recoverInitialGeneratingJobs(elements);
 
         // --- Tool sync (cheap string comparison, skip if unchanged) ---
@@ -650,13 +811,18 @@ export function CanvasToolMenu({
           }
         }
 
-        // --- Generating elements shimmer overlay ---
-        // Build a stable key so we skip setState when the generating set is unchanged.
-        const generatingRaw = elements.filter(
+        // --- Generator status overlays ---
+        // Build stable keys so we skip setState when overlay sets are unchanged.
+        const generatorRaw = elements.filter(
           (el: any) =>
             !el.isDeleted &&
-            (isImageGeneratorElement(el) || isVideoGeneratorElement(el)) &&
-            el.customData?.status === "generating",
+            (isImageGeneratorElement(el) || isVideoGeneratorElement(el)),
+        );
+        const generatingRaw = generatorRaw.filter(
+          (el: any) => el.customData?.status === "generating",
+        );
+        const errorRaw = generatorRaw.filter(
+          (el: any) => el.customData?.status === "error",
         );
 
         // Include viewport state as well, because the shimmer overlay is
@@ -674,9 +840,30 @@ export function CanvasToolMenu({
             screenY: ((el.y as number) + scrollY) * zoom,
             screenW: (el.width as number) * zoom,
             screenH: (el.height as number) * zoom,
+            zoom,
             ...(el.customData?.model ? { model: el.customData.model as string } : {}),
           }));
           setGeneratingElements(generating);
+        }
+
+        const errorKey = errorRaw.map((el: any) =>
+          `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${el.customData?.errorMessage ?? ""}`
+        ).join("|") + `@${scrollX}:${scrollY}:${zoom}`;
+
+        if (errorKey !== prevErrorKeyRef.current) {
+          prevErrorKeyRef.current = errorKey;
+          const errored = errorRaw.map((el: any) => ({
+            id: el.id as string,
+            screenX: ((el.x as number) + scrollX) * zoom,
+            screenY: ((el.y as number) + scrollY) * zoom,
+            screenW: (el.width as number) * zoom,
+            screenH: (el.height as number) * zoom,
+            zoom,
+            ...(typeof el.customData?.errorMessage === "string"
+              ? { errorMessage: el.customData.errorMessage }
+              : {}),
+          }));
+          setErrorElements(errored);
         }
       },
     );
@@ -865,6 +1052,16 @@ export function CanvasToolMenu({
           <>
             {generatingElements.map((el) => (
               <GeneratingOverlay key={el.id} {...el} />
+            ))}
+          </>,
+          document.body,
+        )}
+
+      {errorElements.length > 0 &&
+        createPortal(
+          <>
+            {errorElements.map((el) => (
+              <GeneratorErrorOverlay key={el.id} {...el} />
             ))}
           </>,
           document.body,

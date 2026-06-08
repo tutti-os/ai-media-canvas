@@ -129,6 +129,43 @@ describe("createLocalStore", () => {
     expect(row?.completed_at).toEqual(expect.any(String));
   });
 
+  it("reclaims stale running background jobs without incrementing attempts", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const project = store.createProject({ name: "Stale Jobs" });
+    const job = store.createBackgroundJob({
+      jobType: "video_generation",
+      queueName: "video_generation_jobs",
+      projectId: project.id,
+      payload: {
+        prompt: "A long running video",
+        model: "agnes-video/agnes-video-v2.0",
+      },
+    });
+
+    const [firstClaim] = store.claimBackgroundJobs({
+      workerId: "worker-old",
+      limit: 1,
+    });
+    expect(firstClaim?.id).toBe(job.id);
+    expect(firstClaim?.attempt_count).toBe(1);
+
+    const [reclaimed] = store.claimBackgroundJobs({
+      workerId: "worker-new",
+      limit: 1,
+      staleAfterMs: 0,
+    });
+
+    expect(reclaimed?.id).toBe(job.id);
+    expect(reclaimed?.attempt_count).toBe(1);
+  });
+
   it("updates assistant anchors and persists agent run events", () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
     tempDirs.push(dataRoot);

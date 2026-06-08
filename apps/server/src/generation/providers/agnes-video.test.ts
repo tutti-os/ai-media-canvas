@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { videoGenerateMock, videoPollMock, createAgnesClientMock } =
+const { fetchMock, videoGenerateMock, videoPollMock, createAgnesClientMock } =
   vi.hoisted(() => {
+    const fetchMock = vi.fn();
     const videoGenerateMock = vi.fn();
     const videoPollMock = vi.fn();
     const createAgnesClientMock = vi.fn(() => ({
@@ -10,7 +11,7 @@ const { videoGenerateMock, videoPollMock, createAgnesClientMock } =
         poll: videoPollMock,
       },
     }));
-    return { videoGenerateMock, videoPollMock, createAgnesClientMock };
+    return { fetchMock, videoGenerateMock, videoPollMock, createAgnesClientMock };
   });
 
 vi.mock("agnes-ai-cli", () => ({
@@ -23,6 +24,8 @@ describe("AgnesVideoProvider", () => {
   beforeEach(() => {
     videoGenerateMock.mockReset();
     videoPollMock.mockReset();
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
     createAgnesClientMock.mockClear();
     videoGenerateMock.mockResolvedValue({
       ok: true,
@@ -40,6 +43,18 @@ describe("AgnesVideoProvider", () => {
       seconds: 5,
       raw: {},
     });
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "task_123",
+          object: "video",
+          status: "completed",
+          video_url: "https://cdn.agnes.example/generated.mp4",
+          seconds: "5.0",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
   });
 
   it("maps prompt-only requests to Agnes text2video mode", async () => {
@@ -68,10 +83,14 @@ describe("AgnesVideoProvider", () => {
       numFrames: 121,
       frameRate: 24,
     });
-    expect(videoPollMock).toHaveBeenCalledWith("task_123", {
-      intervalSeconds: 10,
-      timeoutSeconds: 1_800,
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://agnes.example/v1/videos/task_123",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer agnes-test-key",
+        }),
+      }),
+    );
     expect(result).toMatchObject({
       url: "https://cdn.agnes.example/generated.mp4",
       mimeType: "video/mp4",
@@ -272,12 +291,66 @@ describe("AgnesVideoProvider", () => {
     });
   });
 
-  it("maps Agnes poll timeouts to a non-duplicateable provider timeout", async () => {
+  it("keeps polling queued Agnes tasks instead of using the SDK timeout", async () => {
     const provider = new AgnesVideoProvider("agnes-test-key");
-    videoPollMock.mockRejectedValueOnce(
-      Object.assign(new Error("Agnes video polling timed out."), {
-        code: "POLL_TIMEOUT",
-      }),
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "task_123",
+            object: "video",
+            status: "queued",
+            progress: 0,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "task_123",
+            object: "video",
+            status: "completed",
+            video_url: "https://cdn.agnes.example/generated.mp4",
+            seconds: "5.0",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    vi.useFakeTimers();
+
+    const resultPromise = provider.generate({
+      prompt: "A long-running queued video",
+      model: "agnes-video/agnes-video-v2.0",
+      aspectRatio: "16:9",
+      resolution: "720p",
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    const result = await resultPromise;
+
+    expect(videoPollMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.url).toBe("https://cdn.agnes.example/generated.mp4");
+    vi.useRealTimers();
+  });
+
+  it("reports provider failures from Agnes task polling", async () => {
+    const provider = new AgnesVideoProvider("agnes-test-key");
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          id: "task_123",
+          object: "video",
+          status: "failed",
+          error: {
+            message: "Remote generation failed.",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
     );
 
     await expect(
@@ -288,7 +361,8 @@ describe("AgnesVideoProvider", () => {
         resolution: "720p",
       }),
     ).rejects.toMatchObject({
-      code: "poll_timeout",
+      code: "api_error",
+      message: "Remote generation failed.",
       provider: "agnes-video",
     });
   });

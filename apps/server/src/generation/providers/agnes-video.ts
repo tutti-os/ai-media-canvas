@@ -10,15 +10,42 @@ import { GenerationError } from "../utils.js";
 
 const ICON_AGNES = "https://agnes-cdn.kiwiar.com/logo/agnes-icon-400x400.jpg";
 const DEFAULT_FRAME_RATE = 24;
+const DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
 const DEFAULT_AGNES_MEDIA_TTL = "1h" as const;
 const AGNES_VIDEO_POLL_INTERVAL_SECONDS = 10;
-const AGNES_VIDEO_POLL_TIMEOUT_SECONDS = 1_800;
+const AGNES_VIDEO_POLL_TIMEOUT_SECONDS = 7_200;
 const AGNES_VIDEO_MODEL_IDS = ["agnes-video-v2.0"] as const;
 const AGNES_VIDEO_ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const MAX_AGNES_NUM_FRAMES = 441;
 type AgnesVideoModelId = (typeof AGNES_VIDEO_MODEL_IDS)[number];
 type AgnesVideoAspectRatio = (typeof AGNES_VIDEO_ASPECT_RATIOS)[number];
 type AgnesVideoResolution = "480p" | "720p" | "1080p";
+type AgnesRemoteTaskMetadata = {
+  onRemoteTaskCreated?: (task: {
+    provider: string;
+    taskId: string;
+    status?: string;
+    raw?: unknown;
+  }) => void | Promise<void>;
+  onRemoteTaskStatus?: (task: {
+    provider: string;
+    taskId: string;
+    status?: string;
+    raw?: unknown;
+  }) => void | Promise<void>;
+};
+type AgnesVideoTaskResponse = {
+  completed_at?: number | string | null;
+  error?: unknown;
+  id?: string;
+  progress?: number;
+  raw?: unknown;
+  seconds?: number | string | null;
+  status?: string;
+  url?: string;
+  video_url?: string;
+  videoUrl?: string;
+};
 
 const AGNES_VIDEO_MODELS: readonly VideoModelInfo[] = [
   {
@@ -181,12 +208,58 @@ function resolveAgnesVideoMode(params: VideoGenerateParams) {
   return "multivideo" as const;
 }
 
+function getAgnesRemoteTaskMetadata(
+  params: VideoGenerateParams,
+): AgnesRemoteTaskMetadata {
+  return params.metadata ?? {};
+}
+
+function resolveAgnesVideoRequest(params: VideoGenerateParams) {
+  if (params.inputVideo) {
+    throw new GenerationError(
+      "agnes-video",
+      "invalid_input",
+      "Agnes video does not support inputVideo in AIMC yet.",
+    );
+  }
+
+  const aspectRatio = resolveAgnesAspectRatio(params.aspectRatio);
+  const resolution = resolveAgnesResolution(
+    params.resolution as VideoGenerateParams["resolution"] | "4k" | undefined,
+  );
+  const { width, height } = getVideoDimensions(resolution, aspectRatio);
+  const frameRate = resolveAgnesFrameRate(params.frameRate);
+  const durationSeconds = params.duration ?? 5;
+  const numFrames = resolveAgnesNumFrames(
+    durationSeconds,
+    frameRate,
+    params.numFrames,
+  );
+  const inputImages = params.inputImages ?? [];
+  const mode = resolveAgnesVideoMode(params);
+  resolveAgnesVideoModel(params.model);
+
+  return {
+    durationSeconds,
+    frameRate,
+    height,
+    inputImages,
+    mode,
+    numFrames,
+    width,
+  };
+}
+
 export class AgnesVideoProvider implements VideoProvider {
   readonly name = "agnes-video";
   readonly models = AGNES_VIDEO_MODELS;
   private client: ReturnType<typeof createAgnesClient>;
+  private apiKey: string;
+  private baseUrl: string;
 
   constructor(apiKey: string, baseUrl?: string) {
+    this.apiKey = apiKey;
+    this.baseUrl = (baseUrl ?? DEFAULT_AGNES_BASE_URL).replace(/\/$/, "");
     this.client = createAgnesClient({
       apiKey,
       ...(baseUrl ? { baseUrl } : {}),
@@ -194,54 +267,33 @@ export class AgnesVideoProvider implements VideoProvider {
   }
 
   async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {
-    if (params.inputVideo) {
-      throw new GenerationError(
-        this.name,
-        "invalid_input",
-        "Agnes video does not support inputVideo in AIMC yet.",
-      );
-    }
-
-    const aspectRatio = resolveAgnesAspectRatio(params.aspectRatio);
-    const resolution = resolveAgnesResolution(
-      params.resolution as VideoGenerateParams["resolution"] | "4k" | undefined,
-    );
-    const { width, height } = getVideoDimensions(resolution, aspectRatio);
-    const frameRate = resolveAgnesFrameRate(params.frameRate);
-    const durationSeconds = params.duration ?? 5;
-    const numFrames = resolveAgnesNumFrames(
-      durationSeconds,
-      frameRate,
-      params.numFrames,
-    );
-    const inputImages = params.inputImages ?? [];
-    const mode = resolveAgnesVideoMode(params);
-    resolveAgnesVideoModel(params.model);
+    const request = resolveAgnesVideoRequest(params);
+    const metadata = getAgnesRemoteTaskMetadata(params);
 
     try {
       const task =
-        mode === "text2video"
+        request.mode === "text2video"
           ? await this.client.video.generate({
-              mode,
+              mode: request.mode,
               prompt: params.prompt,
-              width,
-              height,
-              numFrames,
-              frameRate,
+              width: request.width,
+              height: request.height,
+              numFrames: request.numFrames,
+              frameRate: request.frameRate,
               ...(params.seed !== undefined ? { seed: params.seed } : {}),
               ...(params.negativePrompt
                 ? { negativePrompt: params.negativePrompt }
                 : {}),
             })
-          : mode === "img2video"
+          : request.mode === "img2video"
             ? await this.client.video.generate({
-                mode,
-                image: inputImages[0]!,
+                mode: request.mode,
+                image: request.inputImages[0]!,
                 prompt: params.prompt,
-                width,
-                height,
-                numFrames,
-                frameRate,
+                width: request.width,
+                height: request.height,
+                numFrames: request.numFrames,
+                frameRate: request.frameRate,
                 ttl: DEFAULT_AGNES_MEDIA_TTL,
                 ...(params.seed !== undefined ? { seed: params.seed } : {}),
                 ...(params.negativePrompt
@@ -249,13 +301,13 @@ export class AgnesVideoProvider implements VideoProvider {
                   : {}),
               })
             : await this.client.video.generate({
-                mode,
-                images: inputImages,
+                mode: request.mode,
+                images: request.inputImages,
                 prompt: params.prompt,
-                width,
-                height,
-                numFrames,
-                frameRate,
+                width: request.width,
+                height: request.height,
+                numFrames: request.numFrames,
+                frameRate: request.frameRate,
                 ttl: DEFAULT_AGNES_MEDIA_TTL,
                 ...(params.seed !== undefined ? { seed: params.seed } : {}),
                 ...(params.negativePrompt
@@ -263,19 +315,14 @@ export class AgnesVideoProvider implements VideoProvider {
                   : {}),
               });
 
-      const result = await this.client.video.poll(task.taskId, {
-        intervalSeconds: AGNES_VIDEO_POLL_INTERVAL_SECONDS,
-        timeoutSeconds: AGNES_VIDEO_POLL_TIMEOUT_SECONDS,
+      await metadata.onRemoteTaskCreated?.({
+        provider: this.name,
+        taskId: task.taskId,
+        ...(typeof task.status === "string" ? { status: task.status } : {}),
+        raw: task.raw,
       });
 
-      return {
-        url: result.videoUrl,
-        mimeType: "video/mp4",
-        width,
-        height,
-        durationSeconds:
-          result.seconds ?? durationSeconds ?? Math.round((numFrames - 1) / frameRate),
-      };
+      return await this.pollTask(task.taskId, request, metadata);
     } catch (error) {
       if (error instanceof GenerationError) throw error;
       if (isAgnesPollTimeoutError(error)) {
@@ -292,6 +339,163 @@ export class AgnesVideoProvider implements VideoProvider {
       );
     }
   }
+
+  async resume(
+    remoteTaskId: string,
+    params: VideoGenerateParams,
+  ): Promise<GeneratedVideo> {
+    const request = resolveAgnesVideoRequest(params);
+    const metadata = getAgnesRemoteTaskMetadata(params);
+    try {
+      return await this.pollTask(remoteTaskId, request, metadata);
+    } catch (error) {
+      if (error instanceof GenerationError) throw error;
+      if (isAgnesPollTimeoutError(error)) {
+        throw new GenerationError(
+          this.name,
+          "poll_timeout",
+          "Agnes video polling timed out after the remote task was created.",
+        );
+      }
+      throw new GenerationError(
+        this.name,
+        "api_error",
+        error instanceof Error ? error.message : "Unknown Agnes video error",
+      );
+    }
+  }
+
+  private async pollTask(
+    taskId: string,
+    request: ReturnType<typeof resolveAgnesVideoRequest>,
+    metadata: AgnesRemoteTaskMetadata,
+  ): Promise<GeneratedVideo> {
+    const startedAt = Date.now();
+
+    for (;;) {
+      const task = await this.fetchVideoTask(taskId);
+      const status = normalizeAgnesVideoStatus(task.status);
+      await metadata.onRemoteTaskStatus?.({
+        provider: this.name,
+        taskId,
+        ...(status ? { status } : {}),
+        raw: task.raw ?? task,
+      });
+
+      if (status === "completed" || task.completed_at) {
+        const videoUrl = task.video_url ?? task.videoUrl ?? task.url;
+        if (!videoUrl) {
+          throw new GenerationError(
+            this.name,
+            "api_error",
+            "Agnes video task completed without a video URL.",
+          );
+        }
+        return {
+          url: videoUrl,
+          mimeType: "video/mp4",
+          width: request.width,
+          height: request.height,
+          durationSeconds:
+            coerceSeconds(task.seconds) ??
+            request.durationSeconds ??
+            Math.round((request.numFrames - 1) / request.frameRate),
+        };
+      }
+
+      if (status === "failed" || status === "canceled") {
+        throw new GenerationError(
+          this.name,
+          status === "canceled" ? "canceled" : "api_error",
+          getAgnesTaskErrorMessage(task.error, status),
+        );
+      }
+
+      if (
+        Date.now() - startedAt >=
+        AGNES_VIDEO_POLL_TIMEOUT_SECONDS * 1_000
+      ) {
+        throw new GenerationError(
+          this.name,
+          "poll_timeout",
+          `Agnes video task ${taskId} did not finish within ${AGNES_VIDEO_POLL_TIMEOUT_SECONDS} seconds.`,
+        );
+      }
+
+      await delay(AGNES_VIDEO_POLL_INTERVAL_SECONDS * 1_000);
+    }
+  }
+
+  private async fetchVideoTask(taskId: string): Promise<AgnesVideoTaskResponse> {
+    const response = await fetch(
+      `${this.baseUrl}/videos/${encodeURIComponent(taskId)}`,
+      {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+      },
+    );
+    const text = await response.text();
+    const body = parseAgnesJson(text);
+    if (!response.ok) {
+      throw new GenerationError(
+        this.name,
+        "api_error",
+        getAgnesTaskErrorMessage(
+          typeof body === "object" && body !== null && "error" in body
+            ? (body as { error?: unknown }).error
+            : body,
+          `HTTP ${response.status}`,
+        ),
+      );
+    }
+    return typeof body === "object" && body !== null
+      ? (body as AgnesVideoTaskResponse)
+      : { raw: body };
+  }
+}
+
+function normalizeAgnesVideoStatus(status: string | undefined) {
+  if (!status) return undefined;
+  const normalized = status.toLowerCase();
+  if (normalized === "succeeded") return "completed";
+  if (normalized === "cancelled") return "canceled";
+  return normalized;
+}
+
+function parseAgnesJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function coerceSeconds(seconds: number | string | null | undefined) {
+  if (typeof seconds === "number") return seconds;
+  if (typeof seconds === "string") {
+    const parsed = Number(seconds);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function getAgnesTaskErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === "string" && error.trim()) return error;
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof (error as { message?: unknown }).message === "string"
+  ) {
+    return (error as { message: string }).message;
+  }
+  return `Agnes video task ${fallback}.`;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isAgnesPollTimeoutError(error: unknown) {

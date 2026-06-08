@@ -3,10 +3,13 @@ import type { BackgroundJob, VideoGenerationPayload } from "@aimc/shared";
 import type { ServerEnv } from "../../../config/env.js";
 import { refreshGenerationProviders } from "../../settings/settings-service.js";
 import { loadGeneratedAsset } from "../../../generation/generated-asset.js";
-import { generateVideo } from "../../../generation/video-generation.js";
-import { resolveVideoProviderName } from "../../../generation/providers/registry.js";
+import {
+  getVideoProvider,
+  resolveVideoProviderName,
+} from "../../../generation/providers/registry.js";
 import { GenerationError } from "../../../generation/utils.js";
 import type { LocalStore } from "../../../local/store.js";
+import type { VideoGenerateParams } from "../../../generation/types.js";
 
 const DEFAULT_VIDEO_MODEL = "google-official/veo-3.1-generate-preview";
 
@@ -21,7 +24,8 @@ export async function executeVideoGenerationJob(
   const payload = job.payload as VideoGenerationPayload;
   const model = payload.model ?? DEFAULT_VIDEO_MODEL;
   const provider = resolveVideoProviderName(model);
-  const generated = await generateVideo(provider, {
+  const videoProvider = getVideoProvider(provider);
+  const videoParams: VideoGenerateParams = {
     prompt: payload.prompt,
     model,
     ...(payload.duration ? { duration: payload.duration } : {}),
@@ -43,7 +47,47 @@ export async function executeVideoGenerationJob(
     ...(payload.enable_audio !== undefined
       ? { enableAudio: payload.enable_audio }
       : {}),
-  });
+    metadata: {
+      async onRemoteTaskCreated(task: {
+        provider?: string;
+        taskId: string;
+        status?: string;
+      }) {
+        console.info("[aimc-worker] video remote task created", {
+          jobId: job.id,
+          provider: task.provider ?? provider,
+          status: task.status ?? null,
+          taskId: task.taskId,
+        });
+        store.updateBackgroundJobRemote(job.id, {
+          remoteProvider: task.provider ?? provider,
+          remoteTaskId: task.taskId,
+          remoteStatus: task.status ?? null,
+        });
+      },
+      async onRemoteTaskStatus(task: {
+        provider?: string;
+        taskId?: string;
+        status?: string;
+      }) {
+        console.info("[aimc-worker] video remote task status", {
+          jobId: job.id,
+          provider: task.provider ?? provider,
+          status: task.status ?? null,
+          taskId: task.taskId ?? job.remote_task_id ?? null,
+        });
+        store.updateBackgroundJobRemote(job.id, {
+          remoteProvider: task.provider ?? provider,
+          ...(task.taskId ? { remoteTaskId: task.taskId } : {}),
+          remoteStatus: task.status ?? null,
+        });
+      },
+    },
+  };
+  const generated =
+    job.remote_task_id && videoProvider.resume
+      ? await videoProvider.resume(job.remote_task_id, videoParams)
+      : await videoProvider.generate(videoParams);
 
   const { buffer, mimeType } = await loadGeneratedAsset(
     generated.url,

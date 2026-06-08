@@ -8,6 +8,10 @@ const RATIO_DIMENSIONS: Record<string, { w: number; h: number }> = {
   "4:3": { w: 1024, h: 768 },
   "3:4": { w: 768, h: 1024 },
 };
+const IMAGE_GENERATOR_STROKE = "#D1D5DB";
+const IMAGE_GENERATOR_BACKGROUND = "#F3F4F6";
+const IMAGE_GENERATOR_ERROR_STROKE = "#FCA5A5";
+const IMAGE_GENERATOR_ERROR_BACKGROUND = "#FDECEE";
 
 export type ImageGeneratorStatus = "idle" | "generating" | "completed" | "error";
 
@@ -98,8 +102,8 @@ export function createImageGeneratorElement(
     width,
     height,
     angle: 0,
-    strokeColor: "#D1D5DB",
-    backgroundColor: "#F3F4F6",
+    strokeColor: IMAGE_GENERATOR_STROKE,
+    backgroundColor: IMAGE_GENERATOR_BACKGROUND,
     fillStyle: "solid",
     strokeWidth: 1,
     strokeStyle: "solid",
@@ -158,6 +162,14 @@ export function updateImageGeneratorElement(
     if (el.id !== elementId || !isImageGeneratorElement(el)) return el;
     return {
       ...el,
+      strokeColor:
+        updates.status === "error"
+          ? IMAGE_GENERATOR_ERROR_STROKE
+          : IMAGE_GENERATOR_STROKE,
+      backgroundColor:
+        updates.status === "error"
+          ? IMAGE_GENERATOR_ERROR_BACKGROUND
+          : IMAGE_GENERATOR_BACKGROUND,
       customData: { ...el.customData, ...updates },
       version: ((el.version as number | undefined) ?? 1) + 1,
       versionNonce: Math.floor(Math.random() * 2_000_000_000),
