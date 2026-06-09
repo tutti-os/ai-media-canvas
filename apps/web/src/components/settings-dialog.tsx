@@ -21,7 +21,7 @@ export function SettingsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         disableDefaultMaxWidth
-        className="flex w-[min(1040px,calc(100vw-1.5rem))] max-h-[90vh] max-w-[min(1040px,calc(100vw-1.5rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,calc(100vw-3rem))]"
+        className="flex h-[min(820px,calc(100vh-3rem))] w-[min(1040px,calc(100vw-1.5rem))] max-w-[min(1040px,calc(100vw-1.5rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,calc(100vw-3rem))]"
       >
         <DialogHeader className="border-b px-6 py-4">
           <DialogTitle className="text-sm font-semibold tracking-[0.18em] uppercase text-muted-foreground">
