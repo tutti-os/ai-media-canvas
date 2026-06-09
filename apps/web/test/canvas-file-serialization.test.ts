@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   prepareCanvasImageFiles,
+  resolveCanvasImageFiles,
   serializeExcalidrawFiles,
 } from "../src/lib/canvas-file-serialization";
 
@@ -82,6 +83,48 @@ describe("canvas file serialization", () => {
         created: 456,
         storageUrl: "http://127.0.0.1:3001/local-assets/file-1",
         objectPath: "generated/file-1.png",
+      },
+    });
+  });
+
+  it("resolves storage-backed files into data URLs for live canvas sync", async () => {
+    const resolved = await resolveCanvasImageFiles(
+      {
+        elements: [
+          {
+            id: "el-1",
+            type: "image",
+            fileId: "file-1",
+            status: "error",
+            customData: {
+              storageUrl: "http://127.0.0.1:3001/local-assets/file-1",
+            },
+          },
+        ],
+        appState: {},
+        files: {
+          "file-1": {
+            id: "file-1",
+            mimeType: "image/png",
+            created: 123,
+            storageUrl: "http://127.0.0.1:3001/local-assets/file-1",
+          },
+        },
+      },
+      async (url) => {
+        expect(url).toBe("http://127.0.0.1:3001/local-assets/file-1");
+        return "data:image/png;base64,abc";
+      },
+    );
+
+    expect(resolved.elements[0]).toMatchObject({ status: "saved" });
+    expect(resolved.files).toEqual({
+      "file-1": {
+        id: "file-1",
+        dataURL: "data:image/png;base64,abc",
+        mimeType: "image/png",
+        created: 123,
+        storageUrl: "http://127.0.0.1:3001/local-assets/file-1",
       },
     });
   });

@@ -16,6 +16,13 @@ type Placement = {
 type CanvasElement = Record<string, unknown>;
 
 const AUTO_PLACEMENT_GAP = 40;
+const DEFAULT_VIEWPORT = {
+  height: 720,
+  scrollX: 0,
+  scrollY: 0,
+  width: 1280,
+  zoom: 1,
+};
 
 export async function insertImageElement(
   client: CanvasClient,
@@ -35,7 +42,11 @@ export async function insertImageElement(
   const files = { ...(content.files ?? {}) };
   const display =
     placement ??
-    autoPlacement(elements, scaleToFit(input.width, input.height, 600));
+    autoPlacement(
+      elements,
+      scaleToFit(input.width, input.height, 600),
+      content.appState,
+    );
   const fileId = generateId();
   const elementId = generateId();
   const storageUrl = input.signedUrl ?? input.objectPath;
@@ -94,7 +105,11 @@ export async function insertVideoElement(
   const elements = [...(content.elements ?? [])];
   const display =
     placement ??
-    autoPlacement(elements, scaleToFit(input.width, input.height, 640));
+    autoPlacement(
+      elements,
+      scaleToFit(input.width, input.height, 640),
+      content.appState,
+    );
   const elementId = generateId();
 
   elements.push({
@@ -210,9 +225,15 @@ function scaleToFit(width: number, height: number, maxSize: number): Placement {
   };
 }
 
-function autoPlacement(elements: CanvasElement[], size: Placement): Placement {
+function autoPlacement(
+  elements: CanvasElement[],
+  size: Placement,
+  appState?: Record<string, unknown>,
+): Placement {
   const active = elements.filter((el) => !el.isDeleted);
-  if (active.length === 0) return size;
+  if (active.length === 0) {
+    return centerInViewport(size, appState) ?? size;
+  }
 
   let maxRight = Number.NEGATIVE_INFINITY;
   let centerY = 0;
@@ -229,6 +250,32 @@ function autoPlacement(elements: CanvasElement[], size: Placement): Placement {
     x: maxRight + AUTO_PLACEMENT_GAP,
     y: centerY - size.height / 2,
   };
+}
+
+function centerInViewport(
+  size: Placement,
+  appState?: Record<string, unknown>,
+): Placement | null {
+  const width = finiteNumber(appState?.width) ?? DEFAULT_VIEWPORT.width;
+  const height = finiteNumber(appState?.height) ?? DEFAULT_VIEWPORT.height;
+
+  const zoomRecord =
+    appState?.zoom && typeof appState.zoom === "object"
+      ? (appState.zoom as Record<string, unknown>)
+      : undefined;
+  const zoom = finiteNumber(zoomRecord?.value) ?? DEFAULT_VIEWPORT.zoom;
+  const scrollX = finiteNumber(appState?.scrollX) ?? DEFAULT_VIEWPORT.scrollX;
+  const scrollY = finiteNumber(appState?.scrollY) ?? DEFAULT_VIEWPORT.scrollY;
+
+  return {
+    ...size,
+    x: -scrollX + width / (2 * zoom) - size.width / 2,
+    y: -scrollY + height / (2 * zoom) - size.height / 2,
+  };
+}
+
+function finiteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function numberOrZero(value: unknown) {

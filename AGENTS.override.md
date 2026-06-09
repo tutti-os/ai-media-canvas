@@ -7,7 +7,6 @@
 - When changing a translation value in one locale, update the same namespace/key in every supported locale in `apps/web/src/i18n/locales`.
 - Run `pnpm check:i18n` before finishing any change that touches web UI copy or translation resources.
 - Do not bypass i18n checks with ignore comments unless the string is a product name, technical identifier, provider/model label, API identifier, file extension, keyboard shortcut, route name, or user-generated content.
-- Keep static export compatibility: do not introduce locale-prefixed routes or server-cookie rendering dependencies for language switching.
-<!-- subspace-session:start -->
+- Keep static export compatibility: do not introduce locale-prefixed routes or server-cookie rendering dependencies for language switching.<!-- subspace-session:start -->
 
 <!-- subspace-session:end -->

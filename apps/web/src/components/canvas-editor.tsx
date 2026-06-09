@@ -107,6 +107,18 @@ const SAVE_DEBOUNCE_MS = 1500;
 const THUMBNAIL_DEBOUNCE_MS = 10_000;
 const THUMBNAIL_MAX_SIZE = 800;
 
+function pickPersistedAppState(appState: CanvasAppState) {
+  return {
+    viewBackgroundColor: appState.viewBackgroundColor,
+    gridModeEnabled: appState.gridModeEnabled,
+    scrollX: appState.scrollX,
+    scrollY: appState.scrollY,
+    width: appState.width,
+    height: appState.height,
+    zoom: appState.zoom,
+  };
+}
+
 function isCanvasSceneElement(value: unknown): value is CanvasSceneElement {
   return Boolean(
     value &&
@@ -263,10 +275,7 @@ export function CanvasEditor({
           const appState = excalidrawApi.getAppState();
           saveCanvas(canvasIdRef.current, {
             elements: mutableElements.filter(isLiveElement),
-            appState: {
-              viewBackgroundColor: appState.viewBackgroundColor,
-              gridModeEnabled: appState.gridModeEnabled,
-            },
+            appState: pickPersistedAppState(appState),
             files,
           }).catch((err: Error) =>
             console.warn("[canvas-editor] normalization save failed:", err),
@@ -312,10 +321,7 @@ export function CanvasEditor({
         }
         const content = {
           elements: elements.filter(isLiveElement),
-          appState: {
-            viewBackgroundColor: appState.viewBackgroundColor,
-            gridModeEnabled: appState.gridModeEnabled,
-          },
+          appState: pickPersistedAppState(appState),
           files,
         };
         pendingSaveRef.current = content;
@@ -540,10 +546,7 @@ export function CanvasEditor({
       );
       return {
         elements: sceneElements.filter(isLiveElement),
-        appState: {
-          viewBackgroundColor: appState.viewBackgroundColor,
-          gridModeEnabled: appState.gridModeEnabled,
-        },
+        appState: pickPersistedAppState(appState),
         files,
       };
     } catch (err) {

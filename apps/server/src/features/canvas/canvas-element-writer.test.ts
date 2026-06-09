@@ -80,6 +80,64 @@ describe("canvas element writer", () => {
     });
   });
 
+  it("centers the first generated image in the persisted viewport", async () => {
+    const client = createCanvasClient({
+      elements: [],
+      appState: {
+        scrollX: 0,
+        scrollY: 0,
+        width: 1280,
+        height: 720,
+        zoom: { value: 1 },
+      },
+      files: {},
+    });
+
+    await insertImageElement(client, {
+      canvasId: "canvas-1",
+      height: 768,
+      mimeType: "image/png",
+      objectPath: "generated/image-1.png",
+      width: 1024,
+    });
+
+    const content = client.state.content as {
+      elements: Array<Record<string, unknown>>;
+    };
+    expect(content.elements[0]).toMatchObject({
+      x: 340,
+      y: 135,
+      width: 600,
+      height: 450,
+    });
+  });
+
+  it("centers the first generated image in a default viewport when no viewport is persisted", async () => {
+    const client = createCanvasClient({
+      elements: [],
+      appState: {},
+      files: {},
+    });
+
+    await insertImageElement(client, {
+      canvasId: "canvas-1",
+      height: 768,
+      mimeType: "image/png",
+      objectPath: "generated/image-1.png",
+      width: 1024,
+    });
+
+    const content = client.state.content as {
+      elements: Array<Record<string, unknown>>;
+    };
+    expect(content.elements[0]).toMatchObject({
+      x: 340,
+      y: 135,
+      width: 600,
+      height: 450,
+    });
+  });
+
   it("inserts generated videos as embeddable canvas elements", async () => {
     const client = createCanvasClient({
       elements: [],

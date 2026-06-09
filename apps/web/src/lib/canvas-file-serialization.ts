@@ -98,6 +98,38 @@ export function serializeExcalidrawFiles(
   return files;
 }
 
+export async function resolveCanvasImageFiles(
+  content: CanvasContent,
+  fetchDataURL: (url: string) => Promise<string>,
+): Promise<{
+  elements: CanvasElement[];
+  files: Record<string, CanvasFile>;
+}> {
+  const prepared = prepareCanvasImageFiles(content);
+  const files: Record<string, CanvasFile> = { ...prepared.inlineFiles };
+
+  await Promise.all(
+    prepared.pendingUrls.map(async ({ fileId, meta, url }) => {
+      const dataURL = await fetchDataURL(url);
+      files[fileId] = {
+        id: meta.id ?? fileId,
+        dataURL,
+        mimeType:
+          meta.mimeType ?? /^data:([^;]+)/.exec(dataURL)?.[1] ?? "image/png",
+        created: meta.created ?? Date.now(),
+        ...((stringValue(meta.storageUrl) ?? url)
+          ? { storageUrl: stringValue(meta.storageUrl) ?? url }
+          : {}),
+        ...(stringValue(meta.objectPath)
+          ? { objectPath: stringValue(meta.objectPath) }
+          : {}),
+      };
+    }),
+  );
+
+  return { elements: prepared.elements, files };
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
