@@ -221,11 +221,116 @@ export default interface Resources {
     "title": "设置"
   },
   "skills": {
+    "actions": {
+      "cancel": "取消",
+      "clear": "清空",
+      "delete": "删除",
+      "details": "详情",
+      "install": "安装到本地",
+      "installShort": "安装",
+      "uninstall": "卸载"
+    },
+    "catalog": {
+      "canvas-director": {
+        "description": "帮助 Agent 先梳理画布结构、镜头顺序和版式层级，再给出下一步操作建议。"
+      }
+    },
+    "createDialog": {
+      "addFile": "添加文件",
+      "adding": "添加中...",
+      "description": "创建新的本地技能来扩展 AI Media Canvas 助手的能力。",
+      "descriptionPlaceholder": "简述技能的功能和用途...",
+      "fileContentPlaceholder": "文件内容...",
+      "invalidPath": "文件路径需要以 scripts/、references/ 或 assets/ 开头。",
+      "title": "添加自定义技能",
+      "useTemplate": "使用模板"
+    },
+    "customCard": {
+      "add": "添加技能",
+      "description": "添加技能以解锁你本地助手的新能力。",
+      "title": "添加自定义技能"
+    },
+    "detail": {
+      "attachments": "附属文件",
+      "author": "作者",
+      "confirmDelete": "确认删除?",
+      "files": "附属文件 ({{count}})",
+      "files_one": "附属文件 ({{count}})",
+      "files_other": "附属文件 ({{count}})",
+      "license": "许可证",
+      "loading": "正在加载技能详情",
+      "updatedAt": "更新日期",
+      "version": "版本"
+    },
+    "empty": {
+      "adjustFilters": "尝试调整搜索或筛选条件",
+      "installOrImport": "从市场安装一个技能，或导入自己的本地 skill。",
+      "noInstalled": "暂无已安装技能",
+      "noMatches": "未找到匹配的技能"
+    },
+    "fields": {
+      "category": "分类",
+      "description": "描述",
+      "descriptionOptional": "描述（可选）",
+      "name": "名称",
+      "nameOptional": "名称（可选）"
+    },
+    "filters": {
+      "label": "筛选",
+      "official": "官方",
+      "searchLabel": "搜索技能",
+      "searchPlaceholder": "搜索技能..."
+    },
+    "importPanel": {
+      "chooseDirectory": "选择目录",
+      "chooseFiles": "选择文件",
+      "chooseSkill": "选择本地 skill 文件或目录",
+      "continueImport": "继续导入",
+      "description": "选择本地 `SKILL.md`、skill 文件集合，或直接选择整个 skill 目录。",
+      "descriptionPlaceholder": "默认从 SKILL.md 的 Description 段落提取",
+      "detectedFile": "已识别 {{path}}",
+      "importLocal": "导入到本地",
+      "imported": "已导入",
+      "importing": "导入中...",
+      "namePlaceholder": "默认从 SKILL.md 标题提取",
+      "selectedFiles": "已选择 {{count}} 个本地文件",
+      "selectedFiles_one": "已选择 {{count}} 个本地文件",
+      "selectedFiles_other": "已选择 {{count}} 个本地文件",
+      "suggestion": "建议至少包含一个 SKILL.md 文件，并尽量保留原目录结构。",
+      "title": "从本地导入技能",
+      "viewInstalled": "查看已安装"
+    },
+    "marketplace": {
+      "alreadyLocal": "已在本地",
+      "available": "可安装",
+      "empty": "没有找到匹配的本地市场技能。",
+      "installed": "已安装",
+      "loading": "正在加载本地技能市场...",
+      "searchPlaceholder": "搜索本地市场技能..."
+    },
+    "sources": {
+      "community": "社区",
+      "system": "官方",
+      "user": "自定义"
+    },
+    "subtitle": "为本地 AI 助手提供可安装、可导入、可启停的技能系统。",
     "tabs": {
       "import": "导入",
       "installed": "已安装",
       "marketplace": "市场"
     },
-    "title": "技能"
+    "title": "技能",
+    "toasts": {
+      "created": "技能 \"{{name}}\" 已创建",
+      "detailLoadFailed": "技能详情加载失败",
+      "importFailed": "导入失败，请检查本地文件内容后重试",
+      "imported": "技能 \"{{name}}\" 导入成功",
+      "installFailed": "技能安装失败",
+      "installed": "技能 \"{{name}}\" 已安装到本地",
+      "loadFailed": "本地技能加载失败",
+      "toggleFailed": "技能启停更新失败",
+      "uninstallFailed": "技能卸载失败",
+      "uninstalled": "技能已卸载"
+    }
   }
 }

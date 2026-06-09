@@ -20,15 +20,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useAppTranslation } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 const SOURCE_CONFIG: Record<
   SkillSource,
-  { label: string; icon: typeof ShieldCheck }
+  { labelKey: string; icon: typeof ShieldCheck }
 > = {
-  system: { label: "官方", icon: ShieldCheck },
-  community: { label: "社区", icon: Users },
-  user: { label: "自定义", icon: UserPen },
+  system: { labelKey: "sources.system", icon: ShieldCheck },
+  community: { labelKey: "sources.community", icon: Users },
+  user: { labelKey: "sources.user", icon: UserPen },
 };
 
 function FileTreeItem({ file }: { file: SkillFileEntry }) {
@@ -73,6 +74,7 @@ export function SkillDetailDialog({
   onUninstall: (skillId: string) => Promise<void>;
   onDelete?: (skillId: string) => Promise<void>;
 }) {
+  const { i18n, t } = useAppTranslation("skills");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -102,11 +104,14 @@ export function SkillDetailDialog({
   const SourceIcon = sourceEntry.icon;
   const isUserSkill = skill.source === "user";
   const isInstalled = skill.installed ?? false;
-  const updatedDate = new Date(skill.updatedAt).toLocaleDateString("zh-CN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const updatedDate = new Date(skill.updatedAt).toLocaleDateString(
+    i18n.language === "en" ? "en" : "zh-CN",
+    {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    },
+  );
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -116,7 +121,7 @@ export function SkillDetailDialog({
             {skill.name}
             <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
               <SourceIcon className="size-3" />
-              {sourceEntry.label}
+              {t(sourceEntry.labelKey)}
             </span>
           </DialogTitle>
           <DialogDescription>{skill.description}</DialogDescription>
@@ -124,23 +129,25 @@ export function SkillDetailDialog({
 
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div className="space-y-0.5">
-            <span className="text-muted-foreground">作者</span>
+            <span className="text-muted-foreground">{t("detail.author")}</span>
             <p className="font-medium text-foreground">{skill.author}</p>
           </div>
           <div className="space-y-0.5">
-            <span className="text-muted-foreground">版本</span>
+            <span className="text-muted-foreground">{t("detail.version")}</span>
             <p className="font-medium text-foreground">v{skill.version}</p>
           </div>
           {skill.license ? (
             <div className="space-y-0.5">
-              <span className="text-muted-foreground">许可证</span>
+              <span className="text-muted-foreground">
+                {t("detail.license")}
+              </span>
               <p className="font-medium text-foreground">{skill.license}</p>
             </div>
           ) : null}
           <div className="space-y-0.5">
             <span className="flex items-center gap-1 text-muted-foreground">
               <Calendar className="size-3" />
-              更新日期
+              {t("detail.updatedAt")}
             </span>
             <p className="font-medium text-foreground">{updatedDate}</p>
           </div>
@@ -158,7 +165,7 @@ export function SkillDetailDialog({
         {skill.files && skill.files.length > 0 ? (
           <div className="space-y-1.5">
             <span className="text-xs font-medium text-muted-foreground">
-              附属文件 ({skill.files.length})
+              {t("detail.files", { count: skill.files.length })}
             </span>
             <div className="overflow-hidden rounded-lg border border-border divide-y divide-border">
               {skill.files.map((file) => (
@@ -172,7 +179,9 @@ export function SkillDetailDialog({
           {isUserSkill && onDelete ? (
             confirmDelete ? (
               <div className="mr-auto flex items-center gap-2">
-                <span className="text-xs text-destructive">确认删除?</span>
+                <span className="text-xs text-destructive">
+                  {t("detail.confirmDelete")}
+                </span>
                 <Button
                   variant="destructive"
                   size="xs"
@@ -182,14 +191,14 @@ export function SkillDetailDialog({
                   }
                 >
                   <Trash2 className="size-3.5" />
-                  删除
+                  {t("actions.delete")}
                 </Button>
                 <Button
                   variant="ghost"
                   size="xs"
                   onClick={() => setConfirmDelete(false)}
                 >
-                  取消
+                  {t("actions.cancel")}
                 </Button>
               </div>
             ) : (
@@ -200,7 +209,7 @@ export function SkillDetailDialog({
                 onClick={() => setConfirmDelete(true)}
               >
                 <Trash2 className="size-3.5" />
-                删除
+                {t("actions.delete")}
               </Button>
             )
           ) : null}
@@ -209,16 +218,18 @@ export function SkillDetailDialog({
             <Button
               variant="outline"
               disabled={actionLoading === "uninstall"}
-              onClick={() => handleAction(() => onUninstall(skill.id), "uninstall")}
+              onClick={() =>
+                handleAction(() => onUninstall(skill.id), "uninstall")
+              }
             >
-              卸载
+              {t("actions.uninstall")}
             </Button>
           ) : (
             <Button
               disabled={actionLoading === "install"}
               onClick={() => handleAction(() => onInstall(skill.id), "install")}
             >
-              安装到本地
+              {t("actions.install")}
             </Button>
           )}
         </DialogFooter>
