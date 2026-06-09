@@ -5,9 +5,9 @@ import { randomUUID } from "node:crypto";
 
 import { generateImage } from "../../generation/image-generation.js";
 import {
+  type AvailableModel,
   getAvailableImageModels,
   resolveImageProviderName,
-  type AvailableModel,
 } from "../../generation/providers/registry.js";
 import type { CanvasLayoutInspectionState } from "./inspect-canvas.js";
 
@@ -21,7 +21,7 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
   const modelIds = models.map((m) => m.id);
   const defaultModel = modelIds.includes(DEFAULT_MODEL)
     ? DEFAULT_MODEL
-    : modelIds[0] ?? DEFAULT_MODEL;
+    : (modelIds[0] ?? DEFAULT_MODEL);
 
   const modelDescription = models.length
     ? `Model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.displayName} — ${m.description}`).join("\n")}`
@@ -49,7 +49,9 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .string()
       .optional()
       .default("1:1")
-      .describe("Aspect ratio (e.g. 1:1, 16:9, 9:16, 4:3, 3:4, 4:5, 5:4, 2:3, 3:2). Provider auto-normalizes unsupported ratios to nearest match."),
+      .describe(
+        "Aspect ratio (e.g. 1:1, 16:9, 9:16, 4:3, 3:4, 4:5, 5:4, 2:3, 3:2). Provider auto-normalizes unsupported ratios to nearest match.",
+      ),
     quality: z
       .enum(["standard", "hd", "ultra"])
       .optional()
@@ -60,7 +62,9 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
     outputFormat: z
       .enum(["png", "jpg", "webp"])
       .optional()
-      .describe("Output image format. PNG for transparency, JPG for photos, WebP for web."),
+      .describe(
+        "Output image format. PNG for transparency, JPG for photos, WebP for web.",
+      ),
     inputImages: z
       .array(z.string())
       .optional()
@@ -111,8 +115,8 @@ type ImageGenerateInput = {
   prompt: string;
   model: string;
   aspectRatio?: string;
-  quality?: string;
-  outputFormat?: string;
+  quality?: "standard" | "hd" | "ultra";
+  outputFormat?: "png" | "jpg" | "webp";
   inputImages?: string[];
   size?: string;
   seed?: number;
@@ -134,6 +138,12 @@ type ImageGenerateResult = {
   jobId?: string;
   jobType?: "image_generation";
   placement?: { x: number; y: number; width: number; height: number };
+};
+
+type ToolInvokeConfig = {
+  configurable?: {
+    user_attachment_map?: Record<string, string>;
+  };
 };
 
 /**
@@ -159,6 +169,10 @@ export type SubmitImageJobFn = (input: {
   quality?: string;
   size?: string;
   seed?: number;
+  placementX?: number;
+  placementY?: number;
+  placementWidth?: number;
+  placementHeight?: number;
 }) => Promise<{
   jobId: string;
   elementId?: string;
@@ -175,17 +189,21 @@ export async function runImageGenerate(
   submitImageJob?: SubmitImageJobFn,
   attachmentMap?: Record<string, string>,
 ): Promise<ImageGenerateResult> {
+  let effectiveInput = input;
   const t0 = Date.now();
   const lap = (label: string, extra?: Record<string, unknown>) => {
-    console.log(`[generate_image] ${label} +${Date.now() - t0}ms`, extra ? JSON.stringify(extra) : "");
+    console.log(
+      `[generate_image] ${label} +${Date.now() - t0}ms`,
+      extra ? JSON.stringify(extra) : "",
+    );
   };
 
   // Resolve assetId references in inputImages to base64 data URIs
-  if (input.inputImages?.length && attachmentMap) {
-    input = {
-      ...input,
-      inputImages: input.inputImages.map((ref) =>
-        attachmentMap[ref] ?? ref,
+  if (effectiveInput.inputImages?.length && attachmentMap) {
+    effectiveInput = {
+      ...effectiveInput,
+      inputImages: effectiveInput.inputImages.map(
+        (ref) => attachmentMap[ref] ?? ref,
       ),
     };
   }
@@ -193,37 +211,60 @@ export async function runImageGenerate(
   // Filter out invalid image references — only keep valid URLs.
   // Agent may pass canvas element IDs or unresolved assetIds that aren't
   // in the attachmentMap. These would cause Replicate 422 errors.
-  if (input.inputImages?.length) {
-    const validImages = input.inputImages.filter((img) =>
-      img.startsWith("http://") || img.startsWith("https://") || img.startsWith("data:"),
+  if (effectiveInput.inputImages?.length) {
+    const validImages = effectiveInput.inputImages.filter(
+      (img) =>
+        img.startsWith("http://") ||
+        img.startsWith("https://") ||
+        img.startsWith("data:"),
     );
-    if (validImages.length !== input.inputImages.length) {
+    if (validImages.length !== effectiveInput.inputImages.length) {
       lap("filtered_invalid_refs", {
-        before: input.inputImages.length,
+        before: effectiveInput.inputImages.length,
         after: validImages.length,
-        dropped: input.inputImages.filter((img) =>
-          !img.startsWith("http://") && !img.startsWith("https://") && !img.startsWith("data:"),
+        dropped: effectiveInput.inputImages.filter(
+          (img) =>
+            !img.startsWith("http://") &&
+            !img.startsWith("https://") &&
+            !img.startsWith("data:"),
         ),
       });
     }
-    input = validImages.length > 0
-      ? { ...input, inputImages: validImages }
-      : { ...input, inputImages: [] };
+    effectiveInput =
+      validImages.length > 0
+        ? { ...effectiveInput, inputImages: validImages }
+        : { ...effectiveInput, inputImages: [] };
   }
 
   // Job mode: submit to PGMQ and wait for worker to complete
   if (submitImageJob) {
     try {
-      lap("job_submit", { model: input.model });
+      lap("job_submit", { model: effectiveInput.model });
       const jobResult = await submitImageJob({
-        prompt: input.prompt,
-        title: input.title,
-        model: input.model,
-        aspectRatio: input.aspectRatio ?? "1:1",
-        ...(input.inputImages ? { inputImages: input.inputImages } : {}),
-        ...(input.quality ? { quality: input.quality } : {}),
-        ...(input.size ? { size: input.size } : {}),
-        ...(input.seed !== undefined ? { seed: input.seed } : {}),
+        prompt: effectiveInput.prompt,
+        title: effectiveInput.title,
+        model: effectiveInput.model,
+        aspectRatio: effectiveInput.aspectRatio ?? "1:1",
+        ...(effectiveInput.inputImages
+          ? { inputImages: effectiveInput.inputImages }
+          : {}),
+        ...(effectiveInput.quality ? { quality: effectiveInput.quality } : {}),
+        ...(effectiveInput.size ? { size: effectiveInput.size } : {}),
+        ...(effectiveInput.seed !== undefined
+          ? { seed: effectiveInput.seed }
+          : {}),
+        ...(effectiveInput.placementX !== undefined
+          ? { placementX: effectiveInput.placementX }
+          : {}),
+        ...(effectiveInput.placementY !== undefined
+          ? { placementY: effectiveInput.placementY }
+          : {}),
+        ...(effectiveInput.placementWidth !== undefined
+          ? { placementWidth: effectiveInput.placementWidth }
+          : {}),
+        ...(effectiveInput.placementHeight !== undefined
+          ? { placementHeight: effectiveInput.placementHeight }
+          : {}),
       });
 
       if (jobResult.error) {
@@ -231,8 +272,8 @@ export async function runImageGenerate(
         const isTimeout = jobResult.error.includes("timed out");
         return {
           summary: isTimeout
-            ? `Image is still being generated by the server. It will automatically appear on the canvas once ready — no action needed from the user.`
-            : `Image generation failed with model ${input.model}: ${jobResult.error}. Consider trying a different model or simplifying the prompt.`,
+            ? "Image is still being generated by the server. It will automatically appear on the canvas once ready — no action needed from the user."
+            : `Image generation failed with model ${effectiveInput.model}: ${jobResult.error}. Consider trying a different model or simplifying the prompt.`,
           error: jobResult.error,
           // Expose jobId so frontend can poll for late-arriving results
           // (worker may still succeed after agent poll timeout)
@@ -243,27 +284,32 @@ export async function runImageGenerate(
       lap("job_complete", { jobId: jobResult.jobId });
 
       const result: ImageGenerateResult = {
-        summary: `Generated image (${jobResult.width ?? 0}x${jobResult.height ?? 0}) via ${input.model}`,
-        title: input.title,
-        ...(jobResult.elementId != null ? { elementId: jobResult.elementId } : {}),
+        summary: `Generated image (${jobResult.width ?? 0}x${jobResult.height ?? 0}) via ${effectiveInput.model}`,
+        title: effectiveInput.title,
+        ...(jobResult.elementId != null
+          ? { elementId: jobResult.elementId }
+          : {}),
         imageUrl: jobResult.imageUrl ?? "",
         mimeType: jobResult.mimeType ?? "image/png",
         ...(jobResult.width != null ? { width: jobResult.width } : {}),
         ...(jobResult.height != null ? { height: jobResult.height } : {}),
       };
-      if (input.placementX != null && input.placementY != null) {
+      if (
+        effectiveInput.placementX != null &&
+        effectiveInput.placementY != null
+      ) {
         result.placement = {
-          x: input.placementX,
-          y: input.placementY,
-          width: input.placementWidth ?? 512,
-          height: input.placementHeight ?? 512,
+          x: effectiveInput.placementX,
+          y: effectiveInput.placementY,
+          width: effectiveInput.placementWidth ?? 512,
+          height: effectiveInput.placementHeight ?? 512,
         };
       }
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       return {
-        summary: `Image generation failed with model ${input.model}: ${message}. Consider trying a different model or simplifying the prompt.`,
+        summary: `Image generation failed with model ${effectiveInput.model}: ${message}. Consider trying a different model or simplifying the prompt.`,
         error: message,
       };
     }
@@ -271,24 +317,36 @@ export async function runImageGenerate(
 
   // Direct generation: resolve provider from model ID via registry
   try {
-    lap("direct_generate_start", { model: input.model });
-    const providerName = resolveImageProviderName(input.model);
+    lap("direct_generate_start", { model: effectiveInput.model });
+    const providerName = resolveImageProviderName(effectiveInput.model);
     const result = await generateImage(providerName, {
-      prompt: input.prompt,
-      model: input.model,
-      ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
-      ...(input.quality ? { quality: input.quality as any } : {}),
-      ...(input.outputFormat ? { outputFormat: input.outputFormat as any } : {}),
-      ...(input.inputImages?.length ? { inputImages: input.inputImages } : {}),
-      ...(input.size ? { size: input.size } : {}),
-      ...(input.seed !== undefined ? { seed: input.seed } : {}),
+      prompt: effectiveInput.prompt,
+      model: effectiveInput.model,
+      ...(effectiveInput.aspectRatio
+        ? { aspectRatio: effectiveInput.aspectRatio }
+        : {}),
+      ...(effectiveInput.quality ? { quality: effectiveInput.quality } : {}),
+      ...(effectiveInput.outputFormat
+        ? { outputFormat: effectiveInput.outputFormat }
+        : {}),
+      ...(effectiveInput.inputImages?.length
+        ? { inputImages: effectiveInput.inputImages }
+        : {}),
+      ...(effectiveInput.size ? { size: effectiveInput.size } : {}),
+      ...(effectiveInput.seed !== undefined
+        ? { seed: effectiveInput.seed }
+        : {}),
     });
     lap("direct_generate_done", { width: result.width, height: result.height });
 
     let imageUrl = result.url;
     if (persistImage) {
       try {
-        imageUrl = await persistImage(result.url, result.mimeType, input.prompt);
+        imageUrl = await persistImage(
+          result.url,
+          result.mimeType,
+          effectiveInput.prompt,
+        );
         lap("persist_image_done");
       } catch {
         // Fall back to ephemeral URL if upload fails
@@ -296,19 +354,22 @@ export async function runImageGenerate(
     }
 
     const directResult: ImageGenerateResult = {
-      summary: `Generated image (${result.width}x${result.height}) via ${input.model}`,
-      title: input.title,
+      summary: `Generated image (${result.width}x${result.height}) via ${effectiveInput.model}`,
+      title: effectiveInput.title,
       imageUrl,
       mimeType: result.mimeType,
       width: result.width,
       height: result.height,
     };
-    if (input.placementX != null && input.placementY != null) {
+    if (
+      effectiveInput.placementX != null &&
+      effectiveInput.placementY != null
+    ) {
       directResult.placement = {
-        x: input.placementX,
-        y: input.placementY,
-        width: input.placementWidth ?? 512,
-        height: input.placementHeight ?? 512,
+        x: effectiveInput.placementX,
+        y: effectiveInput.placementY,
+        width: effectiveInput.placementWidth ?? 512,
+        height: effectiveInput.placementHeight ?? 512,
       };
     }
     return directResult;
@@ -336,9 +397,8 @@ export function createImageGenerateTool(deps?: {
 
   return tool(
     async (input: ImageGenerateInput, config) => {
-      const attachmentMap =
-        (config as any)?.configurable?.user_attachment_map as
-          Record<string, string> | undefined;
+      const attachmentMap = (config as ToolInvokeConfig | undefined)
+        ?.configurable?.user_attachment_map;
       const result = await runImageGenerate(
         input,
         deps?.persistImage,
@@ -346,8 +406,8 @@ export function createImageGenerateTool(deps?: {
         attachmentMap,
       );
       if (!result.error && deps?.layoutInspectionState) {
-        delete deps.layoutInspectionState.canvasId;
-        delete deps.layoutInspectionState.inspectedAt;
+        deps.layoutInspectionState.canvasId = undefined;
+        deps.layoutInspectionState.inspectedAt = undefined;
       }
       return result;
     },

@@ -5,15 +5,16 @@ const inspectCanvasSchema = z.object({
   detail_level: z
     .enum(["summary", "full"])
     .default("summary")
-    .describe("Level of detail: summary (id, type, position, size) or full (all properties)"),
-  element_id: z
-    .string()
-    .optional()
-    .describe("Query a specific element by ID"),
+    .describe(
+      "Level of detail: summary (id, type, position, size) or full (all properties)",
+    ),
+  element_id: z.string().optional().describe("Query a specific element by ID"),
   filter_type: z
     .array(z.string())
     .optional()
-    .describe("Filter by element type(s), e.g. ['text', 'image', 'video', 'rectangle']. Use 'video' to match video elements (stored internally as image elements with isVideo metadata)."),
+    .describe(
+      "Filter by element type(s), e.g. ['text', 'image', 'video', 'rectangle']. Use 'video' to match video elements (stored internally as image elements with isVideo metadata).",
+    ),
   filter_region: z
     .object({
       min_x: z.number(),
@@ -26,15 +27,42 @@ const inspectCanvasSchema = z.object({
 });
 
 type CanvasElement = Record<string, unknown>;
+type CanvasClient = {
+  from(table: "canvases"): {
+    select(columns: string): {
+      eq(
+        column: string,
+        value: string,
+      ): {
+        single(): Promise<{
+          data: { content?: unknown } | null;
+          error: unknown | null;
+        }>;
+      };
+    };
+  };
+};
+type ToolInvokeConfig = {
+  configurable?: {
+    access_token?: unknown;
+    canvas_id?: unknown;
+  };
+};
 
 export type CanvasLayoutInspectionState = {
-  canvasId?: string;
-  inspectedAt?: number;
+  canvasId?: string | undefined;
+  inspectedAt?: number | undefined;
 };
 
 const DEFAULT_STROKE_COLOR = "#1e1e1e";
 const DEFAULT_BACKGROUND_COLOR = "transparent";
 const SHAPE_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
+
+function toRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
 
 function summarizeElement(el: CanvasElement) {
   const base: Record<string, unknown> = {
@@ -47,7 +75,7 @@ function summarizeElement(el: CanvasElement) {
   };
 
   if (el.type === "text" && typeof el.text === "string") {
-    base.text = el.text.length > 50 ? el.text.slice(0, 47) + "..." : el.text;
+    base.text = el.text.length > 50 ? `${el.text.slice(0, 47)}...` : el.text;
     base.fontSize = el.fontSize;
   }
 
@@ -58,7 +86,8 @@ function summarizeElement(el: CanvasElement) {
       base.type = "video";
       if (customData.videoUrl) base.videoUrl = customData.videoUrl;
       if (customData.mimeType) base.mimeType = customData.mimeType;
-      if (customData.durationSeconds !== undefined) base.durationSeconds = customData.durationSeconds;
+      if (customData.durationSeconds !== undefined)
+        base.durationSeconds = customData.durationSeconds;
     } else {
       if (customData?.title) {
         base.title = customData.title;
@@ -74,7 +103,8 @@ function summarizeElement(el: CanvasElement) {
       if (customData.title) base.title = customData.title;
       if (customData.prompt) base.prompt = customData.prompt;
       if (customData.mimeType) base.mimeType = customData.mimeType;
-      if (customData.durationSeconds !== undefined) base.durationSeconds = customData.durationSeconds;
+      if (customData.durationSeconds !== undefined)
+        base.durationSeconds = customData.durationSeconds;
     }
   }
 
@@ -97,7 +127,10 @@ function summarizeElement(el: CanvasElement) {
 
 function computeBoundingBox(elements: CanvasElement[]) {
   if (elements.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
   for (const el of elements) {
     const x = Number(el.x) || 0;
     const y = Number(el.y) || 0;
@@ -136,12 +169,15 @@ export function buildCanvasSummaryForContext(
   for (const s of toShow) {
     const parts = [`${s.type}#${s.id}`];
     parts.push(`@(${Math.round(s.x as number)},${Math.round(s.y as number)})`);
-    parts.push(`${Math.round(s.width as number)}x${Math.round(s.height as number)}`);
+    parts.push(
+      `${Math.round(s.width as number)}x${Math.round(s.height as number)}`,
+    );
     if (s.text) parts.push(`"${s.text}"`);
     if (s.title) parts.push(`title="${s.title}"`);
     if (s.type === "video") {
       if (s.durationSeconds) parts.push(`${s.durationSeconds}s`);
-      if (s.prompt) parts.push(`prompt="${(s.prompt as string).slice(0, 120)}"`);
+      if (s.prompt)
+        parts.push(`prompt="${(s.prompt as string).slice(0, 120)}"`);
     }
     if (s.strokeColor) parts.push(`stroke=${s.strokeColor}`);
     if (s.backgroundColor) parts.push(`fill=${s.backgroundColor}`);
@@ -155,13 +191,21 @@ export function buildCanvasSummaryForContext(
 }
 
 export function createInspectCanvasTool(deps: {
-  createUserClient: (accessToken: string) => any;
+  createUserClient: (accessToken: string) => CanvasClient;
   layoutInspectionState?: CanvasLayoutInspectionState;
 }) {
   return tool(
     async (input, config) => {
-      const canvasId = (config as any)?.configurable?.canvas_id;
-      const accessToken = (config as any)?.configurable?.access_token;
+      const configurable = (config as ToolInvokeConfig | undefined)
+        ?.configurable;
+      const canvasId =
+        typeof configurable?.canvas_id === "string"
+          ? configurable.canvas_id
+          : undefined;
+      const accessToken =
+        typeof configurable?.access_token === "string"
+          ? configurable.access_token
+          : undefined;
 
       if (!canvasId || !accessToken) {
         return JSON.stringify({
@@ -190,9 +234,7 @@ export function createInspectCanvasTool(deps: {
         appState?: Record<string, unknown>;
       };
 
-      const elements = (content.elements ?? []).filter(
-        (el) => !el.isDeleted,
-      );
+      const elements = (content.elements ?? []).filter((el) => !el.isDeleted);
 
       if (input.element_id) {
         const found = elements.find((el) => el.id === input.element_id);
@@ -217,11 +259,14 @@ export function createInspectCanvasTool(deps: {
       if (input.filter_type && input.filter_type.length > 0) {
         filtered = filtered.filter((el) => {
           // Resolve logical type: image/embeddable elements with customData.isVideo are treated as "video"
-          const customData = el.customData as Record<string, unknown> | undefined;
+          const customData = el.customData as
+            | Record<string, unknown>
+            | undefined;
           const isVideoElement =
-            (el.type === "image" || el.type === "embeddable") && customData?.isVideo === true;
+            (el.type === "image" || el.type === "embeddable") &&
+            customData?.isVideo === true;
           const logicalType = isVideoElement ? "video" : (el.type as string);
-          return input.filter_type!.includes(logicalType);
+          return input.filter_type?.includes(logicalType);
         });
       }
 
@@ -233,7 +278,12 @@ export function createInspectCanvasTool(deps: {
           const ew = Number(el.width) || 0;
           const eh = Number(el.height) || 0;
           // Element overlaps region if it's not completely outside
-          return !(ex + ew < r.min_x || ex > r.max_x || ey + eh < r.min_y || ey > r.max_y);
+          return !(
+            ex + ew < r.min_x ||
+            ex > r.max_x ||
+            ey + eh < r.min_y ||
+            ey > r.max_y
+          );
         });
       }
 
@@ -254,7 +304,7 @@ export function createInspectCanvasTool(deps: {
         boundingBox: computeBoundingBox(filtered),
         viewport: {
           backgroundColor:
-            (content.appState as any)?.viewBackgroundColor ?? "#ffffff",
+            toRecord(content.appState)?.viewBackgroundColor ?? "#ffffff",
         },
         elements: summaryElements,
       });

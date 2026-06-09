@@ -1,28 +1,35 @@
 import { randomUUID } from "node:crypto";
 
-import type { BackendFactory } from "deepagents";
-import { z } from "zod";
 import {
-  imageArtifactSchema,
   type StreamEvent,
   type ToolArtifact,
+  imageArtifactSchema,
   videoArtifactSchema,
 } from "@aimc/shared";
+import type { BackendFactory } from "deepagents";
+import { z } from "zod";
 
-import type { ServerEnv } from "../../config/env.js";
-import { refreshGenerationProviders } from "../../features/settings/settings-service.js";
 import type { UserDataClient } from "../../auth/request.js";
+import type { ServerEnv } from "../../config/env.js";
+import { insertImageElement } from "../../features/canvas/canvas-element-writer.js";
+import { refreshGenerationProviders } from "../../features/settings/settings-service.js";
 import { createBrandKitTool } from "../tools/brand-kit.js";
-import { createImageGenerateTool, type SubmitImageJobFn } from "../tools/image-generate.js";
 import {
-  createInspectCanvasTool,
+  type SubmitImageJobFn,
+  createImageGenerateTool,
+} from "../tools/image-generate.js";
+import {
   type CanvasLayoutInspectionState,
+  createInspectCanvasTool,
 } from "../tools/inspect-canvas.js";
 import { createManipulateCanvasTool } from "../tools/manipulate-canvas.js";
 import { createPersistSandboxFileTool } from "../tools/persist-sandbox-file.js";
 import { createProjectSearchTool } from "../tools/project-search.js";
 import { createScreenshotCanvasTool } from "../tools/screenshot-canvas.js";
-import { createVideoGenerateTool, type SubmitVideoJobFn } from "../tools/video-generate.js";
+import {
+  type SubmitVideoJobFn,
+  createVideoGenerateTool,
+} from "../tools/video-generate.js";
 
 type StructuredToolLike = {
   description: string;
@@ -174,7 +181,8 @@ function normalizeToolResult(
   const errorMessage =
     typeof parsedRecord.error === "string" && parsedRecord.error.length > 0
       ? parsedRecord.error
-      : parsedRecord.success === false && typeof parsedRecord.message === "string"
+      : parsedRecord.success === false &&
+          typeof parsedRecord.message === "string"
         ? parsedRecord.message
         : undefined;
   const artifacts = buildArtifacts(toolName, parsedRecord);
@@ -191,6 +199,75 @@ function normalizeToolResult(
     result.artifacts = artifacts;
   }
   return result;
+}
+
+function placementFromOutput(output: Record<string, unknown>) {
+  const placement = toRecord(output.placement);
+  if (!placement) return undefined;
+  const { x, y, width, height } = placement;
+  if (
+    typeof x !== "number" ||
+    typeof y !== "number" ||
+    typeof width !== "number" ||
+    typeof height !== "number"
+  ) {
+    return undefined;
+  }
+  return { x, y, width, height };
+}
+
+async function insertDirectGeneratedImage(input: {
+  createUserClient: (accessToken: string) => UserDataClient;
+  output: Record<string, unknown>;
+  session: LocalToolGatewaySession;
+  pushToCanvas?: CreateLocalToolGatewayOptions["connectionPublisher"];
+}) {
+  if (
+    typeof input.output.elementId === "string" ||
+    typeof input.output.imageUrl !== "string" ||
+    !input.output.imageUrl ||
+    !input.session.accessToken ||
+    !input.session.canvasId
+  ) {
+    return;
+  }
+
+  const width =
+    typeof input.output.width === "number" ? input.output.width : 1024;
+  const height =
+    typeof input.output.height === "number" ? input.output.height : 1024;
+  const mimeType =
+    typeof input.output.mimeType === "string"
+      ? input.output.mimeType
+      : "image/png";
+  const title =
+    typeof input.output.title === "string" ? input.output.title : undefined;
+  const imageUrl = input.output.imageUrl;
+  const objectPath =
+    typeof input.output.objectPath === "string"
+      ? input.output.objectPath
+      : imageUrl;
+
+  const { elementId } = await insertImageElement(
+    input.createUserClient(input.session.accessToken),
+    {
+      canvasId: input.session.canvasId,
+      objectPath,
+      signedUrl: imageUrl,
+      width,
+      height,
+      mimeType,
+      ...(title ? { title } : {}),
+    },
+    placementFromOutput(input.output),
+  );
+  input.output.elementId = elementId;
+
+  input.pushToCanvas?.pushToCanvas(input.session.canvasId, {
+    type: "canvas.sync",
+    runId: input.session.runId,
+    timestamp: new Date().toISOString(),
+  });
 }
 
 function toolOptionsForSession(
@@ -232,9 +309,14 @@ async function readImageBytes(sourceUrl: string) {
     if (!match) {
       throw new Error("Unsupported data URL image format.");
     }
+    const mimeType = match[1];
+    const base64 = match[2];
+    if (!mimeType || !base64) {
+      throw new Error("Unsupported data URL image format.");
+    }
     return {
-      buffer: Buffer.from(match[2]!, "base64"),
-      mimeType: match[1]!,
+      buffer: Buffer.from(base64, "base64"),
+      mimeType,
     };
   }
 
@@ -262,19 +344,22 @@ export function createLocalToolGatewayService(
       accessToken: string,
     ) => UserDataClient;
     const layoutInspectionState = session.layoutInspectionState ?? {};
-    const persistSessionImage = session.accessToken
+    const sessionAccessToken = session.accessToken;
+    const persistSessionImage = sessionAccessToken
       ? async (sourceUrl: string, mimeType?: string) => {
           const image = await readImageBytes(sourceUrl);
           const resolvedMimeType = mimeType || image.mimeType;
           const fileName = `generated-${randomUUID()}.${extensionForMimeType(resolvedMimeType)}`;
           const objectPath = `generated/${session.runId}/${fileName}`;
-          const client = createUserClient(session.accessToken!);
+          const client = createUserClient(sessionAccessToken);
           const bucket = client.storage.from("project-assets");
           const { error } = await bucket.upload(objectPath, image.buffer, {
             contentType: resolvedMimeType,
           });
           if (error) {
-            throw new Error(error.message ?? "Unable to persist generated image.");
+            throw new Error(
+              error.message ?? "Unable to persist generated image.",
+            );
           }
           return bucket.getPublicUrl(objectPath).data.publicUrl;
         }
@@ -347,7 +432,9 @@ export function createLocalToolGatewayService(
   };
 
   return {
-    createSession(input: Omit<LocalToolGatewaySession, "runId"> & { runId: string }) {
+    createSession(
+      input: Omit<LocalToolGatewaySession, "runId"> & { runId: string },
+    ) {
       const token = randomUUID();
       sessions.set(token, {
         ...input,
@@ -365,7 +452,10 @@ export function createLocalToolGatewayService(
       return [...tools.values()].map((toolInstance) => ({
         name: toolInstance.name,
         description: toolInstance.description,
-        inputSchema: z.toJSONSchema(toolInstance.schema) as Record<string, unknown>,
+        inputSchema: z.toJSONSchema(toolInstance.schema) as Record<
+          string,
+          unknown
+        >,
       }));
     },
 
@@ -393,10 +483,26 @@ export function createLocalToolGatewayService(
       }
 
       try {
-        return normalizeToolResult(
+        const createUserClient = options.createUserClient as (
+          accessToken: string,
+        ) => UserDataClient;
+        const result = normalizeToolResult(
           canonicalName,
           await toolInstance.invoke(args, toolOptionsForSession(session)),
         );
+        if (
+          canonicalName === "generate_image" &&
+          !result.isError &&
+          result.output
+        ) {
+          await insertDirectGeneratedImage({
+            createUserClient,
+            output: result.output,
+            session,
+            pushToCanvas: options.connectionPublisher,
+          });
+        }
+        return result;
       } catch (error) {
         return {
           isError: true,
