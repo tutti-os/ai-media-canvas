@@ -23,17 +23,6 @@ export const metadata: Metadata = {
     ],
     apple: "/brand/apple-touch-icon.png",
   },
-  openGraph: {
-    title: "AI Media Canvas",
-    description: "Local-first AI canvas for image and video generation.",
-    images: [{ url: "/og-image.png", width: 1200, height: 630 }],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "AI Media Canvas",
-    description: "Local-first AI canvas for image and video generation.",
-    images: ["/og-image.png"],
-  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

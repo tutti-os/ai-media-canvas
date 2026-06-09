@@ -103,9 +103,9 @@ vi.mock("../src/lib/server-api", () => ({
 }));
 
 vi.mock("../src/lib/generation-job-service", async () => {
-  const actual = await vi.importActual<
-    typeof import("../src/lib/generation-job-service")
-  >("../src/lib/generation-job-service");
+  const actual = (await vi.importActual("../src/lib/generation-job-service")) as {
+    generationJobService: Record<string, unknown>;
+  };
   return {
     ...actual,
     generationJobService: {
@@ -113,7 +113,7 @@ vi.mock("../src/lib/generation-job-service", async () => {
       watch: generationJobWatchMock,
     },
   };
-}));
+});
 
 vi.mock("../src/lib/canvas-elements", () => ({
   insertImageOnCanvas: vi.fn(),

@@ -1,12 +1,12 @@
 import { tool } from "langchain";
 import { z } from "zod";
 
-import { generateVideo } from "../../generation/video-generation.js";
 import {
+  type AvailableModel,
   getAvailableVideoModels,
   resolveVideoProviderName,
-  type AvailableModel,
 } from "../../generation/providers/registry.js";
+import { generateVideo } from "../../generation/video-generation.js";
 import type { CanvasLayoutInspectionState } from "./inspect-canvas.js";
 
 const DEFAULT_MODEL = "google-official/veo-3.1-generate-preview";
@@ -60,14 +60,10 @@ function validateAgnesVideoInput(input: {
       throw new Error("Agnes video numFrames must be a positive integer.");
     }
     if (input.numFrames > 441) {
-      throw new Error(
-        "Agnes video numFrames cannot exceed 441.",
-      );
+      throw new Error("Agnes video numFrames cannot exceed 441.");
     }
     if ((input.numFrames - 1) % 8 !== 0) {
-      throw new Error(
-        "Agnes video numFrames must follow the 8n + 1 rule.",
-      );
+      throw new Error("Agnes video numFrames must follow the 8n + 1 rule.");
     }
   }
 }
@@ -75,6 +71,7 @@ function validateAgnesVideoInput(input: {
 // ── Submit function type ───────────────────────────────────────────────────
 
 export type SubmitVideoJobFn = (input: {
+  title: string;
   prompt: string;
   model: string;
   duration?: number;
@@ -88,6 +85,10 @@ export type SubmitVideoJobFn = (input: {
   frameRate?: number;
   numFrames?: number;
   enableAudio?: boolean;
+  placementX?: number;
+  placementY?: number;
+  placementWidth?: number;
+  placementHeight?: number;
 }) => Promise<{
   jobId: string;
   elementId?: string;
@@ -105,7 +106,7 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
   const modelIds = models.map((m) => m.id);
   const defaultModel = modelIds.includes(DEFAULT_MODEL)
     ? DEFAULT_MODEL
-    : modelIds[0] ?? DEFAULT_MODEL;
+    : (modelIds[0] ?? DEFAULT_MODEL);
 
   const modelDescription = models.length
     ? `Video model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.description}`).join("\n")}`
@@ -147,12 +148,16 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
       .enum(["480p", "720p", "1080p", "4k"])
       .optional()
       .default("720p")
-      .describe("Output resolution. 720p recommended for balance of quality and speed. 1080p/4k supported by Google Veo official models (8s duration required)."),
+      .describe(
+        "Output resolution. 720p recommended for balance of quality and speed. 1080p/4k supported by Google Veo official models (8s duration required).",
+      ),
     aspectRatio: z
       .enum(["1:1", "16:9", "9:16", "4:3", "3:4"])
       .optional()
       .default("16:9")
-      .describe("Video aspect ratio. 16:9 for landscape, 9:16 for portrait/mobile."),
+      .describe(
+        "Video aspect ratio. 16:9 for landscape, 9:16 for portrait/mobile.",
+      ),
     inputImages: z
       .array(z.string())
       .max(7)
@@ -163,7 +168,9 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
     inputVideo: z
       .string()
       .optional()
-      .describe("Source video URL for video-to-video editing. Only for Kling O1."),
+      .describe(
+        "Source video URL for video-to-video editing. Only for Kling O1.",
+      ),
     videoMode: z
       .enum(["multivideo", "keyframes"])
       .optional()
@@ -190,7 +197,9 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
       .positive()
       .max(60)
       .optional()
-      .describe("Optional explicit frame rate for Agnes phase-2 style controls."),
+      .describe(
+        "Optional explicit frame rate for Agnes phase-2 style controls.",
+      ),
     numFrames: z
       .number()
       .int()
@@ -257,45 +266,76 @@ export async function runVideoGenerate(
   input: VideoGenerateInput,
   submitVideoJob?: SubmitVideoJobFn,
 ): Promise<VideoGenerateResult> {
+  let effectiveInput = input;
   const t0 = Date.now();
   const lap = (label: string, extra?: Record<string, unknown>) => {
-    console.log(`[generate_video] ${label} +${Date.now() - t0}ms`, extra ? JSON.stringify(extra) : "");
+    console.log(
+      `[generate_video] ${label} +${Date.now() - t0}ms`,
+      extra ? JSON.stringify(extra) : "",
+    );
   };
 
   // Filter invalid image references
-  if (input.inputImages?.length) {
-    const validImages = input.inputImages.filter(
-      (img) => img.startsWith("http://") || img.startsWith("https://") || img.startsWith("data:"),
+  if (effectiveInput.inputImages?.length) {
+    const validImages = effectiveInput.inputImages.filter(
+      (img) =>
+        img.startsWith("http://") ||
+        img.startsWith("https://") ||
+        img.startsWith("data:"),
     );
-    input = { ...input, inputImages: validImages.length > 0 ? validImages : undefined };
+    effectiveInput = {
+      ...effectiveInput,
+      inputImages: validImages.length > 0 ? validImages : undefined,
+    };
   }
 
-  validateAgnesVideoInput(input);
+  validateAgnesVideoInput(effectiveInput);
 
   // Job mode: submit to PGMQ and wait for worker
   if (submitVideoJob) {
     try {
-      lap("job_submit", { model: input.model });
+      lap("job_submit", { model: effectiveInput.model });
       const jobResult = await submitVideoJob({
-        prompt: input.prompt,
-        model: input.model,
-        duration: input.duration,
-        resolution: input.resolution,
-        aspectRatio: input.aspectRatio,
-        ...(input.inputImages ? { inputImages: input.inputImages } : {}),
-        ...(input.inputVideo ? { inputVideo: input.inputVideo } : {}),
-        ...(input.videoMode ? { videoMode: input.videoMode } : {}),
-        ...(input.seed !== undefined ? { seed: input.seed } : {}),
-        ...(input.negativePrompt
-          ? { negativePrompt: input.negativePrompt }
+        title: effectiveInput.title,
+        prompt: effectiveInput.prompt,
+        model: effectiveInput.model,
+        duration: effectiveInput.duration,
+        resolution: effectiveInput.resolution,
+        aspectRatio: effectiveInput.aspectRatio,
+        ...(effectiveInput.inputImages
+          ? { inputImages: effectiveInput.inputImages }
           : {}),
-        ...(input.frameRate !== undefined
-          ? { frameRate: input.frameRate }
+        ...(effectiveInput.inputVideo
+          ? { inputVideo: effectiveInput.inputVideo }
           : {}),
-        ...(input.numFrames !== undefined
-          ? { numFrames: input.numFrames }
+        ...(effectiveInput.videoMode
+          ? { videoMode: effectiveInput.videoMode }
           : {}),
-        enableAudio: input.enableAudio,
+        ...(effectiveInput.seed !== undefined
+          ? { seed: effectiveInput.seed }
+          : {}),
+        ...(effectiveInput.negativePrompt
+          ? { negativePrompt: effectiveInput.negativePrompt }
+          : {}),
+        ...(effectiveInput.frameRate !== undefined
+          ? { frameRate: effectiveInput.frameRate }
+          : {}),
+        ...(effectiveInput.numFrames !== undefined
+          ? { numFrames: effectiveInput.numFrames }
+          : {}),
+        enableAudio: effectiveInput.enableAudio,
+        ...(effectiveInput.placementX !== undefined
+          ? { placementX: effectiveInput.placementX }
+          : {}),
+        ...(effectiveInput.placementY !== undefined
+          ? { placementY: effectiveInput.placementY }
+          : {}),
+        ...(effectiveInput.placementWidth !== undefined
+          ? { placementWidth: effectiveInput.placementWidth }
+          : {}),
+        ...(effectiveInput.placementHeight !== undefined
+          ? { placementHeight: effectiveInput.placementHeight }
+          : {}),
       });
 
       if (jobResult.error) {
@@ -303,8 +343,8 @@ export async function runVideoGenerate(
         const isTimeout = jobResult.error.includes("timed out");
         return {
           summary: isTimeout
-            ? `Video is still being generated by the server. It will automatically appear on the canvas once ready — no action needed from the user.`
-            : `Video generation failed with model ${input.model}: ${jobResult.error}. Consider trying a different model or simplifying the prompt.`,
+            ? "Video is still being generated by the server. It will automatically appear on the canvas once ready — no action needed from the user."
+            : `Video generation failed with model ${effectiveInput.model}: ${jobResult.error}. Consider trying a different model or simplifying the prompt.`,
           error: jobResult.error,
           // Expose jobId so frontend can poll for late-arriving results
           // (worker may still succeed after agent poll timeout)
@@ -315,29 +355,36 @@ export async function runVideoGenerate(
       lap("job_complete", { jobId: jobResult.jobId });
 
       const result: VideoGenerateResult = {
-        summary: `Generated ${jobResult.durationSeconds ?? input.duration}s video (${jobResult.width ?? 0}x${jobResult.height ?? 0}) via ${input.model}`,
-        title: input.title,
-        prompt: input.prompt,
-        ...(jobResult.elementId != null ? { elementId: jobResult.elementId } : {}),
+        summary: `Generated ${jobResult.durationSeconds ?? effectiveInput.duration}s video (${jobResult.width ?? 0}x${jobResult.height ?? 0}) via ${effectiveInput.model}`,
+        title: effectiveInput.title,
+        prompt: effectiveInput.prompt,
+        ...(jobResult.elementId != null
+          ? { elementId: jobResult.elementId }
+          : {}),
         mimeType: jobResult.mimeType ?? "video/mp4",
         ...(jobResult.videoUrl != null ? { videoUrl: jobResult.videoUrl } : {}),
         ...(jobResult.width != null ? { width: jobResult.width } : {}),
         ...(jobResult.height != null ? { height: jobResult.height } : {}),
-        ...(jobResult.durationSeconds != null ? { durationSeconds: jobResult.durationSeconds } : {}),
+        ...(jobResult.durationSeconds != null
+          ? { durationSeconds: jobResult.durationSeconds }
+          : {}),
       };
-      if (input.placementX != null && input.placementY != null) {
+      if (
+        effectiveInput.placementX != null &&
+        effectiveInput.placementY != null
+      ) {
         result.placement = {
-          x: input.placementX,
-          y: input.placementY,
-          width: input.placementWidth ?? 640,
-          height: input.placementHeight ?? 360,
+          x: effectiveInput.placementX,
+          y: effectiveInput.placementY,
+          width: effectiveInput.placementWidth ?? 640,
+          height: effectiveInput.placementHeight ?? 360,
         };
       }
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       return {
-        summary: `Video generation failed with model ${input.model}: ${message}`,
+        summary: `Video generation failed with model ${effectiveInput.model}: ${message}`,
         error: message,
       };
     }
@@ -345,45 +392,62 @@ export async function runVideoGenerate(
 
   // Direct mode: call provider directly
   try {
-    lap("direct_generate_start", { model: input.model });
-    const providerName = resolveVideoProviderName(input.model);
+    lap("direct_generate_start", { model: effectiveInput.model });
+    const providerName = resolveVideoProviderName(effectiveInput.model);
     const result = await generateVideo(providerName, {
-      prompt: input.prompt,
-      model: input.model,
-      duration: input.duration,
-      aspectRatio: input.aspectRatio,
-      ...(input.resolution ? { resolution: input.resolution as "480p" | "720p" | "1080p" } : {}),
-      ...(input.inputImages ? { inputImages: input.inputImages } : {}),
-      ...(input.inputVideo ? { inputVideo: input.inputVideo } : {}),
-      ...(input.videoMode ? { videoMode: input.videoMode } : {}),
-      ...(input.seed !== undefined ? { seed: input.seed } : {}),
-      ...(input.negativePrompt
-        ? { negativePrompt: input.negativePrompt }
+      prompt: effectiveInput.prompt,
+      model: effectiveInput.model,
+      duration: effectiveInput.duration,
+      aspectRatio: effectiveInput.aspectRatio,
+      ...(effectiveInput.resolution
+        ? { resolution: effectiveInput.resolution as "480p" | "720p" | "1080p" }
         : {}),
-      ...(input.frameRate !== undefined
-        ? { frameRate: input.frameRate }
+      ...(effectiveInput.inputImages
+        ? { inputImages: effectiveInput.inputImages }
         : {}),
-      ...(input.numFrames !== undefined ? { numFrames: input.numFrames } : {}),
-      ...(input.enableAudio != null ? { enableAudio: input.enableAudio } : {}),
+      ...(effectiveInput.inputVideo
+        ? { inputVideo: effectiveInput.inputVideo }
+        : {}),
+      ...(effectiveInput.videoMode
+        ? { videoMode: effectiveInput.videoMode }
+        : {}),
+      ...(effectiveInput.seed !== undefined
+        ? { seed: effectiveInput.seed }
+        : {}),
+      ...(effectiveInput.negativePrompt
+        ? { negativePrompt: effectiveInput.negativePrompt }
+        : {}),
+      ...(effectiveInput.frameRate !== undefined
+        ? { frameRate: effectiveInput.frameRate }
+        : {}),
+      ...(effectiveInput.numFrames !== undefined
+        ? { numFrames: effectiveInput.numFrames }
+        : {}),
+      ...(effectiveInput.enableAudio != null
+        ? { enableAudio: effectiveInput.enableAudio }
+        : {}),
     });
     lap("direct_generate_done");
 
     const directResult: VideoGenerateResult = {
-      summary: `Generated ${result.durationSeconds}s video (${result.width}x${result.height}) via ${input.model}`,
-      title: input.title,
-      prompt: input.prompt,
+      summary: `Generated ${result.durationSeconds}s video (${result.width}x${result.height}) via ${effectiveInput.model}`,
+      title: effectiveInput.title,
+      prompt: effectiveInput.prompt,
       videoUrl: result.url,
       mimeType: result.mimeType,
       width: result.width,
       height: result.height,
       durationSeconds: result.durationSeconds,
     };
-    if (input.placementX != null && input.placementY != null) {
+    if (
+      effectiveInput.placementX != null &&
+      effectiveInput.placementY != null
+    ) {
       directResult.placement = {
-        x: input.placementX,
-        y: input.placementY,
-        width: input.placementWidth ?? 640,
-        height: input.placementHeight ?? 360,
+        x: effectiveInput.placementX,
+        y: effectiveInput.placementY,
+        width: effectiveInput.placementWidth ?? 640,
+        height: effectiveInput.placementHeight ?? 360,
       };
     }
     return directResult;
@@ -413,8 +477,8 @@ export function createVideoGenerateTool(deps?: {
     async (input: VideoGenerateInput) => {
       const result = await runVideoGenerate(input, deps?.submitVideoJob);
       if (!result.error && deps?.layoutInspectionState) {
-        delete deps.layoutInspectionState.canvasId;
-        delete deps.layoutInspectionState.inspectedAt;
+        deps.layoutInspectionState.canvasId = undefined;
+        deps.layoutInspectionState.inspectedAt = undefined;
       }
       return result;
     },

@@ -1,9 +1,29 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock(
+  "../../features/settings/settings-service.js",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../features/settings/settings-service.js")
+      >();
+    return {
+      ...actual,
+      refreshGenerationProviders: vi.fn(),
+    };
+  },
+);
+
+import {
+  clearProviders,
+  registerImageProvider,
+} from "../../generation/providers/registry.js";
 import { createLocalToolGatewayService } from "./tool-gateway.js";
 
 describe("createLocalToolGatewayService", () => {
-  function createUserClientWithElements(elements: Array<Record<string, unknown>>) {
+  function createUserClientWithElements(
+    elements: Array<Record<string, unknown>>,
+  ) {
     const state = {
       content: {
         elements: structuredClone(elements),
@@ -12,6 +32,7 @@ describe("createLocalToolGatewayService", () => {
     };
 
     return {
+      state,
       from(table: string) {
         expect(table).toBe("canvases");
         return {
@@ -34,8 +55,33 @@ describe("createLocalToolGatewayService", () => {
           },
         };
       },
+      storage: {
+        from(bucket: string) {
+          expect(bucket).toBe("project-assets");
+          return {
+            async upload(
+              _path: string,
+              _buffer: Buffer,
+              _options: { contentType: string },
+            ) {
+              return { error: null };
+            },
+            getPublicUrl(path: string) {
+              return {
+                data: {
+                  publicUrl: `http://assets.test/${path}`,
+                },
+              };
+            },
+          };
+        },
+      },
     };
   }
+
+  afterEach(() => {
+    clearProviders();
+  });
 
   it("includes workspace search and sandbox persistence tools for local-agent MCP sessions", () => {
     const backendFactory = vi.fn(() => ({
@@ -171,5 +217,78 @@ describe("createLocalToolGatewayService", () => {
         success: true,
       },
     });
+  });
+
+  it("inserts direct generated images into the canvas for local-agent sessions", async () => {
+    registerImageProvider({
+      name: "test-provider",
+      models: [
+        {
+          id: "test/image",
+          displayName: "Test Image",
+          description: "Test image model",
+        },
+      ],
+      async generate() {
+        return {
+          url: "data:image/png;base64,AA==",
+          mimeType: "image/png",
+          width: 1024,
+          height: 768,
+        };
+      },
+    });
+    const client = createUserClientWithElements([]);
+    const pushToCanvas = vi.fn();
+    const gateway = createLocalToolGatewayService({
+      connectionPublisher: { pushToCanvas },
+      createUserClient: () => client,
+    });
+    const session = gateway.createSession({
+      accessToken: "access-token",
+      canvasId: "canvas-1",
+      runId: "run-1",
+      runtimeEnv: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+    });
+
+    const result = await gateway.callTool(session.token, "generate_image", {
+      title: "Dancing boy",
+      prompt: "A happy dancing boy",
+      model: "test/image",
+    });
+
+    expect(result).toMatchObject({
+      isError: false,
+      output: {
+        elementId: expect.any(String),
+        imageUrl: expect.stringContaining(
+          "http://assets.test/generated/run-1/",
+        ),
+      },
+    });
+    expect(client.state.content.elements).toHaveLength(1);
+    expect(client.state.content.elements[0]).toMatchObject({
+      id: (result.output as { elementId: string }).elementId,
+      type: "image",
+      width: 600,
+      height: 450,
+      customData: {
+        source: "generated",
+        title: "Dancing boy",
+      },
+    });
+    expect(pushToCanvas).toHaveBeenCalledWith(
+      "canvas-1",
+      expect.objectContaining({
+        runId: "run-1",
+        type: "canvas.sync",
+      }),
+    );
   });
 });

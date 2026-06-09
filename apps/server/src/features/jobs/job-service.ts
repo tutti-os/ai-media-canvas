@@ -54,6 +54,7 @@ export type JobService = {
   ): Promise<BackgroundJob[]>;
   cancelJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
   claimPendingJobs(workerId: string, limit?: number): Promise<BackgroundJob[]>;
+  getJobAdmin(jobId: string): Promise<BackgroundJob>;
   markSucceeded(jobId: string, result: Record<string, unknown>): Promise<BackgroundJob>;
   markFailed(input: {
     jobId: string;
@@ -62,6 +63,7 @@ export type JobService = {
     retryable?: boolean;
     retryDelayMs?: number;
   }): Promise<BackgroundJob>;
+  setCreditsInfo(jobId: string, amount: number, transactionId: string): Promise<void>;
 };
 
 export function createJobService(store: LocalStore): JobService {
@@ -115,6 +117,14 @@ export function createJobService(store: LocalStore): JobService {
       return store.claimBackgroundJobs({ workerId, ...(limit ? { limit } : {}) });
     },
 
+    async getJobAdmin(jobId) {
+      const job = store.getBackgroundJob(jobId);
+      if (!job) {
+        throw new JobServiceError("job_not_found", "Job not found.", 404);
+      }
+      return job;
+    },
+
     async markSucceeded(jobId, result) {
       const job = store.markBackgroundJobSucceeded(jobId, result);
       if (!job) {
@@ -129,6 +139,10 @@ export function createJobService(store: LocalStore): JobService {
         throw new JobServiceError("job_not_found", "Job not found.", 404);
       }
       return job;
+    },
+
+    async setCreditsInfo() {
+      // Local jobs do not currently persist credit transaction metadata.
     },
   };
 }

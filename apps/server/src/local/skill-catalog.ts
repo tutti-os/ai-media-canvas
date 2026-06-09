@@ -24,7 +24,7 @@ export type BundledSkillDefinition = {
   installedByDefault?: boolean;
 };
 
-const LOCAL_SKILLS_ROOT = fileURLToPath(
+const DEFAULT_LOCAL_SKILLS_ROOT = fileURLToPath(
   new URL("../../../../skills/", import.meta.url),
 );
 
@@ -187,20 +187,21 @@ function mergeBundledSkills(...groups: BundledSkillDefinition[][]) {
 }
 
 function loadDirectoryBundledSkills(): BundledSkillDefinition[] {
-  if (!existsSync(LOCAL_SKILLS_ROOT)) {
+  const localSkillsRoot = resolveLocalSkillsRoot();
+  if (!existsSync(localSkillsRoot)) {
     return [];
   }
 
-  const entries = readdirSync(LOCAL_SKILLS_ROOT, { withFileTypes: true })
+  const entries = readdirSync(localSkillsRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .flatMap((entry) => {
       const slug = entry.name;
-      const skillFile = join(LOCAL_SKILLS_ROOT, slug, "SKILL.md");
+      const skillFile = join(localSkillsRoot, slug, "SKILL.md");
       if (!existsSync(skillFile)) {
         return [];
       }
 
-      const fileManifest = collectLocalSkillFiles(join(LOCAL_SKILLS_ROOT, slug));
+      const fileManifest = collectLocalSkillFiles(join(localSkillsRoot, slug));
       const skillContent = readFileSync(skillFile, "utf8");
       const { frontmatter, body } = parseFrontmatter(skillContent);
       const name = resolveDisplayName(frontmatter.name, body, slug);
@@ -239,6 +240,10 @@ function loadDirectoryBundledSkills(): BundledSkillDefinition[] {
     });
 
   return entries;
+}
+
+function resolveLocalSkillsRoot() {
+  return process.env.AIMC_SKILLS_ROOT?.trim() || DEFAULT_LOCAL_SKILLS_ROOT;
 }
 
 function parseFrontmatter(markdown: string) {

@@ -39,6 +39,25 @@ type AppTranslation = {
   t: (key: string, options?: TranslationOptions) => string;
 };
 type ResourceTree = Record<string, unknown>;
+type NextopAppContextValue = {
+  locale?: unknown;
+  language?: unknown;
+};
+type NextopAppContext = NextopAppContextValue & {
+  get?: () =>
+    | Promise<NextopAppContextValue | null>
+    | NextopAppContextValue
+    | null;
+  subscribe?: (
+    listener: (context: NextopAppContextValue | null) => void,
+  ) => (() => void) | undefined;
+};
+type NextopWindow = Window & {
+  nextop?: {
+    appContext?: NextopAppContext;
+  };
+  nextopAppContext?: NextopAppContext;
+};
 
 const useUntypedTranslation = useTranslation as unknown as (
   namespace?: AppNamespace | AppNamespace[],
@@ -116,6 +135,44 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
     return () => {
       isCurrent = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    let isCurrent = true;
+    const appContext = getHostAppContext();
+
+    function applyHostLocale(context: NextopAppContextValue | null) {
+      const locale = readHostLocale(context);
+      if (locale && isCurrent && i18n.language !== locale) {
+        void i18n.changeLanguage(locale);
+      }
+    }
+
+    if (!appContext) {
+      return undefined;
+    }
+
+    if (typeof appContext.get === "function") {
+      void Promise.resolve(appContext.get())
+        .then(applyHostLocale)
+        .catch(() => undefined);
+    } else {
+      applyHostLocale(appContext);
+    }
+
+    const unsubscribe =
+      typeof appContext.subscribe === "function"
+        ? appContext.subscribe(applyHostLocale)
+        : undefined;
+
+    return () => {
+      isCurrent = false;
+      if (typeof unsubscribe === "function") {
+        unsubscribe();
+      }
     };
   }, []);
 
@@ -226,4 +283,19 @@ function getNestedValue(tree: ResourceTree, keyPath: string) {
     }
     return undefined;
   }, tree);
+}
+
+function getHostAppContext() {
+  const hostWindow = window as NextopWindow;
+  return hostWindow.nextop?.appContext || hostWindow.nextopAppContext || null;
+}
+
+function readHostLocale(context: NextopAppContextValue | null | undefined) {
+  if (typeof context?.locale === "string" && context.locale.trim()) {
+    return normalizeLocale(context.locale);
+  }
+  if (typeof context?.language === "string" && context.language.trim()) {
+    return normalizeLocale(context.language);
+  }
+  return null;
 }

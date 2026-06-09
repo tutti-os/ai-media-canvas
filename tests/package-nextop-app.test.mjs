@@ -124,9 +124,17 @@ test("createManifest returns the Nextop package manifest contract", () => {
       src: "icon.png",
     },
     runtime: {
-      kind: "custom",
       bootstrap: "bootstrap.sh",
       healthcheckPath: "/api/health",
+    },
+    localizationInfo: {
+      defaultLocale: "en",
+      additionalLocales: [
+        {
+          locale: "zh-CN",
+          file: "locales/zh-CN/manifest.json",
+        },
+      ],
     },
     launch: {
       mode: "workspace-open",
@@ -142,18 +150,40 @@ test("renderBootstrap maps Nextop runtime env into AI Media Canvas env", () => {
   const bootstrap = renderBootstrap({ version: "1.2.3" });
 
   assert.match(bootstrap, /^#!\/bin\/sh\n/);
-  assert.match(bootstrap, /: "\$\{NEXTOP_APP_PACKAGE_DIR:\?\}"/);
-  assert.match(bootstrap, /export HOST="\$NEXTOP_APP_HOST"/);
-  assert.match(bootstrap, /export AIMC_SERVER_PORT="\$NEXTOP_APP_PORT"/);
-  assert.match(bootstrap, /export AIMC_APP_VERSION="1\.2\.3"/);
-  assert.match(bootstrap, /export AIMC_WEB_DIST="\$NEXTOP_APP_PACKAGE_DIR\/dist"/);
-  assert.match(bootstrap, /export AIMC_DATA_ROOT="\$NEXTOP_APP_DATA_DIR"/);
-  assert.match(bootstrap, /export AIMC_SKILLS_ROOT="\$NEXTOP_APP_PACKAGE_DIR\/skills"/);
   assert.match(
     bootstrap,
-    /export AIMC_AGENT_FILES_ROOT="\$\{NEXTOP_WORKSPACE_ROOT:-\$NEXTOP_APP_DATA_DIR\}"/,
+    /package_dir="\$\{NEXTOP_APP_PACKAGE_DIR:-\$script_dir\}"/,
   );
-  assert.match(bootstrap, /exec node "\$NEXTOP_APP_PACKAGE_DIR\/server\/server.js"/);
+  assert.match(bootstrap, /export HOST="\$\{NEXTOP_APP_HOST:-127\.0\.0\.1\}"/);
+  assert.match(bootstrap, /export AIMC_SERVER_PORT="\$\{NEXTOP_APP_PORT:-3001\}"/);
+  assert.match(bootstrap, /export AIMC_APP_VERSION="1\.2\.3"/);
+  assert.match(bootstrap, /export AIMC_WEB_DIST="\$package_dir\/dist"/);
+  assert.match(
+    bootstrap,
+    /export AIMC_DATA_ROOT="\$\{NEXTOP_APP_DATA_DIR:-\$package_dir\/\.data\}"/,
+  );
+  assert.match(bootstrap, /export AIMC_SKILLS_ROOT="\$package_dir\/skills"/);
+  assert.match(
+    bootstrap,
+    /export AIMC_TOOLS_MCP_PATH="\$package_dir\/server\/tools-mcp\.js"/,
+  );
+  assert.match(
+    bootstrap,
+    /export AIMC_AGENT_FILES_ROOT="\$\{NEXTOP_WORKSPACE_ROOT:-\$AIMC_DATA_ROOT\}"/,
+  );
+  assert.match(
+    bootstrap,
+    /base_url="\$\{NEXTOP_APP_BASE_URL:-http:\/\/\$HOST:\$AIMC_SERVER_PORT\}"/,
+  );
+  assert.match(bootstrap, /node_bin="\$\{NEXTOP_APP_NODE:-node\}"/);
+  assert.match(bootstrap, /runtime_dir="\$\{NEXTOP_APP_RUNTIME_DIR:-\$AIMC_DATA_ROOT\/\.runtime\}"/);
+  assert.match(bootstrap, /run_child "\$package_dir\/server\/worker.js" "\$worker_status_file" &/);
+  assert.match(bootstrap, /worker_pid=\$!/);
+  assert.match(bootstrap, /run_child "\$package_dir\/server\/server.js" "\$server_status_file" &/);
+  assert.match(bootstrap, /server_pid=\$!/);
+  assert.match(bootstrap, /monitor_children\(\)/);
+  assert.match(bootstrap, /kill -0 "\$worker_pid"/);
+  assert.match(bootstrap, /kill -0 "\$server_pid"/);
 });
 
 test("renderAgentsGuide is non-empty and documents package layout", () => {
@@ -205,7 +235,26 @@ test("validatePackageRoot requires the files Nextop imports", async () => {
   );
   await writeFile(path.join(packageRoot, "AGENTS.md"), "Package guide\n");
   await writeFile(path.join(packageRoot, "bootstrap.sh"), renderBootstrap());
+  await mkdir(path.join(packageRoot, "server"));
+  await writeFile(path.join(packageRoot, "server", "server.js"), "ok\n");
+  await writeFile(path.join(packageRoot, "server", "worker.js"), "ok\n");
+  await writeFile(path.join(packageRoot, "server", "tools-mcp.js"), "ok\n");
   await chmod(path.join(packageRoot, "bootstrap.sh"), 0o755);
+
+  await assert.rejects(
+    validatePackageRoot(packageRoot),
+    /Missing manifest localization file: locales\/zh-CN\/manifest\.json/,
+  );
+
+  await mkdir(path.join(packageRoot, "locales", "zh-CN"), { recursive: true });
+  await writeFile(
+    path.join(packageRoot, "locales", "zh-CN", "manifest.json"),
+    JSON.stringify({
+      name: "AI 媒体画布",
+      description: "本地优先的 AI 图像与视频生成画布。",
+      tags: ["生成式 AI", "本地优先", "媒体画布"],
+    }),
+  );
 
   await validatePackageRoot(packageRoot);
 });

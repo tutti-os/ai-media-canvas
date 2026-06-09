@@ -105,6 +105,18 @@ export const canvasSyncEventSchema = z.object({
   timestamp: timestampSchema,
 });
 
+export const billingErrorEventSchema = z.object({
+  type: z.literal("billing.error"),
+  runId: runIdSchema,
+  timestamp: timestampSchema,
+  code: z.string().min(1),
+  message: z.string().min(1),
+  currentBalance: z.number().optional(),
+  requiredAmount: z.number().optional(),
+  plan: z.string().optional(),
+  dailyClaimed: z.boolean().optional(),
+});
+
 export const streamEventSchema = z.discriminatedUnion("type", [
   runStartedEventSchema,
   messageDeltaEventSchema,
@@ -116,6 +128,7 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   runCompletedEventSchema,
   runFailedEventSchema,
   canvasSyncEventSchema,
+  billingErrorEventSchema,
 ]);
 
 export type StreamEvent = z.infer<typeof streamEventSchema>;

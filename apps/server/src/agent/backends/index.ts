@@ -1,4 +1,4 @@
-import type { BackendFactory } from "deepagents";
+import type { AnyBackendProtocol } from "deepagents";
 
 import type { ServerEnv } from "../../config/env.js";
 import { createDevelopmentBackend } from "./dev.js";
@@ -10,7 +10,7 @@ type AgentBackendEnv = Pick<
 >;
 
 export type AgentBackendResult = {
-  factory: BackendFactory;
+  factory: (config: { state: unknown; store?: unknown }) => AnyBackendProtocol;
   sandboxDir?: string;
 };
 

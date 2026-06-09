@@ -21,15 +21,59 @@ import { Button } from "../../components/ui/button";
 import { useWebSocket } from "../../hooks/use-websocket";
 import { useAppTranslation } from "../../i18n";
 import {
+  fetchAsDataURL,
   insertImageOnCanvas,
   insertVideoOnCanvas,
 } from "../../lib/canvas-elements";
+import { resolveCanvasImageFiles } from "../../lib/canvas-file-serialization";
 import { SHOW_BRAND_KIT_ENTRY_POINTS } from "../../lib/feature-flags";
 import {
   type GenerationJobSubscription,
   generationJobService,
 } from "../../lib/generation-job-service";
 import { fetchCanvas, fetchProject } from "../../lib/server-api";
+
+type CanvasFileRecord = Record<string, unknown>;
+
+type CanvasSceneElement = Record<string, unknown> & {
+  customData?: Record<string, unknown>;
+  fileId?: string | null;
+  id?: string;
+  isDeleted?: boolean;
+  type?: string;
+};
+
+type CanvasImageElement = CanvasSceneElement & {
+  fileId: string;
+  id: string;
+  type: "image";
+};
+
+type ExcalidrawApiLike = {
+  addFiles(files: CanvasFileRecord[]): void;
+  getAppState(): Record<string, unknown>;
+  getFiles(): Record<string, CanvasFileRecord>;
+  getSceneElements(): readonly CanvasSceneElement[];
+  updateScene(scene: {
+    captureUpdate?: string;
+    elements: Record<string, unknown>[];
+  }): void;
+};
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function isCanvasImageElement(
+  element: CanvasSceneElement,
+): element is CanvasImageElement {
+  return (
+    element.type === "image" &&
+    typeof element.id === "string" &&
+    element.isDeleted !== true &&
+    typeof element.fileId === "string"
+  );
+}
 
 function CanvasPageContent() {
   const { t } = useAppTranslation("errors");
@@ -69,9 +113,16 @@ function CanvasPageContent() {
   >([]);
   const { error: toastError } = useToast();
 
-  const excalidrawApiRef = useRef<any>(null);
+  const excalidrawApiRef = useRef<ExcalidrawApiLike | null>(null);
   const fallbackSubscriptionsRef = useRef<GenerationJobSubscription[]>([]);
-  const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
+  const tRef = useRef(t);
+  const toastErrorRef = useRef(toastError);
+  const [excalidrawApi, setExcalidrawApi] = useState<ExcalidrawApiLike | null>(
+    null,
+  );
+
+  tRef.current = t;
+  toastErrorRef.current = toastError;
 
   const routerRef = useRef(router);
   routerRef.current = router;
@@ -92,9 +143,10 @@ function CanvasPageContent() {
 
   const ws = useWebSocket();
 
-  const handleApiReady = useCallback((api: any) => {
-    excalidrawApiRef.current = api;
-    setExcalidrawApi(api);
+  const handleApiReady = useCallback((api: unknown) => {
+    const canvasApi = api as ExcalidrawApiLike;
+    excalidrawApiRef.current = canvasApi;
+    setExcalidrawApi(canvasApi);
   }, []);
 
   const handleImageGenerated = useCallback((artifact: ToolArtifact) => {
@@ -189,9 +241,9 @@ function CanvasPageContent() {
 
   useEffect(() => {
     return () => {
-      fallbackSubscriptionsRef.current.forEach((subscription) =>
-        subscription.unsubscribe(),
-      );
+      for (const subscription of fallbackSubscriptionsRef.current) {
+        subscription.unsubscribe();
+      }
       fallbackSubscriptionsRef.current = [];
     };
   }, []);
@@ -202,20 +254,28 @@ function CanvasPageContent() {
     if (!api || !canvasData) return;
     try {
       const { canvas } = await fetchCanvas(canvasData.id);
-      const elements = canvas.content.elements ?? [];
-      const files = (canvas.content as Record<string, unknown>).files as
-        | Record<
-            string,
-            { id: string; dataURL: string; mimeType: string; created: number }
-          >
-        | undefined;
+      const resolved = await resolveCanvasImageFiles(
+        {
+          elements: canvas.content.elements ?? [],
+          appState: canvas.content.appState ?? {},
+          files:
+            ((canvas.content as Record<string, unknown>).files as Record<
+              string,
+              Record<string, unknown>
+            >) ?? {},
+        },
+        fetchAsDataURL,
+      );
 
-      // Sync files (base64 dataURLs from backend-inserted images) into Excalidraw
-      if (files && Object.keys(files).length > 0) {
-        api.addFiles(Object.values(files));
+      // Sync files into Excalidraw after resolving storage URLs to data URLs.
+      if (Object.keys(resolved.files).length > 0) {
+        api.addFiles(Object.values(resolved.files));
       }
 
-      api.updateScene({ elements, captureUpdate: "IMMEDIATELY" });
+      api.updateScene({
+        elements: resolved.elements,
+        captureUpdate: "IMMEDIATELY",
+      });
     } catch (err) {
       console.warn("Failed to sync canvas:", err);
     }
@@ -233,42 +293,39 @@ function CanvasPageContent() {
   const handleRequestCanvasImages = useCallback((): CanvasImageItem[] => {
     const api = excalidrawApiRef.current;
     if (!api) return [];
-    const elements: any[] = api.getSceneElements() ?? [];
-    const files: Record<string, any> = api.getFiles() ?? {};
+    const elements = api.getSceneElements() ?? [];
+    const files = api.getFiles() ?? {};
     let idx = 0;
-    return elements
-      .filter((el: any) => el.type === "image" && !el.isDeleted && el.fileId)
-      .map((el: any) => {
-        idx++;
-        const file = files[el.fileId];
-        const dataURL = file?.dataURL ?? "";
-        const title =
-          el.customData?.title || el.customData?.label || `Image ${idx}`;
-        return {
-          kind: "canvas-image",
-          id: el.id,
-          name: title,
-          thumbnailUrl: dataURL,
-          assetId: el.id,
-          url: el.customData?.storageUrl ?? dataURL,
-          mimeType: file?.mimeType ?? "image/png",
-        };
-      });
+    return elements.filter(isCanvasImageElement).map((el) => {
+      idx++;
+      const file = files[el.fileId];
+      const dataURL = stringValue(file?.dataURL) ?? "";
+      const title =
+        stringValue(el.customData?.title) ??
+        stringValue(el.customData?.label) ??
+        `Image ${idx}`;
+      return {
+        kind: "canvas-image",
+        id: el.id,
+        name: title,
+        thumbnailUrl: dataURL,
+        assetId: el.id,
+        url: stringValue(el.customData?.storageUrl) ?? dataURL,
+        mimeType: stringValue(file?.mimeType) ?? "image/png",
+      };
+    });
   }, []);
 
-  const loadProjectShell = useCallback(
-    async (projectId: string) => {
-      try {
-        const projectData = await fetchProject(projectId);
-        setBrandKitId(projectData.project.brandKitId);
-        setProjectName(projectData.project.name ?? "Untitled");
-      } catch (err) {
-        console.warn("Failed to fetch project for brand kit:", err);
-        toastError(t("canvas.projectLoadFailed"));
-      }
-    },
-    [t, toastError],
-  );
+  const loadProjectShell = useCallback(async (projectId: string) => {
+    try {
+      const projectData = await fetchProject(projectId);
+      setBrandKitId(projectData.project.brandKitId);
+      setProjectName(projectData.project.name ?? "Untitled");
+    } catch (err) {
+      console.warn("Failed to fetch project for brand kit:", err);
+      toastErrorRef.current(tRef.current("canvas.projectLoadFailed"));
+    }
+  }, []);
 
   useEffect(() => {
     if (!canvasId) return;
@@ -284,17 +341,21 @@ function CanvasPageContent() {
           content: {
             elements: c.content.elements ?? [],
             appState: c.content.appState ?? {},
-            files: (c.content as any).files ?? {},
+            files:
+              ((c.content as Record<string, unknown>).files as Record<
+                string,
+                Record<string, unknown>
+              >) ?? {},
           },
         });
         setPageLoading(false);
         void loadProjectShell(c.projectId);
       })
       .catch(() => {
-        setError(t("canvas.loadFailed"));
+        setError(tRef.current("canvas.loadFailed"));
         setPageLoading(false);
       });
-  }, [canvasId, loadProjectShell, t]);
+  }, [canvasId, loadProjectShell]);
 
   if (!canvasId) {
     return (

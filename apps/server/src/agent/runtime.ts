@@ -3,68 +3,114 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
-import {
-  createLocalAgentRuntime,
-  type LocalAgentProviderPlugin,
-  type LocalAgentRuntime,
-} from "@nextop-os/agent-acp-kit";
-import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type {
   AgentRuntimeProvider,
   ChatMessage,
   ImageAttachment,
   ImageGenerationPreference,
   MessageMention,
-  RuntimeKind,
   RunCancelResponse,
   RunCreateRequest,
   RunCreateResponse,
+  RuntimeKind,
   StreamEvent,
   VideoGenerationPreference,
 } from "@aimc/shared";
+import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import {
+  type LocalAgentProviderPlugin,
+  type LocalAgentRuntime,
+  createLocalAgentRuntime,
+} from "@nextop-os/agent-acp-kit";
 
-import type { ServerEnv } from "../config/env.js";
-import { createPipelineLogger } from "../ws/logger.js";
-import type { JobService } from "../features/jobs/job-service.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { AuthenticatedUser, UserDataClient } from "../auth/request.js";
-import type { ConnectionManager } from "../ws/connection-manager.js";
-// execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
-// 不需要自定义代码执行工具
-import type { SubmitImageJobFn } from "./tools/image-generate.js";
-import type { SubmitVideoJobFn } from "./tools/video-generate.js";
+import type { ServerEnv } from "../config/env.js";
+import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import {
+  insertImageElement,
+  insertVideoElement,
+} from "../features/canvas/canvas-element-writer.js";
 import type { CreditService } from "../features/credits/credit-service.js";
-import { TierGuardError, type TierGuard } from "../features/credits/tier-guard.js";
-import { getPlanConfig, type BillingErrorCode, type ImageQualityLevel } from "@aimc/shared";
+import {
+  type TierGuard,
+  TierGuardError,
+} from "../features/credits/tier-guard.js";
+import type { JobService } from "../features/jobs/job-service.js";
+import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
+import type { ConnectionManager } from "../ws/connection-manager.js";
+import { createPipelineLogger } from "../ws/logger.js";
 import { createAgentBackend } from "./backends/index.js";
 import {
   type AimcAgentFactory,
-  createDefaultModelSpecifier,
   createAimcDeepAgent,
+  createDefaultModelSpecifier,
 } from "./deep-agent.js";
-import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
-import type { WorkspaceSkillEntry } from "./workspace-skills.js";
-import { resolveAimcWorkspaceSkills } from "./local-agent-host/skills.js";
-import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
-import { insertImageElement, insertVideoElement } from "../features/canvas/canvas-element-writer.js";
 import {
   buildAgentImageJobPayload,
   buildAgentVideoJobPayload,
 } from "./job-payloads.js";
+import { resolveAimcWorkspaceSkills } from "./local-agent-host/skills.js";
 import type { createLocalToolGatewayService } from "./local-agent-host/tool-gateway.js";
+import { createAimcLocalAgentProviderPlugins } from "./local-agent-providers.js";
 import {
+  type RuntimeTarget,
   createRuntimeControlPlane,
   resolveResumeMode,
-  type RuntimeTarget,
 } from "./run-orchestrator.js";
 import { inferAimcRuntimeTarget } from "./run-orchestrator.js";
+import { adaptDeepAgentStream } from "./runtimes/deepagent-events.js";
+import { loadNormalizedSessionHistory } from "./runtimes/history.js";
 import { createLocalAgentRuntimeProvider } from "./runtimes/local-agent.js";
 import { createServerDeepAgentRuntimeProvider } from "./runtimes/server-deepagent.js";
 import type { RuntimeExecutionContext } from "./runtimes/types.js";
-import { adaptDeepAgentStream } from "./runtimes/deepagent-events.js";
-import { loadNormalizedSessionHistory } from "./runtimes/history.js";
-import { createAimcLocalAgentProviderPlugins } from "./local-agent-providers.js";
+// execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
+// 不需要自定义代码执行工具
+import type { SubmitImageJobFn } from "./tools/image-generate.js";
+import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
+import type { SubmitVideoJobFn } from "./tools/video-generate.js";
+import type { WorkspaceSkillEntry } from "./workspace-skills.js";
+
+type BillingErrorCode = string;
+type ImageQualityLevel = "standard" | "hd" | "ultra";
+type CanvasSummaryClient = {
+  from(table: "canvases"): {
+    select(columns: string): {
+      eq(
+        column: string,
+        value: string,
+      ): {
+        single(): Promise<{
+          data: {
+            content?: {
+              elements?: Array<Record<string, unknown>>;
+            };
+          } | null;
+        }>;
+      };
+    };
+  };
+};
+type BrandKitLookupClient = {
+  from(table: string): {
+    select(columns: string): {
+      eq(
+        column: string,
+        value: string,
+      ): {
+        maybeSingle(): Promise<{
+          data: unknown | null;
+        }>;
+      };
+    };
+  };
+};
+
+function recordOrNull(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
 
 /**
  * Build the text portion of a user message, appending <input_images> XML
@@ -91,12 +137,14 @@ export function buildUserMessage(
   const imageGenerationPreferenceXml = buildImageGenerationPreferenceXml(
     imageGenerationPreference,
   );
-  if (imageGenerationPreferenceXml) xmlBlocks.push(imageGenerationPreferenceXml);
+  if (imageGenerationPreferenceXml)
+    xmlBlocks.push(imageGenerationPreferenceXml);
 
   const videoGenerationPreferenceXml = buildVideoGenerationPreferenceXml(
     videoGenerationPreference,
   );
-  if (videoGenerationPreferenceXml) xmlBlocks.push(videoGenerationPreferenceXml);
+  if (videoGenerationPreferenceXml)
+    xmlBlocks.push(videoGenerationPreferenceXml);
 
   const mentionXmlBlocks = buildMentionXmlBlocks(mentions);
   xmlBlocks.push(...mentionXmlBlocks);
@@ -164,7 +212,9 @@ function buildMentionXmlBlocks(mentions: MessageMention[]): string[] {
   const xmlBlocks: string[] = [];
 
   const mentionedModels = mentions.filter(
-    (mention): mention is Extract<MessageMention, { mentionType: "image-model" }> =>
+    (
+      mention,
+    ): mention is Extract<MessageMention, { mentionType: "image-model" }> =>
       mention.mentionType === "image-model",
   );
   if (mentionedModels.length > 0) {
@@ -208,9 +258,7 @@ function buildMentionXmlBlocks(mentions: MessageMention[]): string[] {
 
   // Skill mentions — tell the agent to read and follow the mentioned skill
   const mentionedSkills = mentions.filter(
-    (
-      mention,
-    ): mention is Extract<MessageMention, { mentionType: "skill" }> =>
+    (mention): mention is Extract<MessageMention, { mentionType: "skill" }> =>
       mention.mentionType === "skill",
   );
   if (mentionedSkills.length > 0) {
@@ -377,9 +425,7 @@ export type AgentRunService = ReturnType<typeof createAgentRunService>;
 export function createAgentRunService(options: CreateAgentRuntimeOptions) {
   const now = options.now ?? (() => new Date().toISOString());
   const runs = new Map<string, RuntimeRunRecord>();
-  const runIdFactory =
-    options.runIdFactory ??
-    (() => randomUUID());
+  const runIdFactory = options.runIdFactory ?? (() => randomUUID());
 
   const resolvedAgentFactory: AimcAgentFactory =
     options.agentFactory ??
@@ -407,7 +453,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
   ): void {
     const canvasTarget = canvasId ?? run.conversationId;
     if (!opts.connectionManager || !canvasTarget) {
-      console.warn(`[billing] pushBillingErrorAndAbort: no connectionManager or canvasTarget, billing.error (${code}) not sent to client`);
+      console.warn(
+        `[billing] pushBillingErrorAndAbort: no connectionManager or canvasTarget, billing.error (${code}) not sent to client`,
+      );
     } else {
       opts.connectionManager.pushToCanvas(canvasTarget, {
         type: "billing.error",
@@ -423,6 +471,22 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     }
   }
 
+  function createBillingBalanceExtra(input: {
+    currentBalance: number;
+    dailyClaimed?: boolean;
+    plan?: string;
+    requiredAmount: number;
+  }) {
+    return {
+      currentBalance: input.currentBalance,
+      requiredAmount: input.requiredAmount,
+      ...(input.plan !== undefined ? { plan: input.plan } : {}),
+      ...(input.dailyClaimed !== undefined
+        ? { dailyClaimed: input.dailyClaimed }
+        : {}),
+    };
+  }
+
   async function loadCanvasSummaryForRuntime(context: RuntimeExecutionContext) {
     const { run } = context;
     if (!run.canvasId || !run.accessToken || !options.createUserClient) {
@@ -430,7 +494,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     }
 
     try {
-      const canvasClient = options.createUserClient(run.accessToken) as any;
+      const canvasClient = options.createUserClient(
+        run.accessToken,
+      ) as CanvasSummaryClient;
       const { data: canvasData } = await canvasClient
         .from("canvases")
         .select("content")
@@ -452,13 +518,20 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     options.localAgentProviderPlugins ?? createAimcLocalAgentProviderPlugins();
   const localAgentRuntime =
     localAgentTrusted && options.toolGateway && options.toolGatewayBaseUrl
-      ? options.localAgentRuntime ??
+      ? (options.localAgentRuntime ??
         createLocalAgentRuntime({
           providers: localAgentProviderPlugins,
-        })
+        }))
+      : null;
+  const localAgentGatewayDeps =
+    localAgentRuntime && options.toolGateway && options.toolGatewayBaseUrl
+      ? {
+          toolGateway: options.toolGateway,
+          toolGatewayBaseUrl: options.toolGatewayBaseUrl,
+        }
       : null;
   const runtimeProviders = [
-    ...(localAgentRuntime && options.toolGateway && options.toolGatewayBaseUrl
+    ...(localAgentRuntime && localAgentGatewayDeps
       ? localAgentProviderPlugins.map((providerPlugin) =>
           createLocalAgentRuntimeProvider(
             {
@@ -482,8 +555,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   status: runs.get(metadata.runId)?.status ?? "running",
                 });
               },
-              toolGateway: options.toolGateway!,
-              toolGatewayBaseUrl: options.toolGatewayBaseUrl!,
+              toolGateway: localAgentGatewayDeps.toolGateway,
+              toolGatewayBaseUrl: localAgentGatewayDeps.toolGatewayBaseUrl,
             },
             providerPlugin,
           ),
@@ -509,13 +582,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     }),
   ];
 
-  const runtimeControlPlane = createRuntimeControlPlane<RuntimeExecutionContext>(
-    runtimeProviders,
-    {
+  const runtimeControlPlane =
+    createRuntimeControlPlane<RuntimeExecutionContext>(runtimeProviders, {
       now,
       selectRuntimeKind: inferAimcRuntimeTarget,
-    },
-  );
+    });
 
   return {
     cancelRun(runId: string): RunCancelResponse | null {
@@ -551,7 +622,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     ): RunCreateResponse {
       const runId = runIdFactory();
       const runInput = input;
-      const requestedRuntimeKind = runOptions?.runtimeKind ?? runInput.runtimeKind;
+      const requestedRuntimeKind =
+        runOptions?.runtimeKind ?? runInput.runtimeKind;
       const requestedRuntimeProvider =
         runOptions?.runtimeProvider ?? runInput.runtimeProvider;
       const resolvedModel =
@@ -564,9 +636,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         initialRuntimeTarget = runtimeControlPlane.resolveRuntimeTarget({
           model: resolvedModel,
           requestedRuntimeKind,
-          ...(requestedRuntimeProvider
-            ? { requestedRuntimeProvider }
-            : {}),
+          ...(requestedRuntimeProvider ? { requestedRuntimeProvider } : {}),
         });
       } catch (error) {
         if (requestedRuntimeKind) {
@@ -583,7 +653,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         : undefined;
 
       if (runInput.resumeFromRunId && !previousRun) {
-        throw new Error(`Resume source run not found: ${runInput.resumeFromRunId}`);
+        throw new Error(
+          `Resume source run not found: ${runInput.resumeFromRunId}`,
+        );
       }
 
       const rawResumeMode =
@@ -603,35 +675,38 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             : undefined;
       const resolvedResumeMode =
         rawResumeMode === "native" ? "provider-local" : rawResumeMode;
-      const resumeContext =
-        resolvedResumeMode
-          ? {
-              mode: resolvedResumeMode,
-              ...(runInput.resumeFromRunId
-                ? { previousRunId: runInput.resumeFromRunId }
-                : {}),
-              ...(previousRun?.runtime_kind != null
-                ? { previousRuntimeKind: previousRun.runtime_kind }
-                : {}),
-              ...(previousRun?.runtime_provider != null
-                ? { previousRuntimeProvider: previousRun.runtime_provider }
-                : {}),
-              ...(previousRun?.provider_session_id
-                ? { providerSessionId: previousRun.provider_session_id }
-                : {}),
-              ...(previousRun?.resume_token
-                ? { resumeToken: previousRun.resume_token }
-                : {}),
-            }
-          : undefined;
+      const resumeContext = resolvedResumeMode
+        ? {
+            mode: resolvedResumeMode,
+            ...(runInput.resumeFromRunId
+              ? { previousRunId: runInput.resumeFromRunId }
+              : {}),
+            ...(previousRun?.runtime_kind != null
+              ? { previousRuntimeKind: previousRun.runtime_kind }
+              : {}),
+            ...(previousRun?.runtime_provider != null
+              ? { previousRuntimeProvider: previousRun.runtime_provider }
+              : {}),
+            ...(previousRun?.provider_session_id
+              ? { providerSessionId: previousRun.provider_session_id }
+              : {}),
+            ...(previousRun?.resume_token
+              ? { resumeToken: previousRun.resume_token }
+              : {}),
+          }
+        : undefined;
 
       runs.set(runId, {
         ...runInput,
-        ...(runOptions?.accessToken ? { accessToken: runOptions.accessToken } : {}),
+        ...(runOptions?.accessToken
+          ? { accessToken: runOptions.accessToken }
+          : {}),
         ...(runOptions?.assistantMessageId
           ? { assistantMessageId: runOptions.assistantMessageId }
           : {}),
-        ...(runOptions?.connectionId ? { connectionId: runOptions.connectionId } : {}),
+        ...(runOptions?.connectionId
+          ? { connectionId: runOptions.connectionId }
+          : {}),
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
@@ -710,7 +785,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       // Build submitImageJob / submitVideoJob closures for async jobs via PGMQ
       let submitImageJob: SubmitImageJobFn | undefined;
       let submitVideoJob: SubmitVideoJobFn | undefined;
-      if (options.jobService && options.createUserClient && run.accessToken && run.userId) {
+      if (
+        options.jobService &&
+        options.createUserClient &&
+        run.accessToken &&
+        run.userId
+      ) {
         const jobSvc = options.jobService;
         const createClient = options.createUserClient;
         const accessToken = run.accessToken;
@@ -722,7 +802,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         submitImageJob = async (input) => {
           const jobT0 = Date.now();
           const jobLap = (label: string, extra?: Record<string, unknown>) => {
-            console.log(`[submitImageJob] ${label} +${Date.now() - jobT0}ms`, extra ? JSON.stringify(extra) : "");
+            console.log(
+              `[submitImageJob] ${label} +${Date.now() - jobT0}ms`,
+              extra ? JSON.stringify(extra) : "",
+            );
           };
 
           // Look up personal workspace directly — the viewer is already
@@ -748,7 +831,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           const workspaceId = ws.id;
           let creditsCost = 0;
           if (options.creditService && options.tierGuard) {
-            const sub = await options.creditService.getSubscription(workspaceId);
+            const sub =
+              await options.creditService.getSubscription(workspaceId);
             const quality = (input.quality as ImageQualityLevel) ?? "hd";
             try {
               options.tierGuard.checkModelAccess(sub.plan, input.model);
@@ -756,24 +840,48 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               await options.tierGuard.checkConcurrency(workspaceId, sub.plan);
             } catch (err) {
               if (err instanceof TierGuardError) {
-                pushBillingErrorAndAbort(run, canvasId, options, err.code, err.message);
+                pushBillingErrorAndAbort(
+                  run,
+                  canvasId,
+                  options,
+                  err.code,
+                  err.message,
+                );
                 throw err;
               }
               throw err;
             }
-            creditsCost = options.tierGuard.calculateCreditCost(input.model, "image_generation", { quality });
+            creditsCost = options.tierGuard.calculateCreditCost(
+              input.model,
+              "image_generation",
+              { quality },
+            );
           }
 
           // ── Balance pre-check: stop run immediately if insufficient ──
           if (options.creditService && creditsCost > 0) {
-            const balanceInfo = await options.creditService.getBalance(workspaceId);
+            const balanceInfo =
+              await options.creditService.getBalance(workspaceId);
             if (balanceInfo.balance < creditsCost) {
-              pushBillingErrorAndAbort(run, canvasId, options, "insufficient_credits", "Insufficient credits", {
-                currentBalance: balanceInfo.balance,
-                requiredAmount: creditsCost,
-                plan: balanceInfo.plan,
-                dailyClaimed: balanceInfo.dailyClaimed,
-              });
+              pushBillingErrorAndAbort(
+                run,
+                canvasId,
+                options,
+                "insufficient_credits",
+                "Insufficient credits",
+                {
+                  ...createBillingBalanceExtra({
+                    currentBalance: balanceInfo.balance,
+                    requiredAmount: creditsCost,
+                    ...(balanceInfo.plan !== undefined
+                      ? { plan: balanceInfo.plan }
+                      : {}),
+                    ...(balanceInfo.dailyClaimed !== undefined
+                      ? { dailyClaimed: balanceInfo.dailyClaimed }
+                      : {}),
+                  }),
+                },
+              );
               throw new Error("Insufficient credits");
             }
           }
@@ -790,7 +898,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (options.creditService && creditsCost > 0) {
             try {
               const txId = await options.creditService.deductCredits(
-                workspaceId, userId, creditsCost, job.id,
+                workspaceId,
+                userId,
+                creditsCost,
+                job.id,
                 `Image generation: ${input.model}`,
               );
               await jobSvc.setCreditsInfo(job.id, creditsCost, txId);
@@ -799,7 +910,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               throw deductError;
             }
           }
-          jobLap("job_created", { jobId: job.id, creditsCost, sessionId, runId });
+          jobLap("job_created", {
+            jobId: job.id,
+            creditsCost,
+            sessionId,
+            runId,
+          });
 
           // Poll until terminal state
           // Worker image VT=120s, but Replicate calls can take 100s+ plus queue delay.
@@ -832,21 +948,27 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               let elementId: string | undefined;
               if (canvasId && result.object_path) {
                 try {
-                  const writerClient = createClient(accessToken) as UserDataClient;
-                  const explicitPlacement = (input as any).placementX != null && (input as any).placementY != null
-                    ? {
-                        x: (input as any).placementX,
-                        y: (input as any).placementY,
-                        width: (input as any).placementWidth ?? 512,
-                        height: (input as any).placementHeight ?? 512,
-                      }
-                    : undefined;
+                  const writerClient = createClient(
+                    accessToken,
+                  ) as UserDataClient;
+                  const explicitPlacement =
+                    input.placementX != null && input.placementY != null
+                      ? {
+                          x: input.placementX,
+                          y: input.placementY,
+                          width: input.placementWidth ?? 512,
+                          height: input.placementHeight ?? 512,
+                        }
+                      : undefined;
 
                   const insertResult = await insertImageElement(
                     writerClient,
                     {
                       canvasId,
                       objectPath: result.object_path,
+                      ...(result.signed_url
+                        ? { signedUrl: result.signed_url }
+                        : {}),
                       width: result.width ?? 1024,
                       height: result.height ?? 1024,
                       mimeType: result.mime_type ?? "image/png",
@@ -862,12 +984,23 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     runId,
                     timestamp: new Date().toISOString(),
                   } satisfies StreamEvent;
-                  const replayEnvelope = options.publishCanvasSyncEvent?.({ canvasId, event, runId });
-                  options.connectionManager?.pushToCanvas(canvasId, event, replayEnvelope);
+                  const replayEnvelope = options.publishCanvasSyncEvent?.({
+                    canvasId,
+                    event,
+                    runId,
+                  });
+                  options.connectionManager?.pushToCanvas(
+                    canvasId,
+                    event,
+                    replayEnvelope,
+                  );
                   jobLap("canvas_element_inserted", { elementId });
                 } catch (insertErr) {
                   // Graceful degradation: log error but still return result
-                  console.error("[submitImageJob] canvas insert failed:", insertErr);
+                  console.error(
+                    "[submitImageJob] canvas insert failed:",
+                    insertErr,
+                  );
                 }
               }
 
@@ -881,7 +1014,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               };
             }
 
-            if (current.status === "dead_letter" || current.status === "canceled") {
+            if (
+              current.status === "dead_letter" ||
+              current.status === "canceled"
+            ) {
               jobLap("job_poll_done", { pollCount, status: current.status });
               return {
                 jobId: job.id,
@@ -894,7 +1030,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               current.status === "failed" &&
               current.attempt_count >= current.max_attempts
             ) {
-              jobLap("job_poll_done", { pollCount, status: "failed_max_retries" });
+              jobLap("job_poll_done", {
+                pollCount,
+                status: "failed_max_retries",
+              });
               return {
                 jobId: job.id,
                 error: current.error_message ?? "Job failed after max retries",
@@ -912,7 +1051,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         submitVideoJob = async (input) => {
           const jobT0 = Date.now();
           const jobLap = (label: string, extra?: Record<string, unknown>) => {
-            console.log(`[submitVideoJob] ${label} +${Date.now() - jobT0}ms`, extra ? JSON.stringify(extra) : "");
+            console.log(
+              `[submitVideoJob] ${label} +${Date.now() - jobT0}ms`,
+              extra ? JSON.stringify(extra) : "",
+            );
           };
 
           const client = createClient(accessToken) as UserDataClient;
@@ -935,39 +1077,61 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           const workspaceId = ws.id;
           let creditsCost = 0;
           if (options.creditService && options.tierGuard) {
-            const sub = await options.creditService.getSubscription(workspaceId);
+            const sub =
+              await options.creditService.getSubscription(workspaceId);
             try {
               options.tierGuard.checkModelAccess(sub.plan, input.model);
               if (input.resolution) {
-                options.tierGuard.checkVideoResolution(sub.plan, input.resolution as any);
+                options.tierGuard.checkResolution(sub.plan, input.resolution);
               }
               await options.tierGuard.checkConcurrency(workspaceId, sub.plan);
             } catch (err) {
               if (err instanceof TierGuardError) {
-                pushBillingErrorAndAbort(run, canvasId, options, err.code, err.message);
+                pushBillingErrorAndAbort(
+                  run,
+                  canvasId,
+                  options,
+                  err.code,
+                  err.message,
+                );
                 throw err;
               }
               throw err;
             }
             creditsCost = options.tierGuard.calculateCreditCost(
-              input.model, "video_generation",
+              input.model,
+              "video_generation",
               {
                 ...(input.duration != null ? { duration: input.duration } : {}),
-                ...(input.resolution ? { resolution: input.resolution as any } : {}),
+                ...(input.resolution ? { resolution: input.resolution } : {}),
               },
             );
           }
 
           // ── Balance pre-check: stop run immediately if insufficient ──
           if (options.creditService && creditsCost > 0) {
-            const balanceInfo = await options.creditService.getBalance(workspaceId);
+            const balanceInfo =
+              await options.creditService.getBalance(workspaceId);
             if (balanceInfo.balance < creditsCost) {
-              pushBillingErrorAndAbort(run, canvasId, options, "insufficient_credits", "Insufficient credits", {
-                currentBalance: balanceInfo.balance,
-                requiredAmount: creditsCost,
-                plan: balanceInfo.plan,
-                dailyClaimed: balanceInfo.dailyClaimed,
-              });
+              pushBillingErrorAndAbort(
+                run,
+                canvasId,
+                options,
+                "insufficient_credits",
+                "Insufficient credits",
+                {
+                  ...createBillingBalanceExtra({
+                    currentBalance: balanceInfo.balance,
+                    requiredAmount: creditsCost,
+                    ...(balanceInfo.plan !== undefined
+                      ? { plan: balanceInfo.plan }
+                      : {}),
+                    ...(balanceInfo.dailyClaimed !== undefined
+                      ? { dailyClaimed: balanceInfo.dailyClaimed }
+                      : {}),
+                  }),
+                },
+              );
               throw new Error("Insufficient credits");
             }
           }
@@ -984,7 +1148,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (options.creditService && creditsCost > 0) {
             try {
               const txId = await options.creditService.deductCredits(
-                workspaceId, userId, creditsCost, job.id,
+                workspaceId,
+                userId,
+                creditsCost,
+                job.id,
                 `Video generation: ${input.model}`,
               );
               await jobSvc.setCreditsInfo(job.id, creditsCost, txId);
@@ -993,7 +1160,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               throw deductError;
             }
           }
-          jobLap("job_created", { jobId: job.id, creditsCost, sessionId, runId });
+          jobLap("job_created", {
+            jobId: job.id,
+            creditsCost,
+            sessionId,
+            runId,
+          });
 
           // Poll until terminal state - video generation can sit in a provider
           // queue for a while, so keep the outer wait longer than provider poll.
@@ -1026,15 +1198,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               let elementId: string | undefined;
               if (canvasId && result.signed_url) {
                 try {
-                  const writerClient = createClient(accessToken) as UserDataClient;
-                  const explicitPlacement = (input as any).placementX != null && (input as any).placementY != null
-                    ? {
-                        x: (input as any).placementX,
-                        y: (input as any).placementY,
-                        width: (input as any).placementWidth ?? 640,
-                        height: (input as any).placementHeight ?? 360,
-                      }
-                    : undefined;
+                  const writerClient = createClient(
+                    accessToken,
+                  ) as UserDataClient;
+                  const explicitPlacement =
+                    input.placementX != null && input.placementY != null
+                      ? {
+                          x: input.placementX,
+                          y: input.placementY,
+                          width: input.placementWidth ?? 640,
+                          height: input.placementHeight ?? 360,
+                        }
+                      : undefined;
 
                   const insertResult = await insertVideoElement(
                     writerClient,
@@ -1044,8 +1219,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                       width: result.width ?? 1280,
                       height: result.height ?? 720,
                       mimeType: result.mime_type ?? "video/mp4",
-                      ...(result.duration_seconds != null ? { durationSeconds: result.duration_seconds } : {}),
-                      title: (input as any).title,
+                      ...(result.duration_seconds != null
+                        ? { durationSeconds: result.duration_seconds }
+                        : {}),
+                      title: input.title,
                       prompt: input.prompt,
                     },
                     explicitPlacement,
@@ -1058,12 +1235,23 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     runId,
                     timestamp: new Date().toISOString(),
                   } satisfies StreamEvent;
-                  const replayEnvelope = options.publishCanvasSyncEvent?.({ canvasId, event, runId });
-                  options.connectionManager?.pushToCanvas(canvasId, event, replayEnvelope);
+                  const replayEnvelope = options.publishCanvasSyncEvent?.({
+                    canvasId,
+                    event,
+                    runId,
+                  });
+                  options.connectionManager?.pushToCanvas(
+                    canvasId,
+                    event,
+                    replayEnvelope,
+                  );
                   jobLap("canvas_element_inserted", { elementId });
                 } catch (insertErr) {
                   // Graceful degradation: log error but still return result
-                  console.error("[submitVideoJob] canvas insert failed:", insertErr);
+                  console.error(
+                    "[submitVideoJob] canvas insert failed:",
+                    insertErr,
+                  );
                 }
               }
 
@@ -1074,11 +1262,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 width: result.width ?? 1280,
                 height: result.height ?? 720,
                 mimeType: result.mime_type ?? "video/mp4",
-                ...(result.duration_seconds != null ? { durationSeconds: result.duration_seconds } : {}),
+                ...(result.duration_seconds != null
+                  ? { durationSeconds: result.duration_seconds }
+                  : {}),
               };
             }
 
-            if (current.status === "dead_letter" || current.status === "canceled") {
+            if (
+              current.status === "dead_letter" ||
+              current.status === "canceled"
+            ) {
               jobLap("job_poll_done", { pollCount, status: current.status });
               return {
                 jobId: job.id,
@@ -1090,7 +1283,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               current.status === "failed" &&
               current.attempt_count >= current.max_attempts
             ) {
-              jobLap("job_poll_done", { pollCount, status: "failed_max_retries" });
+              jobLap("job_poll_done", {
+                pollCount,
+                status: "failed_max_retries",
+              });
               return {
                 jobId: job.id,
                 error: current.error_message ?? "Job failed after max retries",
@@ -1104,7 +1300,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             error: `Job timed out after ${MAX_WAIT / 1000}s`,
           };
         };
-
       }
 
       // Load workspace skills (user-installed skills from DB).
@@ -1118,7 +1313,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             canvasId: run.canvasId,
             createUserClient: options.createUserClient,
           });
-          rlog.lap("workspace_skills_loaded", { count: workspaceSkills.length });
+          rlog.lap("workspace_skills_loaded", {
+            count: workspaceSkills.length,
+          });
         } catch (err) {
           // Non-fatal: agent runs without workspace skills
           console.warn("[runtime] Failed to load workspace skills:", err);
@@ -1128,20 +1325,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       const runtimeEnv = run.envOverride ?? options.env;
 
       // Create backend — production uses StateBackend (no local shell).
-      const backendResult = createAgentBackend(
-        runtimeEnv,
-        run.canvasId,
-        { hasWorkspaceSkills: workspaceSkills.length > 0 },
-      );
+      const backendResult = createAgentBackend(runtimeEnv, run.canvasId, {
+        hasWorkspaceSkills: workspaceSkills.length > 0,
+      });
 
       let activeRuntimeTarget: RuntimeTarget | null = null;
       let runtimeLease: { release(): void } | null = null;
 
       try {
         const resolvedModel = run.modelOverride
-          ? (run.runtimeKind === "local-agent" || run.modelOverride.includes(":")
+          ? run.runtimeKind === "local-agent" || run.modelOverride.includes(":")
             ? run.modelOverride
-            : createDefaultModelSpecifier({ agentModel: run.modelOverride }))
+            : createDefaultModelSpecifier({ agentModel: run.modelOverride })
           : options.model;
         const resolvedRuntimeTarget = runtimeControlPlane.resolveRuntimeTarget({
           model: resolvedModel,
@@ -1162,30 +1357,45 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         let brandKitId: string | null = null;
         if (run.canvasId && run.accessToken && options.createUserClient) {
           try {
-            const client = options.createUserClient(run.accessToken) as any;
+            const client = options.createUserClient(
+              run.accessToken,
+            ) as BrandKitLookupClient;
             const { data: canvas } = await client
               .from("canvases")
               .select("project_id, projects!inner(brand_kit_id)")
               .eq("id", run.canvasId)
               .maybeSingle();
-            brandKitId = canvas?.projects?.brand_kit_id ?? null;
+            const canvasRecord = recordOrNull(canvas);
+            const projectRecord = recordOrNull(canvasRecord?.projects);
+            brandKitId =
+              typeof projectRecord?.brand_kit_id === "string"
+                ? projectRecord.brand_kit_id
+                : null;
           } catch (err) {
             // Fallback: joined query may fail if FK isn't exposed via PostgREST
             // In that case, try the two-step approach
             try {
-              const client = options.createUserClient(run.accessToken) as any;
+              const client = options.createUserClient(
+                run.accessToken,
+              ) as BrandKitLookupClient;
               const { data: c } = await client
                 .from("canvases")
                 .select("project_id")
                 .eq("id", run.canvasId)
                 .maybeSingle();
-              if (c?.project_id) {
+              const canvasRecord = recordOrNull(c);
+              const projectId = canvasRecord?.project_id;
+              if (typeof projectId === "string") {
                 const { data: p } = await client
                   .from("projects")
                   .select("brand_kit_id")
-                  .eq("id", c.project_id)
+                  .eq("id", projectId)
                   .maybeSingle();
-                brandKitId = p?.brand_kit_id ?? null;
+                const projectRecord = recordOrNull(p);
+                brandKitId =
+                  typeof projectRecord?.brand_kit_id === "string"
+                    ? projectRecord.brand_kit_id
+                    : null;
               }
             } catch (err2) {
               console.warn("Failed to resolve brand kit ID:", err2);
@@ -1218,36 +1428,38 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             workspaceSkills,
           },
         )) {
-        run.status = mapEventToStatus(event);
-        yield event;
+          run.status = mapEventToStatus(event);
+          yield event;
 
-        if (!isTerminalEvent(event) && options.eventDelayMs) {
-          try {
-            await delay(options.eventDelayMs, undefined, {
-              signal: run.controller.signal,
-            });
-          } catch {
-            run.status = "canceled";
-            yield {
-              runId,
-              timestamp: now(),
-              type: "run.canceled",
-            };
-            return;
+          if (!isTerminalEvent(event) && options.eventDelayMs) {
+            try {
+              await delay(options.eventDelayMs, undefined, {
+                signal: run.controller.signal,
+              });
+            } catch {
+              run.status = "canceled";
+              yield {
+                runId,
+                timestamp: now(),
+                type: "run.canceled",
+              };
+              return;
+            }
           }
         }
-      }
       } catch (streamError) {
         console.error("[agent-runtime] Stream iteration failed:", streamError);
         if (activeRuntimeTarget) {
-          runtimeControlPlane.updateRuntimeStatus(activeRuntimeTarget, "degraded");
+          runtimeControlPlane.updateRuntimeStatus(
+            activeRuntimeTarget,
+            "degraded",
+          );
         }
         const failedEvent = toFailedEvent(runId, now, streamError);
         run.status = "failed";
         yield failedEvent;
         return;
-      }
-      finally {
+      } finally {
         runtimeLease?.release();
         if (backendResult.sandboxDir) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(
@@ -1258,7 +1470,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     },
   };
 }
-
 
 function isTerminalEvent(event: StreamEvent) {
   return (

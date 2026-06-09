@@ -33,7 +33,7 @@ test("production Nextop app workflow publishes ai-media-canvas on main", async (
   assert.deepEqual(on.push.branches, ["main"]);
   assert.equal(
     publish.uses,
-    "nextop-os/nextop/.github/workflows/publish-nextop-app-release.yml@main",
+    "tutti-os/tutti/.github/workflows/publish-nextop-app-release.yml@main",
   );
   assert.equal(publish.with.app_id, "ai-media-canvas");
   assert.equal(publish.with.package_command, "pnpm package:nextop");
@@ -54,7 +54,7 @@ test("staging Nextop app workflow publishes ai-media-canvas manually", async () 
   assert.equal(on.push, undefined);
   assert.equal(
     publish.uses,
-    "nextop-os/nextop/.github/workflows/publish-nextop-app-release.yml@main",
+    "tutti-os/tutti/.github/workflows/publish-nextop-app-release.yml@main",
   );
   assert.equal(publish.with.app_id, "ai-media-canvas");
   assert.equal(publish.with.package_command, "pnpm package:nextop");
