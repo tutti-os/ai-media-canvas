@@ -19,6 +19,7 @@ import { LoadingScreen } from "../../components/loading-screen";
 import { useToast } from "../../components/toast";
 import { Button } from "../../components/ui/button";
 import { useWebSocket } from "../../hooks/use-websocket";
+import { useAppTranslation } from "../../i18n";
 import {
   insertImageOnCanvas,
   insertVideoOnCanvas,
@@ -31,12 +32,15 @@ import {
 import { fetchCanvas, fetchProject } from "../../lib/server-api";
 
 function CanvasPageContent() {
+  const { t } = useAppTranslation("errors");
   const searchParams = useSearchParams();
   const canvasId = searchParams.get("id");
   const initialSessionId = searchParams.get("session") ?? undefined;
   // Capture prompt once — router.replace will strip it from URL, but the
   // value must survive for the auto-send effect in ChatSidebar.
-  const [initialPrompt] = useState(() => searchParams.get("prompt") ?? undefined);
+  const [initialPrompt] = useState(
+    () => searchParams.get("prompt") ?? undefined,
+  );
   const router = useRouter();
 
   const [canvasData, setCanvasData] = useState<{
@@ -60,12 +64,19 @@ function CanvasPageContent() {
   const [filesOpen, setFilesOpen] = useState(false);
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("Untitled");
-  const [selectedCanvasElements, setSelectedCanvasElements] = useState<CanvasSelectedElement[]>([]);
+  const [selectedCanvasElements, setSelectedCanvasElements] = useState<
+    CanvasSelectedElement[]
+  >([]);
   const { error: toastError } = useToast();
 
   const excalidrawApiRef = useRef<any>(null);
   const fallbackSubscriptionsRef = useRef<GenerationJobSubscription[]>([]);
+  const tRef = useRef(t);
+  const toastErrorRef = useRef(toastError);
   const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
+
+  tRef.current = t;
+  toastErrorRef.current = toastError;
 
   const routerRef = useRef(router);
   routerRef.current = router;
@@ -73,8 +84,14 @@ function CanvasPageContent() {
   // Stable callbacks for panel toggles to prevent re-renders of child components
   const handleOpenChat = useCallback(() => setChatOpen(true), []);
   const handleToggleChat = useCallback(() => setChatOpen((v) => !v), []);
-  const handleToggleLayers = useCallback(() => { setLayersOpen((v) => !v); setFilesOpen(false); }, []);
-  const handleToggleFiles = useCallback(() => { setFilesOpen((v) => !v); setLayersOpen(false); }, []);
+  const handleToggleLayers = useCallback(() => {
+    setLayersOpen((v) => !v);
+    setFilesOpen(false);
+  }, []);
+  const handleToggleFiles = useCallback(() => {
+    setFilesOpen((v) => !v);
+    setLayersOpen(false);
+  }, []);
   const handleCloseLayers = useCallback(() => setLayersOpen(false), []);
   const handleCloseFiles = useCallback(() => setFilesOpen(false), []);
 
@@ -117,7 +134,10 @@ function CanvasPageContent() {
           : null;
       if (!jobId || !jobType) return;
       if (typeof output?.elementId === "string") return;
-      if (typeof output?.videoUrl === "string" || typeof output?.url === "string") {
+      if (
+        typeof output?.videoUrl === "string" ||
+        typeof output?.url === "string"
+      ) {
         return;
       }
       const isVideo = jobType === "video_generation";
@@ -189,7 +209,11 @@ function CanvasPageContent() {
       const { canvas } = await fetchCanvas(canvasData.id);
       const elements = canvas.content.elements ?? [];
       const files = (canvas.content as Record<string, unknown>).files as
-        Record<string, { id: string; dataURL: string; mimeType: string; created: number }> | undefined;
+        | Record<
+            string,
+            { id: string; dataURL: string; mimeType: string; created: number }
+          >
+        | undefined;
 
       // Sync files (base64 dataURLs from backend-inserted images) into Excalidraw
       if (files && Object.keys(files).length > 0) {
@@ -224,9 +248,7 @@ function CanvasPageContent() {
         const file = files[el.fileId];
         const dataURL = file?.dataURL ?? "";
         const title =
-          el.customData?.title ||
-          el.customData?.label ||
-          `Image ${idx}`;
+          el.customData?.title || el.customData?.label || `Image ${idx}`;
         return {
           kind: "canvas-image",
           id: el.id,
@@ -247,10 +269,10 @@ function CanvasPageContent() {
         setProjectName(projectData.project.name ?? "Untitled");
       } catch (err) {
         console.warn("Failed to fetch project for brand kit:", err);
-        toastError("项目信息加载失败，请重试。");
+        toastErrorRef.current(tRef.current("canvas.projectLoadFailed"));
       }
     },
-    [toastError],
+    [],
   );
 
   useEffect(() => {
@@ -274,7 +296,7 @@ function CanvasPageContent() {
         void loadProjectShell(c.projectId);
       })
       .catch(() => {
-        setError("Failed to load the local canvas.");
+        setError(tRef.current("canvas.loadFailed"));
         setPageLoading(false);
       });
   }, [canvasId, loadProjectShell]);
@@ -282,7 +304,7 @@ function CanvasPageContent() {
   if (!canvasId) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">No canvas ID specified.</p>
+        <p className="text-sm text-muted-foreground">{t("canvas.missingId")}</p>
       </div>
     );
   }
@@ -297,7 +319,7 @@ function CanvasPageContent() {
         <div className="space-y-4 text-center">
           <p className="text-sm text-destructive">{error}</p>
           <Button variant="outline" onClick={() => router.refresh()}>
-            Retry
+            {t("retry")}
           </Button>
         </div>
       </div>

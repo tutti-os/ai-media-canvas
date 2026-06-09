@@ -7,6 +7,7 @@ export type InputMention = {
 };
 
 export type HomeExampleCard = {
+  id: string;
   title: string;
   prompt: string;
   previewImages: string[];
@@ -24,6 +25,7 @@ export type HomeExampleCategory = {
 export type HomeExampleSelection = {
   categoryKey: string;
   categoryLabel: string;
+  exampleId: string;
   title: string;
   prompt: string;
   previewImages: string[];
@@ -31,12 +33,13 @@ export type HomeExampleSelection = {
 };
 
 function example(
+  id: string,
   title: string,
   prompt: string,
   previewImages: string[],
   inputMentions: InputMention[],
 ): HomeExampleCard {
-  return { title, prompt, previewImages, inputMentions };
+  return { id, title, prompt, previewImages, inputMentions };
 }
 
 function generatedImage(name: string, file: string): InputMention {
@@ -63,6 +66,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
     accent: "special",
     examples: [
       example(
+        "visual-magazine-cover",
         "Turn a selfie into a magazine cover",
         "请把这张自拍扩展成时尚杂志封面方案，保留人物神态，补齐封面主标题、副标题、配色和版式层级，整体更高级、更 editorial。",
         previews(
@@ -76,6 +80,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         ],
       ),
       example(
+        "visual-superhero-comic",
         "Make a classic superhero comic strip",
         "请把这个创意拆成复古超级英雄漫画页面，包含 4 到 6 格分镜、对白气泡、旁白框和统一人物动作，整体要有 70 年代漫画纸感。",
         previews(
@@ -86,6 +91,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         [tool("Canvas Director", "#2563eb")],
       ),
       example(
+        "visual-engineering-drawings",
         "Generate professional engineering drawings",
         "请把这个产品概念变成一套专业工程蓝图视觉，输出主视图、等轴图、关键尺寸标注和注释层级，适合给研发或打样沟通。",
         previews(
@@ -106,6 +112,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
     dataType: "Illustration",
     examples: [
       example(
+        "illustration-cat-tarot",
         "Expand a cat tarot card series",
         "请围绕猫咪塔罗牌扩展一套插画系列，补齐角色设定、牌面视觉语言、边框系统和周边延展建议。",
         previews(
@@ -116,6 +123,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         [tool("Prompt Polisher", "#8b5cf6")],
       ),
       example(
+        "illustration-seaside-story",
         "Illustrate a dreamy seaside story",
         "请把一个海边奇遇故事画成梦幻插画，强调色彩氛围、光影层次和封面标题位置。",
         previews(
@@ -126,6 +134,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         [tool("Canvas Design", "#0ea5e9")],
       ),
       example(
+        "illustration-character-poster",
         "Create a playful character poster",
         "请做一张角色海报，把人物设定、色彩性格和辅助道具统一起来，适合潮流玩具品牌介绍页。",
         previews(
@@ -143,6 +152,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
     dataType: "Poster",
     examples: [
       example(
+        "design-bauhaus-poster",
         "Design a Bauhaus-inspired poster",
         "请为音乐节设计一张 Bauhaus 风格海报，使用几何形、强节奏排版和有限色板，并附带移动端竖版延展建议。",
         previews(
@@ -153,6 +163,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         [tool("Canvas Design", "#f97316")],
       ),
       example(
+        "design-ceramic-dinnerware",
         "Design a ceramic dinnerware set",
         "请围绕北欧极简与侘寂气质，做一组陶瓷器皿视觉提案，包含碗、盘、杯的统一造型语言和产品展示图方向。",
         previews(
@@ -163,6 +174,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         [tool("Canvas Director", "#8b5cf6")],
       ),
       example(
+        "design-furniture",
         "Experiment with furniture design",
         "请围绕一把雕塑感橙色天鹅绒单椅，输出家具概念海报、材质细节特写和电商主图方向。",
         previews(
@@ -180,6 +192,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
     dataType: "Identity",
     examples: [
       example(
+        "branding-logo-options",
         "Generate logo options",
         "请为寿司品牌做一组极简 Logo 探索，输出 3 个方向、颜色建议、应用场景和品牌语气差异。",
         previews(
@@ -190,6 +203,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         [tool("Brand Keeper", "#14b8a6")],
       ),
       example(
+        "branding-coffee-merch",
         "Design branded merch for your coffee shop",
         "请把这个咖啡品牌延展到杯子、纸袋和社媒头像，保持高端但亲和的品牌感，并给出 mockup 构图方向。",
         previews(
@@ -203,6 +217,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         ],
       ),
       example(
+        "branding-cap-logo",
         "Put your logo on a cap",
         "请做一张帽子品牌周边 mockup，重点表现 Logo 刺绣、材质触感和潮流感，适合官网商品页首图。",
         previews(
@@ -223,6 +238,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
     dataType: "UI",
     examples: [
       example(
+        "ui-fintech-dashboard",
         "Design a fintech dashboard hero",
         "请给我一个金融产品首页首屏方案，突出数据可信感、行动按钮层级和卡片式指标布局。",
         previews(
@@ -233,6 +249,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         [tool("Canvas Director", "#2563eb")],
       ),
       example(
+        "ui-cake-shop",
         "Create a cake shop landing page",
         "请为末日废土风蛋糕店设计首页，输出首屏视觉、商品卡片和 CTA 样式，整体既怪诞又有趣。",
         previews(
@@ -243,6 +260,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         [tool("Canvas Director", "#dc2626")],
       ),
       example(
+        "ui-ai-waitlist",
         "Build an AI product waitlist page",
         "请设计一个 AI 产品 waitlist 页面，强调未来感、可信感和转化路径，适合 desktop 与移动端首屏适配。",
         previews(
@@ -260,6 +278,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
     dataType: "Video",
     examples: [
       example(
+        "storyboard-product-teaser",
         "Plan a 6-frame product teaser",
         "请帮我拆一个 6 镜头产品 teaser 分镜，重点是节奏起伏、转场方式和最后的标题卡落点。",
         previews(
@@ -273,6 +292,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         ],
       ),
       example(
+        "storyboard-music-teaser",
         "Build a music teaser sequence",
         "请为 15 秒音乐 teaser 规划镜头顺序、情绪节奏、字幕节拍和结尾 logo 出现方式。",
         previews(
@@ -283,6 +303,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         [tool("Shot Sequencer", "#8b5cf6")],
       ),
       example(
+        "storyboard-comic-sequence",
         "Create a comic-style sequence",
         "请把一个动作创意拆成漫画式连续分镜，保持统一角色动作关系，并且适合后续转成短视频 animatic。",
         previews(

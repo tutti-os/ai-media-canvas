@@ -3,16 +3,12 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "./ui/dialog";
+import { useAppTranslation } from "@/i18n";
+import { useToast } from "./toast";
 import { Button } from "./ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { useToast } from "./toast";
 
 interface CreateProjectDialogProps {
   open: boolean;
@@ -26,6 +22,7 @@ export function CreateProjectDialog({
   onSubmit,
 }: CreateProjectDialogProps) {
   const { success: toastSuccess, error: toastError } = useToast();
+  const { t } = useAppTranslation(["projects", "common"]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
@@ -40,14 +37,16 @@ export function CreateProjectDialog({
     setError(null);
 
     try {
-      const payload: { name: string; description?: string } = { name: trimmedName };
+      const payload: { name: string; description?: string } = {
+        name: trimmedName,
+      };
       const trimmedDesc = description.trim();
       if (trimmedDesc) {
         payload.description = trimmedDesc;
       }
       await onSubmit(payload);
       // Success -- reset and close
-      toastSuccess("项目创建成功");
+      toastSuccess(t("createDialog.success"));
       setName("");
       setDescription("");
       onOpenChange(false);
@@ -55,14 +54,14 @@ export function CreateProjectDialog({
       if (err && typeof err === "object" && "code" in err) {
         const apiErr = err as { code: string };
         if (apiErr.code === "project_slug_taken") {
-          setError("A project with this name already exists. Try a different name.");
+          setError(t("createDialog.slugTaken"));
         } else {
-          setError("Failed to create project. Please try again.");
-          toastError("项目创建失败");
+          setError(t("createDialog.failed"));
+          toastError(t("createDialog.failed"));
         }
       } else {
-        setError("Failed to create project. Please try again.");
-        toastError("项目创建失败");
+        setError(t("createDialog.failed"));
+        toastError(t("createDialog.failed"));
       }
     } finally {
       setLoading(false);
@@ -82,24 +81,26 @@ export function CreateProjectDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New Project</DialogTitle>
+          <DialogTitle>{t("createDialog.title")}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="project-name">Name</Label>
+            <Label htmlFor="project-name">{t("createDialog.nameLabel")}</Label>
             <Input
               id="project-name"
-              placeholder="My Project"
+              placeholder={t("createDialog.namePlaceholder")}
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="project-description">Description (optional)</Label>
+            <Label htmlFor="project-description">
+              {t("createDialog.descriptionLabel")}
+            </Label>
             <Input
               id="project-description"
-              placeholder="A brief description..."
+              placeholder={t("createDialog.descriptionPlaceholder")}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
@@ -124,10 +125,10 @@ export function CreateProjectDialog({
               variant="outline"
               onClick={() => handleOpenChange(false)}
             >
-              Cancel
+              {t("common:actions.cancel")}
             </Button>
             <Button type="submit" disabled={loading || !name.trim()}>
-              {loading ? "Creating..." : "Create"}
+              {loading ? t("createDialog.creating") : t("create")}
             </Button>
           </div>
         </form>

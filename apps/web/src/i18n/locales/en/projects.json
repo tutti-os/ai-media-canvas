@@ -1,0 +1,21 @@
+{
+  "archive": "Archive {{name}}",
+  "archiveAction": "Archive project",
+  "archiveConfirmDescription": "Archive this project? It will be removed from the project list, but local data will remain.",
+  "create": "New project",
+  "createDialog": {
+    "creating": "Creating...",
+    "descriptionLabel": "Description (optional)",
+    "descriptionPlaceholder": "A brief description...",
+    "failed": "Failed to create project. Please try again.",
+    "nameLabel": "Name",
+    "namePlaceholder": "My Project",
+    "slugTaken": "A project with this name already exists. Try a different name.",
+    "success": "Project created",
+    "title": "New project"
+  },
+  "loadFailed": "Failed to load local projects. Please try again.",
+  "title": "Projects",
+  "untitled": "Untitled",
+  "updatedAt": "Updated {{date}}"
+}

@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useAppTranslation } from "../i18n";
 import { LocalCliProviderIcon } from "./local-cli-provider-icon";
 import { SettingsDialog } from "./settings-dialog";
 
@@ -135,8 +136,10 @@ function ProviderLogo({ provider }: { provider: string }) {
 }
 
 function ModelTriggerTooltip({
+  label,
   placement,
 }: {
+  label: string;
   placement: "top" | "bottom";
 }) {
   const placementClass =
@@ -146,7 +149,7 @@ function ModelTriggerTooltip({
       aria-hidden="true"
       className={`pointer-events-none absolute left-1/2 z-50 ${placementClass} -translate-x-1/2 whitespace-nowrap rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100`}
     >
-      Select agent model
+      {label}
     </span>
   );
 }
@@ -158,6 +161,7 @@ export function AgentModelSelector({
   compact?: boolean;
   tooltipPlacement?: "top" | "bottom";
 } = {}) {
+  const { t } = useAppTranslation("chat");
   const { model, setModel } = useAgentModel();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -368,7 +372,10 @@ export function AgentModelSelector({
             {displayLabel}
           </span>
         </span>
-        <ModelTriggerTooltip placement={tooltipPlacement} />
+        <ModelTriggerTooltip
+          label={t("agentModelSelector.tooltip")}
+          placement={tooltipPlacement}
+        />
       </button>
       {open &&
         typeof document !== "undefined" &&
@@ -380,11 +387,11 @@ export function AgentModelSelector({
           >
             <div className="mb-2 flex items-center justify-between gap-2 px-2">
               <div className="text-xs font-medium text-muted-foreground">
-                Assistant Mode
+                {t("agentModelSelector.assistantMode")}
               </div>
               <button
                 type="button"
-                aria-label="Open agent settings"
+                aria-label={t("agentModelSelector.openSettings")}
                 onClick={() => {
                   setOpen(false);
                   setSettingsOpen(true);
@@ -392,19 +399,19 @@ export function AgentModelSelector({
                 className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <Settings2 className="h-3 w-3" />
-                Settings
+                {t("agentModelSelector.settings")}
               </button>
             </div>
             <div className="mb-2 grid grid-cols-2 rounded-full border border-border bg-muted/30 p-0.5">
               {[
                 {
                   id: "local-cli" as const,
-                  label: "Local agent",
+                  label: t("agentModelSelector.localAgent"),
                   icon: Terminal,
                 },
                 {
                   id: "api-provider" as const,
-                  label: "API provider",
+                  label: t("agentModelSelector.apiProvider"),
                   icon: Cloud,
                 },
               ].map((tab) => {
@@ -442,11 +449,15 @@ export function AgentModelSelector({
               }`}
             >
               <span className="flex-1 text-left">
-                <span className="block">Local Assistant</span>
+                <span className="block">
+                  {t("agentModelSelector.localAssistant")}
+                </span>
                 <span className="block text-xs text-muted-foreground">
                   {defaultModelLabel
-                    ? `Uses default model: ${defaultModelLabel}`
-                    : "Uses your configured default route"}
+                    ? t("agentModelSelector.usesDefaultModel", {
+                        model: defaultModelLabel,
+                      })
+                    : t("agentModelSelector.usesConfiguredDefaultRoute")}
                 </span>
               </span>
               {!isActive && (
@@ -507,8 +518,8 @@ export function AgentModelSelector({
             {providers.length === 0 ? (
               <div className="rounded-lg px-2 py-4 text-xs text-muted-foreground">
                 {activeModelTab === "local-cli"
-                  ? "No local CLI models detected."
-                  : "No API provider models configured."}
+                  ? t("agentModelSelector.noLocalCliModels")
+                  : t("agentModelSelector.noApiProviderModels")}
               </div>
             ) : null}
             {activeModelTab === "api-provider" ? (
@@ -523,7 +534,7 @@ export function AgentModelSelector({
                   htmlFor="customModelId"
                   className="px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60"
                 >
-                  Custom model ID
+                  {t("agentModelSelector.customModelId")}
                 </label>
                 <div className="mt-2 space-y-2 px-2">
                   <input
@@ -540,7 +551,7 @@ export function AgentModelSelector({
                     disabled={!trimmedCustomModelDraft}
                     className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Use custom model
+                    {t("agentModelSelector.useCustomModel")}
                   </button>
                 </div>
               </form>

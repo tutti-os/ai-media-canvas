@@ -1,0 +1,104 @@
+{
+  "agentSettings": {
+    "actions": {
+      "saving": "保存中..."
+    },
+    "api": {
+      "addModel": "添加",
+      "addProviderModel": "添加 {{provider}} 模型",
+      "browseModels": "浏览可用模型",
+      "chooseApiProviderModelBelow": "请在下方选择 API provider 模型。",
+      "chooseModel": "选择模型",
+      "customProvider": "自定义 provider",
+      "defaultLlmModel": "默认 LLM 模型",
+      "defaultModelDescription": "从下方已配置的模型列表中选择工作区默认模型。",
+      "defaultModelTitle": "默认模型",
+      "importDetected": "导入已检测模型",
+      "noApiProviderModelSelected": "未选择 API provider 模型",
+      "noModelsYet": "暂无模型",
+      "noProviderModels": "{{provider}} 暂未配置模型。",
+      "protocolCredentials": "协议凭证",
+      "protocolDescription": "选择一个协议来编辑对应凭证。",
+      "providerModels": "{{provider}} 模型",
+      "providerModelsDescription": "添加、编辑或移除这个 provider 对外暴露的模型 ID。",
+      "quickFillProvider": "快速填充 provider",
+      "removeModel": "移除",
+      "useModel": "使用 {{model}}",
+      "workspaceModels": "工作区模型",
+      "workspaceModelsDescription": "从各 provider 下已配置的模型列表中选择。"
+    },
+    "feedback": {
+      "installFailed": "无法安装本地 Agent provider。",
+      "updated": "本地 Agent 设置已更新。",
+      "updateFailed": "本地 Agent 设置更新失败，请重试。"
+    },
+    "local": {
+      "customModelId": "自定义模型 ID",
+      "customModelPlaceholder": "例如 my-model",
+      "customOption": "自定义（在下方输入）...",
+      "description": "选择生成任务要使用的 CLI 路由。",
+      "detectedCli": "已检测 CLI",
+      "empty": "暂未检测到本地 CLI 模型。安装或登录支持的本地 CLI 后重新扫描。",
+      "fetchedDescription": "当 CLI 暴露模型列表时会自动获取。自定义模式允许输入该 CLI 支持的任意模型 ID。",
+      "installHint": "安装 Codex 或 Claude Code 后重新扫描，即可启用本地 Agent 路由。",
+      "installing": "安装中...",
+      "installRequired": "需要安装",
+      "modelCountOne": "{{modelCount}} 个模型",
+      "modelCountOther": "{{modelCount}} 个模型",
+      "modelLabel": "模型",
+      "noCliSelected": "未选择 CLI",
+      "rescan": "重新扫描",
+      "selectCliFirst": "请先选择 CLI...",
+      "selectModel": "选择模型..."
+    },
+    "source": {
+      "apiProvider": "API provider",
+      "detected": "已检测 {{cliCount}} 个",
+      "localAgent": "本地 Agent"
+    }
+  },
+  "dialogTitle": "设置",
+  "general": {
+    "description": "控制界面语言与本地显示偏好。",
+    "languageDescription": "会保存到本地浏览器，并在后续打开时继续使用。",
+    "languageLabel": "语言",
+    "languageOptions": {
+      "en": "English",
+      "zhCN": "简体中文"
+    },
+    "title": "通用"
+  },
+  "modelConfiguration": {
+    "configureAgent": "配置 Agent",
+    "configureMedia": "配置媒体模型",
+    "description": "Agnes 提供免费的文本、生图、生视频模型能力，可以申请 API Key 后配置。",
+    "getAgnesKey": "申请 Agnes API Key",
+    "missing": "未配置 {{models}}",
+    "models": {
+      "agent": "Agent 模型",
+      "image": "图片模型",
+      "video": "视频模型"
+    }
+  },
+  "status": {
+    "loadFailed": "本地设置加载失败，请重试。",
+    "loadUnavailable": "当前无法加载本地设置。",
+    "unsaved": "有未保存更改",
+    "upToDate": "设置已是最新"
+  },
+  "tabs": {
+    "agent": {
+      "description": "LLM 协议与默认模型",
+      "label": "Agent"
+    },
+    "general": {
+      "description": "语言与界面偏好",
+      "label": "通用"
+    },
+    "media": {
+      "description": "图片与视频 provider 路由",
+      "label": "媒体"
+    }
+  },
+  "title": "设置"
+}

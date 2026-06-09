@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Providers } from "../src/components/providers";
+import { AIMC_LOCALE_STORAGE_KEY, I18nProvider, i18n } from "../src/i18n";
 
 type HostContext = {
   locale?: string;
@@ -33,35 +33,26 @@ function setHostAppContext(appContext: HostAppContext | undefined) {
 
 describe("Nextop host app context locale", () => {
   beforeEach(() => {
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      value: vi.fn().mockImplementation((query: string) => ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    });
+    installMemoryLocalStorage();
+    void i18n.changeLanguage("zh-CN");
   });
 
   afterEach(() => {
     setHostAppContext(undefined);
-    document.documentElement.lang = "en";
+    window.localStorage.clear();
+    document.documentElement.lang = "";
     cleanup();
   });
 
-  it("uses English by default without reading locale from the URL", async () => {
+  it("ignores URL locale parameters when detecting the initial locale", async () => {
     window.history.replaceState({}, "", "/home?locale=zh-CN&lang=zh-CN");
+    window.localStorage.setItem(AIMC_LOCALE_STORAGE_KEY, "en");
     document.documentElement.lang = "";
 
     render(
-      <Providers>
+      <I18nProvider>
         <div>content</div>
-      </Providers>,
+      </I18nProvider>,
     );
 
     await waitFor(() => expect(document.documentElement.lang).toBe("en"));
@@ -79,20 +70,33 @@ describe("Nextop host app context locale", () => {
     });
 
     const result = render(
-      <Providers>
+      <I18nProvider>
         <div>content</div>
-      </Providers>,
+      </I18nProvider>,
     );
 
     await waitFor(() => expect(document.documentElement.lang).toBe("zh-CN"));
 
     act(() => {
-      localeListener?.({ language: "fr" });
+      localeListener?.({ language: "en" });
     });
 
-    expect(document.documentElement.lang).toBe("fr");
+    await waitFor(() => expect(document.documentElement.lang).toBe("en"));
 
     result.unmount();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 });
+
+function installMemoryLocalStorage() {
+  const values = new Map<string, string>();
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: {
+      clear: () => values.clear(),
+      getItem: (key: string) => values.get(key) ?? null,
+      removeItem: (key: string) => values.delete(key),
+      setItem: (key: string, value: string) => values.set(key, value),
+    },
+  });
+}

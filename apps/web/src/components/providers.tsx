@@ -3,14 +3,16 @@
 import { ThemeProvider } from "next-themes";
 import type { ReactNode } from "react";
 
-import { NextopAppLocale } from "./nextop-app-locale";
+import { I18nProvider } from "@/i18n";
+
 import { ToastProvider } from "./toast";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-      <NextopAppLocale />
-      <ToastProvider>{children}</ToastProvider>
+      <I18nProvider>
+        <ToastProvider>{children}</ToastProvider>
+      </I18nProvider>
     </ThemeProvider>
   );
 }

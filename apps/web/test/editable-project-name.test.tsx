@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EditableProjectName } from "../src/components/editable-project-name";
+import { i18n } from "../src/i18n";
 
 const { updateProjectMock, toastErrorMock } = vi.hoisted(() => ({
   updateProjectMock: vi.fn(),
@@ -23,7 +24,8 @@ vi.mock("../src/components/toast", () => ({
 }));
 
 describe("EditableProjectName", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("zh-CN");
     updateProjectMock.mockReset();
     toastErrorMock.mockReset();
   });
@@ -33,17 +35,30 @@ describe("EditableProjectName", () => {
     vi.clearAllMocks();
   });
 
+  it("localizes the default project title for display", async () => {
+    render(
+      <EditableProjectName projectId="project-1" initialName="Untitled" />,
+    );
+
+    expect(screen.getByRole("button", { name: "未命名" })).toBeInTheDocument();
+
+    await i18n.changeLanguage("en");
+
+    expect(
+      screen.getByRole("button", { name: "Untitled" }),
+    ).toBeInTheDocument();
+  });
+
   it("rolls back the optimistic title when rename fails", async () => {
     updateProjectMock.mockRejectedValue(new Error("network"));
 
     render(
-      <EditableProjectName
-        projectId="project-1"
-        initialName="Original Name"
-      />,
+      <EditableProjectName projectId="project-1" initialName="Original Name" />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Original Name" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Original Name" }),
+    );
     const input = screen.getByDisplayValue("Original Name");
     await userEvent.clear(input);
     await userEvent.type(input, "Renamed Project{enter}");

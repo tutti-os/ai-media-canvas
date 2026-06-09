@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAppTranslation } from "@/i18n";
 
 const SKILL_TEMPLATE = `# Skill Name
 
@@ -65,11 +66,14 @@ export function CreateSkillDialog({
     files?: Array<{ filePath: string; content: string }>;
   }) => Promise<void>;
 }) {
+  const { t } = useAppTranslation("skills");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<SkillCategory>("custom");
   const [skillContent, setSkillContent] = useState("");
-  const [files, setFiles] = useState<Array<{ filePath: string; content: string }>>([]);
+  const [files, setFiles] = useState<
+    Array<{ filePath: string; content: string }>
+  >([]);
   const [submitting, setSubmitting] = useState(false);
 
   const addFile = useCallback(() => {
@@ -132,7 +136,15 @@ export function CreateSkillDialog({
         setSubmitting(false);
       }
     },
-    [category, description, files, handleOpenChange, name, onSubmit, skillContent],
+    [
+      category,
+      description,
+      files,
+      handleOpenChange,
+      name,
+      onSubmit,
+      skillContent,
+    ],
   );
 
   const canSubmit =
@@ -144,15 +156,13 @@ export function CreateSkillDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>添加自定义技能</DialogTitle>
-          <DialogDescription>
-            创建新的本地技能来扩展 AI Media Canvas 助手的能力。
-          </DialogDescription>
+          <DialogTitle>{t("createDialog.title")}</DialogTitle>
+          <DialogDescription>{t("createDialog.description")}</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="skill-name">名称</Label>
+            <Label htmlFor="skill-name">{t("fields.name")}</Label>
             <Input
               id="skill-name"
               placeholder="e.g. UI Design Expert"
@@ -163,11 +173,13 @@ export function CreateSkillDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="skill-category">分类</Label>
+            <Label htmlFor="skill-category">{t("fields.category")}</Label>
             <select
               id="skill-category"
               value={category}
-              onChange={(event) => setCategory(event.target.value as SkillCategory)}
+              onChange={(event) =>
+                setCategory(event.target.value as SkillCategory)
+              }
               className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {CATEGORY_OPTIONS.map((option) => (
@@ -179,11 +191,11 @@ export function CreateSkillDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="skill-desc">描述</Label>
+            <Label htmlFor="skill-desc">{t("fields.description")}</Label>
             <textarea
               id="skill-desc"
               rows={2}
-              placeholder="简述技能的功能和用途..."
+              placeholder={t("createDialog.descriptionPlaceholder")}
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               maxLength={2000}
@@ -200,7 +212,7 @@ export function CreateSkillDialog({
                 size="xs"
                 onClick={() => setSkillContent(SKILL_TEMPLATE)}
               >
-                使用模板
+                {t("createDialog.useTemplate")}
               </Button>
             </div>
             <textarea
@@ -215,10 +227,15 @@ export function CreateSkillDialog({
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label>附属文件</Label>
-              <Button type="button" variant="outline" size="xs" onClick={addFile}>
+              <Label>{t("detail.attachments")}</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={addFile}
+              >
                 <Plus className="size-3.5" />
-                添加文件
+                {t("createDialog.addFile")}
               </Button>
             </div>
             {files.map((file, index) => {
@@ -251,12 +268,12 @@ export function CreateSkillDialog({
                   </div>
                   {!pathValid ? (
                     <p className="text-[11px] text-destructive">
-                      文件路径需要以 scripts/、references/ 或 assets/ 开头。
+                      {t("createDialog.invalidPath")}
                     </p>
                   ) : null}
                   <textarea
                     rows={4}
-                    placeholder="文件内容..."
+                    placeholder={t("createDialog.fileContentPlaceholder")}
                     value={file.content}
                     onChange={(event) =>
                       updateFile(index, "content", event.target.value)
@@ -269,11 +286,15 @@ export function CreateSkillDialog({
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
-              取消
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleOpenChange(false)}
+            >
+              {t("actions.cancel")}
             </Button>
             <Button type="submit" disabled={!canSubmit || submitting}>
-              {submitting ? "添加中..." : "添加技能"}
+              {submitting ? t("createDialog.adding") : t("customCard.add")}
             </Button>
           </DialogFooter>
         </form>

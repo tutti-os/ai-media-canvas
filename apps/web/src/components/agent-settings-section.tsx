@@ -9,6 +9,7 @@ import type {
   WorkspaceSettings,
 } from "@aimc/shared";
 
+import { useAppTranslation } from "@/i18n";
 import {
   type AgentModelSourceTab,
   formatLocalCliProviderLabel,
@@ -422,6 +423,7 @@ function QuickFillProviderField({
   settings: WorkspaceSettings;
   onChange: (preset: ApiProviderPreset | null) => void;
 }) {
+  const { t } = useAppTranslation("settings");
   const presets = API_PROVIDER_PRESETS.filter(
     (preset) => preset.provider === provider,
   );
@@ -435,11 +437,11 @@ function QuickFillProviderField({
   return (
     <div className="space-y-2">
       <Label htmlFor={`${provider}QuickFillProvider`}>
-        Quick fill provider
+        {t("agentSettings.api.quickFillProvider")}
       </Label>
       <select
         id={`${provider}QuickFillProvider`}
-        aria-label="Quick fill provider"
+        aria-label={t("agentSettings.api.quickFillProvider")}
         value={selectedPreset?.baseUrl ?? ""}
         onChange={(event) => {
           const preset =
@@ -450,7 +452,7 @@ function QuickFillProviderField({
         }}
         className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus:border-accent focus:ring-3 focus:ring-accent/20"
       >
-        <option value="">Custom provider</option>
+        <option value="">{t("agentSettings.api.customProvider")}</option>
         {presets.map((preset) => (
           <option
             key={`${preset.provider}-${preset.baseUrl}`}
@@ -475,6 +477,7 @@ function ProviderModelListEditor({
   availableModels: ModelInfo[];
   onChange: (nextValues: string[]) => void;
 }) {
+  const { t } = useAppTranslation("settings");
   const [draft, setDraft] = useState("");
   const configuredModels = settings.providerModels[provider];
   const detectedModels = availableModels
@@ -493,10 +496,12 @@ function ProviderModelListEditor({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-foreground">
-            {getProviderLabel(provider)} models
+            {t("agentSettings.api.providerModels", {
+              provider: getProviderLabel(provider),
+            })}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Add, edit, or remove the model IDs you want this provider to expose.
+            {t("agentSettings.api.providerModelsDescription")}
           </p>
         </div>
         {configuredModels.length === 0 && detectedModels.length > 0 ? (
@@ -506,7 +511,7 @@ function ProviderModelListEditor({
             variant="outline"
             onClick={() => onChange(detectedModels)}
           >
-            Import detected
+            {t("agentSettings.api.importDetected")}
           </Button>
         ) : null}
       </div>
@@ -549,14 +554,16 @@ function ProviderModelListEditor({
                   )
                 }
               >
-                Remove
+                {t("agentSettings.api.removeModel")}
               </Button>
             </div>
           ))}
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          No models configured yet for {getProviderLabel(provider)}.
+          {t("agentSettings.api.noProviderModels", {
+            provider: getProviderLabel(provider),
+          })}
         </p>
       )}
 
@@ -566,7 +573,9 @@ function ProviderModelListEditor({
             {provider}:
           </span>
           <Input
-            aria-label={`Add ${getProviderLabel(provider)} model`}
+            aria-label={t("agentSettings.api.addProviderModel", {
+              provider: getProviderLabel(provider),
+            })}
             value={getModelName(provider, draft)}
             onChange={(event) => setDraft(event.target.value)}
             placeholder="model-id"
@@ -574,7 +583,7 @@ function ProviderModelListEditor({
           />
         </div>
         <Button type="button" size="sm" onClick={addModel}>
-          Add
+          {t("agentSettings.api.addModel")}
         </Button>
       </div>
     </div>
@@ -600,6 +609,7 @@ function LocalCliProviderModelPicker({
   onInstallProvider: (provider: InstallableAgentProviderId) => void;
   installingProvider: InstallableAgentProviderId | null;
 }) {
+  const { t } = useAppTranslation("settings");
   const effectiveActiveProvider =
     activeProvider || getModelProvider(selectedModel);
   const activeGroup =
@@ -677,14 +687,16 @@ function LocalCliProviderModelPicker({
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold">Local agent</h3>
+          <h3 className="text-base font-semibold">
+            {t("agentSettings.source.localAgent")}
+          </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Pick the CLI route generations should use.
+            {t("agentSettings.local.description")}
           </p>
         </div>
         <Button type="button" size="sm" variant="outline" onClick={onRescan}>
           <RefreshCw className="size-3.5" />
-          Rescan
+          {t("agentSettings.local.rescan")}
         </Button>
       </div>
 
@@ -692,7 +704,7 @@ function LocalCliProviderModelPicker({
         <div className="space-y-4">
           <div className="rounded-xl border bg-card p-4 shadow-sm">
             <div className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Detected CLI
+              {t("agentSettings.local.detectedCli")}
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {displayGroups.map((group) => {
@@ -745,12 +757,16 @@ function LocalCliProviderModelPicker({
                       </span>
                       <span className="mt-1 block truncate text-xs text-muted-foreground">
                         {installing
-                          ? "Installing..."
+                          ? t("agentSettings.local.installing")
                           : group.installed
-                            ? `${group.models.length} ${
-                                group.models.length === 1 ? "model" : "models"
-                              }`
-                            : "Install required"}
+                            ? group.models.length === 1
+                              ? t("agentSettings.local.modelCountOne", {
+                                  modelCount: group.models.length,
+                                })
+                              : t("agentSettings.local.modelCountOther", {
+                                  modelCount: group.models.length,
+                                })
+                            : t("agentSettings.local.installRequired")}
                       </span>
                     </span>
                     {installing ? (
@@ -768,8 +784,7 @@ function LocalCliProviderModelPicker({
             </div>
             {providerGroups.length === 0 ? (
               <p className="mt-3 text-xs text-muted-foreground">
-                Install Codex or Claude Code, then rescan to enable local agent
-                routes.
+                {t("agentSettings.local.installHint")}
               </p>
             ) : null}
           </div>
@@ -781,17 +796,17 @@ function LocalCliProviderModelPicker({
                   htmlFor="localCliModel"
                   className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
                 >
-                  Model
+                  {t("agentSettings.local.modelLabel")}
                 </Label>
                 <p className="mt-1 truncate text-sm font-semibold text-foreground">
-                  {activeGroup?.label ?? "No CLI selected"}
+                  {activeGroup?.label ?? t("agentSettings.local.noCliSelected")}
                 </p>
               </div>
             </div>
 
             <select
               id="localCliModel"
-              aria-label="Model"
+              aria-label={t("agentSettings.local.modelLabel")}
               value={modelSelectValue}
               disabled={!activeGroup}
               onChange={(event) => {
@@ -808,7 +823,9 @@ function LocalCliProviderModelPicker({
             >
               {modelSelectValue ? null : (
                 <option value="">
-                  {activeGroup ? "Select a model..." : "Select a CLI first..."}
+                  {activeGroup
+                    ? t("agentSettings.local.selectModel")
+                    : t("agentSettings.local.selectCliFirst")}
                 </option>
               )}
               {activeGroup?.models.map((model) => (
@@ -818,7 +835,7 @@ function LocalCliProviderModelPicker({
               ))}
               {activeGroup ? (
                 <option value={CUSTOM_LOCAL_MODEL_VALUE}>
-                  Custom (type below)...
+                  {t("agentSettings.local.customOption")}
                 </option>
               ) : null}
             </select>
@@ -829,27 +846,25 @@ function LocalCliProviderModelPicker({
                   htmlFor="localCliCustomModel"
                   className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
                 >
-                  Custom model id
+                  {t("agentSettings.local.customModelId")}
                 </Label>
                 <Input
                   id="localCliCustomModel"
                   value={customModelDraft}
                   onChange={(event) => updateCustomModel(event.target.value)}
-                  placeholder="e.g. my-model"
+                  placeholder={t("agentSettings.local.customModelPlaceholder")}
                 />
               </div>
             ) : null}
 
             <p className="mt-3 text-sm text-muted-foreground">
-              Fetched from the CLI when it exposes models. Custom lets you type
-              any model id this CLI accepts.
+              {t("agentSettings.local.fetchedDescription")}
             </p>
           </div>
         </div>
       ) : (
         <div className="rounded-xl border bg-muted/20 p-5 text-sm text-muted-foreground">
-          No local CLI models detected yet. Rescan after installing or signing
-          in to a supported local CLI.
+          {t("agentSettings.local.empty")}
         </div>
       )}
     </section>
@@ -861,6 +876,7 @@ export function AgentSettingsSection({
   onSave,
   surface = "page",
 }: AgentSettingsSectionProps) {
+  const { t } = useAppTranslation("settings");
   const [settings, setSettings] = useState<WorkspaceSettings>({
     ...initialSettings,
     providerModels: {
@@ -1009,7 +1025,7 @@ export function AgentSettingsSection({
         message:
           error instanceof Error
             ? error.message
-            : "Unable to install local agent provider.",
+            : t("agentSettings.feedback.installFailed"),
       });
     } finally {
       setInstallingLocalProvider(null);
@@ -1030,12 +1046,12 @@ export function AgentSettingsSection({
       void refreshAvailableModels();
       setFeedback({
         type: "success",
-        message: "Local agent settings updated.",
+        message: t("agentSettings.feedback.updated"),
       });
     } catch {
       setFeedback({
         type: "error",
-        message: "Failed to update local agent settings. Please try again.",
+        message: t("agentSettings.feedback.updateFailed"),
       });
     } finally {
       setSaving(false);
@@ -1047,7 +1063,7 @@ export function AgentSettingsSection({
   return (
     <div className={isDialog ? "flex min-h-0 flex-1 flex-col" : "space-y-6"}>
       <div className={isDialog ? "px-6 pt-6 md:px-8" : undefined}>
-        <h2 className="text-lg font-semibold">Agent</h2>
+        <h2 className="text-lg font-semibold">{t("tabs.agent.label")}</h2>
       </div>
 
       <form
@@ -1065,13 +1081,15 @@ export function AgentSettingsSection({
             {[
               {
                 id: "local-cli" as const,
-                label: "Local agent",
-                description: `${localCliProviderCount} detected`,
+                label: t("agentSettings.source.localAgent"),
+                description: t("agentSettings.source.detected", {
+                  cliCount: localCliProviderCount,
+                }),
                 icon: Terminal,
               },
               {
                 id: "api-provider" as const,
-                label: "API provider",
+                label: t("agentSettings.source.apiProvider"),
                 description: "BYOK",
                 icon: Cloud,
               },
@@ -1120,24 +1138,26 @@ export function AgentSettingsSection({
             <>
               <section className="rounded-2xl border bg-card p-5 shadow-sm">
                 <div className="mb-4">
-                  <h3 className="text-base font-semibold">Default model</h3>
+                  <h3 className="text-base font-semibold">
+                    {t("agentSettings.api.defaultModelTitle")}
+                  </h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Pick the workspace default from the model lists configured
-                    below.
+                    {t("agentSettings.api.defaultModelDescription")}
                   </p>
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground">
-                      Default LLM Model
+                      {t("agentSettings.api.defaultLlmModel")}
                     </p>
                     <p className="mt-2 truncate text-sm text-foreground">
-                      {selectedModelName || "No API provider model selected"}
+                      {selectedModelName ||
+                        t("agentSettings.api.noApiProviderModelSelected")}
                     </p>
                     <p className="mt-1 truncate text-xs text-muted-foreground">
                       {selectedModelName
                         ? settings.defaultModel
-                        : "Choose an API provider model below."}
+                        : t("agentSettings.api.chooseApiProviderModelBelow")}
                     </p>
                   </div>
                   {modelPickerGroups.length > 0 ? (
@@ -1150,9 +1170,9 @@ export function AgentSettingsSection({
                             className="shrink-0"
                           />
                         }
-                        aria-label="Browse available models"
+                        aria-label={t("agentSettings.api.browseModels")}
                       >
-                        Choose model
+                        {t("agentSettings.api.chooseModel")}
                       </DropdownMenuTrigger>
                       <DropdownMenuContent
                         align="end"
@@ -1161,11 +1181,10 @@ export function AgentSettingsSection({
                       >
                         <div className="px-2 py-1.5">
                           <p className="text-sm font-medium text-foreground">
-                            Workspace models
+                            {t("agentSettings.api.workspaceModels")}
                           </p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Choose from the model lists configured under each
-                            provider.
+                            {t("agentSettings.api.workspaceModelsDescription")}
                           </p>
                         </div>
                         <DropdownMenuSeparator />
@@ -1185,7 +1204,10 @@ export function AgentSettingsSection({
                                   <DropdownMenuRadioItem
                                     key={model.id}
                                     value={model.id}
-                                    aria-label={`Use ${model.name}`}
+                                    aria-label={t(
+                                      "agentSettings.api.useModel",
+                                      { model: model.name },
+                                    )}
                                   >
                                     <div className="min-w-0">
                                       <div className="truncate font-medium">
@@ -1208,7 +1230,7 @@ export function AgentSettingsSection({
                     </DropdownMenu>
                   ) : (
                     <Button type="button" size="sm" variant="outline" disabled>
-                      No models yet
+                      {t("agentSettings.api.noModelsYet")}
                     </Button>
                   )}
                 </div>
@@ -1217,10 +1239,10 @@ export function AgentSettingsSection({
               <section className="rounded-2xl border bg-card p-5 shadow-sm">
                 <div className="mb-4">
                   <h3 className="text-base font-semibold">
-                    Protocol credentials
+                    {t("agentSettings.api.protocolCredentials")}
                   </h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Pick a protocol to edit its credentials.
+                    {t("agentSettings.api.protocolDescription")}
                   </p>
                 </div>
 
@@ -1517,7 +1539,7 @@ export function AgentSettingsSection({
               </p>
             ) : (
               <span className="min-w-0 flex-1 text-sm text-muted-foreground">
-                {hasChanges ? "Unsaved changes" : "Settings are up to date"}
+                {hasChanges ? t("status.unsaved") : t("status.upToDate")}
               </span>
             )}
 
@@ -1526,7 +1548,9 @@ export function AgentSettingsSection({
               disabled={saving || !hasChanges}
               className="ml-auto min-w-24"
             >
-              {saving ? "Saving..." : "Save"}
+              {saving
+                ? t("agentSettings.actions.saving")
+                : t("common:actions.save")}
             </Button>
           </div>
         </div>

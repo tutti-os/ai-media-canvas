@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "../src/components/toast";
+import { i18n } from "../src/i18n";
 
 const fetchInstalledSkillsMock = vi.fn();
 const fetchSkillCatalogMock = vi.fn();
@@ -13,7 +14,8 @@ const createSkillMock = vi.fn();
 const uninstallSkillMock = vi.fn();
 
 vi.mock("../src/lib/server-api", () => ({
-  fetchInstalledSkills: (...args: unknown[]) => fetchInstalledSkillsMock(...args),
+  fetchInstalledSkills: (...args: unknown[]) =>
+    fetchInstalledSkillsMock(...args),
   fetchSkillCatalog: (...args: unknown[]) => fetchSkillCatalogMock(...args),
   fetchSkillDetail: (...args: unknown[]) => fetchSkillDetailMock(...args),
   createSkill: (...args: unknown[]) => createSkillMock(...args),
@@ -28,6 +30,7 @@ import SkillsPage from "../src/app/(workspace)/skills/page";
 describe("Skills page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    void i18n.changeLanguage("zh-CN");
     fetchInstalledSkillsMock.mockResolvedValue({
       skills: [
         {
@@ -138,11 +141,34 @@ describe("Skills page", () => {
       </ToastProvider>,
     );
 
-    expect(await screen.findByText("Skills")).toBeInTheDocument();
+    expect(await screen.findByText("技能")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "已安装" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "市场" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "导入" })).toBeInTheDocument();
     expect(await screen.findByText("Canvas Director")).toBeInTheDocument();
+  });
+
+  it("renders representative English copy when language is English", async () => {
+    void i18n.changeLanguage("en");
+
+    render(
+      <ToastProvider>
+        <SkillsPage />
+      </ToastProvider>,
+    );
+
+    expect(await screen.findByText("Skills")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Installed" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Marketplace" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Official" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Canvas Director")).toBeInTheDocument();
   });
 
   it("offers both file import and directory import for local skill packages", async () => {
@@ -154,11 +180,13 @@ describe("Skills page", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "导入" }));
 
+    expect(await screen.findByText("从本地导入技能")).toBeInTheDocument();
     expect(
-      await screen.findByText("从本地导入技能"),
+      screen.getByRole("button", { name: "选择文件" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "选择文件" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "选择目录" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "选择目录" }),
+    ).toBeInTheDocument();
   });
 
   it("creates a skill with local state updates instead of refetching the installed list", async () => {
@@ -171,7 +199,7 @@ describe("Skills page", () => {
     await screen.findByText("Canvas Director");
     expect(fetchInstalledSkillsMock).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: /添加$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "添加技能" }));
     fireEvent.change(screen.getByLabelText("名称"), {
       target: { value: "Story Beats" },
     });
@@ -179,7 +207,9 @@ describe("Skills page", () => {
       target: { value: "Break ideas into beats" },
     });
     fireEvent.change(screen.getByLabelText("SKILL.md"), {
-      target: { value: "# Story Beats\n\n## Description\nBreak ideas into beats." },
+      target: {
+        value: "# Story Beats\n\n## Description\nBreak ideas into beats.",
+      },
     });
     fireEvent.click(screen.getByRole("button", { name: "添加技能" }));
 

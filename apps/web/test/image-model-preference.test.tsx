@@ -7,6 +7,7 @@ import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ImageModelPreferencePopover } from "../src/components/image-model-preference";
+import { i18n } from "../src/i18n";
 
 const {
   fetchImageModelsMock,
@@ -48,7 +49,8 @@ function OpenPopover({
 }
 
 describe("ImageModelPreferencePopover", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("zh-CN");
     fetchImageModelsMock.mockResolvedValue({
       models: [
         {

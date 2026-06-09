@@ -1,0 +1,15 @@
+{
+  "brandKit": "品牌套件",
+  "home": "首页",
+  "mainNavigation": "主导航",
+  "mainRegion": "主内容",
+  "projects": "项目",
+  "settingsMenu": {
+    "description": "打开 Agent 和媒体 provider 的本地设置。",
+    "localUser": "本地用户",
+    "open": "打开设置菜单",
+    "settings": "设置"
+  },
+  "skills": "技能",
+  "skipToMain": "跳到主内容"
+}

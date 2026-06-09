@@ -38,10 +38,12 @@ vi.mock("../src/components/settings-dialog", () => ({
 }));
 
 import { AgentModelSelector } from "../src/components/agent-model-selector";
+import { i18n } from "../src/i18n";
 import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "../src/lib/workspace-settings-events";
 
 describe("AgentModelSelector", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
     fetchModelsMock.mockReset();
     fetchWorkspaceSettingsMock.mockReset();
     setModelMock.mockReset();
@@ -104,6 +106,22 @@ describe("AgentModelSelector", () => {
     expect(await screen.findByText("Select agent model")).toBeInTheDocument();
   });
 
+  it("renders localized trigger copy in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN");
+    fetchModelsMock.mockResolvedValue({
+      models: [{ id: "codex:default", name: "Codex", provider: "codex" }],
+    });
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "codex:default",
+      },
+    });
+
+    render(<AgentModelSelector compact />);
+
+    expect(await screen.findByText("选择 Agent 模型")).toBeInTheDocument();
+  });
+
   it("can place the compact model trigger tooltip below the trigger", async () => {
     fetchModelsMock.mockResolvedValue({
       models: [{ id: "codex:default", name: "Codex", provider: "codex" }],
@@ -116,7 +134,9 @@ describe("AgentModelSelector", () => {
 
     render(<AgentModelSelector compact tooltipPlacement="bottom" />);
 
-    expect(await screen.findByText("Select agent model")).toHaveClass("top-full");
+    expect(await screen.findByText("Select agent model")).toHaveClass(
+      "top-full",
+    );
   });
 
   it("shows the default-model hint, keeps Agnes above OpenAI, and exposes settings at the top", async () => {

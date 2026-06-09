@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import type { MessageMention } from "@aimc/shared";
+import { useAppTranslation } from "@/i18n";
 import { useAgentModelRequirement } from "../hooks/use-agent-model-requirement";
 import type { ImageAttachmentState } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
@@ -86,6 +87,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const [settingsInitialTab, setSettingsInitialTab] = useState<
       "agent" | "media"
     >("agent");
+    const { t } = useAppTranslation("chat");
     const modelBtnRef = useRef<HTMLButtonElement>(null);
     const isAgentModelConfigurationLoaded =
       agentRequirement.isAgentModelConfigurationLoaded ?? true;
@@ -306,7 +308,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       <path d="m21 15-5-5L5 21" />
                     </svg>
                     {selectionImageCount}{" "}
-                    {selectionImageCount === 1 ? "image" : "images"}
+                    {selectionImageCount === 1
+                      ? t("selection.image")
+                      : t("selection.images")}
                   </span>
                 )}
                 {selectionImageCount > 0 && selectionShapeCount > 0 && (
@@ -325,11 +329,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       <rect x="3" y="3" width="18" height="18" rx="2" />
                     </svg>
                     {selectionShapeCount}{" "}
-                    {selectionShapeCount === 1 ? "shape" : "shapes"}
+                    {selectionShapeCount === 1
+                      ? t("selection.shape")
+                      : t("selection.shapes")}
                   </span>
                 )}
                 <span className="text-[10px] text-muted-foreground/60">
-                  selected on canvas
+                  {t("selection.selectedOnCanvas")}
                 </span>
               </div>
             </div>
@@ -349,7 +355,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   type="button"
                   onClick={() => onRemoveMention(mention)}
                   className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted/80"
-                  title="Remove mention"
+                  title={t("mentions.remove")}
                 >
                   <span className="text-muted-foreground">@</span>
                   <span className="max-w-[180px] truncate">
@@ -376,8 +382,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder='Start with an idea, or type "@" to mention'
-            aria-label="输入消息"
+            placeholder={t("input.placeholder")}
+            aria-label={t("input.ariaLabel")}
             rows={1}
             style={{ scrollbarWidth: "none" }}
             className="min-h-[48px] max-h-60 resize-none bg-transparent px-1 text-sm leading-[1.8] text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-scrollbar]:hidden"
@@ -397,7 +403,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    aria-label="Attach images"
+                    aria-label={t("input.attachImages")}
                     className="group relative flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
                     <svg
@@ -408,7 +414,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     >
                       <path d="M16 1.1A4.9 4.9 0 0 1 20.9 6a4.9 4.9 0 0 1-1.429 3.457h.001l-8.414 8.587-.007.006a2.9 2.9 0 0 1-3.887.193l-.213-.192a2.9 2.9 0 0 1-.007-4.095l8.414-8.586a.9.9 0 0 1 1.286 1.26L8.23 15.216l-.007.006a1.1 1.1 0 0 0 1.556 1.555l8.407-8.579.007-.007a3.1 3.1 0 0 0 .105-4.271l-.105-.112a3.1 3.1 0 0 0-4.384 0L5.4 12.387l-.007.006a5.1 5.1 0 0 0 7.214 7.213l7.749-7.934a.9.9 0 0 1 1.288 1.256l-7.753 7.938q-.005.007-.012.014a6.9 6.9 0 0 1-9.758-9.76l8.408-8.578.007-.007A4.9 4.9 0 0 1 16 1.1" />
                     </svg>
-                    <PromptToolbarTooltip label="Attach images" />
+                    <PromptToolbarTooltip label={t("input.attachImages")} />
                   </button>
                 </>
               )}
@@ -420,7 +426,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   ref={modelBtnRef}
                   type="button"
                   onClick={() => setModelPopoverOpen((prev) => !prev)}
-                  aria-label="Image/Video model"
+                  aria-label={t("input.modelPreference")}
                   className={`group relative flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] transition-colors ${
                     preference.mode === "manual"
                       ? "border-accent bg-accent/20 text-accent-foreground"
@@ -435,7 +441,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   >
                     <path d="M10.8 1.307a2.33 2.33 0 0 1 2.4 0l7.67 4.602A2.33 2.33 0 0 1 22 7.907v8.361a2.33 2.33 0 0 1-1.13 1.998l-7.67 4.602-.141.078a2.33 2.33 0 0 1-2.258-.078l-7.67-4.602A2.33 2.33 0 0 1 2 16.268V7.907a2.33 2.33 0 0 1 1.003-1.915l.128-.083z" />
                   </svg>
-                  <PromptToolbarTooltip label="Image/Video model" />
+                  <PromptToolbarTooltip label={t("input.modelPreference")} />
                 </button>
                 <ImageModelPreferencePopover
                   open={modelPopoverOpen}
@@ -448,7 +454,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             <button
               type="button"
               onClick={handleSubmit}
-              aria-label="发送消息"
+              aria-label={t("input.send")}
               disabled={disabled || !hasContent || isUploading}
               className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/80 active:bg-primary/90 disabled:opacity-20 disabled:cursor-not-allowed"
             >

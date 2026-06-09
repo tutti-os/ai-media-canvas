@@ -7,7 +7,8 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "package:nextop": "node scripts/package-nextop-app.mjs",
-    "lint": "biome check .",
+    "check:i18n": "node scripts/check-web-i18n.mjs",
+    "lint": "biome check . && pnpm run check:i18n",
     "test:workspace": "node --test tests/*.test.mjs",
     "test:packages": "turbo run test",
     "test": "pnpm run test:workspace && pnpm run test:packages",
@@ -16,6 +17,7 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "esbuild": "^0.28.0",
+    "i18next-cli": "^1.61.1",
     "turbo": "^2.3.3",
     "typescript": "^5.7.3",
     "vitest": "^3.0.7"

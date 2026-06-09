@@ -14,9 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatSidebar } from "../src/components/chat-sidebar";
 import { ToastProvider } from "../src/components/toast";
 import { INITIAL_ATTACHMENTS_KEY } from "../src/hooks/use-create-project";
+import { i18n } from "../src/i18n";
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
 
 const settingsDialogSpy = vi.fn();
+const chatInputPlaceholder = /从一个想法开始/;
 
 const {
   createSessionMock,
@@ -122,7 +124,8 @@ function createMockLocalStorage(): Storage {
 describe("ChatSidebar", () => {
   let mockWs: WebSocketHandle;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("zh-CN");
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,
       value: createMockLocalStorage(),
@@ -232,7 +235,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(/start with an idea/i);
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
     await userEvent.type(input, "hello loom{Enter}");
 
     await waitFor(() =>
@@ -323,7 +326,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(/start with an idea/i);
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
     await userEvent.type(input, "preserve order{Enter}");
 
     await waitFor(() => expect(saveMessageMock).toHaveBeenCalledTimes(1));
@@ -357,7 +360,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(/start with an idea/i);
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
     await userEvent.type(input, "use claude{Enter}");
 
     await waitFor(() =>
@@ -409,7 +412,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(/start with an idea/i);
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
     await userEvent.type(input, "hello without model{Enter}");
 
     await waitFor(() => expect(mockWs.startRun).not.toHaveBeenCalled());
@@ -432,7 +435,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(/start with an idea/i);
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
     await userEvent.type(input, "double send");
 
     fireEvent.keyDown(input, {
@@ -464,7 +467,7 @@ describe("ChatSidebar", () => {
     );
 
     const settingsButton = await screen.findByRole("button", {
-      name: /open settings/i,
+      name: "打开设置",
     });
     await userEvent.click(settingsButton);
 

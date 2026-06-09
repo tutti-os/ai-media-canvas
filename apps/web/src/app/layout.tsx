@@ -28,11 +28,24 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
-      lang="en"
+      lang="zh-CN"
       className={cn(geist.variable, "scroll-smooth")}
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-background font-sans antialiased">
+        <script
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{
+            __html: `
+try {
+  var match = document.cookie.match(/(?:^|; )aimc_locale=([^;]+)/);
+  var saved = localStorage.getItem("aimc_locale") || (match ? decodeURIComponent(match[1]) : "");
+  var locale = /^en/i.test(saved) ? "en" : /^zh/i.test(saved) ? "zh-CN" : "zh-CN";
+  document.documentElement.lang = locale;
+} catch (_) {}
+            `.trim(),
+          }}
+        />
         <Providers>{children}</Providers>
       </body>
     </html>

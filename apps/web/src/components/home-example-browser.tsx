@@ -3,6 +3,7 @@
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
 
+import { useAppTranslation } from "@/i18n";
 import type {
   HomeExampleCard,
   HomeExampleCategory,
@@ -103,11 +104,13 @@ function ExamplePreviewCard({
 
 function toSelection(
   category: HomeExampleCategory,
+  categoryLabel: string,
   example: HomeExampleCard,
 ): HomeExampleSelection {
   return {
     categoryKey: category.key,
-    categoryLabel: category.label,
+    categoryLabel,
+    exampleId: example.id,
     title: example.title,
     prompt: example.prompt,
     previewImages: example.previewImages,
@@ -124,6 +127,7 @@ export function HomeExampleBrowser({
   selectedExample?: HomeExampleSelection | null;
   onExampleSelect: (selection: HomeExampleSelection) => void;
 }) {
+  const { t } = useAppTranslation("home");
   const [internalSelection, setInternalSelection] =
     useState<HomeExampleSelection | null>(null);
   const currentSelection = selectedExample ?? internalSelection;
@@ -132,6 +136,20 @@ export function HomeExampleBrowser({
       (category) => category.key === currentSelection?.categoryKey,
     ) ?? null;
   const activeExamples = activeCategory?.examples ?? [];
+
+  const getCategoryLabel = (category: HomeExampleCategory) =>
+    t(`examples.categories.${category.key}`, {
+      defaultValue: category.label,
+    });
+
+  const getExampleText = (example: HomeExampleCard) => ({
+    title: t(`examples.cases.${example.id}.title`, {
+      defaultValue: example.title,
+    }),
+    prompt: t(`examples.cases.${example.id}.prompt`, {
+      defaultValue: example.prompt,
+    }),
+  });
 
   const applySelection = (selection: HomeExampleSelection) => {
     if (selectedExample === undefined) {
@@ -143,7 +161,12 @@ export function HomeExampleBrowser({
   const handleCategoryClick = (category: HomeExampleCategory) => {
     const firstExample = category.examples[0];
     if (!firstExample) return;
-    applySelection(toSelection(category, firstExample));
+    applySelection(
+      toSelection(category, getCategoryLabel(category), {
+        ...firstExample,
+        ...getExampleText(firstExample),
+      }),
+    );
   };
 
   return (
@@ -153,11 +176,12 @@ export function HomeExampleBrowser({
           const active = category.key === currentSelection?.categoryKey;
           const disabled =
             category.accent !== "special" && category.examples.length === 0;
+          const label = getCategoryLabel(category);
 
           return (
             <ExampleChip
               key={category.key}
-              label={category.label}
+              label={label}
               active={active}
               {...(category.accent ? { accent: category.accent } : {})}
               disabled={disabled}
@@ -169,19 +193,34 @@ export function HomeExampleBrowser({
 
       {activeExamples.length > 0 ? (
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {activeExamples.map((example) => (
-            <ExamplePreviewCard
-              key={`${activeCategory?.key ?? "active"}-${example.title}`}
-              title={example.title}
-              previewImages={example.previewImages}
-              selected={currentSelection?.prompt === example.prompt}
-              onClick={() =>
-                activeCategory
-                  ? applySelection(toSelection(activeCategory, example))
-                  : undefined
-              }
-            />
-          ))}
+          {activeExamples.map((example) => {
+            const exampleText = getExampleText(example);
+            const localizedExample = { ...example, ...exampleText };
+
+            return (
+              <ExamplePreviewCard
+                key={`${activeCategory?.key ?? "active"}-${example.id}`}
+                title={exampleText.title}
+                previewImages={example.previewImages}
+                selected={
+                  currentSelection?.exampleId === example.id ||
+                  (!currentSelection?.exampleId &&
+                    currentSelection?.prompt === example.prompt)
+                }
+                onClick={() =>
+                  activeCategory
+                    ? applySelection(
+                        toSelection(
+                          activeCategory,
+                          getCategoryLabel(activeCategory),
+                          localizedExample,
+                        ),
+                      )
+                    : undefined
+                }
+              />
+            );
+          })}
         </div>
       ) : null}
     </div>

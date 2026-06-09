@@ -29,6 +29,7 @@ import { useImageAttachments } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import type { WebSocketHandle } from "../hooks/use-websocket";
+import { useAppTranslation } from "../i18n";
 import { fetchBrandKit } from "../lib/brand-kit-api";
 import {
   fetchImageModels,
@@ -85,6 +86,7 @@ export function ChatSidebar({
   ws,
   selectedCanvasElements,
 }: ChatSidebarProps) {
+  const { t } = useAppTranslation("chat");
   const breakpoint = useBreakpoint();
   const isOverlay = breakpoint !== "desktop";
 
@@ -1136,7 +1138,7 @@ export function ChatSidebar({
       {/* Header */}
       <div className="flex min-h-[48px] items-center justify-between pl-4 pr-2">
         <div className="flex items-center gap-1 min-w-0">
-          <h2 className="sr-only">AI Media Canvas Assistant</h2>
+          <h2 className="sr-only">{t("assistant.title")}</h2>
           {!sessionsLoading && (
             <SessionSelector
               sessions={sessions}
@@ -1152,8 +1154,8 @@ export function ChatSidebar({
             type="button"
             onClick={() => setSettingsOpen(true)}
             className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Open settings"
-            title="Open settings"
+            aria-label={t("actions.openSettings")}
+            title={t("actions.openSettings")}
           >
             <Settings2 className="h-4 w-4" />
           </button>
@@ -1161,8 +1163,8 @@ export function ChatSidebar({
             type="button"
             onClick={onToggle}
             className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
-            title="Collapse panel"
-            aria-label="Collapse panel"
+            title={t("actions.collapsePanel")}
+            aria-label={t("actions.collapsePanel")}
           >
             <svg
               aria-hidden="true"
@@ -1302,7 +1304,7 @@ export function ChatSidebar({
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize chat panel"
+        aria-label={t("actions.resizePanel")}
         aria-valuenow={sidebarWidth}
         aria-valuemin={SIDEBAR_MIN}
         aria-valuemax={SIDEBAR_MAX}
