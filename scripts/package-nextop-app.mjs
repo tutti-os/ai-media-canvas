@@ -21,11 +21,324 @@ const packageRoot = path.join(buildRoot, "package");
 
 const REQUIRED_PACKAGE_FILES = [
   "nextop.app.json",
+  "nextop.cli.json",
+  "COMMANDS.md",
   "AGENTS.md",
   "bootstrap.sh",
   "server/server.js",
   "server/worker.js",
   "server/tools-mcp.js",
+];
+
+const CLI_SCOPE = "aimc";
+const CLI_COMMANDS = [
+  {
+    path: ["status"],
+    summary: "Show app status",
+    description:
+      "Return AI Media Canvas server health, app version, and local runtime metadata.",
+  },
+  {
+    path: ["projects", "list"],
+    summary: "List projects",
+    description: "List local AI Media Canvas projects.",
+  },
+  {
+    path: ["projects", "get"],
+    summary: "Get a project",
+    description: "Return one local AI Media Canvas project by project-id.",
+    properties: {
+      "project-id": { type: "string", description: "Project id to load." },
+    },
+    required: ["project-id"],
+  },
+  {
+    path: ["projects", "create"],
+    summary: "Create a project",
+    description:
+      "Create a local AI Media Canvas project. Use the returned primaryCanvas.id before saving canvas content.",
+    properties: {
+      name: { type: "string", description: "Project name." },
+      description: {
+        type: "string",
+        description: "Optional project description.",
+      },
+    },
+    required: ["name"],
+  },
+  {
+    path: ["canvases", "get"],
+    summary: "Get a canvas",
+    description: "Return canvas content by canvas-id.",
+    properties: {
+      "canvas-id": { type: "string", description: "Canvas id to load." },
+    },
+    required: ["canvas-id"],
+  },
+  {
+    path: ["canvases", "save"],
+    summary: "Save a canvas",
+    description:
+      "Save canvas content by canvas-id. Pass content-json as a JSON string matching the canvas content object.",
+    properties: {
+      "canvas-id": { type: "string", description: "Canvas id to save." },
+      "content-json": {
+        type: "string",
+        description: "Canvas content JSON string.",
+      },
+    },
+    required: ["canvas-id", "content-json"],
+  },
+  {
+    path: ["sessions", "list"],
+    summary: "List chat sessions",
+    description: "List chat sessions for a canvas-id.",
+    properties: {
+      "canvas-id": {
+        type: "string",
+        description: "Canvas id whose sessions should be listed.",
+      },
+    },
+    required: ["canvas-id"],
+  },
+  {
+    path: ["sessions", "create"],
+    summary: "Create a chat session",
+    description:
+      "Create a chat session for a canvas-id. Use the returned session.id for messages and agent runs.",
+    properties: {
+      "canvas-id": {
+        type: "string",
+        description: "Canvas id for the new session.",
+      },
+      title: { type: "string", description: "Optional session title." },
+    },
+    required: ["canvas-id"],
+  },
+  {
+    path: ["messages", "list"],
+    summary: "List chat messages",
+    description: "List messages in a chat session by session-id.",
+    properties: {
+      "session-id": { type: "string", description: "Chat session id." },
+    },
+    required: ["session-id"],
+  },
+  {
+    path: ["messages", "create"],
+    summary: "Create a chat message",
+    description:
+      "Append a text-only user or assistant message to a chat session.",
+    properties: {
+      "session-id": { type: "string", description: "Chat session id." },
+      role: { type: "string", description: "Message role: user or assistant." },
+      content: { type: "string", description: "Message text content." },
+    },
+    required: ["session-id", "role", "content"],
+  },
+  {
+    path: ["agent", "run"],
+    summary: "Start an agent run",
+    description:
+      "Start an AI Media Canvas agent run for a session and conversation. Poll agent events with agent events using the returned runId.",
+    properties: {
+      "session-id": { type: "string", description: "Chat session id." },
+      "conversation-id": {
+        type: "string",
+        description:
+          "Conversation or canvas id used for streamed canvas events.",
+      },
+      prompt: { type: "string", description: "User prompt for the agent." },
+      "canvas-id": {
+        type: "string",
+        description: "Optional canvas id for canvas event replay.",
+      },
+      model: { type: "string", description: "Optional agent model id." },
+      "runtime-kind": {
+        type: "string",
+        description: "Optional runtime kind, for example local-agent.",
+      },
+      "runtime-provider": {
+        type: "string",
+        description: "Optional local agent provider id.",
+      },
+    },
+    required: ["session-id", "conversation-id", "prompt"],
+    timeoutMs: 60000,
+  },
+  {
+    path: ["agent", "events"],
+    summary: "Poll agent events",
+    description:
+      "Poll persisted events for an agent run. Use cursor from the previous response nextCursor to continue.",
+    properties: {
+      "run-id": { type: "string", description: "Agent run id." },
+      cursor: {
+        type: "integer",
+        description: "Optional event cursor, defaults to 0.",
+      },
+    },
+    required: ["run-id"],
+  },
+  {
+    path: ["agent", "cancel"],
+    summary: "Cancel an agent run",
+    description: "Cancel an active agent run by run-id.",
+    properties: {
+      "run-id": { type: "string", description: "Agent run id." },
+    },
+    required: ["run-id"],
+  },
+  {
+    path: ["generation", "image"],
+    summary: "Queue image generation",
+    description:
+      "Queue an image generation job. Use jobs get or jobs list to monitor status.",
+    properties: {
+      prompt: { type: "string", description: "Image prompt." },
+      model: { type: "string", description: "Optional image model id." },
+      "project-id": { type: "string", description: "Optional project id." },
+      "canvas-id": { type: "string", description: "Optional canvas id." },
+      "session-id": { type: "string", description: "Optional session id." },
+      "aspect-ratio": { type: "string", description: "Optional aspect ratio." },
+      quality: {
+        type: "string",
+        description: "Optional quality: standard, hd, or ultra.",
+      },
+      size: { type: "string", description: "Optional image size." },
+      seed: { type: "integer", description: "Optional integer seed." },
+      "input-images": {
+        type: "string",
+        description: "Optional comma-separated input image URLs.",
+      },
+    },
+    required: ["prompt"],
+    timeoutMs: 60000,
+  },
+  {
+    path: ["generation", "video"],
+    summary: "Queue video generation",
+    description:
+      "Queue a video generation job. Use jobs get or jobs list to monitor status.",
+    properties: {
+      prompt: { type: "string", description: "Video prompt." },
+      model: { type: "string", description: "Optional video model id." },
+      "project-id": { type: "string", description: "Optional project id." },
+      "canvas-id": { type: "string", description: "Optional canvas id." },
+      "session-id": { type: "string", description: "Optional session id." },
+      duration: {
+        type: "integer",
+        description: "Optional duration in seconds.",
+      },
+      resolution: { type: "string", description: "Optional resolution." },
+      "aspect-ratio": { type: "string", description: "Optional aspect ratio." },
+      "input-images": {
+        type: "string",
+        description: "Optional comma-separated input image URLs.",
+      },
+      "input-video": {
+        type: "string",
+        description: "Optional input video URL.",
+      },
+      "negative-prompt": {
+        type: "string",
+        description: "Optional negative prompt.",
+      },
+      seed: { type: "integer", description: "Optional integer seed." },
+      "enable-audio": {
+        type: "boolean",
+        description: "Optional audio generation flag.",
+      },
+    },
+    required: ["prompt"],
+    timeoutMs: 60000,
+  },
+  {
+    path: ["jobs", "list"],
+    summary: "List jobs",
+    description:
+      "List background generation jobs. Filter with status or job-type when needed.",
+    properties: {
+      status: { type: "string", description: "Optional job status filter." },
+      "job-type": {
+        type: "string",
+        description: "Optional job type: image_generation or video_generation.",
+      },
+    },
+  },
+  {
+    path: ["jobs", "get"],
+    summary: "Get a job",
+    description: "Return one background job by job-id.",
+    properties: {
+      "job-id": { type: "string", description: "Job id to load." },
+    },
+    required: ["job-id"],
+  },
+  {
+    path: ["jobs", "cancel"],
+    summary: "Cancel a job",
+    description: "Cancel one queued or running background job by job-id.",
+    properties: {
+      "job-id": { type: "string", description: "Job id to cancel." },
+    },
+    required: ["job-id"],
+  },
+  {
+    path: ["models", "list"],
+    summary: "List agent models",
+    description:
+      "List configured assistant and local-agent models available to agent runs.",
+  },
+  {
+    path: ["models", "image"],
+    summary: "List image models",
+    description: "List image generation models available to generation image.",
+  },
+  {
+    path: ["models", "video"],
+    summary: "List video models",
+    description: "List video generation models available to generation video.",
+  },
+  {
+    path: ["skills", "list"],
+    summary: "List skills",
+    description: "List installed AI Media Canvas skills.",
+  },
+  {
+    path: ["skills", "get"],
+    summary: "Get a skill",
+    description: "Return skill detail by skill-id.",
+    properties: {
+      "skill-id": { type: "string", description: "Skill id to load." },
+    },
+    required: ["skill-id"],
+  },
+  {
+    path: ["skills", "enable"],
+    summary: "Enable or disable a skill",
+    description: "Enable or disable an installed skill by skill-id.",
+    properties: {
+      "skill-id": { type: "string", description: "Skill id to update." },
+      enabled: {
+        type: "boolean",
+        description: "Whether the skill should be enabled.",
+      },
+    },
+    required: ["skill-id", "enabled"],
+  },
+  {
+    path: ["skills", "install"],
+    summary: "Install a bundled skill",
+    description: "Install a bundled catalog skill by skill-id.",
+    properties: {
+      "skill-id": {
+        type: "string",
+        description: "Catalog skill id to install.",
+      },
+    },
+    required: ["skill-id"],
+  },
 ];
 
 const MANIFEST_LOCALIZATIONS = {
@@ -54,6 +367,9 @@ export function createManifest({ version }) {
       bootstrap: "bootstrap.sh",
       healthcheckPath: "/api/health",
     },
+    cli: {
+      manifest: "nextop.cli.json",
+    },
     localizationInfo: {
       defaultLocale: "en",
       additionalLocales: Object.entries(MANIFEST_LOCALIZATIONS).map(
@@ -71,6 +387,60 @@ export function createManifest({ version }) {
     },
     tags: ["generated", "local-first", "media-canvas"],
   };
+}
+
+export function createCliManifest() {
+  return {
+    schemaVersion: "nextop.app.cli.v1",
+    scope: CLI_SCOPE,
+    description:
+      "Control AI Media Canvas projects, canvases, generation jobs, agent runs, and skills.",
+    documentation: {
+      file: "COMMANDS.md",
+    },
+    commands: CLI_COMMANDS.map((command) => createCliCommand(command)),
+  };
+}
+
+function createCliCommand(command) {
+  return {
+    path: command.path,
+    summary: command.summary,
+    description: command.description,
+    inputSchema: {
+      type: "object",
+      properties: command.properties ?? {},
+      ...(command.required?.length ? { required: command.required } : {}),
+    },
+    output: {
+      defaultMode: "json",
+      json: true,
+    },
+    handler: {
+      kind: "http",
+      method: "POST",
+      path: `/nextop/cli/${command.path.join("/")}`,
+      timeoutMs: command.timeoutMs ?? 30000,
+    },
+  };
+}
+
+export function renderCommandsGuide() {
+  const manifest = createCliManifest();
+  const rows = manifest.commands
+    .map((command) => {
+      const required = command.inputSchema.required ?? [];
+      const flags = Object.keys(command.inputSchema.properties)
+        .map((key) => `--${key}${required.includes(key) ? " <required>" : ""}`)
+        .join(" ");
+      const usage = [manifest.scope, ...command.path, flags]
+        .filter(Boolean)
+        .join(" ");
+      return `### \`${usage}\`\n\n${command.description}\n\nHandler: \`${command.handler.path}\`\n`;
+    })
+    .join("\n");
+
+  return `# AI Media Canvas CLI Commands\n\nScope: \`${manifest.scope}\`\n\nThese commands expose AI Media Canvas to the Nextop app CLI. Command outputs are JSON \`CliCommandOutput\` envelopes.\n\n${rows}`;
 }
 
 export function renderBootstrap({ version = "0.0.0" } = {}) {
@@ -197,7 +567,9 @@ export async function assertNoSymlinks(root) {
     const entryPath = path.join(root, entry.name);
     const entryStat = await lstat(entryPath);
     if (entryStat.isSymbolicLink()) {
-      throw new Error(`Package contains symlink: ${path.relative(root, entryPath)}`);
+      throw new Error(
+        `Package contains symlink: ${path.relative(root, entryPath)}`,
+      );
     }
     if (entry.isDirectory()) {
       await assertNoSymlinks(entryPath);
@@ -231,6 +603,26 @@ export async function validatePackageRoot(root) {
   if (manifest.runtime && "kind" in manifest.runtime) {
     throw new Error("nextop.app.json must not declare runtime.kind.");
   }
+  if (manifest.cli?.manifest !== "nextop.cli.json") {
+    throw new Error(
+      "nextop.app.json must declare cli.manifest as nextop.cli.json.",
+    );
+  }
+
+  const cliManifest = JSON.parse(
+    await readFile(path.join(root, "nextop.cli.json"), "utf8"),
+  );
+  validateCliManifest(cliManifest);
+  const docsFile = cliManifest.documentation?.file;
+  if (typeof docsFile !== "string" || docsFile !== "COMMANDS.md") {
+    throw new Error(
+      "nextop.cli.json must declare documentation.file as COMMANDS.md.",
+    );
+  }
+  const commandsGuide = await readFile(path.join(root, docsFile), "utf8");
+  if (commandsGuide.trim().length === 0) {
+    throw new Error("COMMANDS.md must be non-empty.");
+  }
 
   for (const locale of manifest.localizationInfo?.additionalLocales ?? []) {
     const localeFile = locale?.file;
@@ -247,6 +639,106 @@ export async function validatePackageRoot(root) {
   }
 
   await assertNoSymlinks(root);
+}
+
+function validateCliManifest(manifest) {
+  if (manifest.schemaVersion !== "nextop.app.cli.v1") {
+    throw new Error(
+      "nextop.cli.json must use schemaVersion nextop.app.cli.v1.",
+    );
+  }
+  if (!isCliPathSegment(manifest.scope)) {
+    throw new Error(
+      "nextop.cli.json scope must be lowercase letters, numbers, or hyphen.",
+    );
+  }
+  if (!Array.isArray(manifest.commands) || manifest.commands.length === 0) {
+    throw new Error("nextop.cli.json must declare commands.");
+  }
+
+  const seenCommands = new Set();
+  for (const command of manifest.commands) {
+    if (!Array.isArray(command.path) || command.path.length === 0) {
+      throw new Error("CLI command path must be a non-empty array.");
+    }
+    for (const segment of command.path) {
+      if (!isCliPathSegment(segment)) {
+        throw new Error(`Invalid CLI command path segment: ${segment}`);
+      }
+      if (segment === manifest.scope) {
+        throw new Error("CLI command path must not repeat the scope.");
+      }
+    }
+
+    const commandKey = command.path.join(" ");
+    if (seenCommands.has(commandKey)) {
+      throw new Error(`Duplicate CLI command: ${commandKey}`);
+    }
+    seenCommands.add(commandKey);
+
+    if (!command.summary || !command.description) {
+      throw new Error(
+        `CLI command ${commandKey} must describe itself for agents.`,
+      );
+    }
+    if (
+      command.handler?.kind !== "http" ||
+      command.handler?.method !== "POST"
+    ) {
+      throw new Error(
+        `CLI command ${commandKey} must use an HTTP POST handler.`,
+      );
+    }
+    const expectedHandlerPath = `/nextop/cli/${command.path.join("/")}`;
+    if (command.handler?.path !== expectedHandlerPath) {
+      throw new Error(
+        `CLI command ${commandKey} handler.path must be ${expectedHandlerPath}.`,
+      );
+    }
+    validateCliInputSchema(commandKey, command.inputSchema);
+  }
+}
+
+function validateCliInputSchema(commandKey, schema) {
+  if (schema?.type !== "object" || typeof schema.properties !== "object") {
+    throw new Error(
+      `CLI command ${commandKey} inputSchema must be an object schema.`,
+    );
+  }
+  const required = schema.required ?? [];
+  if (!Array.isArray(required)) {
+    throw new Error(
+      `CLI command ${commandKey} inputSchema.required must be an array.`,
+    );
+  }
+  for (const [propertyName, property] of Object.entries(schema.properties)) {
+    if (!isCliPathSegment(propertyName)) {
+      throw new Error(
+        `CLI command ${commandKey} has invalid input name: ${propertyName}`,
+      );
+    }
+    if (!["string", "boolean", "integer"].includes(property?.type)) {
+      throw new Error(
+        `CLI command ${commandKey} input ${propertyName} must be string, boolean, or integer.`,
+      );
+    }
+    if (required.includes(propertyName) && !property.description) {
+      throw new Error(
+        `CLI command ${commandKey} required input ${propertyName} must have a description.`,
+      );
+    }
+  }
+  for (const requiredName of required) {
+    if (!(requiredName in schema.properties)) {
+      throw new Error(
+        `CLI command ${commandKey} requires unknown input ${requiredName}.`,
+      );
+    }
+  }
+}
+
+function isCliPathSegment(value) {
+  return typeof value === "string" && /^[a-z0-9-]+$/.test(value);
 }
 
 async function readRootPackage() {
@@ -267,7 +759,9 @@ async function run(command, args, options = {}) {
         resolve();
         return;
       }
-      reject(new Error(`${command} ${args.join(" ")} exited with code ${code}`));
+      reject(
+        new Error(`${command} ${args.join(" ")} exited with code ${code}`),
+      );
     });
   });
 }
@@ -280,22 +774,41 @@ async function writePackageFiles(version) {
     path.join(packageRoot, "nextop.app.json"),
     `${JSON.stringify(createManifest({ version }), null, 2)}\n`,
   );
+  await writeFile(
+    path.join(packageRoot, "nextop.cli.json"),
+    `${JSON.stringify(createCliManifest(), null, 2)}\n`,
+  );
   for (const { file, metadata } of Object.values(MANIFEST_LOCALIZATIONS)) {
     const localePath = path.join(packageRoot, file);
     await mkdir(path.dirname(localePath), { recursive: true });
     await writeFile(localePath, `${JSON.stringify(metadata, null, 2)}\n`);
   }
+  await writeFile(path.join(packageRoot, "COMMANDS.md"), renderCommandsGuide());
   await writeFile(path.join(packageRoot, "AGENTS.md"), renderAgentsGuide());
-  await writeFile(path.join(packageRoot, "bootstrap.sh"), renderBootstrap({ version }));
+  await writeFile(
+    path.join(packageRoot, "bootstrap.sh"),
+    renderBootstrap({ version }),
+  );
   await chmod(path.join(packageRoot, "bootstrap.sh"), 0o755);
 
   await cp(
-    path.join(rootDir, "apps", "web", "public", "brand", "aimc-nextop-app-icon.png"),
+    path.join(
+      rootDir,
+      "apps",
+      "web",
+      "public",
+      "brand",
+      "aimc-nextop-app-icon.png",
+    ),
     path.join(packageRoot, "icon.png"),
   );
-  await cp(path.join(rootDir, "apps", "web", "out"), path.join(packageRoot, "dist"), {
-    recursive: true,
-  });
+  await cp(
+    path.join(rootDir, "apps", "web", "out"),
+    path.join(packageRoot, "dist"),
+    {
+      recursive: true,
+    },
+  );
   await cp(path.join(rootDir, "skills"), path.join(packageRoot, "skills"), {
     recursive: true,
   });

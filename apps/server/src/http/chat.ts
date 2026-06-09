@@ -3,38 +3,41 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   applicationErrorResponseSchema,
   chatMessageCreateRequestSchema,
-  messageCreateResponseSchema,
-  messageListResponseSchema,
-  sessionCreateResponseSchema,
-  sessionListResponseSchema,
 } from "@aimc/shared";
 
-import {
-  ChatServiceError,
-  type ChatService,
-} from "../features/chat/chat-service.js";
 import type { AuthenticatedUser } from "../auth/types.js";
+import {
+  type ChatService,
+  ChatServiceError,
+} from "../features/chat/chat-service.js";
+import {
+  type ChatOperations,
+  createChatOperations,
+} from "./chat-operations.js";
 
 export async function registerChatRoutes(
   app: FastifyInstance,
   options: {
     localUser: AuthenticatedUser;
     chatService: ChatService;
+    chatOperations?: ChatOperations;
   },
 ) {
+  const chatOperations =
+    options.chatOperations ??
+    createChatOperations({
+      localUser: options.localUser,
+      chatService: options.chatService,
+    });
+
   // List sessions for a canvas
   app.get<{ Params: { canvasId: string } }>(
     "/api/canvases/:canvasId/sessions",
     async (request, reply) => {
       try {
-        const sessions = await options.chatService.listSessions(
-          options.localUser,
-          request.params.canvasId,
-        );
-
         return reply
           .code(200)
-          .send(sessionListResponseSchema.parse({ sessions }));
+          .send(await chatOperations.listSessions(request.params.canvasId));
       } catch (error) {
         return sendChatError(error, reply);
       }
@@ -47,15 +50,14 @@ export async function registerChatRoutes(
     async (request, reply) => {
       try {
         const body = request.body as { title?: string } | undefined;
-        const session = await options.chatService.createSession(
-          options.localUser,
-          request.params.canvasId,
-          body?.title,
-        );
-
         return reply
           .code(201)
-          .send(sessionCreateResponseSchema.parse({ session }));
+          .send(
+            await chatOperations.createSession(
+              request.params.canvasId,
+              body?.title,
+            ),
+          );
       } catch (error) {
         return sendChatError(error, reply);
       }
@@ -105,18 +107,18 @@ export async function registerChatRoutes(
     "/api/sessions/:sessionId/messages",
     async (request, reply) => {
       try {
-        const messages = await options.chatService.listMessages(
-          options.localUser,
+        const response = await chatOperations.listMessages(
           request.params.sessionId,
         );
 
         request.log.info(
-          { sessionId: request.params.sessionId, count: messages.length },
+          {
+            sessionId: request.params.sessionId,
+            count: response.messages.length,
+          },
           "chat.listMessages OK",
         );
-        return reply
-          .code(200)
-          .send(messageListResponseSchema.parse({ messages }));
+        return reply.code(200).send(response);
       } catch (error) {
         request.log.error(
           { sessionId: request.params.sessionId, err: error },
@@ -134,19 +136,20 @@ export async function registerChatRoutes(
     async (request, reply) => {
       try {
         const input = chatMessageCreateRequestSchema.parse(request.body);
-        const message = await options.chatService.createMessage(
-          options.localUser,
+        const response = await chatOperations.createMessage(
           request.params.sessionId,
           input,
         );
 
         request.log.info(
-          { sessionId: request.params.sessionId, role: input.role, messageId: message.id },
+          {
+            sessionId: request.params.sessionId,
+            role: input.role,
+            messageId: response.message.id,
+          },
           "chat.createMessage OK",
         );
-        return reply
-          .code(201)
-          .send(messageCreateResponseSchema.parse({ message }));
+        return reply.code(201).send(response);
       } catch (error) {
         request.log.error(
           { sessionId: request.params.sessionId, err: error },

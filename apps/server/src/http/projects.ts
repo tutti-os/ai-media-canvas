@@ -3,42 +3,40 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   applicationErrorResponseSchema,
   projectCreateRequestSchema,
-  projectCreateResponseSchema,
-  projectDetailResponseSchema,
-  projectListResponseSchema,
   projectUpdateRequestSchema,
 } from "@aimc/shared";
 
-import {
-  ProjectServiceError,
-  type ProjectService,
-} from "../features/projects/project-service.js";
 import type { AuthenticatedUser } from "../auth/types.js";
+import {
+  type ProjectService,
+  ProjectServiceError,
+} from "../features/projects/project-service.js";
+import {
+  type ProjectOperations,
+  createProjectOperations,
+} from "./project-operations.js";
 
 export async function registerProjectRoutes(
   app: FastifyInstance,
   options: {
     localUser: AuthenticatedUser;
     projectService: ProjectService;
+    projectOperations?: ProjectOperations;
   },
 ) {
+  const projectOperations =
+    options.projectOperations ??
+    createProjectOperations({
+      localUser: options.localUser,
+      projectService: options.projectService,
+    });
+
   app.get("/api/projects/:projectId", async (request, reply) => {
     try {
       const { projectId } = request.params as { projectId: string };
-      const project = await options.projectService.getProject(options.localUser, projectId);
-      return reply.code(200).send(
-        projectDetailResponseSchema.parse({
-          project: {
-            id: project.id,
-            name: project.name,
-            slug: project.slug,
-            description: project.description,
-            brandKitId: project.brand_kit_id,
-            createdAt: project.created_at,
-            updatedAt: project.updated_at,
-          },
-        }),
-      );
+      return reply
+        .code(200)
+        .send(await projectOperations.getProject(projectId));
     } catch (error) {
       return sendProjectError(error, reply, "project_query_failed");
     }
@@ -46,8 +44,7 @@ export async function registerProjectRoutes(
 
   app.get("/api/projects", async (request, reply) => {
     try {
-      const projects = await options.projectService.listProjects(options.localUser);
-      return reply.code(200).send(projectListResponseSchema.parse({ projects }));
+      return reply.code(200).send(await projectOperations.listProjects());
     } catch (error) {
       return sendProjectError(error, reply, "project_query_failed");
     }
@@ -66,13 +63,9 @@ export async function registerProjectRoutes(
   app.post("/api/projects", async (request, reply) => {
     try {
       const payload = projectCreateRequestSchema.parse(request.body);
-      const project = await options.projectService.createProject(options.localUser, payload);
-
-      return reply.code(201).send(
-        projectCreateResponseSchema.parse({
-          project,
-        }),
-      );
+      return reply
+        .code(201)
+        .send(await projectOperations.createProject(payload));
     } catch (error) {
       if (isZodError(error)) {
         return reply.code(400).send(
@@ -93,7 +86,11 @@ export async function registerProjectRoutes(
     try {
       const { projectId } = request.params as { projectId: string };
       const payload = projectUpdateRequestSchema.parse(request.body);
-      await options.projectService.updateProject(options.localUser, projectId, payload);
+      await options.projectService.updateProject(
+        options.localUser,
+        projectId,
+        payload,
+      );
 
       return reply.code(204).send();
     } catch (error) {
