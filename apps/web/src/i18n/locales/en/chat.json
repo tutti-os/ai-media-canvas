@@ -1,9 +1,110 @@
 {
+  "actions": {
+    "collapsePanel": "Collapse panel",
+    "openSettings": "Open settings",
+    "resizePanel": "Resize chat panel"
+  },
+  "agentModelSelector": {
+    "apiProvider": "API provider",
+    "assistantMode": "Assistant Mode",
+    "customModelId": "Custom model ID",
+    "localAgent": "Local agent",
+    "localAssistant": "Local Assistant",
+    "noApiProviderModels": "No API provider models configured.",
+    "noLocalCliModels": "No local CLI models detected.",
+    "openSettings": "Open agent settings",
+    "settings": "Settings",
+    "tooltip": "Select agent model",
+    "useCustomModel": "Use custom model",
+    "usesConfiguredDefaultRoute": "Uses your configured default route",
+    "usesDefaultModel": "Uses default model: {{model}}"
+  },
+  "assistant": {
+    "title": "AI Media Canvas Assistant"
+  },
   "conversation": "Conversation",
   "input": {
     "ariaLabel": "Message input",
+    "attachImages": "Attach images",
+    "modelPreference": "Image/Video model",
+    "placeholder": "Start with an idea, or type \"@\" to mention",
     "send": "Send message"
   },
+  "mediaModelPreference": {
+    "configure": "Configure media models",
+    "description": {
+      "autoImage": "AI Media Canvas uses the built-in local renderer for image tasks.",
+      "autoVideo": "AI Media Canvas uses local video-planning presets for storyboard and motion tasks.",
+      "manualImage": "AI Media Canvas keeps using the local renderer while prioritizing your pinned presets.",
+      "manualVideo": "AI Media Canvas keeps using your chosen local video-planning presets."
+    },
+    "empty": {
+      "image": "No configured image models",
+      "video": "No configured video models"
+    },
+    "mode": {
+      "auto": "Auto",
+      "manual": "Manual"
+    },
+    "openSettings": "Open media settings",
+    "tabs": {
+      "image": "Image",
+      "video": "Video"
+    },
+    "title": {
+      "image": "Image Renderer",
+      "video": "Video Planner"
+    }
+  },
+  "mentions": {
+    "remove": "Remove mention"
+  },
   "reconnecting": "Connection lost, reconnecting...",
+  "selection": {
+    "image": "image",
+    "images": "images",
+    "selectedOnCanvas": "selected on canvas",
+    "shape": "shape",
+    "shapes": "shapes"
+  },
+  "sessions": {
+    "cancelDelete": "Cancel",
+    "confirmDelete": "Delete",
+    "delete": "Delete {{title}}",
+    "empty": "No chats yet",
+    "history": "History",
+    "newChat": "New chat",
+    "noMatches": "No matching chats",
+    "searchPlaceholder": "Search chats"
+  },
+  "templates": {
+    "items": {
+      "logoBrand": {
+        "label": "Logo & Brand",
+        "prompt": "Design a logo and brand visual system."
+      },
+      "marketingBrochure": {
+        "label": "Marketing Brochure",
+        "prompt": "Design a marketing brochure page set with a cover and inner pages."
+      },
+      "productShowcase": {
+        "label": "Product Showcase",
+        "prompt": "Design a set of product showcase images suitable for ecommerce."
+      },
+      "socialCarousel": {
+        "label": "Social Carousel",
+        "prompt": "Design a cohesive social media carousel with a cover and multiple inner slides."
+      },
+      "socialMedia": {
+        "label": "Social Media",
+        "prompt": "Design a clean modern social media poster."
+      },
+      "storyboard": {
+        "label": "Storyboard",
+        "prompt": "Create a storyboard sequence for presenting a creative concept."
+      }
+    },
+    "title": "Try these local creation templates"
+  },
   "thinking": "Thinking"
 }

@@ -20,5 +20,9 @@
     "importImage": "导入图片",
     "newProject": "新建项目",
     "projects": "项目库"
+  },
+  "project": {
+    "renameFailed": "项目重命名失败",
+    "untitled": "未命名"
   }
 }

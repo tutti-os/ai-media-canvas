@@ -10,6 +10,9 @@
     "message": "页面不存在"
   },
   "pageComponent": "页面组件发生异常，请重试或刷新页面",
+  "project": {
+    "createFailed": "项目创建失败"
+  },
   "refresh": "刷新页面",
   "retry": "重试"
 }

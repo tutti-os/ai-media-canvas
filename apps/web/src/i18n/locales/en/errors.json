@@ -10,6 +10,9 @@
     "message": "Page not found"
   },
   "pageComponent": "A page component failed. Try again or refresh the page.",
+  "project": {
+    "createFailed": "Failed to create project"
+  },
   "refresh": "Refresh page",
   "retry": "Retry"
 }

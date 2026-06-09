@@ -20,5 +20,9 @@
     "importImage": "Import image",
     "newProject": "New project",
     "projects": "Projects"
+  },
+  "project": {
+    "renameFailed": "Failed to rename project",
+    "untitled": "Untitled"
   }
 }

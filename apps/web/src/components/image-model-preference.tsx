@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
+import { useAppTranslation } from "../i18n";
 import { isMediaProviderConfigured } from "../lib/media-provider-configuration";
 import { formatProviderLabel } from "../lib/provider-labels";
 import type { ImageModelInfo } from "../lib/server-api";
@@ -29,6 +30,7 @@ export function ImageModelPreferencePopover({
   anchorRef: React.RefObject<HTMLElement | null>;
   onOpenSettings?: () => void;
 }) {
+  const { t } = useAppTranslation("chat");
   const { preference, setMode, toggleModel } = useImageModelPreference();
   const {
     preference: videoPreference,
@@ -168,7 +170,9 @@ export function ImageModelPreferencePopover({
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {tab === "image" ? "Image" : "Video"}
+                {tab === "image"
+                  ? t("mediaModelPreference.tabs.image")
+                  : t("mediaModelPreference.tabs.video")}
               </button>
             ))}
           </div>
@@ -178,13 +182,15 @@ export function ImageModelPreferencePopover({
         <div className="flex flex-col gap-2 px-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-foreground">
-              {activeTab === "image" ? "Image Renderer" : "Video Planner"}
+              {activeTab === "image"
+                ? t("mediaModelPreference.title.image")
+                : t("mediaModelPreference.title.video")}
             </span>
             <div className="flex items-center gap-1.5">
               {onOpenSettings ? (
                 <button
                   type="button"
-                  aria-label="Open media settings"
+                  aria-label={t("mediaModelPreference.openSettings")}
                   onClick={handleOpenSettings}
                   className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
@@ -211,18 +217,20 @@ export function ImageModelPreferencePopover({
                       : "bg-muted-foreground"
                   }`}
                 />
-                {currentPreference.mode === "auto" ? "Auto" : "Manual"}
+                {currentPreference.mode === "auto"
+                  ? t("mediaModelPreference.mode.auto")
+                  : t("mediaModelPreference.mode.manual")}
               </button>
             </div>
           </div>
           <span className="text-[11px] text-muted-foreground">
             {currentPreference.mode === "auto"
               ? activeTab === "image"
-                ? "AI Media Canvas uses the built-in local renderer for image tasks."
-                : "AI Media Canvas uses local video-planning presets for storyboard and motion tasks."
+                ? t("mediaModelPreference.description.autoImage")
+                : t("mediaModelPreference.description.autoVideo")
               : activeTab === "image"
-                ? "AI Media Canvas keeps using the local renderer while prioritizing your pinned presets."
-                : "AI Media Canvas keeps using your chosen local video-planning presets."}
+                ? t("mediaModelPreference.description.manualImage")
+                : t("mediaModelPreference.description.manualVideo")}
           </span>
         </div>
 
@@ -232,8 +240,8 @@ export function ImageModelPreferencePopover({
             <div className="flex flex-col items-center gap-3 px-2 py-6 text-center text-xs leading-relaxed text-muted-foreground">
               <span>
                 {activeTab === "image"
-                  ? "未配置可用的图片模型"
-                  : "未配置可用的视频模型"}
+                  ? t("mediaModelPreference.empty.image")
+                  : t("mediaModelPreference.empty.video")}
               </span>
               {onOpenSettings ? (
                 <Button
@@ -243,7 +251,7 @@ export function ImageModelPreferencePopover({
                   onClick={handleOpenSettings}
                 >
                   <Settings2 data-icon="inline-start" />
-                  配置媒体模型
+                  {t("mediaModelPreference.configure")}
                 </Button>
               ) : null}
             </div>

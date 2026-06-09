@@ -1,8 +1,11 @@
 "use client";
 
 import { useToast } from "@/components/toast";
+import { useAppTranslation } from "@/i18n";
 import { updateProject } from "@/lib/server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+const DEFAULT_PROJECT_NAME = "Untitled";
 
 interface EditableProjectNameProps {
   projectId: string;
@@ -18,6 +21,7 @@ export function EditableProjectName({
   const inputRef = useRef<HTMLInputElement>(null);
   const prevName = useRef(initialName);
   const { error: toastError } = useToast();
+  const { t } = useAppTranslation("canvas");
 
   // Sync if initialName changes externally
   useEffect(() => {
@@ -27,7 +31,7 @@ export function EditableProjectName({
 
   const save = useCallback(
     async (newName: string) => {
-      const trimmed = newName.trim() || "Untitled";
+      const trimmed = newName.trim() || DEFAULT_PROJECT_NAME;
       const previousName = prevName.current;
       setName(trimmed);
       setEditing(false);
@@ -38,11 +42,11 @@ export function EditableProjectName({
         } catch (err) {
           console.warn("Failed to update project name:", err);
           setName(previousName);
-          toastError("项目重命名失败");
+          toastError(t("project.renameFailed"));
         }
       }
     },
-    [projectId, toastError],
+    [projectId, t, toastError],
   );
 
   const startEditing = useCallback(() => {
@@ -83,9 +87,9 @@ export function EditableProjectName({
       type="button"
       onClick={startEditing}
       className="h-8 rounded-lg bg-transparent hover:bg-card/60 backdrop-blur-sm px-2.5 text-sm font-medium text-foreground transition-colors truncate max-w-[200px] cursor-text"
-      title={name}
+      title={name === DEFAULT_PROJECT_NAME ? t("project.untitled") : name}
     >
-      {name}
+      {name === DEFAULT_PROJECT_NAME ? t("project.untitled") : name}
     </button>
   );
 }

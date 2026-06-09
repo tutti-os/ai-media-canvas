@@ -2,8 +2,8 @@
 
 import i18n from "i18next";
 import {
-  createContext,
   type ReactNode,
+  createContext,
   useContext,
   useEffect,
   useState,
@@ -17,19 +17,20 @@ import {
 import {
   AIMC_LOCALE_COOKIE_NAME,
   AIMC_LOCALE_STORAGE_KEY,
+  type AppLocale,
   defaultLocale,
   detectInitialLocale,
   fallbackLocale,
+  normalizeLocale,
   persistLocalePreference,
   supportedLocales,
   syncDocumentLanguage,
-  type AppLocale,
 } from "./locales";
 import {
+  type AppNamespace,
   defaultNamespace,
   namespaces,
   resources,
-  type AppNamespace,
 } from "./resources";
 
 type TranslationOptions = Record<string, unknown>;
@@ -80,6 +81,21 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
+    function handleLanguageChanged(localeValue: string) {
+      const locale = normalizeLocale(localeValue);
+      if (locale) {
+        syncDocumentLanguage(locale);
+      }
+    }
+
+    handleLanguageChanged(i18n.resolvedLanguage ?? i18n.language);
+    i18n.on("languageChanged", handleLanguageChanged);
+    return () => {
+      i18n.off("languageChanged", handleLanguageChanged);
+    };
+  }, []);
+
+  useEffect(() => {
     let isCurrent = true;
     const locale = detectInitialLocale();
     const finishHydration = () => {
@@ -89,7 +105,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     };
 
     if (i18n.language !== locale) {
-      void i18n.changeLanguage(locale).finally(finishHydration);
+      void i18n.changeLanguage(locale).finally(() => {
+        syncDocumentLanguage(locale);
+        finishHydration();
+      });
     } else {
       syncDocumentLanguage(locale);
       finishHydration();
@@ -110,6 +129,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 export function useAppTranslation(namespace?: AppNamespace | AppNamespace[]) {
   const translation = useUntypedTranslation(namespace);
   const isHydrated = useContext(I18nHydrationContext);
+  const renderedLocale = isHydrated
+    ? (normalizeLocale(
+        translation.i18n.resolvedLanguage ?? translation.i18n.language,
+      ) ?? defaultLocale)
+    : defaultLocale;
+
+  useEffect(() => {
+    syncDocumentLanguage(renderedLocale);
+  }, [renderedLocale]);
+  syncDocumentLanguage(renderedLocale);
 
   if (isHydrated) {
     return translation;

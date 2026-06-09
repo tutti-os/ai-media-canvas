@@ -30,15 +30,120 @@ export default interface Resources {
       "importImage": "导入图片",
       "newProject": "新建项目",
       "projects": "项目库"
+    },
+    "project": {
+      "renameFailed": "项目重命名失败",
+      "untitled": "未命名"
     }
   },
   "chat": {
+    "actions": {
+      "collapsePanel": "收起面板",
+      "openSettings": "打开设置",
+      "resizePanel": "调整聊天面板宽度"
+    },
+    "agentModelSelector": {
+      "apiProvider": "API provider",
+      "assistantMode": "助手模式",
+      "customModelId": "自定义模型 ID",
+      "localAgent": "本地 Agent",
+      "localAssistant": "本地助手",
+      "noApiProviderModels": "未配置 API provider 模型。",
+      "noLocalCliModels": "未检测到本地 CLI 模型。",
+      "openSettings": "打开 Agent 设置",
+      "settings": "设置",
+      "tooltip": "选择 Agent 模型",
+      "useCustomModel": "使用自定义模型",
+      "usesConfiguredDefaultRoute": "使用你配置的默认路由",
+      "usesDefaultModel": "使用默认模型：{{model}}"
+    },
+    "assistant": {
+      "title": "AI Media Canvas 助手"
+    },
     "conversation": "对话",
     "input": {
       "ariaLabel": "输入消息",
+      "attachImages": "添加图片",
+      "modelPreference": "图片/视频模型",
+      "placeholder": "从一个想法开始，或输入 “@” 提及内容",
       "send": "发送消息"
     },
+    "mediaModelPreference": {
+      "configure": "配置媒体模型",
+      "description": {
+        "autoImage": "AI Media Canvas 会使用内置本地渲染器处理图片任务。",
+        "autoVideo": "AI Media Canvas 会使用本地视频规划预设处理分镜和动态任务。",
+        "manualImage": "AI Media Canvas 仍使用本地渲染器，并优先使用你固定的预设。",
+        "manualVideo": "AI Media Canvas 会使用你选择的本地视频规划预设。"
+      },
+      "empty": {
+        "image": "未配置可用的图片模型",
+        "video": "未配置可用的视频模型"
+      },
+      "mode": {
+        "auto": "自动",
+        "manual": "手动"
+      },
+      "openSettings": "打开媒体设置",
+      "tabs": {
+        "image": "图片",
+        "video": "视频"
+      },
+      "title": {
+        "image": "图片渲染器",
+        "video": "视频规划器"
+      }
+    },
+    "mentions": {
+      "remove": "移除提及"
+    },
     "reconnecting": "连接已断开，正在重连...",
+    "selection": {
+      "image": "张图片",
+      "images": "张图片",
+      "selectedOnCanvas": "已在画布中选中",
+      "shape": "个图形",
+      "shapes": "个图形"
+    },
+    "sessions": {
+      "cancelDelete": "取消",
+      "confirmDelete": "删除",
+      "delete": "删除 {{title}}",
+      "empty": "暂无对话",
+      "history": "历史对话",
+      "newChat": "新建对话",
+      "noMatches": "无匹配结果",
+      "searchPlaceholder": "请输入搜索关键词"
+    },
+    "templates": {
+      "items": {
+        "logoBrand": {
+          "label": "Logo 与品牌",
+          "prompt": "帮我设计一个 Logo 和品牌视觉方案"
+        },
+        "marketingBrochure": {
+          "label": "营销宣传册",
+          "prompt": "帮我设计一套营销宣传册页面，包含封面和内页"
+        },
+        "productShowcase": {
+          "label": "产品展示图",
+          "prompt": "帮我设计一组产品展示图，适合电商平台使用"
+        },
+        "socialCarousel": {
+          "label": "社媒轮播图",
+          "prompt": "帮我设计一组社交媒体轮播图，包含封面和多张内页，风格统一"
+        },
+        "socialMedia": {
+          "label": "社交媒体",
+          "prompt": "帮我设计一张社交媒体海报，风格现代简洁"
+        },
+        "storyboard": {
+          "label": "分镜故事板",
+          "prompt": "帮我创建一组分镜故事板，用于展示创意概念"
+        }
+      },
+      "title": "试试这些本地创作模板"
+    },
     "thinking": "思考中"
   },
   "common": {
@@ -72,6 +177,9 @@ export default interface Resources {
       "message": "页面不存在"
     },
     "pageComponent": "页面组件发生异常，请重试或刷新页面",
+    "project": {
+      "createFailed": "项目创建失败"
+    },
     "refresh": "刷新页面",
     "retry": "重试"
   },
@@ -254,11 +362,80 @@ export default interface Resources {
     "archiveAction": "归档项目",
     "archiveConfirmDescription": "确定归档此项目？它会从项目列表中移除，但本地数据仍会保留。",
     "create": "新建项目",
+    "createDialog": {
+      "creating": "创建中...",
+      "descriptionLabel": "描述（可选）",
+      "descriptionPlaceholder": "简单描述一下...",
+      "failed": "项目创建失败，请重试。",
+      "nameLabel": "名称",
+      "namePlaceholder": "我的项目",
+      "slugTaken": "已经存在同名项目，请换一个名称。",
+      "success": "项目创建成功",
+      "title": "新建项目"
+    },
     "loadFailed": "本地项目加载失败，请重试。",
     "title": "项目",
     "updatedAt": "更新于 {{date}}"
   },
   "settings": {
+    "agentSettings": {
+      "actions": {
+        "saving": "保存中..."
+      },
+      "api": {
+        "addModel": "添加",
+        "addProviderModel": "添加 {{provider}} 模型",
+        "browseModels": "浏览可用模型",
+        "chooseApiProviderModelBelow": "请在下方选择 API provider 模型。",
+        "chooseModel": "选择模型",
+        "customProvider": "自定义 provider",
+        "defaultLlmModel": "默认 LLM 模型",
+        "defaultModelDescription": "从下方已配置的模型列表中选择工作区默认模型。",
+        "defaultModelTitle": "默认模型",
+        "importDetected": "导入已检测模型",
+        "noApiProviderModelSelected": "未选择 API provider 模型",
+        "noModelsYet": "暂无模型",
+        "noProviderModels": "{{provider}} 暂未配置模型。",
+        "protocolCredentials": "协议凭证",
+        "protocolDescription": "选择一个协议来编辑对应凭证。",
+        "providerModels": "{{provider}} 模型",
+        "providerModelsDescription": "添加、编辑或移除这个 provider 对外暴露的模型 ID。",
+        "quickFillProvider": "快速填充 provider",
+        "removeModel": "移除",
+        "useModel": "使用 {{model}}",
+        "workspaceModels": "工作区模型",
+        "workspaceModelsDescription": "从各 provider 下已配置的模型列表中选择。"
+      },
+      "feedback": {
+        "installFailed": "无法安装本地 Agent provider。",
+        "updateFailed": "本地 Agent 设置更新失败，请重试。",
+        "updated": "本地 Agent 设置已更新。"
+      },
+      "local": {
+        "customModelId": "自定义模型 ID",
+        "customModelPlaceholder": "例如 my-model",
+        "customOption": "自定义（在下方输入）...",
+        "description": "选择生成任务要使用的 CLI 路由。",
+        "detectedCli": "已检测 CLI",
+        "empty": "暂未检测到本地 CLI 模型。安装或登录支持的本地 CLI 后重新扫描。",
+        "fetchedDescription": "当 CLI 暴露模型列表时会自动获取。自定义模式允许输入该 CLI 支持的任意模型 ID。",
+        "installHint": "安装 Codex 或 Claude Code 后重新扫描，即可启用本地 Agent 路由。",
+        "installRequired": "需要安装",
+        "installing": "安装中...",
+        "modelCountOne": "{{modelCount}} 个模型",
+        "modelCountOther": "{{modelCount}} 个模型",
+        "modelLabel": "模型",
+        "noCliSelected": "未选择 CLI",
+        "rescan": "重新扫描",
+        "selectCliFirst": "请先选择 CLI...",
+        "selectModel": "选择模型..."
+      },
+      "source": {
+        "apiProvider": "API provider",
+        "detected": "已检测 {{cliCount}} 个",
+        "localAgent": "本地 Agent"
+      }
+    },
     "dialogTitle": "设置",
     "general": {
       "description": "控制界面语言与本地显示偏好。",

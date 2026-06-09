@@ -118,10 +118,13 @@ describe("ChatInput", () => {
   it("renders tooltip labels for prompt toolbar icon buttons", () => {
     render(<ChatInput onSend={vi.fn()} onAddFiles={vi.fn()} />);
 
-    expect(screen.getByText("Attach images")).toBeInTheDocument();
-    expect(screen.getByText("Image/Video model")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Image/Video model" }),
+      screen.getByPlaceholderText("从一个想法开始，或输入 “@” 提及内容"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("添加图片")).toBeInTheDocument();
+    expect(screen.getByText("图片/视频模型")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "图片/视频模型" }),
     ).toBeInTheDocument();
   });
 

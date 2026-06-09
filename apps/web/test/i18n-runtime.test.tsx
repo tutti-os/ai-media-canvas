@@ -24,6 +24,9 @@ function Probe() {
       <button type="button" onClick={() => void i18n.changeLanguage("en")}>
         switch
       </button>
+      <button type="button" onClick={() => void i18n.changeLanguage("zh-CN")}>
+        switch zh
+      </button>
     </div>
   );
 }
@@ -98,6 +101,14 @@ describe("web i18n runtime", () => {
     expect(screen.getByText("Language")).toBeInTheDocument();
     expect(window.localStorage.getItem(AIMC_LOCALE_STORAGE_KEY)).toBe("en");
     expect(document.documentElement.lang).toBe("en");
+
+    await act(async () => {
+      await userEvent.click(screen.getByRole("button", { name: "switch zh" }));
+    });
+
+    expect(screen.getByText("语言")).toBeInTheDocument();
+    expect(window.localStorage.getItem(AIMC_LOCALE_STORAGE_KEY)).toBe("zh-CN");
+    expect(document.documentElement.lang).toBe("zh-CN");
   });
 });
 

@@ -16,7 +16,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { supportedLocales, type AppLocale, useAppTranslation } from "@/i18n";
+import {
+  type AppLocale,
+  persistLocalePreference,
+  supportedLocales,
+  useAppTranslation,
+} from "@/i18n";
 import {
   fetchWorkspaceSettings,
   updateWorkspaceSettings,
@@ -46,6 +51,14 @@ const SETTINGS_TABS: Array<{
     descriptionKey: "tabs.media.description",
   },
 ];
+
+function syncLocalePreference(locale: AppLocale) {
+  persistLocalePreference(locale);
+  document.documentElement.setAttribute("lang", locale);
+  window.setTimeout(() => {
+    document.documentElement.setAttribute("lang", locale);
+  }, 0);
+}
 
 export function isSettingsTab(value: string | null): value is SettingsTab {
   return SETTINGS_TABS.some((tab) => tab.id === value);
@@ -122,7 +135,7 @@ export function SettingsPanel({
           />
         );
     }
-  }, [activeTab, handleWorkspaceSettingsSave, workspaceSettings]);
+  }, [activeTab, handleWorkspaceSettingsSave, surface, workspaceSettings]);
 
   if (panelLoading) {
     return <SettingsSkeleton />;
@@ -244,9 +257,13 @@ function GeneralSettingsSection() {
         </div>
         <Select
           items={localeItems}
-          onValueChange={(locale) =>
-            void i18n.changeLanguage(locale as AppLocale)
-          }
+          onValueChange={(locale) => {
+            const nextLocale = locale as AppLocale;
+            syncLocalePreference(nextLocale);
+            void i18n.changeLanguage(nextLocale).finally(() => {
+              syncLocalePreference(nextLocale);
+            });
+          }}
           value={currentLocale}
         >
           <SelectTrigger

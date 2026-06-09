@@ -3,6 +3,17 @@
   "archiveAction": "归档项目",
   "archiveConfirmDescription": "确定归档此项目？它会从项目列表中移除，但本地数据仍会保留。",
   "create": "新建项目",
+  "createDialog": {
+    "creating": "创建中...",
+    "descriptionLabel": "描述（可选）",
+    "descriptionPlaceholder": "简单描述一下...",
+    "failed": "项目创建失败，请重试。",
+    "nameLabel": "名称",
+    "namePlaceholder": "我的项目",
+    "slugTaken": "已经存在同名项目，请换一个名称。",
+    "success": "项目创建成功",
+    "title": "新建项目"
+  },
   "loadFailed": "本地项目加载失败，请重试。",
   "title": "项目",
   "updatedAt": "更新于 {{date}}"

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ChatSessionSummary } from "@aimc/shared";
+import { useAppTranslation } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type SessionSelectorProps = {
@@ -50,7 +51,13 @@ function TrashIcon({ className }: { className?: string }) {
 
 function SearchIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5}>
+    <svg
+      className={className}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+    >
       <circle cx="7" cy="7" r="4.5" />
       <path d="m10.5 10.5 3 3" strokeLinecap="round" />
     </svg>
@@ -64,14 +71,24 @@ export function SessionSelector({
   onNewChat,
   onDelete,
 }: SessionSelectorProps) {
+  const { t } = useAppTranslation("chat");
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const [open, setOpen] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const panelRef = useRef<HTMLDivElement>(null);
+  const formatSessionTitle = useCallback(
+    (title: string) =>
+      title.trim().toLowerCase() === "new chat" ? t("sessions.newChat") : title,
+    [t],
+  );
 
   const filtered = search.trim()
-    ? sessions.filter((s) => s.title.toLowerCase().includes(search.toLowerCase()))
+    ? sessions.filter((s) =>
+        formatSessionTitle(s.title)
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+      )
     : sessions;
 
   // Close panel on outside click
@@ -121,7 +138,9 @@ export function SessionSelector({
         >
           <HistoryIcon className="h-3.5 w-3.5" />
           <span className="max-w-[140px] truncate">
-            {activeSession?.title ?? "History"}
+            {activeSession
+              ? formatSessionTitle(activeSession.title)
+              : t("sessions.history")}
           </span>
           <svg
             className={`h-3 w-3 opacity-50 transition-transform ${open ? "rotate-180" : ""}`}
@@ -136,7 +155,9 @@ export function SessionSelector({
           <div className="absolute left-0 top-full mt-1.5 z-50 w-[260px] rounded-lg border border-border bg-popover shadow-lg overflow-hidden">
             {/* Header */}
             <div className="px-3 pt-3 pb-2">
-              <p className="text-xs font-medium text-foreground mb-2">历史对话</p>
+              <p className="text-xs font-medium text-foreground mb-2">
+                {t("sessions.history")}
+              </p>
               {/* Search */}
               <div className="relative">
                 <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
@@ -144,7 +165,7 @@ export function SessionSelector({
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="请输入搜索关键词"
+                  placeholder={t("sessions.searchPlaceholder")}
                   className="w-full rounded-md border border-input bg-muted py-1.5 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground/70 outline-none focus:border-input-border focus:bg-background transition-colors"
                 />
               </div>
@@ -154,7 +175,7 @@ export function SessionSelector({
             <div className="max-h-[240px] overflow-y-auto px-1 pb-1">
               {filtered.length === 0 && (
                 <p className="px-3 py-4 text-center text-xs text-muted-foreground/70">
-                  {search ? "无匹配结果" : "暂无对话"}
+                  {search ? t("sessions.noMatches") : t("sessions.empty")}
                 </p>
               )}
               {filtered.map((s) => (
@@ -171,7 +192,10 @@ export function SessionSelector({
                     if (confirmingId !== s.id) handleSelect(s.id);
                   }}
                   onKeyDown={(e) => {
-                    if ((e.key === "Enter" || e.key === " ") && confirmingId !== s.id) {
+                    if (
+                      (e.key === "Enter" || e.key === " ") &&
+                      confirmingId !== s.id
+                    ) {
                       e.preventDefault();
                       handleSelect(s.id);
                     }
@@ -180,7 +204,9 @@ export function SessionSelector({
                   {confirmingId === s.id ? (
                     /* Inline confirm */
                     <>
-                      <span className="truncate flex-1">{s.title}</span>
+                      <span className="truncate flex-1">
+                        {formatSessionTitle(s.title)}
+                      </span>
                       <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
@@ -190,7 +216,7 @@ export function SessionSelector({
                             setConfirmingId(null);
                           }}
                         >
-                          取消
+                          {t("sessions.cancelDelete")}
                         </button>
                         <button
                           type="button"
@@ -200,17 +226,21 @@ export function SessionSelector({
                             handleDelete(s.id);
                           }}
                         >
-                          删除
+                          {t("sessions.confirmDelete")}
                         </button>
                       </div>
                     </>
                   ) : (
                     /* Normal state */
                     <>
-                      <span className="truncate flex-1">{s.title}</span>
+                      <span className="truncate flex-1">
+                        {formatSessionTitle(s.title)}
+                      </span>
                       <button
                         type="button"
-                        aria-label={`Delete ${s.title}`}
+                        aria-label={t("sessions.delete", {
+                          title: formatSessionTitle(s.title),
+                        })}
                         className="hidden group-hover:flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-destructive transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -233,7 +263,7 @@ export function SessionSelector({
         type="button"
         onClick={onNewChat}
         className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-        title="New Chat"
+        title={t("sessions.newChat")}
       >
         <NewChatIcon className="h-5 w-5" />
       </button>
