@@ -8,6 +8,14 @@ import { AgentSettingsSection } from "@/components/agent-settings-section";
 import { MediaSettingsSection } from "@/components/media-settings-section";
 import { SettingsSkeleton } from "@/components/skeletons/settings-skeleton";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { supportedLocales, type AppLocale, useAppTranslation } from "@/i18n";
 import {
   fetchWorkspaceSettings,
@@ -203,6 +211,13 @@ function GeneralSettingsSection() {
     i18n.language === "en" || i18n.language === "zh-CN"
       ? i18n.language
       : "zh-CN";
+  const localeItems = supportedLocales.map((locale) => ({
+    label:
+      locale === "en"
+        ? t("general.languageOptions.en")
+        : t("general.languageOptions.zhCN"),
+    value: locale,
+  }));
 
   return (
     <div className="space-y-6">
@@ -227,23 +242,30 @@ function GeneralSettingsSection() {
             {t("general.languageDescription")}
           </p>
         </div>
-        <select
-          id="aimc-language-select"
-          aria-label={t("general.languageLabel")}
-          className="h-9 min-w-48 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          value={currentLocale}
-          onChange={(event) =>
-            void i18n.changeLanguage(event.target.value as AppLocale)
+        <Select
+          items={localeItems}
+          onValueChange={(locale) =>
+            void i18n.changeLanguage(locale as AppLocale)
           }
+          value={currentLocale}
         >
-          {supportedLocales.map((locale) => (
-            <option key={locale} value={locale}>
-              {locale === "en"
-                ? t("general.languageOptions.en")
-                : t("general.languageOptions.zhCN")}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            id="aimc-language-select"
+            aria-label={t("general.languageLabel")}
+            className="h-9 min-w-48 bg-background"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end" alignItemWithTrigger={false}>
+            <SelectGroup>
+              {localeItems.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );

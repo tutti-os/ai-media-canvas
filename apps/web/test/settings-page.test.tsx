@@ -95,9 +95,9 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(await screen.findByRole("button", { name: /通用/ }));
-    await userEvent.selectOptions(
-      screen.getByLabelText("语言"),
-      screen.getByRole("option", { name: "English" }),
+    await userEvent.click(screen.getByRole("combobox", { name: "语言" }));
+    await userEvent.click(
+      await screen.findByRole("option", { name: "English" }),
     );
 
     expect(await screen.findByText("Language")).toBeInTheDocument();
