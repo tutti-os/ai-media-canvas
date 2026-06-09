@@ -1,7 +1,7 @@
 import { mkdirSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
-  type BackendFactory,
+  type AnyBackendProtocol,
   type StateAndStore,
   CompositeBackend,
   FilesystemBackend,
@@ -62,15 +62,16 @@ export function createDevelopmentBackend(
     virtualMode: true,
   });
 
-  const factory: BackendFactory = (stateAndStore: StateAndStore) => {
-    const routes: Record<string, FilesystemBackend | StoreBackend> = {
+  const factory: AgentBackendResult["factory"] = (stateAndStore) => {
+    const storeContext = stateAndStore as StateAndStore;
+    const routes: Record<string, AnyBackendProtocol> = {
       "/workspace/": workspaceBackend,
       "/skills/": skillsBackend,
     };
 
     // In dev mode, workspace skills are served from the Store when available.
-    if (options?.hasWorkspaceSkills && options.canvasId && stateAndStore.store) {
-      routes["/workspace-skills/"] = new StoreBackend(stateAndStore, {
+    if (options?.hasWorkspaceSkills && options.canvasId && storeContext.store) {
+      routes["/workspace-skills/"] = new StoreBackend(storeContext, {
         namespace: ["projects", options.canvasId, "workspace-skills"],
       });
     }

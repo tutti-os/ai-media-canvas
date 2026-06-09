@@ -124,7 +124,6 @@ test("createManifest returns the Nextop package manifest contract", () => {
       src: "icon.png",
     },
     runtime: {
-      kind: "custom",
       bootstrap: "bootstrap.sh",
       healthcheckPath: "/api/health",
     },
@@ -149,11 +148,19 @@ test("renderBootstrap maps Nextop runtime env into AI Media Canvas env", () => {
   assert.match(bootstrap, /export AIMC_WEB_DIST="\$NEXTOP_APP_PACKAGE_DIR\/dist"/);
   assert.match(bootstrap, /export AIMC_DATA_ROOT="\$NEXTOP_APP_DATA_DIR"/);
   assert.match(bootstrap, /export AIMC_SKILLS_ROOT="\$NEXTOP_APP_PACKAGE_DIR\/skills"/);
+  assert.match(bootstrap, /export AIMC_TOOLS_MCP_PATH="\$NEXTOP_APP_PACKAGE_DIR\/server\/tools-mcp\.js"/);
   assert.match(
     bootstrap,
     /export AIMC_AGENT_FILES_ROOT="\$\{NEXTOP_WORKSPACE_ROOT:-\$NEXTOP_APP_DATA_DIR\}"/,
   );
-  assert.match(bootstrap, /exec node "\$NEXTOP_APP_PACKAGE_DIR\/server\/server.js"/);
+  assert.match(bootstrap, /node_bin="\$\{NEXTOP_APP_NODE:-node\}"/);
+  assert.match(bootstrap, /run_child "\$NEXTOP_APP_PACKAGE_DIR\/server\/worker.js" "\$worker_status_file" &/);
+  assert.match(bootstrap, /worker_pid=\$!/);
+  assert.match(bootstrap, /run_child "\$NEXTOP_APP_PACKAGE_DIR\/server\/server.js" "\$server_status_file" &/);
+  assert.match(bootstrap, /server_pid=\$!/);
+  assert.match(bootstrap, /monitor_children\(\)/);
+  assert.match(bootstrap, /kill -0 "\$worker_pid"/);
+  assert.match(bootstrap, /kill -0 "\$server_pid"/);
 });
 
 test("renderAgentsGuide is non-empty and documents package layout", () => {
@@ -205,6 +212,10 @@ test("validatePackageRoot requires the files Nextop imports", async () => {
   );
   await writeFile(path.join(packageRoot, "AGENTS.md"), "Package guide\n");
   await writeFile(path.join(packageRoot, "bootstrap.sh"), renderBootstrap());
+  await mkdir(path.join(packageRoot, "server"));
+  await writeFile(path.join(packageRoot, "server", "server.js"), "ok\n");
+  await writeFile(path.join(packageRoot, "server", "worker.js"), "ok\n");
+  await writeFile(path.join(packageRoot, "server", "tools-mcp.js"), "ok\n");
   await chmod(path.join(packageRoot, "bootstrap.sh"), 0o755);
 
   await validatePackageRoot(packageRoot);

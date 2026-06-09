@@ -1,13 +1,15 @@
 import { mkdirSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
-  type BackendFactory,
-  type BackendProtocol,
+  type AnyBackendProtocol,
+  type StateAndStore,
   CompositeBackend,
   FilesystemBackend,
   LocalShellBackend,
   StoreBackend,
 } from "deepagents";
+
+import type { AgentBackendResult } from "./index.js";
 
 const DEFAULT_SANDBOX_ROOT = "/tmp/ai-media-canvas-sandbox";
 const DEFAULT_SKILLS_ROOT = "/opt/ai-media-canvas/skills";
@@ -35,7 +37,7 @@ export function createProductionBackendFactory(
     skillsRoot?: string;
     hasWorkspaceSkills?: boolean;
   },
-): { factory: BackendFactory; sandboxDir: string } {
+): AgentBackendResult & { sandboxDir: string } {
   const sandboxRoot = resolve(options?.sandboxRoot ?? DEFAULT_SANDBOX_ROOT);
   const skillsRoot = resolve(options?.skillsRoot ?? DEFAULT_SKILLS_ROOT);
 
@@ -65,19 +67,20 @@ export function createProductionBackendFactory(
 
   const skillsBackend = new FilesystemBackend({ rootDir: skillsRoot, virtualMode: true });
 
-  const factory: BackendFactory = (stateAndStore) => {
-    const routes: Record<string, BackendProtocol> = {
-      "/memories/": new StoreBackend(stateAndStore, {
+  const factory: AgentBackendResult["factory"] = (stateAndStore) => {
+    const storeContext = stateAndStore as StateAndStore;
+    const routes: Record<string, AnyBackendProtocol> = {
+      "/memories/": new StoreBackend(storeContext, {
         namespace: ["projects", canvasId, "memories"],
       }),
-      "/workspace/": new StoreBackend(stateAndStore, {
+      "/workspace/": new StoreBackend(storeContext, {
         namespace: ["projects", canvasId, "workspace"],
       }),
       "/skills/": skillsBackend,
     };
 
     if (options?.hasWorkspaceSkills) {
-      routes["/workspace-skills/"] = new StoreBackend(stateAndStore, {
+      routes["/workspace-skills/"] = new StoreBackend(storeContext, {
         namespace: ["projects", canvasId, "workspace-skills"],
       });
     }

@@ -36,7 +36,6 @@ import type { SubmitImageJobFn } from "./tools/image-generate.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import { TierGuardError, type TierGuard } from "../features/credits/tier-guard.js";
-import { getPlanConfig, type BillingErrorCode, type ImageQualityLevel } from "@aimc/shared";
 import { createAgentBackend } from "./backends/index.js";
 import {
   type AimcAgentFactory,
@@ -65,6 +64,9 @@ import type { RuntimeExecutionContext } from "./runtimes/types.js";
 import { adaptDeepAgentStream } from "./runtimes/deepagent-events.js";
 import { loadNormalizedSessionHistory } from "./runtimes/history.js";
 import { createAimcLocalAgentProviderPlugins } from "./local-agent-providers.js";
+
+type BillingErrorCode = string;
+type ImageQualityLevel = "standard" | "hd" | "ultra";
 
 /**
  * Build the text portion of a user message, appending <input_images> XML
@@ -423,6 +425,20 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     }
   }
 
+  function createBillingBalanceExtra(input: {
+    currentBalance: number;
+    dailyClaimed?: boolean;
+    plan?: string;
+    requiredAmount: number;
+  }) {
+    return {
+      currentBalance: input.currentBalance,
+      requiredAmount: input.requiredAmount,
+      ...(input.plan !== undefined ? { plan: input.plan } : {}),
+      ...(input.dailyClaimed !== undefined ? { dailyClaimed: input.dailyClaimed } : {}),
+    };
+  }
+
   async function loadCanvasSummaryForRuntime(context: RuntimeExecutionContext) {
     const { run } = context;
     if (!run.canvasId || !run.accessToken || !options.createUserClient) {
@@ -769,10 +785,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             const balanceInfo = await options.creditService.getBalance(workspaceId);
             if (balanceInfo.balance < creditsCost) {
               pushBillingErrorAndAbort(run, canvasId, options, "insufficient_credits", "Insufficient credits", {
-                currentBalance: balanceInfo.balance,
-                requiredAmount: creditsCost,
-                plan: balanceInfo.plan,
-                dailyClaimed: balanceInfo.dailyClaimed,
+                ...createBillingBalanceExtra({
+                  currentBalance: balanceInfo.balance,
+                  requiredAmount: creditsCost,
+                  ...(balanceInfo.plan !== undefined ? { plan: balanceInfo.plan } : {}),
+                  ...(balanceInfo.dailyClaimed !== undefined ? { dailyClaimed: balanceInfo.dailyClaimed } : {}),
+                }),
               });
               throw new Error("Insufficient credits");
             }
@@ -939,7 +957,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             try {
               options.tierGuard.checkModelAccess(sub.plan, input.model);
               if (input.resolution) {
-                options.tierGuard.checkVideoResolution(sub.plan, input.resolution as any);
+                options.tierGuard.checkResolution(sub.plan, input.resolution);
               }
               await options.tierGuard.checkConcurrency(workspaceId, sub.plan);
             } catch (err) {
@@ -963,10 +981,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             const balanceInfo = await options.creditService.getBalance(workspaceId);
             if (balanceInfo.balance < creditsCost) {
               pushBillingErrorAndAbort(run, canvasId, options, "insufficient_credits", "Insufficient credits", {
-                currentBalance: balanceInfo.balance,
-                requiredAmount: creditsCost,
-                plan: balanceInfo.plan,
-                dailyClaimed: balanceInfo.dailyClaimed,
+                ...createBillingBalanceExtra({
+                  currentBalance: balanceInfo.balance,
+                  requiredAmount: creditsCost,
+                  ...(balanceInfo.plan !== undefined ? { plan: balanceInfo.plan } : {}),
+                  ...(balanceInfo.dailyClaimed !== undefined ? { dailyClaimed: balanceInfo.dailyClaimed } : {}),
+                }),
               });
               throw new Error("Insufficient credits");
             }

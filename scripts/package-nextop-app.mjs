@@ -19,7 +19,14 @@ const rootDir = path.resolve(path.dirname(scriptPath), "..");
 const buildRoot = path.join(rootDir, "build", "nextop-app");
 const packageRoot = path.join(buildRoot, "package");
 
-const REQUIRED_PACKAGE_FILES = ["nextop.app.json", "AGENTS.md", "bootstrap.sh"];
+const REQUIRED_PACKAGE_FILES = [
+  "nextop.app.json",
+  "AGENTS.md",
+  "bootstrap.sh",
+  "server/server.js",
+  "server/worker.js",
+  "server/tools-mcp.js",
+];
 
 export function createManifest({ version }) {
   return {
@@ -33,7 +40,6 @@ export function createManifest({ version }) {
       src: "icon.png",
     },
     runtime: {
-      kind: "custom",
       bootstrap: "bootstrap.sh",
       healthcheckPath: "/api/health",
     },
@@ -63,11 +69,69 @@ export AIMC_APP_VERSION="${version}"
 export AIMC_WEB_DIST="$NEXTOP_APP_PACKAGE_DIR/dist"
 export AIMC_DATA_ROOT="$NEXTOP_APP_DATA_DIR"
 export AIMC_SKILLS_ROOT="$NEXTOP_APP_PACKAGE_DIR/skills"
+export AIMC_TOOLS_MCP_PATH="$NEXTOP_APP_PACKAGE_DIR/server/tools-mcp.js"
 export AIMC_AGENT_FILES_ROOT="\${NEXTOP_WORKSPACE_ROOT:-$NEXTOP_APP_DATA_DIR}"
 export AIMC_WEB_ORIGIN="$NEXTOP_APP_BASE_URL"
 export AIMC_SERVER_BASE_URL="$NEXTOP_APP_BASE_URL"
 
-exec node "$NEXTOP_APP_PACKAGE_DIR/server/server.js"
+node_bin="\${NEXTOP_APP_NODE:-node}"
+runtime_dir="\${NEXTOP_APP_RUNTIME_DIR:-$NEXTOP_APP_DATA_DIR}"
+mkdir -p "$runtime_dir"
+worker_status_file="$runtime_dir/worker.exit"
+server_status_file="$runtime_dir/server.exit"
+rm -f "$worker_status_file" "$server_status_file"
+
+run_child() {
+  target=$1
+  status_file=$2
+  "$node_bin" "$target" &
+  child_pid=$!
+  trap 'kill "$child_pid" 2>/dev/null || true; wait "$child_pid" 2>/dev/null || true; exit 143' INT TERM
+  wait "$child_pid"
+  child_status=$?
+  printf "%s\\n" "$child_status" > "$status_file"
+  exit "$child_status"
+}
+
+monitor_children() {
+  while :; do
+    if [ -f "$worker_status_file" ]; then
+      child_status=$(cat "$worker_status_file")
+      return "$child_status"
+    fi
+    if [ -f "$server_status_file" ]; then
+      child_status=$(cat "$server_status_file")
+      return "$child_status"
+    fi
+    if ! kill -0 "$worker_pid" 2>/dev/null; then
+      wait "$worker_pid" 2>/dev/null
+      return $?
+    fi
+    if ! kill -0 "$server_pid" 2>/dev/null; then
+      wait "$server_pid" 2>/dev/null
+      return $?
+    fi
+    sleep 1
+  done
+}
+
+run_child "$NEXTOP_APP_PACKAGE_DIR/server/worker.js" "$worker_status_file" &
+worker_pid=$!
+run_child "$NEXTOP_APP_PACKAGE_DIR/server/server.js" "$server_status_file" &
+server_pid=$!
+
+cleanup() {
+  status=$?
+  kill "$server_pid" 2>/dev/null || true
+  wait "$server_pid" 2>/dev/null || true
+  kill "$worker_pid" 2>/dev/null || true
+  wait "$worker_pid" 2>/dev/null || true
+  exit "$status"
+}
+
+trap cleanup INT TERM EXIT
+
+monitor_children
 `;
 }
 
@@ -82,6 +146,7 @@ This package runs AI Media Canvas as a Nextop workspace app.
 - \`bootstrap.sh\`: executable runtime entrypoint.
 - \`dist/\`: static frontend files from \`apps/web/out\`.
 - \`server/server.js\`: bundled Fastify server.
+- \`server/worker.js\`: bundled background worker for queued generation jobs.
 - \`skills/\`: packaged local skills used by the app runtime.
 - \`icon.png\`: App Center icon with its own contrast-safe background.
 
@@ -203,6 +268,33 @@ async function bundleServer() {
   ]);
 }
 
+async function bundleWorker() {
+  await run("pnpm", [
+    "exec",
+    "esbuild",
+    "apps/server/src/worker.ts",
+    "--bundle",
+    "--platform=node",
+    "--format=esm",
+    "--target=node22",
+    "--outfile=build/nextop-app/package/server/worker.js",
+    "--banner:js=import { createRequire as __aimcCreateRequire } from 'node:module'; const require = __aimcCreateRequire(import.meta.url);",
+  ]);
+}
+
+async function bundleToolsMcpServer() {
+  await run("pnpm", [
+    "exec",
+    "esbuild",
+    "apps/server/src/agent/local-agent-host/tools-mcp.ts",
+    "--bundle",
+    "--platform=node",
+    "--format=esm",
+    "--target=node22",
+    "--outfile=build/nextop-app/package/server/tools-mcp.js",
+  ]);
+}
+
 async function createZip(version) {
   const zipPath = path.join(buildRoot, `ai-media-canvas-${version}.zip`);
   await rm(zipPath, { force: true });
@@ -222,6 +314,8 @@ export async function packageNextopApp() {
   await mkdir(buildRoot, { recursive: true });
   await writePackageFiles(version);
   await bundleServer();
+  await bundleWorker();
+  await bundleToolsMcpServer();
   await validatePackageRoot(packageRoot);
   const zipPath = await createZip(version);
   console.log(`Created ${zipPath}`);

@@ -1,5 +1,10 @@
 import type { ToolRuntime } from "@langchain/core/tools";
-import type { BackendFactory, BackendProtocol } from "deepagents";
+import {
+  type AnyBackendProtocol,
+  type BackendFactory,
+  type BackendProtocolV2,
+  resolveBackend as resolveDeepAgentBackend,
+} from "deepagents";
 import { tool } from "langchain";
 import { z } from "zod";
 
@@ -25,23 +30,24 @@ type ProjectSearchResult = {
 };
 
 export async function runProjectSearch(
-  backend: BackendProtocol,
+  backend: BackendProtocolV2,
   input: ProjectSearchInput,
 ): Promise<ProjectSearchResult> {
-  const rawMatches = await backend.grepRaw(
+  const grepResult = await backend.grep(
     input.query,
     DEFAULT_SEARCH_ROOT,
     input.glob ?? null,
   );
 
-  if (typeof rawMatches === "string") {
+  if (grepResult.error) {
     return {
       matchCount: 0,
       matches: [],
-      summary: rawMatches,
+      summary: grepResult.error,
     };
   }
 
+  const rawMatches = grepResult.matches ?? [];
   const sortedMatches = [...rawMatches].sort((left, right) => {
     if (left.path === right.path) {
       return left.line - right.line;
@@ -71,11 +77,14 @@ export async function runProjectSearch(
 }
 
 export function createProjectSearchTool(
-  backend: BackendProtocol | BackendFactory,
+  backend: AnyBackendProtocol | BackendFactory,
 ) {
   return tool(
     async (input, runtime: ToolRuntime) => {
-      return await runProjectSearch(resolveBackend(backend, runtime), input);
+      return await runProjectSearch(
+        await resolveDeepAgentBackend(backend, runtime),
+        input,
+      );
     },
     {
       name: "project_search",
@@ -84,17 +93,4 @@ export function createProjectSearchTool(
       schema: projectSearchSchema,
     },
   );
-}
-
-function resolveBackend(
-  backend: BackendProtocol | BackendFactory,
-  runtime: ToolRuntime,
-): BackendProtocol {
-  if (typeof backend === "function") {
-    return backend({
-      state: runtime.state,
-    });
-  }
-
-  return backend;
 }
