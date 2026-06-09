@@ -128,6 +128,7 @@ describe("HomePrompt", () => {
     const selectedSeed: HomeExampleSelection = {
       categoryKey: "visual-concepts",
       categoryLabel: "Visual Concepts",
+      exampleId: "visual-magazine-cover",
       title: "Turn a selfie into a magazine cover",
       prompt: "Make this editorial",
       previewImages: [],
@@ -188,6 +189,7 @@ describe("HomePrompt", () => {
         selectedSeed={{
           categoryKey: "design",
           categoryLabel: "Design",
+          exampleId: designSeed?.id ?? "",
           title: designSeed?.title ?? "",
           prompt: designSeed?.prompt ?? "",
           previewImages: designSeed?.previewImages ?? [],

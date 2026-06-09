@@ -111,6 +111,12 @@ describe("Home page", () => {
       screen.getByPlaceholderText("让 AI Media Canvas 帮你设计..."),
     ).toBeInTheDocument();
     expect(await screen.findByText("Recent Project")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "视觉概念" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Visual Concepts" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("灵感发现")).toBeInTheDocument();
     expect(
       screen.getByText(

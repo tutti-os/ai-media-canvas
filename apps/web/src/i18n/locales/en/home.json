@@ -39,6 +39,90 @@
     },
     "title": "Inspiration"
   },
+  "examples": {
+    "cases": {
+      "branding-cap-logo": {
+        "prompt": "Create a branded cap mockup that highlights logo embroidery, material texture, and streetwear appeal for an ecommerce hero image.",
+        "title": "Put your logo on a cap"
+      },
+      "branding-coffee-merch": {
+        "prompt": "Extend this coffee brand across cups, bags, and social avatars while keeping the brand premium and approachable, with mockup composition directions.",
+        "title": "Design branded merch for your coffee shop"
+      },
+      "branding-logo-options": {
+        "prompt": "Create a minimal logo exploration for a sushi brand with three directions, color suggestions, usage scenarios, and distinct brand voices.",
+        "title": "Generate logo options"
+      },
+      "design-bauhaus-poster": {
+        "prompt": "Design a Bauhaus-inspired music festival poster using geometric shapes, rhythmic typography, a limited palette, and a vertical mobile extension.",
+        "title": "Design a Bauhaus-inspired poster"
+      },
+      "design-ceramic-dinnerware": {
+        "prompt": "Create a visual proposal for a ceramic dinnerware set with Nordic minimal and wabi-sabi qualities, covering unified forms for bowls, plates, cups, and product display images.",
+        "title": "Design a ceramic dinnerware set"
+      },
+      "design-furniture": {
+        "prompt": "Explore a sculptural orange velvet lounge chair with a furniture concept poster, material closeups, and ecommerce hero image directions.",
+        "title": "Experiment with furniture design"
+      },
+      "illustration-cat-tarot": {
+        "prompt": "Expand a cat tarot card theme into an illustration series with character setup, card-face visual language, border system, and merchandise extensions.",
+        "title": "Expand a cat tarot card series"
+      },
+      "illustration-character-poster": {
+        "prompt": "Create a character poster that unifies character setup, color personality, and supporting props for a designer toy brand intro page.",
+        "title": "Create a playful character poster"
+      },
+      "illustration-seaside-story": {
+        "prompt": "Illustrate a dreamy seaside adventure with atmospheric color, layered lighting, and cover title placement.",
+        "title": "Illustrate a dreamy seaside story"
+      },
+      "storyboard-comic-sequence": {
+        "prompt": "Break an action concept into a comic-style sequence with consistent character movement, ready to become a short-form animatic.",
+        "title": "Create a comic-style sequence"
+      },
+      "storyboard-music-teaser": {
+        "prompt": "Plan a 15-second music teaser with shot order, emotional rhythm, subtitle beats, and the final logo reveal.",
+        "title": "Build a music teaser sequence"
+      },
+      "storyboard-product-teaser": {
+        "prompt": "Plan a six-shot product teaser storyboard focused on pacing, transitions, and the final title-card landing.",
+        "title": "Plan a 6-frame product teaser"
+      },
+      "ui-ai-waitlist": {
+        "prompt": "Design an AI product waitlist page that emphasizes futurism, trust, and conversion flow across desktop and mobile first screens.",
+        "title": "Build an AI product waitlist page"
+      },
+      "ui-cake-shop": {
+        "prompt": "Design a homepage for a post-apocalyptic cake shop with hero visuals, product cards, and CTA styling that feels strange and fun.",
+        "title": "Create a cake shop landing page"
+      },
+      "ui-fintech-dashboard": {
+        "prompt": "Create a fintech product homepage hero that highlights data trust, CTA hierarchy, and card-based metric layout.",
+        "title": "Design a fintech dashboard hero"
+      },
+      "visual-engineering-drawings": {
+        "prompt": "Turn this product concept into professional engineering blueprint visuals with front view, isometric view, key dimensions, and annotation hierarchy for R&D or prototyping conversations.",
+        "title": "Generate professional engineering drawings"
+      },
+      "visual-magazine-cover": {
+        "prompt": "Turn this selfie into a fashion magazine cover concept while preserving the expression, adding cover headlines, subtitle hierarchy, color direction, and a more editorial layout.",
+        "title": "Turn a selfie into a magazine cover"
+      },
+      "visual-superhero-comic": {
+        "prompt": "Break this idea into a vintage superhero comic page with four to six panels, speech bubbles, narration boxes, and consistent character action with a 1970s comic-paper feel.",
+        "title": "Make a classic superhero comic strip"
+      }
+    },
+    "categories": {
+      "branding": "Branding",
+      "design": "Design",
+      "illustration": "Illustration",
+      "storyboard-video": "Storyboard",
+      "ui-design": "UI Design",
+      "visual-concepts": "Visual Concepts"
+    }
+  },
   "hero": {
     "subtitle": "Your local AI design assistant, from idea to finished work.",
     "title": "Make creative design easier"

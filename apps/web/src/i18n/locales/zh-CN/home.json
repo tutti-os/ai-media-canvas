@@ -39,6 +39,90 @@
     },
     "title": "灵感发现"
   },
+  "examples": {
+    "cases": {
+      "branding-cap-logo": {
+        "prompt": "请做一张帽子品牌周边 mockup，重点表现 Logo 刺绣、材质触感和潮流感，适合官网商品页首图。",
+        "title": "把 Logo 放到帽子上"
+      },
+      "branding-coffee-merch": {
+        "prompt": "请把这个咖啡品牌延展到杯子、纸袋和社媒头像，保持高端但亲和的品牌感，并给出 mockup 构图方向。",
+        "title": "设计咖啡店品牌周边"
+      },
+      "branding-logo-options": {
+        "prompt": "请为寿司品牌做一组极简 Logo 探索，输出 3 个方向、颜色建议、应用场景和品牌语气差异。",
+        "title": "生成 Logo 方向"
+      },
+      "design-bauhaus-poster": {
+        "prompt": "请为音乐节设计一张 Bauhaus 风格海报，使用几何形、强节奏排版和有限色板，并附带移动端竖版延展建议。",
+        "title": "设计 Bauhaus 风格海报"
+      },
+      "design-ceramic-dinnerware": {
+        "prompt": "请围绕北欧极简与侘寂气质，做一组陶瓷器皿视觉提案，包含碗、盘、杯的统一造型语言和产品展示图方向。",
+        "title": "设计陶瓷餐具套装"
+      },
+      "design-furniture": {
+        "prompt": "请围绕一把雕塑感橙色天鹅绒单椅，输出家具概念海报、材质细节特写和电商主图方向。",
+        "title": "尝试家具设计概念"
+      },
+      "illustration-cat-tarot": {
+        "prompt": "请围绕猫咪塔罗牌扩展一套插画系列，补齐角色设定、牌面视觉语言、边框系统和周边延展建议。",
+        "title": "扩展猫咪塔罗牌系列"
+      },
+      "illustration-character-poster": {
+        "prompt": "请做一张角色海报，把人物设定、色彩性格和辅助道具统一起来，适合潮流玩具品牌介绍页。",
+        "title": "创作趣味角色海报"
+      },
+      "illustration-seaside-story": {
+        "prompt": "请把一个海边奇遇故事画成梦幻插画，强调色彩氛围、光影层次和封面标题位置。",
+        "title": "绘制梦幻海边故事"
+      },
+      "storyboard-comic-sequence": {
+        "prompt": "请把一个动作创意拆成漫画式连续分镜，保持统一角色动作关系，并且适合后续转成短视频 animatic。",
+        "title": "创建漫画式连续分镜"
+      },
+      "storyboard-music-teaser": {
+        "prompt": "请为 15 秒音乐 teaser 规划镜头顺序、情绪节奏、字幕节拍和结尾 logo 出现方式。",
+        "title": "搭建音乐 teaser 镜头序列"
+      },
+      "storyboard-product-teaser": {
+        "prompt": "请帮我拆一个 6 镜头产品 teaser 分镜，重点是节奏起伏、转场方式和最后的标题卡落点。",
+        "title": "规划 6 格产品 teaser 分镜"
+      },
+      "ui-ai-waitlist": {
+        "prompt": "请设计一个 AI 产品 waitlist 页面，强调未来感、可信感和转化路径，适合 desktop 与移动端首屏适配。",
+        "title": "搭建 AI 产品 waitlist 页面"
+      },
+      "ui-cake-shop": {
+        "prompt": "请为末日废土风蛋糕店设计首页，输出首屏视觉、商品卡片和 CTA 样式，整体既怪诞又有趣。",
+        "title": "创建蛋糕店落地页"
+      },
+      "ui-fintech-dashboard": {
+        "prompt": "请给我一个金融产品首页首屏方案，突出数据可信感、行动按钮层级和卡片式指标布局。",
+        "title": "设计金融仪表盘首屏"
+      },
+      "visual-engineering-drawings": {
+        "prompt": "请把这个产品概念变成一套专业工程蓝图视觉，输出主视图、等轴图、关键尺寸标注和注释层级，适合给研发或打样沟通。",
+        "title": "生成专业工程图"
+      },
+      "visual-magazine-cover": {
+        "prompt": "请把这张自拍扩展成时尚杂志封面方案，保留人物神态，补齐封面主标题、副标题、配色和版式层级，整体更高级、更 editorial。",
+        "title": "把自拍变成杂志封面"
+      },
+      "visual-superhero-comic": {
+        "prompt": "请把这个创意拆成复古超级英雄漫画页面，包含 4 到 6 格分镜、对白气泡、旁白框和统一人物动作，整体要有 70 年代漫画纸感。",
+        "title": "制作经典超级英雄漫画"
+      }
+    },
+    "categories": {
+      "branding": "品牌",
+      "design": "设计",
+      "illustration": "插画",
+      "storyboard-video": "分镜",
+      "ui-design": "UI 设计",
+      "visual-concepts": "视觉概念"
+    }
+  },
   "hero": {
     "subtitle": "你的本地 AI 设计助手，从想法到作品。",
     "title": "让创意设计更简单"
