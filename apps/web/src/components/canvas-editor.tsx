@@ -2,18 +2,22 @@
 
 import "@excalidraw/excalidraw/index.css";
 
-import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
-import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
+import dynamic from "next/dynamic";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { WebSocketHandle } from "../hooks/use-websocket";
+import { fetchAsDataURL, isVideoUrl } from "../lib/canvas-elements";
+import {
+  prepareCanvasImageFiles,
+  serializeExcalidrawFiles,
+} from "../lib/canvas-file-serialization";
+import { normalizeCanvasElements } from "../lib/canvas-normalize";
 import { getServerBaseUrl } from "../lib/env";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
-import { VideoCanvasElement } from "./canvas/video-canvas-element";
-import { isVideoUrl } from "../lib/canvas-elements";
-import { CanvasToolMenu } from "./canvas-tool-menu";
 import { CanvasContextMenuExtensions } from "./canvas-context-menu-extensions";
-import { normalizeCanvasElements } from "../lib/canvas-normalize";
+import { CanvasToolMenu } from "./canvas-tool-menu";
+import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { ErrorBoundary } from "./error-boundary";
 
 const Excalidraw = dynamic(
@@ -26,7 +30,7 @@ const Excalidraw = dynamic(
 const ric: typeof requestIdleCallback =
   typeof window !== "undefined" && window.requestIdleCallback
     ? window.requestIdleCallback.bind(window)
-    : ((cb: IdleRequestCallback) => setTimeout(cb, 1) as unknown as number);
+    : (cb: IdleRequestCallback) => setTimeout(cb, 1) as unknown as number;
 const cic: typeof cancelIdleCallback =
   typeof window !== "undefined" && window.cancelIdleCallback
     ? window.cancelIdleCallback.bind(window)
@@ -58,15 +62,66 @@ type CanvasEditorProps = {
     appState: Record<string, unknown>;
     files: Record<string, Record<string, unknown>>;
   };
-  onApiReady?: (api: any) => void;
+  onApiReady?: (api: ExcalidrawApi) => void;
   ws?: WebSocketHandle;
   leftPanelOpen?: boolean;
   onSelectionChange?: (elements: CanvasSelectedElement[]) => void;
 };
 
+type CanvasFileRecord = Record<string, unknown>;
+
+type CanvasSceneElement = Record<string, unknown> & {
+  customData?: Record<string, unknown>;
+  fileId?: string | null;
+  height?: number;
+  id: string;
+  isDeleted?: boolean;
+  link?: string | null;
+  text?: string | null;
+  type: string;
+  width?: number;
+  x?: number;
+  y?: number;
+};
+
+type CanvasAppState = Record<string, unknown> & {
+  gridModeEnabled?: unknown;
+  height?: number;
+  scrollX?: number;
+  scrollY?: number;
+  selectedElementIds?: Record<string, boolean>;
+  viewBackgroundColor?: unknown;
+  width?: number;
+  zoom?: { value?: number };
+};
+
+type ExcalidrawApi = {
+  addFiles(files: CanvasFileRecord[]): void;
+  getAppState(): CanvasAppState;
+  getFiles(): Record<string, CanvasFileRecord>;
+  getSceneElements(): readonly CanvasSceneElement[];
+  updateScene(scene: Record<string, unknown>): void;
+};
+
 const SAVE_DEBOUNCE_MS = 1500;
 const THUMBNAIL_DEBOUNCE_MS = 10_000;
 const THUMBNAIL_MAX_SIZE = 800;
+
+function isCanvasSceneElement(value: unknown): value is CanvasSceneElement {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as { id?: unknown }).id === "string" &&
+      typeof (value as { type?: unknown }).type === "string",
+  );
+}
+
+function isLiveElement(element: unknown): element is CanvasSceneElement {
+  return (
+    isCanvasSceneElement(element) &&
+    (element as { isDeleted?: unknown }).isDeleted !== true
+  );
+}
 
 export function CanvasEditor({
   canvasId,
@@ -82,7 +137,9 @@ export function CanvasEditor({
   const thumbnailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canvasIdRef = useRef(canvasId);
   canvasIdRef.current = canvasId;
-  const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
+  const [excalidrawApi, setExcalidrawApi] = useState<ExcalidrawApi | null>(
+    null,
+  );
   const prevSelectedIdsRef = useRef<string>("");
   const onSelectionChangeRef = useRef(onSelectionChange);
   onSelectionChangeRef.current = onSelectionChange;
@@ -93,7 +150,9 @@ export function CanvasEditor({
   // Without this, a page reload can fire onChange with empty elements before
   // initialData is applied, causing a FULL REPLACE that wipes existing content.
   const hydratedRef = useRef(false);
-  const initialElementCountRef = useRef(initialContent.elements.filter((e) => !e.isDeleted).length);
+  const initialElementCountRef = useRef(
+    initialContent.elements.filter(isLiveElement).length,
+  );
 
   // Track pending save payload so we can flush on tab close / unmount
   const pendingSaveRef = useRef<{
@@ -102,72 +161,73 @@ export function CanvasEditor({
     files: Record<string, Record<string, unknown>>;
   } | null>(null);
 
-  // Ref to hold initialContent.files for storageUrl lookup in handleChange
-  // without adding the full initialContent to the dependency array.
-  const initialFilesRef = useRef(initialContent.files);
-  initialFilesRef.current = initialContent.files;
-
   // Separate inline files (ready) from storage URLs (need async fetch)
-  const { inlineFiles, pendingUrls } = useMemo(() => {
-    const inline: Record<string, Record<string, unknown>> = {};
-    const pending: Array<{ fileId: string; url: string; meta: Record<string, unknown> }> = [];
-    for (const [fileId, fileData] of Object.entries(initialContent.files)) {
-      if (typeof fileData.storageUrl === "string" && fileData.storageUrl) {
-        pending.push({ fileId, url: fileData.storageUrl, meta: fileData });
-      } else {
-        inline[fileId] = fileData;
-      }
-    }
-    return { inlineFiles: inline, pendingUrls: pending };
-  }, [initialContent.files]);
+  const preparedInitialContent = useMemo(
+    () => prepareCanvasImageFiles(initialContent),
+    [initialContent],
+  );
+  const {
+    elements: initialElements,
+    files: initialFiles,
+    inlineFiles,
+    pendingUrls,
+  } = preparedInitialContent;
+
+  // Ref to hold recovered file metadata for storageUrl lookup in handleChange
+  // without adding the full initialContent to the dependency array.
+  const initialFilesRef = useRef(initialFiles);
+  initialFilesRef.current = initialFiles;
 
   // Lazily resolve storage URLs and inject into Excalidraw
   useEffect(() => {
     if (!excalidrawApi || pendingUrls.length === 0) return;
+    const api = excalidrawApi;
     let cancelled = false;
 
     async function resolveFiles() {
-      const resolved: Record<string, any> = {};
+      const resolved: Record<string, CanvasFileRecord> = {};
       await Promise.all(
         pendingUrls.map(async ({ fileId, url, meta }) => {
           try {
-            const resp = await fetch(url);
-            if (!resp.ok) {
-              console.warn(`[canvas-editor] Failed to fetch file ${fileId}: ${resp.status}`);
-              return;
-            }
-            const blob = await resp.blob();
-            const reader = new FileReader();
-            const dataURL = await new Promise<string>((resolve, reject) => {
-              reader.onload = () => resolve(reader.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
-            });
+            const dataURL = await fetchAsDataURL(url);
             resolved[fileId] = {
               id: meta.id ?? fileId,
-              mimeType: meta.mimeType ?? blob.type,
+              mimeType:
+                meta.mimeType ??
+                /^data:([^;]+)/.exec(dataURL)?.[1] ??
+                "image/png",
               created: meta.created ?? Date.now(),
               dataURL,
+              ...(meta.storageUrl ? { storageUrl: meta.storageUrl } : {}),
+              ...(meta.objectPath ? { objectPath: meta.objectPath } : {}),
             };
           } catch (err) {
-            console.warn(`[canvas-editor] Failed to resolve file ${fileId}:`, err);
+            console.warn(
+              `[canvas-editor] Failed to resolve file ${fileId}:`,
+              err,
+            );
           }
         }),
       );
       if (!cancelled && Object.keys(resolved).length > 0) {
-        excalidrawApi.addFiles(Object.values(resolved));
-        console.log(`[canvas-editor] Resolved ${Object.keys(resolved).length} storage files`);
+        api.addFiles(Object.values(resolved));
+        console.log(
+          `[canvas-editor] Resolved ${Object.keys(resolved).length} storage files`,
+        );
       }
     }
 
     resolveFiles();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [excalidrawApi, pendingUrls]);
 
   const handleExcalidrawApi = useCallback(
-    (api: any) => {
-      setExcalidrawApi(api);
-      onApiReady?.(api);
+    (api: unknown) => {
+      const canvasApi = api as ExcalidrawApi;
+      setExcalidrawApi(canvasApi);
+      onApiReady?.(canvasApi);
     },
     [onApiReady],
   );
@@ -184,7 +244,7 @@ export function CanvasEditor({
       try {
         const sceneElements = excalidrawApi.getSceneElements();
         // Create mutable copies for normalization
-        const mutableElements = sceneElements.map((el: any) => ({ ...el }));
+        const mutableElements = sceneElements.map((el) => ({ ...el }));
         const { changed } = normalizeCanvasElements(mutableElements);
 
         if (changed) {
@@ -195,16 +255,22 @@ export function CanvasEditor({
           });
           // Persist normalized elements to DB
           const files: Record<string, Record<string, unknown>> = {};
-          const rawFiles = excalidrawApi.getFiles() as Record<string, any>;
-          for (const [id, file] of Object.entries(rawFiles)) {
-            files[id] = { id: file.id, dataURL: file.dataURL, mimeType: file.mimeType, created: file.created };
-          }
+          const rawFiles = excalidrawApi.getFiles();
+          Object.assign(
+            files,
+            serializeExcalidrawFiles(rawFiles, initialFilesRef.current),
+          );
           const appState = excalidrawApi.getAppState();
           saveCanvas(canvasIdRef.current, {
-            elements: mutableElements.filter((el: any) => !el.isDeleted),
-            appState: { viewBackgroundColor: appState.viewBackgroundColor, gridModeEnabled: appState.gridModeEnabled },
+            elements: mutableElements.filter(isLiveElement),
+            appState: {
+              viewBackgroundColor: appState.viewBackgroundColor,
+              gridModeEnabled: appState.gridModeEnabled,
+            },
             files,
-          }).catch((err: Error) => console.warn("[canvas-editor] normalization save failed:", err));
+          }).catch((err: Error) =>
+            console.warn("[canvas-editor] normalization save failed:", err),
+          );
         }
       } catch (err) {
         console.warn("[canvas-editor] normalization failed:", err);
@@ -220,7 +286,8 @@ export function CanvasEditor({
   }, [excalidrawApi]);
 
   const handleChange = useCallback(
-    (elements: readonly any[], appState: any) => {
+    (elements: readonly unknown[], appStateInput: unknown) => {
+      const appState = appStateInput as CanvasAppState;
       // Skip auto-save until Excalidraw has fully hydrated with initial data.
       // During initialization, onChange may fire with empty/partial elements
       // which would wipe the persisted canvas via FULL REPLACE.
@@ -231,26 +298,20 @@ export function CanvasEditor({
 
       // Mark that a save is pending. The full payload is built lazily inside
       // the timeout to avoid constructing the files map on every drag frame.
-      pendingSaveRef.current = { elements: [] as any, appState: {}, files: {} };
+      pendingSaveRef.current = { elements: [], appState: {}, files: {} };
 
       saveTimerRef.current = setTimeout(() => {
         // Build the full payload only when the debounce fires
         const files: Record<string, Record<string, unknown>> = {};
         if (excalidrawApi) {
-          const rawFiles = excalidrawApi.getFiles() as Record<string, any>;
-          for (const [id, file] of Object.entries(rawFiles)) {
-            files[id] = {
-              id: file.id,
-              dataURL: file.dataURL,
-              mimeType: file.mimeType,
-              created: file.created,
-            };
-          }
+          const rawFiles = excalidrawApi.getFiles();
+          Object.assign(
+            files,
+            serializeExcalidrawFiles(rawFiles, initialFilesRef.current),
+          );
         }
         const content = {
-          elements: elements.filter(
-            (el: any) => !el.isDeleted,
-          ) as Record<string, unknown>[],
+          elements: elements.filter(isLiveElement),
           appState: {
             viewBackgroundColor: appState.viewBackgroundColor,
             gridModeEnabled: appState.gridModeEnabled,
@@ -279,28 +340,38 @@ export function CanvasEditor({
           if (!sceneElements.length) return;
 
           const blob = await exportToBlob({
-            elements: sceneElements,
+            elements: sceneElements as never,
             appState: { exportBackground: true },
-            files: sceneFiles,
+            files: sceneFiles as never,
             mimeType: "image/webp",
             quality: 0.8,
             maxWidthOrHeight: THUMBNAIL_MAX_SIZE,
           });
 
-          console.log("[canvas-editor] uploading thumbnail, blob size:", blob.size);
+          console.log(
+            "[canvas-editor] uploading thumbnail, blob size:",
+            blob.size,
+          );
           await uploadThumbnail(projectId, blob);
           console.log("[canvas-editor] thumbnail uploaded OK");
         } catch (err) {
-          console.warn("[canvas-editor] thumbnail generation/upload failed:", err);
+          console.warn(
+            "[canvas-editor] thumbnail generation/upload failed:",
+            err,
+          );
         }
       }, THUMBNAIL_DEBOUNCE_MS);
 
       // --- 3. Selection change detection ---
       // Cheap string comparison avoids unnecessary downstream re-renders.
-      const selectedIds = appState.selectedElementIds
-        ? Object.keys(appState.selectedElementIds as Record<string, boolean>).filter(
-            (id) => (appState.selectedElementIds as Record<string, boolean>)[id],
-          ).sort().join(",")
+      const selectedElementIds = appState.selectedElementIds as
+        | Record<string, boolean>
+        | undefined;
+      const selectedIds = selectedElementIds
+        ? Object.keys(selectedElementIds)
+            .filter((id) => selectedElementIds[id])
+            .sort()
+            .join(",")
         : "";
 
       if (selectedIds !== prevSelectedIdsRef.current) {
@@ -310,10 +381,14 @@ export function CanvasEditor({
             onSelectionChangeRef.current([]);
           } else {
             const idSet = new Set(selectedIds.split(","));
-            const selFiles: Record<string, any> = excalidrawApi?.getFiles() ?? {};
+            const selFiles: Record<string, CanvasFileRecord> =
+              excalidrawApi?.getFiles() ?? {};
             const selected: CanvasSelectedElement[] = elements
-              .filter((el: any) => idSet.has(el.id) && !el.isDeleted)
-              .map((el: any) => {
+              .filter(
+                (el): el is CanvasSceneElement =>
+                  isLiveElement(el) && idSet.has(el.id),
+              )
+              .map((el) => {
                 const base: CanvasSelectedElement = {
                   id: el.id,
                   type: el.type,
@@ -328,7 +403,7 @@ export function CanvasEditor({
                 if (el.type === "image" && el.fileId) {
                   base.fileId = el.fileId;
                   const file = selFiles[el.fileId];
-                  if (file?.dataURL) {
+                  if (typeof file?.dataURL === "string") {
                     base.dataUrl = file.dataURL;
                   }
                   // Prefer storage URL over base64 dataUrl for message attachments.
@@ -355,82 +430,87 @@ export function CanvasEditor({
   useEffect(() => {
     if (!ws || !excalidrawApi) return;
 
-    const cleanup = ws.registerRPC(
-      "canvas.screenshot",
-      async (params) => {
-        const { mode, region, max_dimension = 1024 } = params as {
-          mode: string;
-          region?: { x: number; y: number; width: number; height: number };
-          max_dimension?: number;
-        };
+    const cleanup = ws.registerRPC("canvas.screenshot", async (params) => {
+      const {
+        mode,
+        region,
+        max_dimension = 1024,
+      } = params as {
+        mode: string;
+        region?: { x: number; y: number; width: number; height: number };
+        max_dimension?: number;
+      };
 
-        const allElements = excalidrawApi
-          .getSceneElements()
-          .filter((e: any) => !e.isDeleted);
-        const appState = excalidrawApi.getAppState();
-        const files = excalidrawApi.getFiles();
+      const allElements = excalidrawApi
+        .getSceneElements()
+        .filter(isLiveElement);
+      const appState = excalidrawApi.getAppState();
+      const files = excalidrawApi.getFiles();
 
-        let elements = allElements;
+      let elements = allElements;
 
-        if (mode === "region" && region) {
-          elements = allElements.filter((el: any) => {
-            const ex = (el.x as number) ?? 0;
-            const ey = (el.y as number) ?? 0;
-            const ew = (el.width as number) ?? 0;
-            const eh = (el.height as number) ?? 0;
-            return !(
-              ex + ew < region.x ||
-              ex > region.x + region.width ||
-              ey + eh < region.y ||
-              ey > region.y + region.height
-            );
-          });
-        } else if (mode === "viewport") {
-          const zoom = (appState.zoom?.value as number) ?? 1;
-          const sx = -((appState.scrollX as number) ?? 0);
-          const sy = -((appState.scrollY as number) ?? 0);
-          const vw = ((appState.width as number) ?? 1920) / zoom;
-          const vh = ((appState.height as number) ?? 1080) / zoom;
-          elements = allElements.filter((el: any) => {
-            const ex = (el.x as number) ?? 0;
-            const ey = (el.y as number) ?? 0;
-            const ew = (el.width as number) ?? 0;
-            const eh = (el.height as number) ?? 0;
-            return !(
-              ex + ew < sx || ex > sx + vw || ey + eh < sy || ey > sy + vh
-            );
-          });
-        }
-
-        const { exportToBlob } = await import("@excalidraw/excalidraw");
-        const blob = await exportToBlob({
-          elements,
-          appState: { ...appState, exportBackground: true },
-          files,
-          maxWidthOrHeight: max_dimension,
-          mimeType: "image/png",
+      if (mode === "region" && region) {
+        elements = allElements.filter((el) => {
+          const ex = el.x ?? 0;
+          const ey = el.y ?? 0;
+          const ew = el.width ?? 0;
+          const eh = el.height ?? 0;
+          return !(
+            ex + ew < region.x ||
+            ex > region.x + region.width ||
+            ey + eh < region.y ||
+            ey > region.y + region.height
+          );
         });
-
-        // Convert blob to base64 data URL directly (no upload needed --
-        // the image is passed inline to the model for visual understanding)
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(new Error("Failed to convert screenshot to data URL"));
-          reader.readAsDataURL(blob);
+      } else if (mode === "viewport") {
+        const zoom = (appState.zoom?.value as number) ?? 1;
+        const sx = -((appState.scrollX as number) ?? 0);
+        const sy = -((appState.scrollY as number) ?? 0);
+        const vw = ((appState.width as number) ?? 1920) / zoom;
+        const vh = ((appState.height as number) ?? 1080) / zoom;
+        elements = allElements.filter((el) => {
+          const ex = el.x ?? 0;
+          const ey = el.y ?? 0;
+          const ew = el.width ?? 0;
+          const eh = el.height ?? 0;
+          return !(
+            ex + ew < sx ||
+            ex > sx + vw ||
+            ey + eh < sy ||
+            ey > sy + vh
+          );
         });
+      }
 
-        const bmp = await createImageBitmap(blob);
-        const width = bmp.width;
-        const height = bmp.height;
-        bmp.close();
+      const { exportToBlob } = await import("@excalidraw/excalidraw");
+      const blob = await exportToBlob({
+        elements: elements as never,
+        appState: { ...appState, exportBackground: true },
+        files: files as never,
+        maxWidthOrHeight: max_dimension,
+        mimeType: "image/png",
+      });
 
-        return { url: dataUrl, width, height };
-      },
-    );
+      // Convert blob to base64 data URL directly (no upload needed --
+      // the image is passed inline to the model for visual understanding)
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () =>
+          reject(new Error("Failed to convert screenshot to data URL"));
+        reader.readAsDataURL(blob);
+      });
+
+      const bmp = await createImageBitmap(blob);
+      const width = bmp.width;
+      const height = bmp.height;
+      bmp.close();
+
+      return { url: dataUrl, width, height };
+    });
 
     return cleanup;
-  }, [ws, excalidrawApi, canvasId]);
+  }, [ws, excalidrawApi]);
 
   // Build a full save payload from current Excalidraw state.
   // Used by both beforeunload and unmount to flush pending changes.
@@ -440,27 +520,26 @@ export function CanvasEditor({
     if (!hydratedRef.current) return null;
     try {
       const sceneElements = excalidrawApi.getSceneElements();
-      const rawFiles = excalidrawApi.getFiles() as Record<string, any>;
+      const rawFiles = excalidrawApi.getFiles();
       const appState = excalidrawApi.getAppState();
 
       // Safety: refuse to save empty when we loaded with elements — prevents
       // race conditions from wiping canvas content during page teardown.
-      const liveCount = sceneElements.filter((el: any) => !el.isDeleted).length;
+      const liveCount = sceneElements.filter(isLiveElement).length;
       if (liveCount === 0 && initialElementCountRef.current > 0) {
-        console.warn("[canvas-editor] skipping save: 0 elements but loaded with", initialElementCountRef.current);
+        console.warn(
+          "[canvas-editor] skipping save: 0 elements but loaded with",
+          initialElementCountRef.current,
+        );
         return null;
       }
       const files: Record<string, Record<string, unknown>> = {};
-      for (const [id, file] of Object.entries(rawFiles)) {
-        files[id] = {
-          id: file.id,
-          dataURL: file.dataURL,
-          mimeType: file.mimeType,
-          created: file.created,
-        };
-      }
+      Object.assign(
+        files,
+        serializeExcalidrawFiles(rawFiles, initialFilesRef.current),
+      );
       return {
-        elements: sceneElements.filter((el: any) => !el.isDeleted),
+        elements: sceneElements.filter(isLiveElement),
         appState: {
           viewBackgroundColor: appState.viewBackgroundColor,
           gridModeEnabled: appState.gridModeEnabled,
@@ -468,7 +547,10 @@ export function CanvasEditor({
         files,
       };
     } catch (err) {
-      console.warn("[canvas-editor] failed to build save payload on flush:", err);
+      console.warn(
+        "[canvas-editor] failed to build save payload on flush:",
+        err,
+      );
       return null;
     }
   }, [excalidrawApi]);
@@ -519,26 +601,32 @@ export function CanvasEditor({
       if (pendingSaveRef.current) {
         const payload = buildSavePayloadRef.current();
         if (payload) {
-          saveCanvas(canvasIdRef.current, payload).catch(
-            console.error,
-          );
+          saveCanvas(canvasIdRef.current, payload).catch(console.error);
         }
         pendingSaveRef.current = null;
       }
     };
   }, []);
 
-  const renderEmbeddable = useCallback((element: any) => {
-    const link = element?.link;
+  const renderEmbeddable = useCallback((element: unknown) => {
+    const record =
+      element && typeof element === "object"
+        ? (element as Record<string, unknown>)
+        : {};
+    const customData =
+      record.customData && typeof record.customData === "object"
+        ? (record.customData as Record<string, unknown>)
+        : {};
+    const link = record.link;
     if (
       typeof link === "string" &&
-      (isVideoUrl(link) || element?.customData?.isVideo === true)
+      (isVideoUrl(link) || customData.isVideo === true)
     ) {
       return (
         <VideoCanvasElement
           src={link}
-          width={element.width ?? 640}
-          height={element.height ?? 360}
+          width={typeof record.width === "number" ? record.width : 640}
+          height={typeof record.height === "number" ? record.height : 360}
         />
       );
     }
@@ -554,11 +642,13 @@ export function CanvasEditor({
       <div className="h-full w-full relative">
         <Excalidraw
           theme={resolvedTheme === "dark" ? "dark" : "light"}
-          initialData={{
-            elements: initialContent.elements as any,
-            appState: initialContent.appState as any,
-            files: inlineFiles as any,
-          }}
+          initialData={
+            {
+              elements: initialElements,
+              appState: initialContent.appState,
+              files: inlineFiles,
+            } as never
+          }
           onChange={handleChange}
           excalidrawAPI={handleExcalidrawApi}
           renderEmbeddable={renderEmbeddable}
