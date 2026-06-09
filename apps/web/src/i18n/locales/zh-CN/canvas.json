@@ -1,4 +1,12 @@
 {
+  "bottomBar": {
+    "backgroundColor": "画布背景色",
+    "closeColorPicker": "关闭颜色选择器",
+    "fitAll": "显示全部",
+    "setBackground": "设置背景为 {{color}}",
+    "zoomIn": "放大",
+    "zoomOut": "缩小"
+  },
   "closeFiles": "关闭生成文件面板",
   "closeLayers": "关闭图层面板",
   "empty": "输入你的想法开始创作",
@@ -16,13 +24,40 @@
   "logoMenu": {
     "archive": "归档当前项目",
     "archiveConfirm": "确认归档?",
+    "archiveFailed": "项目归档失败",
+    "duplicate": "复制对象",
+    "fitAll": "显示画布所有元素",
     "home": "首页",
     "importImage": "导入图片",
+    "menu": "菜单",
     "newProject": "新建项目",
-    "projects": "项目库"
+    "projects": "项目库",
+    "redo": "重做",
+    "undo": "撤销"
   },
   "project": {
     "renameFailed": "项目重命名失败",
     "untitled": "未命名"
+  },
+  "tools": {
+    "arrow": "箭头 (A)",
+    "ellipse": "椭圆 (O)",
+    "freedraw": "画笔 (P)",
+    "generateFailed": "生成失败",
+    "generateImage": "AI 生成图片",
+    "generateVideo": "AI 生成视频",
+    "generating": "生成中...",
+    "hand": "拖拽画布 (H)",
+    "image": "上传图片",
+    "imagePanel": {
+      "close": "关闭图片生成面板",
+      "generate": "生成",
+      "placeholder": "描述你想创建的图片...",
+      "title": "AI 图片"
+    },
+    "line": "直线 (L)",
+    "rectangle": "矩形 (R)",
+    "selection": "选择 (V)",
+    "text": "文字 (T)"
   }
 }

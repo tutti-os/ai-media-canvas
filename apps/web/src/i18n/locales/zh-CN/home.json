@@ -138,6 +138,7 @@
     "archive": "归档 {{name}}",
     "newProject": "新建项目",
     "title": "最近项目",
+    "untitled": "未命名",
     "updatedAt": "更新于 {{date}}",
     "viewAll": "查看全部"
   }

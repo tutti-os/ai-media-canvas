@@ -75,6 +75,7 @@
     "history": "历史对话",
     "newChat": "新建对话",
     "noMatches": "无匹配结果",
+    "openHistory": "打开历史对话",
     "searchPlaceholder": "请输入搜索关键词"
   },
   "templates": {

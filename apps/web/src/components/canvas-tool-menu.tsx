@@ -49,6 +49,7 @@ import {
   type GenerationJobSubscription,
   generationJobService,
 } from "../lib/generation-job-service";
+import { useAppTranslation } from "../i18n";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
 import { VideoPlayerPanel } from "./canvas/video-player-panel";
@@ -89,7 +90,10 @@ type GeneratorOverlayItem = {
   errorMessage?: string;
 };
 
-const TOOL_ICONS: Record<ToolType, React.ComponentType<{ className?: string }>> = {
+const TOOL_ICONS: Record<
+  ToolType,
+  React.ComponentType<{ className?: string }>
+> = {
   hand: Hand,
   selection: MousePointer2,
   rectangle: Square,
@@ -101,16 +105,16 @@ const TOOL_ICONS: Record<ToolType, React.ComponentType<{ className?: string }>> 
   image: ImageUp,
 };
 
-const TOOL_LABELS: Record<ToolType, string> = {
-  hand: "拖拽画布 (H)",
-  selection: "选择 (V)",
-  rectangle: "矩形 (R)",
-  ellipse: "椭圆 (O)",
-  arrow: "箭头 (A)",
-  line: "直线 (L)",
-  freedraw: "画笔 (P)",
-  text: "文字 (T)",
-  image: "上传图片",
+const TOOL_LABEL_KEYS: Record<ToolType, string> = {
+  hand: "tools.hand",
+  selection: "tools.selection",
+  rectangle: "tools.rectangle",
+  ellipse: "tools.ellipse",
+  arrow: "tools.arrow",
+  line: "tools.line",
+  freedraw: "tools.freedraw",
+  text: "tools.text",
+  image: "tools.image",
 };
 
 type CanvasToolMenuProps = {
@@ -170,8 +174,7 @@ function ImageGeneratorIcon() {
 
 function generateRecoveryFileId(): string {
   return (
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2)
+    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   ).slice(0, 20);
 }
 
@@ -229,6 +232,7 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
   screenH,
   model,
   zoom,
+  label,
 }: {
   id: string;
   screenX: number;
@@ -237,6 +241,7 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
   screenH: number;
   zoom: number;
   model?: string;
+  label: string;
 }) {
   const contentScale = Math.min(1, Math.max(0.25, zoom));
   const showIcon = screenH >= 56 && screenW >= 72;
@@ -264,23 +269,30 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
           className="flex flex-col items-center justify-center"
           style={{ transform: `scale(${contentScale})` }}
         >
-        {showIcon && (
-          <svg
-            className="h-12 w-12 text-muted-foreground/40"
-            viewBox="0 0 24 24"
-            fill="currentColor"
+          {showIcon && (
+            <svg
+              className="h-12 w-12 text-muted-foreground/40"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <path d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+            </svg>
+          )}
+          {showIcon && model && (
+            <span className="mt-2 whitespace-nowrap rounded-full bg-foreground/5 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+              {model
+                .split("/")
+                .pop()
+                ?.split("-")
+                .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(" ")}
+            </span>
+          )}
+          <span
+            className={`${showIcon ? "mt-1" : "mt-0"} whitespace-nowrap text-[11px] text-muted-foreground`}
           >
-            <path d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
-          </svg>
-        )}
-        {showIcon && model && (
-          <span className="mt-2 whitespace-nowrap rounded-full bg-foreground/5 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-            {model.split("/").pop()?.split("-").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
+            {label}
           </span>
-        )}
-        <span className={`${showIcon ? "mt-1" : "mt-0"} whitespace-nowrap text-[11px] text-muted-foreground`}>
-          Generating...
-        </span>
         </div>
       </div>
       <div className="absolute inset-0 animate-shimmer-scan">
@@ -333,8 +345,12 @@ const GeneratorErrorOverlay = memo(function GeneratorErrorOverlay({
           className="flex flex-col items-center justify-center"
           style={{ transform: `scale(${contentScale})` }}
         >
-          {showIcon && <AlertTriangle className="h-7 w-7 text-destructive/80" />}
-          <span className={`${showIcon ? "mt-2" : "mt-0"} whitespace-nowrap rounded-full bg-background/85 px-2.5 py-1 text-[11px] font-medium text-destructive shadow-sm`}>
+          {showIcon && (
+            <AlertTriangle className="h-7 w-7 text-destructive/80" />
+          )}
+          <span
+            className={`${showIcon ? "mt-2" : "mt-0"} whitespace-nowrap rounded-full bg-background/85 px-2.5 py-1 text-[11px] font-medium text-destructive shadow-sm`}
+          >
             {errorMessage || "生成失败"}
           </span>
         </div>
@@ -349,13 +365,18 @@ export function CanvasToolMenu({
   leftPanelOpen,
   projectId,
 }: CanvasToolMenuProps) {
+  const { t } = useAppTranslation("canvas");
   const { activeImageGenerationPreference } = useImageModelPreference();
   const { activeVideoGenerationPreference } = useVideoModelPreference();
   const [activeTool, setActiveTool] = useState<string>("selection");
 
   // Image generator state
-  const [activeGeneratorId, setActiveGeneratorId] = useState<string | null>(null);
-  const [generatorData, setGeneratorData] = useState<ImageGeneratorData | null>(null);
+  const [activeGeneratorId, setActiveGeneratorId] = useState<string | null>(
+    null,
+  );
+  const [generatorData, setGeneratorData] = useState<ImageGeneratorData | null>(
+    null,
+  );
   const [generatorBounds, setGeneratorBounds] = useState<{
     x: number;
     y: number;
@@ -364,7 +385,9 @@ export function CanvasToolMenu({
   } | null>(null);
 
   const [activeVideoGenId, setActiveVideoGenId] = useState<string | null>(null);
-  const [videoGenData, setVideoGenData] = useState<VideoGeneratorData | null>(null);
+  const [videoGenData, setVideoGenData] = useState<VideoGeneratorData | null>(
+    null,
+  );
   const [videoGenBounds, setVideoGenBounds] = useState<{
     x: number;
     y: number;
@@ -372,7 +395,9 @@ export function CanvasToolMenu({
     height: number;
   } | null>(null);
 
-  const [activeVideoPlayerId, setActiveVideoPlayerId] = useState<string | null>(null);
+  const [activeVideoPlayerId, setActiveVideoPlayerId] = useState<string | null>(
+    null,
+  );
   const [videoPlayerData, setVideoPlayerData] = useState<{
     videoUrl: string;
     mimeType: string;
@@ -396,7 +421,9 @@ export function CanvasToolMenu({
   const [generatingElements, setGeneratingElements] = useState<
     GeneratorOverlayItem[]
   >([]);
-  const [errorElements, setErrorElements] = useState<GeneratorOverlayItem[]>([]);
+  const [errorElements, setErrorElements] = useState<GeneratorOverlayItem[]>(
+    [],
+  );
 
   // Keep activeGeneratorId accessible inside onChange without causing re-subscription
   const activeGeneratorIdRef = useRef(activeGeneratorId);
@@ -426,11 +453,7 @@ export function CanvasToolMenu({
   }, []);
 
   const replaceRecoveredImageGenerator = useCallback(
-    async (
-      element: any,
-      result: Record<string, unknown>,
-      jobId: string,
-    ) => {
+    async (element: any, result: Record<string, unknown>, jobId: string) => {
       const url = result.signed_url;
       const mimeType = result.mime_type;
       const width = result.width;
@@ -478,9 +501,11 @@ export function CanvasToolMenu({
         source: "generated",
         storageUrl: url,
       });
-      const elements = excalidrawApi.getSceneElements().map((item: any) =>
-        item.id === current.id ? { ...item, isDeleted: true } : item,
-      );
+      const elements = excalidrawApi
+        .getSceneElements()
+        .map((item: any) =>
+          item.id === current.id ? { ...item, isDeleted: true } : item,
+        );
       excalidrawApi.updateScene({
         elements: [...elements, imageElement],
         captureUpdate: "IMMEDIATELY",
@@ -490,11 +515,7 @@ export function CanvasToolMenu({
   );
 
   const replaceRecoveredVideoGenerator = useCallback(
-    async (
-      element: any,
-      result: Record<string, unknown>,
-      jobId: string,
-    ) => {
+    async (element: any, result: Record<string, unknown>, jobId: string) => {
       const url = result.signed_url;
       const mimeType = result.mime_type;
       const width = result.width;
@@ -521,7 +542,9 @@ export function CanvasToolMenu({
         return;
       }
 
-      const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+      const { convertToExcalidrawElements } = await import(
+        "@excalidraw/excalidraw"
+      );
       const durationSeconds = result.duration_seconds;
       const newElements = convertToExcalidrawElements([
         {
@@ -534,17 +557,17 @@ export function CanvasToolMenu({
           customData: {
             isVideo: true,
             mimeType,
-            ...(typeof durationSeconds === "number"
-              ? { durationSeconds }
-              : {}),
+            ...(typeof durationSeconds === "number" ? { durationSeconds } : {}),
             title: String(current.customData?.prompt ?? "").slice(0, 60),
             prompt: current.customData?.prompt,
           },
         } as any,
       ]);
-      const elements = excalidrawApi.getSceneElements().map((item: any) =>
-        item.id === current.id ? { ...item, isDeleted: true } : item,
-      );
+      const elements = excalidrawApi
+        .getSceneElements()
+        .map((item: any) =>
+          item.id === current.id ? { ...item, isDeleted: true } : item,
+        );
       excalidrawApi.updateScene({
         elements: [...elements, ...newElements],
         captureUpdate: "IMMEDIATELY",
@@ -611,7 +634,10 @@ export function CanvasToolMenu({
             });
           },
           onFailed: (error) => {
-            console.warn("[canvas-tool-menu] recovered generation failed:", error);
+            console.warn(
+              "[canvas-tool-menu] recovered generation failed:",
+              error,
+            );
             markRecoveredGeneratorFailed(element.id as string, jobId);
           },
         });
@@ -657,15 +683,21 @@ export function CanvasToolMenu({
       });
     }
     const { scrollX, scrollY, zoom } = excalidrawApi.getAppState();
-    const errorRaw = excalidrawApi.getSceneElements().filter(
-      (el: any) =>
-        !el.isDeleted &&
-        (isImageGeneratorElement(el) || isVideoGeneratorElement(el)) &&
-        el.customData?.status === "error",
-    );
-    prevErrorKeyRef.current = errorRaw.map((el: any) =>
-      `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${el.customData?.errorMessage ?? ""}`
-    ).join("|") + `@${scrollX}:${scrollY}:${zoom}`;
+    const errorRaw = excalidrawApi
+      .getSceneElements()
+      .filter(
+        (el: any) =>
+          !el.isDeleted &&
+          (isImageGeneratorElement(el) || isVideoGeneratorElement(el)) &&
+          el.customData?.status === "error",
+      );
+    prevErrorKeyRef.current =
+      errorRaw
+        .map(
+          (el: any) =>
+            `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${el.customData?.errorMessage ?? ""}`,
+        )
+        .join("|") + `@${scrollX}:${scrollY}:${zoom}`;
     setErrorElements(
       errorRaw.map((el: any) => ({
         id: el.id as string,
@@ -701,14 +733,20 @@ export function CanvasToolMenu({
 
         // --- Tool sync (cheap string comparison, skip if unchanged) ---
         const tool = appState?.activeTool?.type;
-        if (tool) setActiveTool((prev: string) => prev === tool ? prev : tool);
+        if (tool)
+          setActiveTool((prev: string) => (prev === tool ? prev : tool));
 
         const scrollX = appState?.scrollX ?? 0;
         const scrollY = appState?.scrollY ?? 0;
         const zoom = appState?.zoom?.value ?? 1;
         // Only update scroll/zoom state if values actually changed
         setCanvasScrollZoom((prev) => {
-          if (prev.scrollX === scrollX && prev.scrollY === scrollY && prev.zoom === zoom) return prev;
+          if (
+            prev.scrollX === scrollX &&
+            prev.scrollY === scrollY &&
+            prev.zoom === zoom
+          )
+            return prev;
           return { scrollX, scrollY, zoom };
         });
 
@@ -742,8 +780,10 @@ export function CanvasToolMenu({
             }
             // Always update bounds (element may have been moved/resized)
             setGeneratorBounds({
-              x: sel.x as number, y: sel.y as number,
-              width: sel.width as number, height: sel.height as number,
+              x: sel.x as number,
+              y: sel.y as number,
+              width: sel.width as number,
+              height: sel.height as number,
             });
           } else if (isVideoGeneratorElement(sel)) {
             if (currentVideoId !== sel.id) {
@@ -777,7 +817,9 @@ export function CanvasToolMenu({
                 videoUrl: sel.link as string,
                 mimeType: (sel.customData?.mimeType as string) ?? "video/mp4",
                 ...(sel.customData?.durationSeconds != null
-                  ? { durationSeconds: sel.customData.durationSeconds as number }
+                  ? {
+                      durationSeconds: sel.customData.durationSeconds as number,
+                    }
                   : {}),
                 ...(sel.customData?.title != null
                   ? { title: sel.customData.title as string }
@@ -828,9 +870,12 @@ export function CanvasToolMenu({
         // Include viewport state as well, because the shimmer overlay is
         // rendered in screen coordinates and must move when the canvas pans
         // or zooms even if the scene element itself did not change.
-        const genKey = generatingRaw.map((el: any) =>
-          `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}`
-        ).join("|") + `@${scrollX}:${scrollY}:${zoom}`;
+        const genKey =
+          generatingRaw
+            .map(
+              (el: any) => `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}`,
+            )
+            .join("|") + `@${scrollX}:${scrollY}:${zoom}`;
 
         if (genKey !== prevGeneratingKeyRef.current) {
           prevGeneratingKeyRef.current = genKey;
@@ -841,14 +886,20 @@ export function CanvasToolMenu({
             screenW: (el.width as number) * zoom,
             screenH: (el.height as number) * zoom,
             zoom,
-            ...(el.customData?.model ? { model: el.customData.model as string } : {}),
+            ...(el.customData?.model
+              ? { model: el.customData.model as string }
+              : {}),
           }));
           setGeneratingElements(generating);
         }
 
-        const errorKey = errorRaw.map((el: any) =>
-          `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${el.customData?.errorMessage ?? ""}`
-        ).join("|") + `@${scrollX}:${scrollY}:${zoom}`;
+        const errorKey =
+          errorRaw
+            .map(
+              (el: any) =>
+                `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${el.customData?.errorMessage ?? ""}`,
+            )
+            .join("|") + `@${scrollX}:${scrollY}:${zoom}`;
 
         if (errorKey !== prevErrorKeyRef.current) {
           prevErrorKeyRef.current = errorKey;
@@ -958,10 +1009,7 @@ export function CanvasToolMenu({
         {TOOL_GROUPS.map((tool, i) => {
           if (tool === null) {
             return (
-              <div
-                key={`sep-${i}`}
-                className="mx-0.5 h-6 w-px bg-border"
-              />
+              <div key={`sep-${i}`} className="mx-0.5 h-6 w-px bg-border" />
             );
           }
 
@@ -971,7 +1019,7 @@ export function CanvasToolMenu({
           return (
             <ToolbarButton
               key={tool}
-              label={TOOL_LABELS[tool]}
+              label={t(TOOL_LABEL_KEYS[tool])}
               active={isActive}
               onMouseDown={(e) => {
                 e.preventDefault();
@@ -988,7 +1036,7 @@ export function CanvasToolMenu({
 
         {/* AI Image -- creates a placeholder on canvas */}
         <ToolbarButton
-          label="AI 生成图片"
+          label={t("tools.generateImage")}
           active={Boolean(activeGeneratorId)}
           onClick={handleCreateImageGenerator}
         >
@@ -996,7 +1044,7 @@ export function CanvasToolMenu({
         </ToolbarButton>
 
         <ToolbarButton
-          label="AI 生成视频"
+          label={t("tools.generateVideo")}
           active={Boolean(activeVideoGenId)}
           onClick={handleCreateVideoGenerator}
         >
@@ -1051,7 +1099,11 @@ export function CanvasToolMenu({
         createPortal(
           <>
             {generatingElements.map((el) => (
-              <GeneratingOverlay key={el.id} {...el} />
+              <GeneratingOverlay
+                key={el.id}
+                {...el}
+                label={t("tools.generating")}
+              />
             ))}
           </>,
           document.body,
@@ -1061,12 +1113,15 @@ export function CanvasToolMenu({
         createPortal(
           <>
             {errorElements.map((el) => (
-              <GeneratorErrorOverlay key={el.id} {...el} />
+              <GeneratorErrorOverlay
+                key={el.id}
+                {...el}
+                errorMessage={el.errorMessage || t("tools.generateFailed")}
+              />
             ))}
           </>,
           document.body,
         )}
-
     </>
   );
 }

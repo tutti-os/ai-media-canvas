@@ -2,10 +2,9 @@
 
 import { useToast } from "@/components/toast";
 import { useAppTranslation } from "@/i18n";
+import { DEFAULT_PROJECT_NAME, formatProjectName } from "@/lib/project-display";
 import { updateProject } from "@/lib/server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-const DEFAULT_PROJECT_NAME = "Untitled";
 
 interface EditableProjectNameProps {
   projectId: string;
@@ -22,6 +21,7 @@ export function EditableProjectName({
   const prevName = useRef(initialName);
   const { error: toastError } = useToast();
   const { t } = useAppTranslation("canvas");
+  const displayName = formatProjectName(name, t("project.untitled"));
 
   // Sync if initialName changes externally
   useEffect(() => {
@@ -87,9 +87,9 @@ export function EditableProjectName({
       type="button"
       onClick={startEditing}
       className="h-8 rounded-lg bg-transparent hover:bg-card/60 backdrop-blur-sm px-2.5 text-sm font-medium text-foreground transition-colors truncate max-w-[200px] cursor-text"
-      title={name === DEFAULT_PROJECT_NAME ? t("project.untitled") : name}
+      title={displayName}
     >
-      {name === DEFAULT_PROJECT_NAME ? t("project.untitled") : name}
+      {displayName}
     </button>
   );
 }

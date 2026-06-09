@@ -33,6 +33,7 @@ import {
   homeExampleSeedCategories,
   type HomeExampleSelection,
 } from "@/lib/home-example-seeds";
+import { formatProjectName } from "@/lib/project-display";
 import { fetchProjects } from "@/lib/server-api";
 import { formatDate } from "@/lib/utils";
 
@@ -308,58 +309,65 @@ export default function HomePage() {
               </div>
             </motion.button>
 
-            {projects.map((project) => (
-              <motion.div
-                key={project.id}
-                variants={cardItem}
-                whileHover={{ y: -4 }}
-                className="group relative aspect-[286/208] cursor-pointer rounded-lg bg-card p-2 text-left shadow-card transition-shadow duration-300 hover:shadow-md sm:p-3"
-                onClick={() =>
-                  router.push(`/canvas?id=${project.primaryCanvas.id}`)
-                }
-              >
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    requestDelete(project.id);
-                  }}
-                  aria-label={t("recentProjects.archive", {
-                    name: project.name,
-                  })}
-                  className="absolute right-3 top-3 z-10 flex size-8 items-center justify-center rounded-[4px] bg-foreground/70 text-background opacity-0 transition-all duration-300 hover:bg-foreground/80 group-hover:opacity-100 sm:right-5 sm:top-5"
+            {projects.map((project) => {
+              const projectName = formatProjectName(
+                project.name,
+                t("recentProjects.untitled"),
+              );
+
+              return (
+                <motion.div
+                  key={project.id}
+                  variants={cardItem}
+                  whileHover={{ y: -4 }}
+                  className="group relative aspect-[286/208] cursor-pointer rounded-lg bg-card p-2 text-left shadow-card transition-shadow duration-300 hover:shadow-md sm:p-3"
+                  onClick={() =>
+                    router.push(`/canvas?id=${project.primaryCanvas.id}`)
+                  }
                 >
-                  <Trash2 size={14} />
-                </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      requestDelete(project.id);
+                    }}
+                    aria-label={t("recentProjects.archive", {
+                      name: projectName,
+                    })}
+                    className="absolute right-3 top-3 z-10 flex size-8 items-center justify-center rounded-[4px] bg-foreground/70 text-background opacity-0 transition-all duration-300 hover:bg-foreground/80 group-hover:opacity-100 sm:right-5 sm:top-5"
+                  >
+                    <Trash2 size={14} />
+                  </button>
 
-                <div className="aspect-[395/227] w-full overflow-hidden rounded-lg bg-muted">
-                  {project.thumbnailUrl ? (
-                    <img
-                      src={project.thumbnailUrl}
-                      alt=""
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                      loading="lazy"
-                      onError={(event) => {
-                        (
-                          event.currentTarget as HTMLImageElement
-                        ).style.display = "none";
-                      }}
-                    />
-                  ) : null}
-                </div>
-
-                <div className="mt-2 flex items-center justify-between sm:mt-3">
-                  <div className="truncate text-xs text-foreground sm:text-sm">
-                    {project.name}
+                  <div className="aspect-[395/227] w-full overflow-hidden rounded-lg bg-muted">
+                    {project.thumbnailUrl ? (
+                      <img
+                        src={project.thumbnailUrl}
+                        alt=""
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                        loading="lazy"
+                        onError={(event) => {
+                          (
+                            event.currentTarget as HTMLImageElement
+                          ).style.display = "none";
+                        }}
+                      />
+                    ) : null}
                   </div>
-                </div>
-                <div className="mt-0.5 text-[10px] text-muted-foreground sm:text-[11px]">
-                  {t("recentProjects.updatedAt", {
-                    date: formatDate(project.updatedAt),
-                  })}
-                </div>
-              </motion.div>
-            ))}
+
+                  <div className="mt-2 flex items-center justify-between sm:mt-3">
+                    <div className="truncate text-xs text-foreground sm:text-sm">
+                      {projectName}
+                    </div>
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-muted-foreground sm:text-[11px]">
+                    {t("recentProjects.updatedAt", {
+                      date: formatDate(project.updatedAt),
+                    })}
+                  </div>
+                </motion.div>
+              );
+            })}
           </motion.div>
         )}
       </div>

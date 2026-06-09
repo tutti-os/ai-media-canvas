@@ -78,8 +78,10 @@ export function SessionSelector({
   const [search, setSearch] = useState("");
   const panelRef = useRef<HTMLDivElement>(null);
   const formatSessionTitle = useCallback(
-    (title: string) =>
-      title.trim().toLowerCase() === "new chat" ? t("sessions.newChat") : title,
+    (title: string) => {
+      const normalized = title.trim().replace(/\s+/g, " ").toLowerCase();
+      return normalized === "new chat" ? t("sessions.newChat") : title;
+    },
     [t],
   );
 
@@ -134,6 +136,7 @@ export function SessionSelector({
             setConfirmingId(null);
             setSearch("");
           }}
+          aria-label={t("sessions.openHistory")}
           className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
         >
           <HistoryIcon className="h-3.5 w-3.5" />
@@ -263,6 +266,7 @@ export function SessionSelector({
         type="button"
         onClick={onNewChat}
         className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+        aria-label={t("sessions.newChat")}
         title={t("sessions.newChat")}
       >
         <NewChatIcon className="h-5 w-5" />

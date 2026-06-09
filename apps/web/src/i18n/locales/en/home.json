@@ -138,6 +138,7 @@
     "archive": "Archive {{name}}",
     "newProject": "New project",
     "title": "Recent projects",
+    "untitled": "Untitled",
     "updatedAt": "Updated {{date}}",
     "viewAll": "View all"
   }

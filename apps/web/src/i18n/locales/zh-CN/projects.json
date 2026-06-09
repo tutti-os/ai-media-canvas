@@ -16,5 +16,6 @@
   },
   "loadFailed": "本地项目加载失败，请重试。",
   "title": "项目",
+  "untitled": "未命名",
   "updatedAt": "更新于 {{date}}"
 }

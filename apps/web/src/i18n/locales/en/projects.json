@@ -16,5 +16,6 @@
   },
   "loadFailed": "Failed to load local projects. Please try again.",
   "title": "Projects",
+  "untitled": "Untitled",
   "updatedAt": "Updated {{date}}"
 }

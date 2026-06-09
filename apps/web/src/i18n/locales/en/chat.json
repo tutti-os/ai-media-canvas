@@ -75,6 +75,7 @@
     "history": "History",
     "newChat": "New chat",
     "noMatches": "No matching chats",
+    "openHistory": "Open chat history",
     "searchPlaceholder": "Search chats"
   },
   "templates": {

@@ -9,6 +9,14 @@ export default interface Resources {
     "title": "品牌套件"
   },
   "canvas": {
+    "bottomBar": {
+      "backgroundColor": "画布背景色",
+      "closeColorPicker": "关闭颜色选择器",
+      "fitAll": "显示全部",
+      "setBackground": "设置背景为 {{color}}",
+      "zoomIn": "放大",
+      "zoomOut": "缩小"
+    },
     "closeFiles": "关闭生成文件面板",
     "closeLayers": "关闭图层面板",
     "empty": "输入你的想法开始创作",
@@ -26,14 +34,41 @@ export default interface Resources {
     "logoMenu": {
       "archive": "归档当前项目",
       "archiveConfirm": "确认归档?",
+      "archiveFailed": "项目归档失败",
+      "duplicate": "复制对象",
+      "fitAll": "显示画布所有元素",
       "home": "首页",
       "importImage": "导入图片",
+      "menu": "菜单",
       "newProject": "新建项目",
-      "projects": "项目库"
+      "projects": "项目库",
+      "redo": "重做",
+      "undo": "撤销"
     },
     "project": {
       "renameFailed": "项目重命名失败",
       "untitled": "未命名"
+    },
+    "tools": {
+      "arrow": "箭头 (A)",
+      "ellipse": "椭圆 (O)",
+      "freedraw": "画笔 (P)",
+      "generateFailed": "生成失败",
+      "generateImage": "AI 生成图片",
+      "generateVideo": "AI 生成视频",
+      "generating": "生成中...",
+      "hand": "拖拽画布 (H)",
+      "image": "上传图片",
+      "imagePanel": {
+        "close": "关闭图片生成面板",
+        "generate": "生成",
+        "placeholder": "描述你想创建的图片...",
+        "title": "AI 图片"
+      },
+      "line": "直线 (L)",
+      "rectangle": "矩形 (R)",
+      "selection": "选择 (V)",
+      "text": "文字 (T)"
     }
   },
   "chat": {
@@ -113,6 +148,7 @@ export default interface Resources {
       "history": "历史对话",
       "newChat": "新建对话",
       "noMatches": "无匹配结果",
+      "openHistory": "打开历史对话",
       "searchPlaceholder": "请输入搜索关键词"
     },
     "templates": {
@@ -338,6 +374,7 @@ export default interface Resources {
       "archive": "归档 {{name}}",
       "newProject": "新建项目",
       "title": "最近项目",
+      "untitled": "未命名",
       "updatedAt": "更新于 {{date}}",
       "viewAll": "查看全部"
     }
@@ -375,6 +412,7 @@ export default interface Resources {
     },
     "loadFailed": "本地项目加载失败，请重试。",
     "title": "项目",
+    "untitled": "未命名",
     "updatedAt": "更新于 {{date}}"
   },
   "settings": {
