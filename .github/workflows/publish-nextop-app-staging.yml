@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   publish:
-    uses: nextop-os/nextop/.github/workflows/publish-nextop-app-release.yml@main
+    uses: tutti-os/tutti/.github/workflows/publish-nextop-app-release.yml@main
     with:
       app_id: ai-media-canvas
       package_command: pnpm package:nextop
