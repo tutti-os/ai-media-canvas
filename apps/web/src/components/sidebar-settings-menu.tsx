@@ -11,23 +11,24 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAppTranslation } from "@/i18n";
 import { fetchViewer } from "@/lib/server-api";
 
 import { SettingsDialog } from "./settings-dialog";
 
 function getInitials(name: string | null) {
   if (!name) return "AI";
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("") || "AI";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return (
+    parts
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("") || "AI"
+  );
 }
 
 export function SidebarSettingsMenu() {
+  const { t } = useAppTranslation("navigation");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [displayName, setDisplayName] = useState<string | null>(null);
 
@@ -58,26 +59,31 @@ export function SidebarSettingsMenu() {
       <DropdownMenu>
         <DropdownMenuTrigger
           className="flex h-11 w-11 items-center justify-center rounded-full outline-none ring-offset-background transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:h-10 md:w-10"
-          aria-label="Open settings menu"
+          aria-label={t("settingsMenu.open")}
         >
           <Avatar size="default">
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent side="right" align="end" sideOffset={12} className="w-64">
+        <DropdownMenuContent
+          side="right"
+          align="end"
+          sideOffset={12}
+          className="w-64"
+        >
           <div className="px-3 py-2">
             <div className="text-sm font-medium text-foreground">
-              {displayName ?? "Local user"}
+              {displayName ?? t("settingsMenu.localUser")}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              Open local settings for agent and media providers.
+              {t("settingsMenu.description")}
             </div>
           </div>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
             <Settings2 className="size-4" />
-            Settings
+            {t("settingsMenu.settings")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -1,0 +1,113 @@
+{
+  "actions": {
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "delete": "Delete",
+    "details": "Details",
+    "install": "Install locally",
+    "installShort": "Install",
+    "uninstall": "Uninstall"
+  },
+  "catalog": {
+    "canvas-director": {
+      "description": "Helps the Agent outline canvas structure, shot order, and layout hierarchy before suggesting the next action."
+    }
+  },
+  "createDialog": {
+    "addFile": "Add file",
+    "adding": "Adding...",
+    "description": "Create a local skill to extend the AI Media Canvas assistant.",
+    "descriptionPlaceholder": "Summarize what this skill does and when to use it...",
+    "fileContentPlaceholder": "File content...",
+    "invalidPath": "File paths must start with scripts/, references/, or assets/.",
+    "title": "Add custom skill",
+    "useTemplate": "Use template"
+  },
+  "customCard": {
+    "add": "Add skill",
+    "description": "Add a skill to unlock new abilities for your local assistant.",
+    "title": "Add custom skill"
+  },
+  "detail": {
+    "attachments": "Attachments",
+    "author": "Author",
+    "confirmDelete": "Confirm delete?",
+    "files": "Attachments ({{count}})",
+    "files_one": "Attachment ({{count}})",
+    "files_other": "Attachments ({{count}})",
+    "license": "License",
+    "loading": "Loading skill details",
+    "updatedAt": "Updated",
+    "version": "Version"
+  },
+  "empty": {
+    "adjustFilters": "Try changing the search or filters.",
+    "installOrImport": "Install a skill from the marketplace, or import your own local skill.",
+    "noInstalled": "No installed skills yet",
+    "noMatches": "No matching skills found"
+  },
+  "fields": {
+    "category": "Category",
+    "description": "Description",
+    "descriptionOptional": "Description (optional)",
+    "name": "Name",
+    "nameOptional": "Name (optional)"
+  },
+  "filters": {
+    "label": "Filter",
+    "official": "Official",
+    "searchLabel": "Search skills",
+    "searchPlaceholder": "Search skills..."
+  },
+  "importPanel": {
+    "chooseDirectory": "Choose folder",
+    "chooseFiles": "Choose files",
+    "chooseSkill": "Choose local skill files or a folder",
+    "continueImport": "Import another",
+    "description": "Choose a local `SKILL.md`, a set of skill files, or an entire skill folder.",
+    "descriptionPlaceholder": "Defaults to the Description section in SKILL.md",
+    "detectedFile": "Detected {{path}}",
+    "imported": "Imported",
+    "importing": "Importing...",
+    "importLocal": "Import locally",
+    "namePlaceholder": "Defaults to the SKILL.md title",
+    "selectedFiles": "{{count}} local files selected",
+    "selectedFiles_one": "{{count}} local file selected",
+    "selectedFiles_other": "{{count}} local files selected",
+    "suggestion": "Include at least one SKILL.md file and preserve the original folder structure when possible.",
+    "title": "Import local skill",
+    "viewInstalled": "View installed"
+  },
+  "marketplace": {
+    "alreadyLocal": "Already local",
+    "available": "Available",
+    "empty": "No matching local marketplace skills found.",
+    "installed": "Installed",
+    "loading": "Loading local skill marketplace...",
+    "searchPlaceholder": "Search local marketplace skills..."
+  },
+  "sources": {
+    "community": "Community",
+    "system": "Official",
+    "user": "Custom"
+  },
+  "subtitle": "Install, import, enable, and disable local skills for the AI assistant.",
+  "tabs": {
+    "import": "Import",
+    "installed": "Installed",
+    "marketplace": "Marketplace"
+  },
+  "title": "Skills",
+  "toasts": {
+    "created": "Skill \"{{name}}\" created",
+    "detailLoadFailed": "Failed to load skill details",
+    "imported": "Skill \"{{name}}\" imported",
+    "importFailed": "Import failed. Check the local file contents and try again.",
+    "installed": "Skill \"{{name}}\" installed locally",
+    "installFailed": "Failed to install skill",
+    "loadFailed": "Failed to load local skills",
+    "toggleFailed": "Failed to update skill state",
+    "uninstalled": "Skill uninstalled",
+    "uninstallFailed": "Failed to uninstall skill"
+  }
+}

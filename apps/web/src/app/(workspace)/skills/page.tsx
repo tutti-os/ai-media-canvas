@@ -34,15 +34,10 @@ import {
   toggleSkill,
   uninstallSkill,
 } from "@/lib/server-api";
+import { useAppTranslation } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 type SkillsTab = "installed" | "marketplace" | "import";
-
-const TAB_LABELS: Record<SkillsTab, string> = {
-  installed: "已安装",
-  marketplace: "市场",
-  import: "导入",
-};
 
 const TABS: SkillsTab[] = ["installed", "marketplace", "import"];
 
@@ -103,6 +98,7 @@ function removeSkill(
 }
 
 export default function SkillsPage() {
+  const { t } = useAppTranslation("skills");
   const { success, error: toastError } = useToast();
   const [activeTab, setActiveTab] = useState<SkillsTab>("installed");
   const [installedSkills, setInstalledSkills] = useState<SkillListItem[]>([]);
@@ -134,7 +130,7 @@ export default function SkillsPage() {
       .catch((error) => {
         if (!cancelled) {
           console.error("Failed to fetch local skills:", error);
-          toastError("本地技能加载失败");
+          toastError(t("toasts.loadFailed"));
         }
       })
       .finally(() => {
@@ -145,10 +141,37 @@ export default function SkillsPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadSkills, toastError]);
+  }, [loadSkills, t, toastError]);
+
+  const localizeSkill = useCallback(
+    <T extends SkillListItem | SkillDetail>(skill: T): T => ({
+      ...skill,
+      description: t(`catalog.${skill.slug}.description`, {
+        defaultValue: t(`catalog.${skill.id}.description`, {
+          defaultValue: skill.description,
+        }),
+      }),
+    }),
+    [t],
+  );
+
+  const localizedInstalledSkills = useMemo(
+    () => installedSkills.map((skill) => localizeSkill(skill)),
+    [installedSkills, localizeSkill],
+  );
+
+  const localizedCatalogSkills = useMemo(
+    () => catalogSkills.map((skill) => localizeSkill(skill)),
+    [catalogSkills, localizeSkill],
+  );
+
+  const localizedDetailSkill = useMemo(
+    () => (detailSkill ? localizeSkill(detailSkill) : null),
+    [detailSkill, localizeSkill],
+  );
 
   const filteredSkills = useMemo(() => {
-    let result = installedSkills;
+    let result = localizedInstalledSkills;
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       result = result.filter(
@@ -164,7 +187,7 @@ export default function SkillsPage() {
       result = result.filter((skill) => skill.source === "system");
     }
     return result;
-  }, [installedSkills, officialOnly, searchQuery, selectedCategories]);
+  }, [localizedInstalledSkills, officialOnly, searchQuery, selectedCategories]);
 
   const toggleCategory = useCallback((category: SkillCategory) => {
     setSelectedCategories((prev) => {
@@ -181,18 +204,18 @@ export default function SkillsPage() {
   const handleToggle = useCallback(
     async (skillId: string, enabled: boolean) => {
       setInstalledSkills((prev) =>
-        prev.map((skill) => (skill.id === skillId ? { ...skill, enabled } : skill)),
+        prev.map((skill) =>
+          skill.id === skillId ? { ...skill, enabled } : skill,
+        ),
       );
       try {
         const result = await toggleSkill(skillId, { enabled });
         setInstalledSkills((prev) =>
-          prev.map((skill) =>
-            skill.id === skillId ? result.skill : skill,
-          ),
+          prev.map((skill) => (skill.id === skillId ? result.skill : skill)),
         );
       } catch (error) {
         console.error("Failed to toggle skill:", error);
-        toastError("技能启停更新失败");
+        toastError(t("toasts.toggleFailed"));
         setInstalledSkills((prev) =>
           prev.map((skill) =>
             skill.id === skillId ? { ...skill, enabled: !enabled } : skill,
@@ -200,78 +223,91 @@ export default function SkillsPage() {
         );
       }
     },
-    [toastError],
+    [t, toastError],
   );
 
-  const handleCardClick = useCallback(async (skill: SkillListItem) => {
-    setDetailLoading(true);
-    setDetailOpen(true);
-    try {
-      const result = await fetchSkillDetail(skill.id);
-      setDetailSkill(result.skill);
-    } catch (error) {
-      console.error("Failed to fetch skill detail:", error);
-      toastError("技能详情加载失败");
-      setDetailSkill(null);
-    } finally {
-      setDetailLoading(false);
-    }
-  }, [toastError]);
+  const handleCardClick = useCallback(
+    async (skill: SkillListItem) => {
+      setDetailLoading(true);
+      setDetailOpen(true);
+      try {
+        const result = await fetchSkillDetail(skill.id);
+        setDetailSkill(result.skill);
+      } catch (error) {
+        console.error("Failed to fetch skill detail:", error);
+        toastError(t("toasts.detailLoadFailed"));
+        setDetailSkill(null);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [t, toastError],
+  );
 
-  const handleInstall = useCallback(async (skillId: string) => {
-    try {
-      const result = await installSkill(skillId);
-      success(`技能 "${result.skill.name}" 已安装到本地`);
+  const handleInstall = useCallback(
+    async (skillId: string) => {
+      try {
+        const result = await installSkill(skillId);
+        success(t("toasts.installed", { name: result.skill.name }));
+        setInstalledSkills((prev) =>
+          upsertAndSortInstalledSkills(prev, result.skill),
+        );
+        setCatalogSkills((prev) => upsertSkill(prev, result.skill));
+        if (detailSkill?.id === skillId) {
+          setDetailSkill(result.skill);
+        }
+      } catch (error) {
+        console.error("Failed to install skill:", error);
+        toastError(t("toasts.installFailed"));
+      }
+    },
+    [detailSkill?.id, success, t, toastError],
+  );
+
+  const handleUninstall = useCallback(
+    async (skillId: string) => {
+      try {
+        const targetSkill =
+          installedSkills.find((skill) => skill.id === skillId) ?? null;
+        await uninstallSkill(skillId);
+        success(t("toasts.uninstalled"));
+        setInstalledSkills((prev) => removeSkill(prev, skillId));
+        setCatalogSkills((prev) =>
+          targetSkill?.source === "system"
+            ? prev.map((skill) =>
+                skill.id === skillId
+                  ? { ...skill, installed: false, enabled: false }
+                  : skill,
+              )
+            : prev,
+        );
+        if (detailSkill?.id === skillId) {
+          setDetailOpen(false);
+        }
+      } catch (error) {
+        console.error("Failed to uninstall skill:", error);
+        toastError(t("toasts.uninstallFailed"));
+      }
+    },
+    [detailSkill?.id, installedSkills, success, t, toastError],
+  );
+
+  const handleCreate = useCallback(
+    async (data: {
+      name: string;
+      description: string;
+      category: SkillCategory;
+      skillContent: string;
+      files?: Array<{ filePath: string; content: string }>;
+    }) => {
+      const result = await createSkill(data);
+      success(t("toasts.created", { name: result.skill.name }));
       setInstalledSkills((prev) =>
         upsertAndSortInstalledSkills(prev, result.skill),
       );
-      setCatalogSkills((prev) => upsertSkill(prev, result.skill));
-      if (detailSkill?.id === skillId) {
-        setDetailSkill(result.skill);
-      }
-    } catch (error) {
-      console.error("Failed to install skill:", error);
-      toastError("技能安装失败");
-    }
-  }, [detailSkill?.id, success, toastError]);
-
-  const handleUninstall = useCallback(async (skillId: string) => {
-    try {
-      const targetSkill = installedSkills.find((skill) => skill.id === skillId) ?? null;
-      await uninstallSkill(skillId);
-      success("技能已卸载");
-      setInstalledSkills((prev) => removeSkill(prev, skillId));
-      setCatalogSkills((prev) =>
-        targetSkill?.source === "system"
-          ? prev.map((skill) =>
-              skill.id === skillId
-                ? { ...skill, installed: false, enabled: false }
-                : skill,
-            )
-          : prev,
-      );
-      if (detailSkill?.id === skillId) {
-        setDetailOpen(false);
-      }
-    } catch (error) {
-      console.error("Failed to uninstall skill:", error);
-      toastError("技能卸载失败");
-    }
-  }, [detailSkill?.id, installedSkills, success, toastError]);
-
-  const handleCreate = useCallback(async (data: {
-    name: string;
-    description: string;
-    category: SkillCategory;
-    skillContent: string;
-    files?: Array<{ filePath: string; content: string }>;
-  }) => {
-    const result = await createSkill(data);
-    success(`技能 "${result.skill.name}" 已创建`);
-    setInstalledSkills((prev) =>
-      upsertAndSortInstalledSkills(prev, result.skill),
-    );
-  }, [success]);
+    },
+    [success, t],
+  );
 
   const handleImport = useCallback(async (payload: SkillImportRequest) => {
     const result = await importSkill(payload);
@@ -292,9 +328,9 @@ export default function SkillsPage() {
 
   return (
     <div className="px-4 py-6 sm:px-6 md:p-8">
-      <h1 className="text-base font-semibold sm:text-lg">Skills</h1>
+      <h1 className="text-base font-semibold sm:text-lg">{t("title")}</h1>
       <p className="mt-1 mb-4 text-xs text-muted-foreground sm:mb-6 sm:text-sm">
-        为本地 AI 助手提供可安装、可导入、可启停的技能系统。
+        {t("subtitle")}
       </p>
 
       <div className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-border sm:mb-6">
@@ -310,7 +346,7 @@ export default function SkillsPage() {
                 : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
-            {TAB_LABELS[tab]}
+            {t(`tabs.${tab}`)}
           </button>
         ))}
       </div>
@@ -329,7 +365,7 @@ export default function SkillsPage() {
                 }
               >
                 <ListFilter className="size-3.5" />
-                筛选
+                {t("filters.label")}
                 {selectedCategories.size > 0 ? (
                   <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[10px] font-medium text-background">
                     {selectedCategories.size}
@@ -353,10 +389,10 @@ export default function SkillsPage() {
               <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="搜索技能..."
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                aria-label="搜索技能"
+                placeholder={t("filters.searchPlaceholder")}
+                aria-label={t("filters.searchLabel")}
                 className="h-10 w-full rounded-lg border border-input bg-transparent pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-7"
               />
             </div>
@@ -368,7 +404,7 @@ export default function SkillsPage() {
               onClick={() => setOfficialOnly((prev) => !prev)}
             >
               <ShieldCheck className="size-3.5" />
-              官方
+              {t("filters.official")}
             </Button>
           </div>
 
@@ -397,16 +433,16 @@ export default function SkillsPage() {
 
             <div className="min-w-0 flex-1">
               <h3 className="text-sm font-medium text-foreground">
-                添加自定义技能
+                {t("customCard.title")}
               </h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                添加技能以解锁你本地助手的新能力。
+                {t("customCard.description")}
               </p>
             </div>
 
             <Button size="sm" onClick={() => setCreateOpen(true)}>
               <Plus className="size-3.5" />
-              添加
+              {t("customCard.add")}
             </Button>
           </motion.div>
 
@@ -421,12 +457,14 @@ export default function SkillsPage() {
                 <Search className="size-5 text-muted-foreground" />
               </div>
               <p className="text-sm font-medium text-foreground">
-                {hasActiveFilters ? "未找到匹配的技能" : "暂无已安装技能"}
+                {hasActiveFilters
+                  ? t("empty.noMatches")
+                  : t("empty.noInstalled")}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {hasActiveFilters
-                  ? "尝试调整搜索或筛选条件"
-                  : "从市场安装一个技能，或导入自己的本地 skill。"}
+                  ? t("empty.adjustFilters")
+                  : t("empty.installOrImport")}
               </p>
             </motion.div>
           ) : (
@@ -452,7 +490,7 @@ export default function SkillsPage() {
 
       {activeTab === "marketplace" ? (
         <MarketplacePanel
-          skills={catalogSkills}
+          skills={localizedCatalogSkills}
           loading={false}
           onInspect={handleCardClick}
           onInstall={handleInstall}
@@ -473,7 +511,7 @@ export default function SkillsPage() {
       />
 
       <SkillDetailDialog
-        skill={detailSkill}
+        skill={localizedDetailSkill}
         open={detailOpen}
         onOpenChange={(open) => {
           setDetailOpen(open);
@@ -489,7 +527,7 @@ export default function SkillsPage() {
 
       {detailLoading && !detailSkill ? (
         <div className="sr-only" aria-live="polite">
-          正在加载技能详情
+          {t("detail.loading")}
         </div>
       ) : null}
     </div>

@@ -1,0 +1,63 @@
+{
+  "bottomBar": {
+    "backgroundColor": "Canvas background color",
+    "closeColorPicker": "Close color picker",
+    "fitAll": "Fit all",
+    "setBackground": "Set background to {{color}}",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out"
+  },
+  "closeFiles": "Close files panel",
+  "closeLayers": "Close layers panel",
+  "empty": "Type an idea to start creating",
+  "files": {
+    "download": "Download {{name}}",
+    "empty": "No generated files",
+    "end": "End of list",
+    "noPreview": "No preview",
+    "title": "Generated files"
+  },
+  "layers": {
+    "empty": "Canvas is empty",
+    "title": "Layers"
+  },
+  "logoMenu": {
+    "archive": "Archive current project",
+    "archiveConfirm": "Confirm archive?",
+    "archiveFailed": "Failed to archive project",
+    "duplicate": "Duplicate object",
+    "fitAll": "Show all canvas elements",
+    "home": "Home",
+    "importImage": "Import image",
+    "menu": "Menu",
+    "newProject": "New project",
+    "projects": "Projects",
+    "redo": "Redo",
+    "undo": "Undo"
+  },
+  "project": {
+    "renameFailed": "Failed to rename project",
+    "untitled": "Untitled"
+  },
+  "tools": {
+    "arrow": "Arrow (A)",
+    "ellipse": "Ellipse (O)",
+    "freedraw": "Draw (P)",
+    "generateFailed": "Generation failed",
+    "generateImage": "Generate image with AI",
+    "generateVideo": "Generate video with AI",
+    "generating": "Generating...",
+    "hand": "Hand tool (H)",
+    "image": "Upload image",
+    "imagePanel": {
+      "close": "Close image generation panel",
+      "generate": "Generate",
+      "placeholder": "Describe the image you want to create...",
+      "title": "AI Image"
+    },
+    "line": "Line (L)",
+    "rectangle": "Rectangle (R)",
+    "selection": "Select (V)",
+    "text": "Text (T)"
+  }
+}

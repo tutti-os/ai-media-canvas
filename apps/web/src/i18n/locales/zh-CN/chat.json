@@ -1,0 +1,111 @@
+{
+  "actions": {
+    "collapsePanel": "收起面板",
+    "openSettings": "打开设置",
+    "resizePanel": "调整聊天面板宽度"
+  },
+  "agentModelSelector": {
+    "apiProvider": "API provider",
+    "assistantMode": "助手模式",
+    "customModelId": "自定义模型 ID",
+    "localAgent": "本地 Agent",
+    "localAssistant": "本地助手",
+    "noApiProviderModels": "未配置 API provider 模型。",
+    "noLocalCliModels": "未检测到本地 CLI 模型。",
+    "openSettings": "打开 Agent 设置",
+    "settings": "设置",
+    "tooltip": "选择 Agent 模型",
+    "useCustomModel": "使用自定义模型",
+    "usesConfiguredDefaultRoute": "使用你配置的默认路由",
+    "usesDefaultModel": "使用默认模型：{{model}}"
+  },
+  "assistant": {
+    "title": "AI Media Canvas 助手"
+  },
+  "conversation": "对话",
+  "input": {
+    "ariaLabel": "输入消息",
+    "attachImages": "添加图片",
+    "modelPreference": "图片/视频模型",
+    "placeholder": "从一个想法开始，或输入 “@” 提及内容",
+    "send": "发送消息"
+  },
+  "mediaModelPreference": {
+    "configure": "配置媒体模型",
+    "description": {
+      "autoImage": "AI Media Canvas 会使用内置本地渲染器处理图片任务。",
+      "autoVideo": "AI Media Canvas 会使用本地视频规划预设处理分镜和动态任务。",
+      "manualImage": "AI Media Canvas 仍使用本地渲染器，并优先使用你固定的预设。",
+      "manualVideo": "AI Media Canvas 会使用你选择的本地视频规划预设。"
+    },
+    "empty": {
+      "image": "未配置可用的图片模型",
+      "video": "未配置可用的视频模型"
+    },
+    "mode": {
+      "auto": "自动",
+      "manual": "手动"
+    },
+    "openSettings": "打开媒体设置",
+    "tabs": {
+      "image": "图片",
+      "video": "视频"
+    },
+    "title": {
+      "image": "图片渲染器",
+      "video": "视频规划器"
+    }
+  },
+  "mentions": {
+    "remove": "移除提及"
+  },
+  "reconnecting": "连接已断开，正在重连...",
+  "selection": {
+    "image": "张图片",
+    "images": "张图片",
+    "selectedOnCanvas": "已在画布中选中",
+    "shape": "个图形",
+    "shapes": "个图形"
+  },
+  "sessions": {
+    "cancelDelete": "取消",
+    "confirmDelete": "删除",
+    "delete": "删除 {{title}}",
+    "empty": "暂无对话",
+    "history": "历史对话",
+    "newChat": "新建对话",
+    "noMatches": "无匹配结果",
+    "openHistory": "打开历史对话",
+    "searchPlaceholder": "请输入搜索关键词"
+  },
+  "templates": {
+    "items": {
+      "logoBrand": {
+        "label": "Logo 与品牌",
+        "prompt": "帮我设计一个 Logo 和品牌视觉方案"
+      },
+      "marketingBrochure": {
+        "label": "营销宣传册",
+        "prompt": "帮我设计一套营销宣传册页面，包含封面和内页"
+      },
+      "productShowcase": {
+        "label": "产品展示图",
+        "prompt": "帮我设计一组产品展示图，适合电商平台使用"
+      },
+      "socialCarousel": {
+        "label": "社媒轮播图",
+        "prompt": "帮我设计一组社交媒体轮播图，包含封面和多张内页，风格统一"
+      },
+      "socialMedia": {
+        "label": "社交媒体",
+        "prompt": "帮我设计一张社交媒体海报，风格现代简洁"
+      },
+      "storyboard": {
+        "label": "分镜故事板",
+        "prompt": "帮我创建一组分镜故事板，用于展示创意概念"
+      }
+    },
+    "title": "试试这些本地创作模板"
+  },
+  "thinking": "思考中"
+}

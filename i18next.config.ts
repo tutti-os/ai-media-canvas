@@ -1,0 +1,62 @@
+import { defineConfig } from "i18next-cli";
+
+const locales = ["zh-CN", "en"];
+
+export default defineConfig({
+  locales,
+  extract: {
+    input: ["apps/web/src/**/*.{ts,tsx}"],
+    ignore: [
+      "apps/web/src/**/*.test.{ts,tsx}",
+      "apps/web/src/**/__tests__/**/*",
+      "apps/web/src/i18n/**/*",
+    ],
+    output: "apps/web/src/i18n/locales/{{language}}/{{namespace}}.json",
+    defaultNS: "common",
+    functions: ["t", "i18n.t"],
+    useTranslationNames: ["useTranslation", "useAppTranslation"],
+    primaryLanguage: "zh-CN",
+    secondaryLanguages: ["en"],
+    removeUnusedKeys: false,
+    sort: true,
+  },
+  lint: {
+    ignore: [
+      "apps/web/src/i18n/**/*",
+      "apps/web/src/lib/home-example-seeds.ts",
+      "apps/web/src/lib/home-discovery-seeds.ts",
+      "apps/web/src/app/(workspace)/skills/page.tsx",
+      "apps/web/src/components/agnes-quickstart-hint.tsx",
+      "apps/web/src/components/agent-model-selector.tsx",
+      "apps/web/src/components/agent-settings-section.tsx",
+      "apps/web/src/components/brand-kit/**/*",
+      "apps/web/src/components/brand-kit-selector.tsx",
+      "apps/web/src/components/canvas-bottom-bar.tsx",
+      "apps/web/src/components/canvas-context-menu-extensions.tsx",
+      "apps/web/src/components/canvas-image-gen-panel.tsx",
+      "apps/web/src/components/canvas-tool-menu.tsx",
+      "apps/web/src/components/canvas/image-generator-panel.tsx",
+      "apps/web/src/components/canvas/video-generator-panel.tsx",
+      "apps/web/src/components/canvas/video-player-panel.tsx",
+      "apps/web/src/components/chat/**/*",
+      "apps/web/src/components/chat-input.tsx",
+      "apps/web/src/components/chat-message.tsx",
+      "apps/web/src/components/chat-sidebar.tsx",
+      "apps/web/src/components/chat-templates.tsx",
+      "apps/web/src/components/create-project-dialog.tsx",
+      "apps/web/src/components/image-attachment-bar.tsx",
+      "apps/web/src/components/image-model-preference.tsx",
+      "apps/web/src/components/media-settings-section.tsx",
+      "apps/web/src/components/profile-section.tsx",
+      "apps/web/src/components/session-selector.tsx",
+      "apps/web/src/components/skills/**/*",
+      "apps/web/src/components/ui/dialog.tsx",
+    ],
+    ignoredTags: ["code", "pre", "script", "style"],
+  },
+  types: {
+    input: ["apps/web/src/i18n/locales/zh-CN/*.json"],
+    output: "apps/web/src/i18n/i18next.d.ts",
+    resourcesFile: "apps/web/src/i18n/resources.d.ts",
+  },
+});

@@ -5,6 +5,7 @@ import { Download, Package, Search, ShieldCheck } from "lucide-react";
 import type { SkillListItem } from "@aimc/shared";
 
 import { Button } from "@/components/ui/button";
+import { useAppTranslation } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 export function MarketplacePanel({
@@ -18,6 +19,7 @@ export function MarketplacePanel({
   onInspect: (skill: SkillListItem) => void;
   onInstall: (skillId: string) => Promise<void>;
 }) {
+  const { t } = useAppTranslation("skills");
   const [query, setQuery] = useState("");
   const visibleSkills = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -35,7 +37,7 @@ export function MarketplacePanel({
         <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
-          placeholder="搜索本地市场技能..."
+          placeholder={t("marketplace.searchPlaceholder")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           className="h-10 w-full rounded-lg border border-input bg-transparent pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -44,11 +46,11 @@ export function MarketplacePanel({
 
       {loading ? (
         <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
-          正在加载本地技能市场...
+          {t("marketplace.loading")}
         </div>
       ) : visibleSkills.length === 0 ? (
         <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
-          没有找到匹配的本地市场技能。
+          {t("marketplace.empty")}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2">
@@ -80,7 +82,9 @@ export function MarketplacePanel({
                     </p>
                   </div>
                 </div>
-                <span className="text-[11px] text-muted-foreground">v{skill.version}</span>
+                <span className="text-[11px] text-muted-foreground">
+                  v{skill.version}
+                </span>
               </div>
 
               <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
@@ -97,7 +101,9 @@ export function MarketplacePanel({
                   )}
                 >
                   <ShieldCheck className="size-3" />
-                  {skill.installed ? "已安装" : "可安装"}
+                  {skill.installed
+                    ? t("marketplace.installed")
+                    : t("marketplace.available")}
                 </span>
                 <Button
                   variant={skill.installed ? "outline" : "default"}
@@ -109,7 +115,9 @@ export function MarketplacePanel({
                   }}
                 >
                   <Download className="size-3.5" />
-                  {skill.installed ? "已在本地" : "安装"}
+                  {skill.installed
+                    ? t("marketplace.alreadyLocal")
+                    : t("actions.installShort")}
                 </Button>
               </div>
             </button>

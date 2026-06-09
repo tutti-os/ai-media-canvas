@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useCreateProject } from "@/hooks/use-create-project";
+import { useAppTranslation } from "@/i18n";
 import {
   createExcalidrawImageElement,
   getViewportCenter,
@@ -79,6 +80,7 @@ export function CanvasLogoMenu({
 }: CanvasLogoMenuProps) {
   const router = useRouter();
   const { error: toastError } = useToast();
+  const { t } = useAppTranslation("canvas");
   const { create: createNewProject } = useCreateProject();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -121,11 +123,11 @@ export function CanvasLogoMenu({
       router.push("/projects");
     } catch (err) {
       console.warn("Failed to delete project:", err);
-      toastError("项目归档失败");
+      toastError(t("logoMenu.archiveFailed"));
     } finally {
       setConfirmingDelete(false);
     }
-  }, [projectId, router, confirmingDelete, toastError]);
+  }, [projectId, router, confirmingDelete, t, toastError]);
 
   const handleFileImport = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -186,7 +188,7 @@ export function CanvasLogoMenu({
       >
         <DropdownMenuTrigger
           className="flex items-center justify-center size-8 rounded-xl bg-card/80 backdrop-blur-sm shadow-sm border border-border hover:bg-card transition-colors cursor-pointer outline-none"
-          aria-label="菜单"
+          aria-label={t("logoMenu.menu")}
         >
           <AimcLogo className="size-5 text-foreground" />
         </DropdownMenuTrigger>
@@ -196,11 +198,11 @@ export function CanvasLogoMenu({
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => router.push("/home")}>
               <House className="size-4" />
-              首页
+              {t("logoMenu.home")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/projects")}>
               <FolderOpen className="size-4" />
-              项目库
+              {t("logoMenu.projects")}
             </DropdownMenuItem>
           </DropdownMenuGroup>
 
@@ -210,7 +212,7 @@ export function CanvasLogoMenu({
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => createNewProject()}>
               <Plus className="size-4" />
-              新建项目
+              {t("logoMenu.newProject")}
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
@@ -218,7 +220,9 @@ export function CanvasLogoMenu({
               onClick={handleDeleteProject}
             >
               <Trash2 className="size-4" />
-              {confirmingDelete ? "确认归档?" : "归档当前项目"}
+              {confirmingDelete
+                ? t("logoMenu.archiveConfirm")
+                : t("logoMenu.archive")}
             </DropdownMenuItem>
           </DropdownMenuGroup>
 
@@ -228,7 +232,7 @@ export function CanvasLogoMenu({
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
               <ImagePlus className="size-4" />
-              导入图片
+              {t("logoMenu.importImage")}
             </DropdownMenuItem>
           </DropdownMenuGroup>
 
@@ -240,7 +244,7 @@ export function CanvasLogoMenu({
               onClick={() => dispatchKeyToExcalidraw("z", { metaKey: true })}
             >
               <Undo2 className="size-4" />
-              撤销
+              {t("logoMenu.undo")}
               <DropdownMenuShortcut>⌘Z</DropdownMenuShortcut>
             </DropdownMenuItem>
             <DropdownMenuItem
@@ -252,12 +256,12 @@ export function CanvasLogoMenu({
               }
             >
               <Redo2 className="size-4" />
-              重做
+              {t("logoMenu.redo")}
               <DropdownMenuShortcut>⇧⌘Z</DropdownMenuShortcut>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleDuplicateElements}>
               <Copy className="size-4" />
-              复制对象
+              {t("logoMenu.duplicate")}
               <DropdownMenuShortcut>⌘D</DropdownMenuShortcut>
             </DropdownMenuItem>
           </DropdownMenuGroup>
@@ -268,7 +272,7 @@ export function CanvasLogoMenu({
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => excalidrawApi?.scrollToContent()}>
               <Maximize2 className="size-4" />
-              显示画布所有元素
+              {t("logoMenu.fitAll")}
             </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>

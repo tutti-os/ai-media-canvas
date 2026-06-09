@@ -78,9 +78,11 @@ vi.mock("../src/components/ui/dropdown-menu", () => ({
 }));
 
 import { CanvasLogoMenu } from "../src/components/canvas-logo-menu";
+import { i18n } from "../src/i18n";
 
 describe("CanvasLogoMenu", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("zh-CN");
     vi.clearAllMocks();
   });
 
@@ -100,6 +102,26 @@ describe("CanvasLogoMenu", () => {
     await userEvent.click(screen.getByRole("button", { name: "首页" }));
 
     expect(pushMock).toHaveBeenCalledWith("/home");
+  });
+
+  it("renders menu actions in English when the locale changes", async () => {
+    await i18n.changeLanguage("en");
+
+    render(
+      <CanvasLogoMenu
+        projectId="project-1"
+        canvasId="canvas-1"
+        excalidrawApi={null}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Home" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Archive current project" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Show all canvas elements" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps the menu action in confirm mode before archiving the project", async () => {

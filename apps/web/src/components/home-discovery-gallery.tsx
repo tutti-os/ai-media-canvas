@@ -7,6 +7,7 @@ import type {
   HomeDiscoveryCase,
   HomeDiscoverySelection,
 } from "@/lib/home-discovery-seeds";
+import { useAppTranslation } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 type HomeDiscoveryGalleryProps = {
@@ -43,30 +44,37 @@ export function HomeDiscoveryGallery({
   categories,
   onCaseSelect,
 }: HomeDiscoveryGalleryProps) {
+  const { t } = useAppTranslation("home");
   const [activeCategoryKey, setActiveCategoryKey] = useState<string>("all");
 
   const visibleCases = useMemo<
     Array<HomeDiscoveryCase & { categoryKey: string; categoryLabel: string }>
   >(() => {
+    const localizeCase = (
+      item: HomeDiscoveryCase,
+      category: HomeDiscoveryCategory,
+    ) => ({
+      ...item,
+      categoryKey: category.key,
+      categoryLabel: t(`discovery.categories.${category.key}`, {
+        defaultValue: category.label,
+      }),
+      prompt: t(`discovery.cases.${item.id}.prompt`, {
+        defaultValue: item.prompt,
+      }),
+    });
+
     if (activeCategoryKey === "all") {
       return categories.flatMap((category) =>
-        category.cases.map((item) => ({
-          ...item,
-          categoryKey: category.key,
-          categoryLabel: category.label,
-        })),
+        category.cases.map((item) => localizeCase(item, category)),
       );
     }
 
     const category = categories.find((item) => item.key === activeCategoryKey);
     if (!category) return [];
 
-    return category.cases.map((item) => ({
-      ...item,
-      categoryKey: category.key,
-      categoryLabel: category.label,
-    }));
-  }, [activeCategoryKey, categories]);
+    return category.cases.map((item) => localizeCase(item, category));
+  }, [activeCategoryKey, categories, t]);
 
   if (categories.length === 0) return null;
 
@@ -75,21 +83,25 @@ export function HomeDiscoveryGallery({
       <div className="mb-5 flex flex-col gap-4">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-lg font-medium text-foreground">灵感发现</h2>
+            <h2 className="text-lg font-medium text-foreground">
+              {t("discovery.title")}
+            </h2>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <DiscoveryTab
             active={activeCategoryKey === "all"}
-            label="全部"
+            label={t("discovery.all")}
             onClick={() => setActiveCategoryKey("all")}
           />
           {categories.map((category) => (
             <DiscoveryTab
               key={category.key}
               active={activeCategoryKey === category.key}
-              label={category.label}
+              label={t(`discovery.categories.${category.key}`, {
+                defaultValue: category.label,
+              })}
               onClick={() => setActiveCategoryKey(category.key)}
             />
           ))}

@@ -6,6 +6,7 @@ import { useCallback } from "react";
 import type { SkillCategory, SkillListItem, SkillSource } from "@aimc/shared";
 
 import { Button } from "@/components/ui/button";
+import { useAppTranslation } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 const CATEGORY_LABELS: Record<SkillCategory, string> = {
@@ -19,11 +20,11 @@ const CATEGORY_LABELS: Record<SkillCategory, string> = {
 
 const SOURCE_CONFIG: Record<
   SkillSource,
-  { label: string; icon: typeof ShieldCheck }
+  { labelKey: string; icon: typeof ShieldCheck }
 > = {
-  system: { label: "官方", icon: ShieldCheck },
-  community: { label: "社区", icon: Users },
-  user: { label: "自定义", icon: UserPen },
+  system: { labelKey: "sources.system", icon: ShieldCheck },
+  community: { labelKey: "sources.community", icon: Users },
+  user: { labelKey: "sources.user", icon: UserPen },
 };
 
 function ToggleSwitch({
@@ -67,6 +68,7 @@ export function SkillCard({
   onClick: (skill: SkillListItem) => void;
   onUninstall?: (skillId: string) => void;
 }) {
+  const { i18n, t } = useAppTranslation("skills");
   const sourceEntry = SOURCE_CONFIG[skill.source] ?? SOURCE_CONFIG.system;
   const SourceIcon = sourceEntry.icon;
 
@@ -77,11 +79,14 @@ export function SkillCard({
     [onToggle, skill.id],
   );
 
-  const formattedDate = new Date(skill.updatedAt).toLocaleDateString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  const formattedDate = new Date(skill.updatedAt).toLocaleDateString(
+    i18n.language === "en" ? "en" : "zh-CN",
+    {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    },
+  );
 
   return (
     <motion.div
@@ -118,7 +123,7 @@ export function SkillCard({
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
           <SourceIcon className="size-3" />
-          {sourceEntry.label}
+          {t(sourceEntry.labelKey)}
         </span>
 
         <div className="flex items-center gap-2">
@@ -133,7 +138,7 @@ export function SkillCard({
               onClick(skill);
             }}
           >
-            详情
+            {t("actions.details")}
           </Button>
           {skill.installed && onUninstall ? (
             <Button
@@ -144,7 +149,7 @@ export function SkillCard({
                 onUninstall(skill.id);
               }}
             >
-              卸载
+              {t("actions.uninstall")}
             </Button>
           ) : null}
         </div>

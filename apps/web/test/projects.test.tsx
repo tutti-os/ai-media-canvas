@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "../src/components/toast";
+import { i18n } from "../src/i18n";
 
 const createProjectMock = vi.fn();
 const fetchProjectsMock = vi.fn();
@@ -47,6 +48,7 @@ function renderPage() {
 describe("Projects page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    void i18n.changeLanguage("zh-CN");
     fetchProjectsMock.mockResolvedValue(projectResponse);
   });
 
@@ -78,10 +80,10 @@ describe("Projects page", () => {
     renderPage();
 
     expect(
-      await screen.findByText("Failed to load local projects. Please try again."),
+      await screen.findByText("本地项目加载失败，请重试。"),
     ).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await userEvent.click(screen.getByRole("button", { name: "重试" }));
 
     await waitFor(() =>
       expect(screen.getByText("Brand System")).toBeInTheDocument(),

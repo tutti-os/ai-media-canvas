@@ -1,0 +1,104 @@
+{
+  "agentSettings": {
+    "actions": {
+      "saving": "Saving..."
+    },
+    "api": {
+      "addModel": "Add",
+      "addProviderModel": "Add {{provider}} model",
+      "browseModels": "Browse available models",
+      "chooseApiProviderModelBelow": "Choose an API provider model below.",
+      "chooseModel": "Choose model",
+      "customProvider": "Custom provider",
+      "defaultLlmModel": "Default LLM Model",
+      "defaultModelDescription": "Pick the workspace default from the model lists configured below.",
+      "defaultModelTitle": "Default model",
+      "importDetected": "Import detected",
+      "noApiProviderModelSelected": "No API provider model selected",
+      "noModelsYet": "No models yet",
+      "noProviderModels": "No models configured yet for {{provider}}.",
+      "protocolCredentials": "Protocol credentials",
+      "protocolDescription": "Pick a protocol to edit its credentials.",
+      "providerModels": "{{provider}} models",
+      "providerModelsDescription": "Add, edit, or remove the model IDs you want this provider to expose.",
+      "quickFillProvider": "Quick fill provider",
+      "removeModel": "Remove",
+      "useModel": "Use {{model}}",
+      "workspaceModels": "Workspace models",
+      "workspaceModelsDescription": "Choose from the model lists configured under each provider."
+    },
+    "feedback": {
+      "installFailed": "Unable to install local agent provider.",
+      "updated": "Local agent settings updated.",
+      "updateFailed": "Failed to update local agent settings. Please try again."
+    },
+    "local": {
+      "customModelId": "Custom model id",
+      "customModelPlaceholder": "e.g. my-model",
+      "customOption": "Custom (type below)...",
+      "description": "Pick the CLI route generations should use.",
+      "detectedCli": "Detected CLI",
+      "empty": "No local CLI models detected yet. Rescan after installing or signing in to a supported local CLI.",
+      "fetchedDescription": "Fetched from the CLI when it exposes models. Custom lets you type any model id this CLI accepts.",
+      "installHint": "Install Codex or Claude Code, then rescan to enable local agent routes.",
+      "installing": "Installing...",
+      "installRequired": "Install required",
+      "modelCountOne": "{{modelCount}} model",
+      "modelCountOther": "{{modelCount}} models",
+      "modelLabel": "Model",
+      "noCliSelected": "No CLI selected",
+      "rescan": "Rescan",
+      "selectCliFirst": "Select a CLI first...",
+      "selectModel": "Select a model..."
+    },
+    "source": {
+      "apiProvider": "API provider",
+      "detected": "{{cliCount}} detected",
+      "localAgent": "Local agent"
+    }
+  },
+  "dialogTitle": "Settings",
+  "general": {
+    "description": "Control interface language and local display preferences.",
+    "languageDescription": "Saved in this browser and reused the next time you open the app.",
+    "languageLabel": "Language",
+    "languageOptions": {
+      "en": "English",
+      "zhCN": "Simplified Chinese"
+    },
+    "title": "General"
+  },
+  "modelConfiguration": {
+    "configureAgent": "Configure Agent",
+    "configureMedia": "Configure media models",
+    "description": "Agnes provides free text, image, and video model routes. Apply for an API key before configuring it.",
+    "getAgnesKey": "Get Agnes API Key",
+    "missing": "Missing {{models}}",
+    "models": {
+      "agent": "Agent model",
+      "image": "image model",
+      "video": "video model"
+    }
+  },
+  "status": {
+    "loadFailed": "Failed to load local settings. Please try again.",
+    "loadUnavailable": "Unable to load local settings right now.",
+    "unsaved": "Unsaved changes",
+    "upToDate": "Settings are up to date"
+  },
+  "tabs": {
+    "agent": {
+      "description": "LLM protocols and default model",
+      "label": "Agent"
+    },
+    "general": {
+      "description": "Language and interface preferences",
+      "label": "General"
+    },
+    "media": {
+      "description": "Image and video provider routing",
+      "label": "Media"
+    }
+  },
+  "title": "Settings"
+}

@@ -18,9 +18,11 @@ vi.mock("../src/lib/server-api", () => ({
 }));
 
 import { AppSidebar } from "../src/components/app-sidebar";
+import { i18n } from "../src/i18n";
 
 describe("AppSidebar", () => {
   beforeEach(() => {
+    void i18n.changeLanguage("en");
     fetchViewerMock.mockReset();
     fetchViewerMock.mockResolvedValue({
       profile: {

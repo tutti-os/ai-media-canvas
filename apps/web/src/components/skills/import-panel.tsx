@@ -6,6 +6,7 @@ import type { SkillCategory } from "@aimc/shared";
 
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast";
+import { useAppTranslation } from "@/i18n";
 import { ApiApplicationError } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +37,7 @@ export function ImportPanel({
   }) => Promise<{ skillName: string }>;
   onSwitchToInstalled?: () => void;
 }) {
+  const { t } = useAppTranslation("skills");
   const { success, error: showError } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const directoryInputRef = useRef<HTMLInputElement>(null);
@@ -51,18 +53,21 @@ export function ImportPanel({
     [files],
   );
 
-  const handleFilesSelected = useCallback(async (selectedFiles: FileList | null) => {
-    if (!selectedFiles || selectedFiles.length === 0) return;
-    const nextFiles = await Promise.all(
-      Array.from(selectedFiles).map(async (file) => ({
-        filePath: file.webkitRelativePath || file.name,
-        content: await file.text(),
-        mimeType: file.type || "text/plain",
-      })),
-    );
-    setFiles(nextFiles);
-    setSuccessName(null);
-  }, []);
+  const handleFilesSelected = useCallback(
+    async (selectedFiles: FileList | null) => {
+      if (!selectedFiles || selectedFiles.length === 0) return;
+      const nextFiles = await Promise.all(
+        Array.from(selectedFiles).map(async (file) => ({
+          filePath: file.webkitRelativePath || file.name,
+          content: await file.text(),
+          mimeType: file.type || "text/plain",
+        })),
+      );
+      setFiles(nextFiles);
+      setSuccessName(null);
+    },
+    [],
+  );
 
   const handleImport = useCallback(async () => {
     if (files.length === 0) return;
@@ -75,12 +80,12 @@ export function ImportPanel({
         files,
       });
       setSuccessName(result.skillName);
-      success(`技能 "${result.skillName}" 导入成功`);
+      success(t("toasts.imported", { name: result.skillName }));
     } catch (error) {
       const message =
         error instanceof ApiApplicationError
           ? error.message
-          : "导入失败，请检查本地文件内容后重试";
+          : t("toasts.importFailed");
       showError(message);
     } finally {
       setLoading(false);
@@ -101,14 +106,16 @@ export function ImportPanel({
   return (
     <div className="max-w-2xl">
       <div className="rounded-xl border border-border bg-card p-6">
-          <div className="mb-5 flex items-center gap-3">
+        <div className="mb-5 flex items-center gap-3">
           <div className="flex size-9 items-center justify-center rounded-lg bg-muted">
             <FileUp className="size-4 text-muted-foreground" />
           </div>
           <div>
-            <h3 className="text-sm font-medium text-foreground">从本地导入技能</h3>
+            <h3 className="text-sm font-medium text-foreground">
+              {t("importPanel.title")}
+            </h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              选择本地 `SKILL.md`、skill 文件集合，或直接选择整个 skill 目录。
+              {t("importPanel.description")}
             </p>
           </div>
         </div>
@@ -126,7 +133,10 @@ export function ImportPanel({
           type="file"
           multiple
           className="hidden"
-          {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+          {...({ webkitdirectory: "", directory: "" } as Record<
+            string,
+            string
+          >)}
           onChange={(event) => void handleFilesSelected(event.target.files)}
         />
 
@@ -140,13 +150,13 @@ export function ImportPanel({
             <div>
               <p className="text-sm font-medium text-foreground">
                 {files.length > 0
-                  ? `已选择 ${files.length} 个本地文件`
-                  : "选择本地 skill 文件或目录"}
+                  ? t("importPanel.selectedFiles", { count: files.length })
+                  : t("importPanel.chooseSkill")}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {skillFile
-                  ? `已识别 ${skillFile.filePath}`
-                  : "建议至少包含一个 SKILL.md 文件，并尽量保留原目录结构。"}
+                  ? t("importPanel.detectedFile", { path: skillFile.filePath })
+                  : t("importPanel.suggestion")}
               </p>
             </div>
 
@@ -156,14 +166,14 @@ export function ImportPanel({
                 onClick={() => fileInputRef.current?.click()}
               >
                 <FileUp className="size-3.5" />
-                选择文件
+                {t("importPanel.chooseFiles")}
               </Button>
               <Button
                 variant="outline"
                 onClick={() => directoryInputRef.current?.click()}
               >
                 <FolderOpen className="size-3.5" />
-                选择目录
+                {t("importPanel.chooseDirectory")}
               </Button>
             </div>
           </div>
@@ -184,19 +194,25 @@ export function ImportPanel({
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <label className="space-y-1">
-            <span className="text-xs text-muted-foreground">名称（可选）</span>
+            <span className="text-xs text-muted-foreground">
+              {t("fields.nameOptional")}
+            </span>
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="默认从 SKILL.md 标题提取"
+              placeholder={t("importPanel.namePlaceholder")}
               className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           </label>
           <label className="space-y-1">
-            <span className="text-xs text-muted-foreground">分类</span>
+            <span className="text-xs text-muted-foreground">
+              {t("fields.category")}
+            </span>
             <select
               value={category}
-              onChange={(event) => setCategory(event.target.value as SkillCategory)}
+              onChange={(event) =>
+                setCategory(event.target.value as SkillCategory)
+              }
               className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {CATEGORY_OPTIONS.map((option) => (
@@ -209,12 +225,14 @@ export function ImportPanel({
         </div>
 
         <label className="mt-3 block space-y-1">
-          <span className="text-xs text-muted-foreground">描述（可选）</span>
+          <span className="text-xs text-muted-foreground">
+            {t("fields.descriptionOptional")}
+          </span>
           <textarea
             rows={3}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
-            placeholder="默认从 SKILL.md 的 Description 段落提取"
+            placeholder={t("importPanel.descriptionPlaceholder")}
             className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </label>
@@ -226,16 +244,22 @@ export function ImportPanel({
               <span className="text-sm font-medium text-foreground">
                 {successName}
               </span>
-              <span className="text-xs text-muted-foreground">已导入</span>
+              <span className="text-xs text-muted-foreground">
+                {t("importPanel.imported")}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               {onSwitchToInstalled ? (
-                <Button variant="outline" size="xs" onClick={onSwitchToInstalled}>
-                  查看已安装
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={onSwitchToInstalled}
+                >
+                  {t("importPanel.viewInstalled")}
                 </Button>
               ) : null}
               <Button variant="ghost" size="xs" onClick={resetSelection}>
-                继续导入
+                {t("importPanel.continueImport")}
               </Button>
             </div>
           </div>
@@ -243,18 +267,21 @@ export function ImportPanel({
 
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="ghost" onClick={resetSelection}>
-            清空
+            {t("actions.clear")}
           </Button>
-          <Button disabled={files.length === 0 || loading} onClick={() => void handleImport()}>
+          <Button
+            disabled={files.length === 0 || loading}
+            onClick={() => void handleImport()}
+          >
             {loading ? (
               <>
                 <Loader2 className="size-3.5 animate-spin" />
-                导入中...
+                {t("importPanel.importing")}
               </>
             ) : (
               <>
                 <FileUp className="size-3.5" />
-                导入到本地
+                {t("importPanel.importLocal")}
               </>
             )}
           </Button>

@@ -1,0 +1,18 @@
+{
+  "canvas": {
+    "loadFailed": "Failed to load the local canvas.",
+    "missingId": "No canvas ID specified.",
+    "projectLoadFailed": "Failed to load project information. Please try again."
+  },
+  "generic": "Something went wrong",
+  "notFound": {
+    "backToProjects": "Back to Projects",
+    "message": "Page not found"
+  },
+  "pageComponent": "A page component failed. Try again or refresh the page.",
+  "project": {
+    "createFailed": "Failed to create project"
+  },
+  "refresh": "Refresh page",
+  "retry": "Retry"
+}

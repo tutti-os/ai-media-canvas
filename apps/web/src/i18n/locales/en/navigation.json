@@ -1,0 +1,15 @@
+{
+  "brandKit": "Brand Kit",
+  "home": "Home",
+  "mainNavigation": "Main navigation",
+  "mainRegion": "Main content",
+  "projects": "Projects",
+  "settingsMenu": {
+    "description": "Open local settings for agent and media providers.",
+    "localUser": "Local user",
+    "open": "Open settings menu",
+    "settings": "Settings"
+  },
+  "skills": "Skills",
+  "skipToMain": "Skip to main content"
+}

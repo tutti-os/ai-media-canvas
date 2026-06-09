@@ -1,0 +1,19 @@
+{
+  "actions": {
+    "add": "Add",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "close": "Close",
+    "continue": "Continue",
+    "copy": "Copy",
+    "delete": "Delete",
+    "download": "Download",
+    "import": "Import",
+    "loading": "Loading...",
+    "retry": "Retry",
+    "save": "Save",
+    "search": "Search",
+    "upload": "Upload"
+  },
+  "productName": "AI Media Canvas"
+}

@@ -1,14 +1,15 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import type {
   ImageGenerationPreference,
   VideoGenerationPreference,
 } from "@aimc/shared";
+import { useRouter } from "next/navigation";
+import { useCallback, useRef, useState } from "react";
 
-import type { ReadyAttachment } from "@/hooks/use-image-attachments";
 import { useToast } from "@/components/toast";
+import type { ReadyAttachment } from "@/hooks/use-image-attachments";
+import { useAppTranslation } from "@/i18n";
 import { createProject } from "@/lib/server-api";
 
 /** sessionStorage key used to pass attachments into the next canvas session. */
@@ -33,6 +34,7 @@ function clearInitialCreateProjectState() {
 export function useCreateProject() {
   const router = useRouter();
   const { error: toastError } = useToast();
+  const { t } = useAppTranslation("errors");
   const [creating, setCreating] = useState(false);
   const creatingRef = useRef(false);
 
@@ -128,13 +130,13 @@ export function useCreateProject() {
         clearInitialCreateProjectState();
         // Close the blank tab on failure
         newTab?.close();
-        toastError("项目创建失败");
+        toastError(t("project.createFailed"));
       } finally {
         creatingRef.current = false;
         setCreating(false);
       }
     },
-    [toastError],
+    [t, toastError],
   );
 
   return { create, creating };

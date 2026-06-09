@@ -2,6 +2,8 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
+import { useAppTranslation } from "@/i18n";
+
 /* -- Types -- */
 // biome-ignore lint/suspicious/noExplicitAny: Excalidraw element has no public type
 type ExcalidrawEl = any;
@@ -155,6 +157,7 @@ export function CanvasLayersPanel({
   open,
   onClose,
 }: CanvasLayersPanelProps) {
+  const { t } = useAppTranslation("canvas");
   const panelRef = useRef<HTMLDivElement>(null);
   const [elements, setElements] = useState<ExcalidrawEl[]>([]);
   const [files, setFiles] = useState<Record<string, ExcalidrawFile>>({});
@@ -221,12 +224,14 @@ export function CanvasLayersPanel({
     >
       {/* Title bar */}
       <div className="flex h-11 shrink-0 items-center justify-between px-3">
-        <span className="text-sm font-medium text-foreground">图层</span>
+        <span className="text-sm font-medium text-foreground">
+          {t("layers.title")}
+        </span>
         <button
           type="button"
           className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
           onClick={onClose}
-          aria-label="Close layers panel"
+          aria-label={t("closeLayers")}
         >
           <CloseIcon className="h-4 w-4" />
         </button>
@@ -242,7 +247,7 @@ export function CanvasLayersPanel({
       >
         {elements.length === 0 ? (
           <p className="px-2 py-8 text-center text-xs text-muted-foreground">
-            画布为空
+            {t("layers.empty")}
           </p>
         ) : (
           elements.map((el: ExcalidrawEl) => (

@@ -7,6 +7,7 @@ import type { ImageArtifact } from "@aimc/shared";
 import { generateImageDirect } from "../lib/server-api";
 import { insertImageOnCanvas } from "../lib/canvas-elements";
 import { useGenerationErrorHandler } from "../hooks/use-generation-error-handler";
+import { useAppTranslation } from "../i18n";
 
 type CanvasImageGenPanelProps = {
   excalidrawApi: any;
@@ -22,6 +23,7 @@ export function CanvasImageGenPanel({
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { handleGenerationError } = useGenerationErrorHandler();
+  const { t } = useAppTranslation("canvas");
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || loading) return;
@@ -46,7 +48,9 @@ export function CanvasImageGenPanel({
     } catch (err) {
       const handled = handleGenerationError(err);
       if (!handled) {
-        setError(err instanceof Error ? err.message : "Generation failed");
+        setError(
+          err instanceof Error ? err.message : t("tools.generateFailed"),
+        );
       }
     } finally {
       setLoading(false);
@@ -56,9 +60,13 @@ export function CanvasImageGenPanel({
   return (
     <div className="w-80 rounded-xl bg-card shadow-xl border border-border p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-foreground">AI Image</h3>
+        <h3 className="text-sm font-semibold text-foreground">
+          {t("tools.imagePanel.title")}
+        </h3>
         <button
+          type="button"
           onClick={onClose}
+          aria-label={t("tools.imagePanel.close")}
           className="text-muted-foreground hover:text-foreground transition-colors"
         >
           <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
@@ -77,7 +85,7 @@ export function CanvasImageGenPanel({
             void handleGenerate();
           }
         }}
-        placeholder="Describe the image you want to create..."
+        placeholder={t("tools.imagePanel.placeholder")}
         className="w-full h-20 resize-none rounded-lg border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         disabled={loading}
       />
@@ -85,6 +93,7 @@ export function CanvasImageGenPanel({
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
       <button
+        type="button"
         onClick={() => void handleGenerate()}
         disabled={!prompt.trim() || loading}
         className="mt-3 w-full rounded-lg bg-foreground text-background py-2 text-sm font-medium transition-opacity disabled:opacity-40 hover:opacity-90"
@@ -92,10 +101,10 @@ export function CanvasImageGenPanel({
         {loading ? (
           <span className="flex items-center justify-center gap-2">
             <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-background/30 border-t-background" />
-            Generating...
+            {t("tools.generating")}
           </span>
         ) : (
-          "Generate"
+          t("tools.imagePanel.generate")
         )}
       </button>
     </div>
