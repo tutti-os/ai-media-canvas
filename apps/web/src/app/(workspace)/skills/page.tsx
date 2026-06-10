@@ -1,21 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import { ListFilter, Plus, Search, ShieldCheck } from "lucide-react";
 import type {
   SkillCategory,
   SkillDetail,
   SkillImportRequest,
   SkillListItem,
 } from "@aimc/shared";
+import { motion } from "framer-motion";
+import { ListFilter, Plus, Search, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { SkillsSkeleton } from "@/components/skeletons/skills-skeleton";
 import { CreateSkillDialog } from "@/components/skills/create-skill-dialog";
 import { ImportPanel } from "@/components/skills/import-panel";
 import { MarketplacePanel } from "@/components/skills/marketplace-panel";
 import { SkillCard } from "@/components/skills/skill-card";
 import { SkillDetailDialog } from "@/components/skills/skill-detail-dialog";
-import { SkillsSkeleton } from "@/components/skeletons/skills-skeleton";
+import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -23,7 +24,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useToast } from "@/components/toast";
+import { useAppTranslation } from "@/i18n";
 import {
   createSkill,
   fetchInstalledSkills,
@@ -34,7 +35,6 @@ import {
   toggleSkill,
   uninstallSkill,
 } from "@/lib/server-api";
-import { useAppTranslation } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 type SkillsTab = "installed" | "marketplace" | "import";
@@ -419,6 +419,7 @@ export default function SkillsPage() {
                 <div className="absolute left-0 top-1 h-14 w-12 rounded-lg border border-border bg-secondary shadow-sm" />
                 <div className="absolute left-5 top-0 flex h-14 w-12 items-center justify-center rounded-lg border border-border bg-card shadow-sm">
                   <svg
+                    aria-hidden="true"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -522,7 +523,6 @@ export default function SkillsPage() {
         }}
         onInstall={handleInstall}
         onUninstall={handleUninstall}
-        onDelete={handleUninstall}
       />
 
       {detailLoading && !detailSkill ? (

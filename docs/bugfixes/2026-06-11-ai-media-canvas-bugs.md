@@ -109,3 +109,13 @@
 - 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 回归，模拟导入 skill 长标题并打开详情弹窗，断言标题文本、标题行和来源胶囊具备防挤压布局类；`pnpm --filter @aimc/web exec vitest run test/skills-page.test.tsx -t "imported skill detail"` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/skills/skill-detail-dialog.tsx apps/web/test/skills-page.test.tsx` 通过；浏览器打开 `http://localhost:3000/skills` 无 console error。
 - 是否已修复完: 是
 - commit hash: `TBD`
+
+## 12. Skill 详情中去掉删除入口
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/UuZ1roNmTerywUcmNtHcH8TDn2g
+- 真实 record id: `recvm8iz9B2On5`
+- Bug 原因: 自定义/导入 skill 详情弹窗底部同时展示“删除”确认区和“卸载”按钮；截图中左侧红框标出删除确认区，右侧红框标出卸载按钮。当前产品交互只需要在详情里保留卸载，删除入口会造成用户误解和高风险操作暴露。
+- 修复方案: 从 `SkillDetailDialog` 移除用户 skill 的删除确认状态、删除按钮、`onDelete` prop 和页面传入；保留安装/卸载主操作。顺手修正被触碰页面的 import 排序和装饰 SVG `aria-hidden`，保证静态检查通过。
+- 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 回归，模拟导入 skill 打开详情，断言不存在“删除”按钮和“确认删除?”文案，同时“卸载”按钮仍存在；`pnpm --filter @aimc/web exec vitest run test/skills-page.test.tsx -t "delete controls"` 通过；`pnpm --filter @aimc/web typecheck`、`pnpm check:i18n`、`pnpm exec biome check apps/web/src/app/(workspace)/skills/page.tsx apps/web/src/components/skills/skill-detail-dialog.tsx apps/web/test/skills-page.test.tsx` 均通过；浏览器打开 `http://localhost:3000/skills` 无 console error。
+- 是否已修复完: 是
+- commit hash: `TBD`

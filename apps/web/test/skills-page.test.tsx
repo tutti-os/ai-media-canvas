@@ -326,6 +326,51 @@ license: MIT
     );
   });
 
+  it("removes delete controls from imported skill details", async () => {
+    const importedSkill = {
+      id: "skill-imported",
+      name: "qq",
+      slug: "qq",
+      description: "qqq",
+      author: "Local User",
+      version: "1.0.0",
+      category: "custom",
+      iconName: null,
+      source: "user",
+      isFeatured: false,
+      metadata: {},
+      installed: true,
+      enabled: true,
+      installedAt: "2026-06-10T00:00:00Z",
+      createdAt: "2026-06-10T00:00:00Z",
+      updatedAt: "2026-06-10T00:00:00Z",
+      license: "Local",
+      skillContent: "# Skill Name",
+      createdBy: "Local User",
+      sourceUrl: null,
+      packageName: null,
+      files: [],
+    };
+    fetchInstalledSkillsMock.mockResolvedValue({ skills: [importedSkill] });
+    fetchSkillCatalogMock.mockResolvedValue({ skills: [] });
+    fetchSkillDetailMock.mockResolvedValue({ skill: importedSkill });
+
+    render(
+      <ToastProvider>
+        <SkillsPage />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "详情" }));
+    await screen.findByRole("dialog");
+
+    expect(
+      screen.queryByRole("button", { name: "删除" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("确认删除?")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "卸载" })).toBeInTheDocument();
+  });
+
   it("uninstalls a skill with local state updates instead of refetching the installed list", async () => {
     render(
       <ToastProvider>
