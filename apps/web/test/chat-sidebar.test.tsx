@@ -459,6 +459,43 @@ describe("ChatSidebar", () => {
     expect(saveMessageMock).toHaveBeenCalledTimes(1);
   });
 
+  it("allows a new session to send while another session is still running", async () => {
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "first run{Enter}");
+
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "新建对话" }),
+    );
+    await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
+
+    const nextInput = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await waitFor(() => expect(nextInput).not.toBeDisabled());
+    await userEvent.type(nextInput, "second run{Enter}");
+
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(2));
+    expect(mockWs.startRun).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sessionId: "session-created",
+        prompt: "second run",
+      }),
+      expect.any(Function),
+    );
+  });
+
   it("opens the settings dialog from the chat header action", async () => {
     render(
       <ToastProvider>

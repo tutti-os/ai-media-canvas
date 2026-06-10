@@ -133,13 +133,21 @@ export function ChatSidebar({
   const initialPromptSent = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef(false);
-  const sendingRef = useRef(false);
+  const inFlightSessionIdsRef = useRef<Set<string>>(new Set());
   const messageMentionsRef = useRef(messageMentions);
   messageMentionsRef.current = messageMentions;
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
   selectedCanvasElementsRef.current = selectedCanvasElements;
   const prevConnectedRef = useRef(false);
   const replayedArtifactKeysRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    setStreaming(
+      Boolean(
+        activeSessionId && inFlightSessionIdsRef.current.has(activeSessionId),
+      ),
+    );
+  }, [activeSessionId, setStreaming]);
 
   const buildAutoTitleSource = useCallback(
     (text: string, attachments: ReadyAttachment[]) => {
@@ -430,11 +438,22 @@ export function ChatSidebar({
       mentionsOverride?: MessageMention[],
     ) => {
       const currentSessionId = activeSessionIdRef.current;
-      if (sendingRef.current || !currentSessionId) return;
-      sendingRef.current = true;
+      if (
+        !currentSessionId ||
+        inFlightSessionIdsRef.current.has(currentSessionId)
+      ) {
+        return;
+      }
+      inFlightSessionIdsRef.current.add(currentSessionId);
+      if (activeSessionIdRef.current === currentSessionId) {
+        setStreaming(true);
+      }
 
       if (!(await ensureAgentModelConfigured())) {
-        sendingRef.current = false;
+        inFlightSessionIdsRef.current.delete(currentSessionId);
+        if (activeSessionIdRef.current === currentSessionId) {
+          setStreaming(false);
+        }
         setSettingsOpen(true);
         return;
       }
@@ -553,7 +572,9 @@ export function ChatSidebar({
           contentBlocks: [],
         },
       ]);
-      setStreaming(true);
+      if (activeSessionIdRef.current === currentSessionId) {
+        setStreaming(true);
+      }
       abortRef.current = false;
 
       try {
@@ -728,8 +749,10 @@ export function ChatSidebar({
           }),
         );
       } finally {
-        sendingRef.current = false;
-        setStreaming(false);
+        inFlightSessionIdsRef.current.delete(currentSessionId);
+        if (activeSessionIdRef.current === currentSessionId) {
+          setStreaming(false);
+        }
       }
     },
     [
@@ -978,8 +1001,10 @@ export function ChatSidebar({
           evt.type === "run.failed" ||
           evt.type === "run.canceled"
         ) {
-          sendingRef.current = false;
-          setStreaming(false);
+          inFlightSessionIdsRef.current.delete(sessionId);
+          if (activeSessionIdRef.current === sessionId) {
+            setStreaming(false);
+          }
         }
       };
 
@@ -1017,8 +1042,10 @@ export function ChatSidebar({
         const assistantMessageId = (ack.payload as Record<string, unknown>)
           .assistantMessageId;
         if (activeRunId && typeof activeRunId === "string") {
-          sendingRef.current = true;
-          setStreaming(true);
+          inFlightSessionIdsRef.current.add(sessionId);
+          if (activeSessionIdRef.current === sessionId) {
+            setStreaming(true);
+          }
 
           resumedRunId = activeRunId;
           resumedAssistantId =
