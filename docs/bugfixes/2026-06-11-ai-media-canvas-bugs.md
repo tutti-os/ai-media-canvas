@@ -8,7 +8,7 @@
 - 修复方案: 在本地 store 删除 session 前，将该 session 下 `accepted/running` 的 agent run 更新为 `canceled` 并写入 `run.canceled` 终态事件，同时取消关联的 `queued/running/failed` 后台 job；保护 job 的 succeeded/failed 写回，避免 canceled job 被晚到 worker 覆盖。
 - 验证方式和结果: 新增 `apps/server/src/local/store.test.ts` 回归用例，验证删除 session 会取消 run/job 且 late success/failure 不会覆盖 canceled；`pnpm --filter @aimc/server test -- src/local/store.test.ts` 通过；`pnpm --filter @aimc/server typecheck` 通过。
 - 是否已修复完: 是
-- commit hash: `92c01ca`
+- commit hash: `7b7baf8`
 
 ## 2. 显示所有元素未完整适配当前窗口
 
@@ -18,7 +18,7 @@
 - 修复方案: 增加共享 `fitAllCanvasElements` helper，两个入口统一调用 `scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: 0.92, animate: true })`，明确要求 Excalidraw 按当前视口显示全部元素。
 - 验证方式和结果: 新增 `apps/web/test/canvas-bottom-bar.test.tsx`，并扩展 `apps/web/test/canvas-logo-menu.test.tsx`，覆盖两个入口的 fit 参数；`pnpm --filter @aimc/web test -- --run test/canvas-bottom-bar.test.tsx test/canvas-logo-menu.test.tsx` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 点击“显示全部”菜单后菜单关闭且无 console error。
 - 是否已修复完: 是
-- commit hash: `TBD`
+- commit hash: `a1f26cf`
 
 ## 3. 进行中会话阻塞新会话发送
 
@@ -28,7 +28,7 @@
 - 修复方案: 将发送中状态改为按 session 维度的 in-flight set；同一 session 仍防重复提交，不同 session 可并行启动 run。`streaming` UI 状态只同步当前 active session，切换/新建会话不会被其他 session 的运行状态锁住。
 - 验证方式和结果: 新增 `apps/web/test/chat-sidebar.test.tsx` 回归用例，覆盖旧 session 运行中时新 session 仍可发送；同时保留快速重复 Enter 只触发一次发送的既有保护；`pnpm --filter @aimc/web test -- --run test/chat-sidebar.test.tsx -t "allows a new session|rapid duplicate"` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 无 console error。
 - 是否已修复完: 是
-- commit hash: `TBD`
+- commit hash: `8eadc8e`
 
 ## 4. 本地模板误带上一会话画布图片
 
@@ -38,7 +38,7 @@
 - 修复方案: 仅在本地模板入口传入空 `attachmentsOverride` 和空 `mentionsOverride`，明确表示模板发送不继承当前画布选择；保留普通聊天输入自动引用选中画布图片的行为。
 - 验证方式和结果: 新增 `apps/web/test/chat-sidebar.test.tsx` 回归用例，先让画布中存在被选中的图片，再点击“分镜故事板”，断言 `startRun` 不包含 attachments；修复前该用例复现失败，修复后 `pnpm --filter @aimc/web test -- --run test/chat-sidebar.test.tsx -t "does not attach selected canvas images"` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 无 console error。
 - 是否已修复完: 是
-- commit hash: `TBD`
+- commit hash: `bde8b2e`
 
 ## 5. 上一个项目生成结果落入新项目画布
 
@@ -48,7 +48,7 @@
 - 修复方案: 在 `ChatSidebar` 中记录当前 `canvasId`，每个 run 事件只允许在其启动时的 canvas 仍为当前 canvas 时执行画布插入、同步和 fallback 转发；旧 canvas 的终态事件只用于结束该流。Canvas 页面在 `canvasId` 变化时取消所有已登记的 fallback 生成任务订阅，防止旧任务晚到。
 - 验证方式和结果: 新增 `apps/web/test/chat-sidebar.test.tsx` 回归用例，模拟旧 canvas 启动 run、切到新 canvas 后派发旧 run 的 `tool.completed`，修复前会触发 `onImageGenerated`，修复后不触发；同时覆盖当前 canvas 的正常生成 artifact 仍会插入；`pnpm --filter @aimc/web test -- --run test/chat-sidebar.test.tsx -t "ignores generated artifacts|keeps generated artifacts"` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 无 console error。
 - 是否已修复完: 是
-- commit hash: `TBD`
+- commit hash: `14213f0`
 
 ## 6. Agnes 分镜生图画布顺序错乱
 
@@ -58,7 +58,7 @@
 - 修复方案: 在 agent runtime 发起生图 job 时就为无显式 placement 的图片按工具调用顺序预留自动位置；预留序列读取一次当前 canvas，后续按顺序追加虚拟占位来计算下一张位置，job 完成后使用预留位置写入 canvas。显式 `placementX/placementY` 仍优先，Agnes/local-agent 与 server job 路径共用该逻辑。
 - 验证方式和结果: 新增 `apps/server/src/features/canvas/canvas-element-writer.test.ts` 用例，验证连续预留位置会按请求顺序排布，而不依赖图片完成后的真实写入顺序；`pnpm --filter @aimc/server test -- src/features/canvas/canvas-element-writer.test.ts` 通过（实际运行 25 个 server 测试文件均通过）；`pnpm --filter @aimc/server typecheck` 通过。
 - 是否已修复完: 是
-- commit hash: `TBD`
+- commit hash: `0f0c0a6`
 
 ## 7. 添加自定义技能弹窗高度溢出
 
@@ -68,7 +68,7 @@
 - 修复方案: 将弹窗内容改为纵向 flex 布局，设置 `max-h-[calc(100vh-6rem)]` 和 `overflow-hidden`；表单主体单独设置 `overflow-y-auto`，底部 `DialogFooter` 固定在滚动区外，保证长内容可滚动且操作按钮始终可见。
 - 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 回归用例，验证添加技能弹窗具备最大高度、外层隐藏溢出和内部滚动区；`pnpm --filter @aimc/web test -- --run test/skills-page.test.tsx -t "custom skill dialog|creates a skill"` 通过（实际运行 45 个 web 测试文件均通过）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm check:i18n` 通过；本地 `localhost:3000/skills` 打开弹窗实测在 1470x797 视口内 top=62/bottom=735，且无 console error。
 - 是否已修复完: 是
-- commit hash: `TBD`
+- commit hash: `7b24236`
 
 ## 8. 导入 Skill 未从 SKILL.md 提取名称和描述
 
@@ -78,7 +78,7 @@
 - 修复方案: 前端选择文件后解析 `SKILL.md` 的 loose YAML frontmatter、一级标题和 `## Description` 段落，在用户未手动编辑时自动预填名称/描述；服务端 `importSkill` 同步支持 frontmatter 兜底，并在 `SKILL.md` 无标题时用父目录名作为更合理的名称来源。
 - 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 导入回归，模拟 `pua/SKILL.md` 含 `name: pua` 和 `description: ...`，断言导入表单自动填入名称/描述；新增 `apps/server/src/local/store.test.ts` 回归，断言服务端导入同类文件后落库名称/描述正确；`pnpm --filter @aimc/web test -- --run test/skills-page.test.tsx -t "file import"` 通过（实际运行 45 个 web 测试文件均通过）；`pnpm --filter @aimc/server test -- src/local/store.test.ts` 通过（实际运行 25 个 server 测试文件均通过）；`pnpm --filter @aimc/web typecheck`、`pnpm --filter @aimc/server typecheck`、`pnpm check:i18n` 均通过；本地 `localhost:3000/skills` 模拟选择文件后名称为 `pua`、描述正确预填且无 console error。
 - 是否已修复完: 是
-- commit hash: `TBD`
+- commit hash: `83084b2`
 
 ## 9. BYOK Agnes 链路读取并使用 Skill 失败
 
@@ -88,7 +88,7 @@
 - 修复方案: 在 AI Media Canvas 的 local-agent wrapper 层启动 provider 前，将已启用 workspace skill 的 `SKILL.md` 和附属文件写入当前 run 目录下的 `workspace-skills/<slug>/`，并对写入路径做目录逃逸保护；local-agent prompt 中把 `/workspace-skills/...` 规范为相对 `workspace-skills/...`，让 BYOK/Agnes 的读文件与 shell 命令都基于运行目录访问同一份 skill 文件。
 - 验证方式和结果: 扩展 `apps/server/src/agent/runtime.test.ts`，在 local-agent provider mock 入口断言 `cwd/workspace-skills/canvas-director/SKILL.md` 已存在且包含 skill 内容，并断言 prompt 使用相对 `workspace-skills/canvas-director/SKILL.md` 而不是绝对 `/workspace-skills/...`；`pnpm --filter @aimc/server test -- src/agent/runtime.test.ts -t "passes enabled local workspace skills"` 通过（实际运行 25 个 server 测试文件均通过）；`pnpm --filter @aimc/server typecheck` 通过。
 - 是否已修复完: 是
-- commit hash: `TBD`
+- commit hash: `d1f6e84`
 
 ## 10. Download image 导出后菜单仍聚焦
 
@@ -98,7 +98,7 @@
 - 修复方案: 将菜单关闭动作提前到下载按钮点击的同步阶段，点击后立即向触发按钮派发 `Escape` 关闭 Excalidraw 原生菜单；导出 PNG 和下载链接创建继续异步执行，不改变导出内容与文件名逻辑。
 - 验证方式和结果: 新增 `apps/web/test/canvas-context-menu-extensions.test.tsx` 回归，模拟 `exportToBlob` 长时间 pending，点击“下载图片”后立即断言已派发 `Escape`，并验证仍按选中图片调用导出；`pnpm --filter @aimc/web exec vitest run test/canvas-context-menu-extensions.test.tsx -t download` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/canvas-context-menu-extensions.tsx apps/web/test/canvas-context-menu-extensions.test.tsx` 通过；浏览器打开 `http://localhost:3000/canvas` 无 console error。一次通过 npm 脚本误触发的 web 全量测试中，目标文件 5 个测试通过，但无关 `test/canvas-page.test.tsx` 的视频轮询用例失败，未作为本 bug 阻塞。
 - 是否已修复完: 是
-- commit hash: `TBD`
+- commit hash: `a7b9fa7`
 
 ## 11. 导入 Skill 详情右上角来源标识拥挤
 
@@ -108,7 +108,7 @@
 - 修复方案: 重构详情标题行布局：标题文本使用 `min-w-0 flex-1 break-words` 作为可换行主区域，来源胶囊使用 `shrink-0` 固定在右侧，并给标题行增加 `pr-12` 为关闭按钮预留空间，避免来源标识和关闭按钮重叠或贴得过近。
 - 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 回归，模拟导入 skill 长标题并打开详情弹窗，断言标题文本、标题行和来源胶囊具备防挤压布局类；`pnpm --filter @aimc/web exec vitest run test/skills-page.test.tsx -t "imported skill detail"` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/skills/skill-detail-dialog.tsx apps/web/test/skills-page.test.tsx` 通过；浏览器打开 `http://localhost:3000/skills` 无 console error。
 - 是否已修复完: 是
-- commit hash: `TBD`
+- commit hash: `8f7f2ff`
 
 ## 12. Skill 详情中去掉删除入口
 
@@ -118,4 +118,4 @@
 - 修复方案: 从 `SkillDetailDialog` 移除用户 skill 的删除确认状态、删除按钮、`onDelete` prop 和页面传入；保留安装/卸载主操作。顺手修正被触碰页面的 import 排序和装饰 SVG `aria-hidden`，保证静态检查通过。
 - 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 回归，模拟导入 skill 打开详情，断言不存在“删除”按钮和“确认删除?”文案，同时“卸载”按钮仍存在；`pnpm --filter @aimc/web exec vitest run test/skills-page.test.tsx -t "delete controls"` 通过；`pnpm --filter @aimc/web typecheck`、`pnpm check:i18n`、`pnpm exec biome check apps/web/src/app/(workspace)/skills/page.tsx apps/web/src/components/skills/skill-detail-dialog.tsx apps/web/test/skills-page.test.tsx` 均通过；浏览器打开 `http://localhost:3000/skills` 无 console error。
 - 是否已修复完: 是
-- commit hash: `TBD`
+- commit hash: `dd03d89`
