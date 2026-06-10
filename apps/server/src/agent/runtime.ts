@@ -28,8 +28,10 @@ import type { AuthenticatedUser, UserDataClient } from "../auth/request.js";
 import type { ServerEnv } from "../config/env.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
+  createCanvasAutoPlacementSequence,
   insertImageElement,
   insertVideoElement,
+  type Placement,
 } from "../features/canvas/canvas-element-writer.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import {
@@ -798,6 +800,39 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         const canvasId = run.canvasId;
         const sessionId = run.sessionId;
         const runId = run.runId;
+        let imagePlacementSequencePromise: Promise<{
+          reserve(size: Pick<Placement, "height" | "width">): Placement;
+        }> | null = null;
+
+        const reserveImagePlacement = async (
+          input: Parameters<SubmitImageJobFn>[0],
+        ): Promise<Placement | undefined> => {
+          if (input.placementX != null && input.placementY != null) {
+            return {
+              x: input.placementX,
+              y: input.placementY,
+              width: input.placementWidth ?? 512,
+              height: input.placementHeight ?? 512,
+            };
+          }
+          if (!canvasId) return undefined;
+
+          imagePlacementSequencePromise ??= createCanvasAutoPlacementSequence(
+            createClient(accessToken) as UserDataClient,
+            canvasId,
+          );
+
+          try {
+            const sequence = await imagePlacementSequencePromise;
+            return sequence.reserve(estimateImageDisplaySize(input));
+          } catch (error) {
+            console.warn(
+              "[submitImageJob] auto placement reservation failed:",
+              error,
+            );
+            return undefined;
+          }
+        };
 
         submitImageJob = async (input) => {
           const jobT0 = Date.now();
@@ -807,6 +842,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               extra ? JSON.stringify(extra) : "",
             );
           };
+          const reservedPlacement = await reserveImagePlacement(input);
 
           // Look up personal workspace directly — the viewer is already
           // bootstrapped from the normal auth flow, so we skip ensureViewer
@@ -951,15 +987,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   const writerClient = createClient(
                     accessToken,
                   ) as UserDataClient;
-                  const explicitPlacement =
-                    input.placementX != null && input.placementY != null
-                      ? {
-                          x: input.placementX,
-                          y: input.placementY,
-                          width: input.placementWidth ?? 512,
-                          height: input.placementHeight ?? 512,
-                        }
-                      : undefined;
 
                   const insertResult = await insertImageElement(
                     writerClient,
@@ -974,7 +1001,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                       mimeType: result.mime_type ?? "image/png",
                       title: input.title,
                     },
-                    explicitPlacement,
+                    reservedPlacement,
                   );
                   elementId = insertResult.elementId;
 
@@ -1477,6 +1504,48 @@ function isTerminalEvent(event: StreamEvent) {
     event.type === "run.completed" ||
     event.type === "run.failed"
   );
+}
+
+function estimateImageDisplaySize(
+  input: Parameters<SubmitImageJobFn>[0],
+): Pick<Placement, "height" | "width"> {
+  const ratio =
+    parseImageSizeRatio(input.size) ?? parseAspectRatio(input.aspectRatio) ?? 1;
+  const maxSize = 600;
+
+  if (ratio >= 1) {
+    return {
+      width: maxSize,
+      height: Math.round(maxSize / ratio),
+    };
+  }
+
+  return {
+    width: Math.round(maxSize * ratio),
+    height: maxSize,
+  };
+}
+
+function parseImageSizeRatio(size: string | undefined) {
+  const match = size?.match(/^(\d+)x(\d+)$/);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || height <= 0) {
+    return null;
+  }
+  return width / height;
+}
+
+function parseAspectRatio(aspectRatio: string | undefined) {
+  const match = aspectRatio?.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || height <= 0) {
+    return null;
+  }
+  return width / height;
 }
 
 function mapEventToStatus(event: StreamEvent): RuntimeRunStatus {

@@ -6,7 +6,7 @@ type CanvasClient = {
   };
 };
 
-type Placement = {
+export type Placement = {
   height: number;
   width: number;
   x: number;
@@ -137,6 +137,33 @@ export async function insertVideoElement(
   });
 
   return { elementId };
+}
+
+export async function createCanvasAutoPlacementSequence(
+  client: CanvasClient,
+  canvasId: string,
+): Promise<{ reserve(size: Pick<Placement, "height" | "width">): Placement }> {
+  const content = await readCanvasContent(client, canvasId);
+  const sourceElements = [...(content.elements ?? [])];
+  const reservedElements: CanvasElement[] = [];
+
+  return {
+    reserve(size) {
+      const display = autoPlacement(
+        [...sourceElements, ...reservedElements],
+        { x: 0, y: 0, width: size.width, height: size.height },
+        content.appState,
+      );
+      reservedElements.push({
+        isDeleted: false,
+        x: display.x,
+        y: display.y,
+        width: display.width,
+        height: display.height,
+      });
+      return display;
+    },
+  };
 }
 
 async function readCanvasContent(

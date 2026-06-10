@@ -49,3 +49,13 @@
 - 验证方式和结果: 新增 `apps/web/test/chat-sidebar.test.tsx` 回归用例，模拟旧 canvas 启动 run、切到新 canvas 后派发旧 run 的 `tool.completed`，修复前会触发 `onImageGenerated`，修复后不触发；同时覆盖当前 canvas 的正常生成 artifact 仍会插入；`pnpm --filter @aimc/web test -- --run test/chat-sidebar.test.tsx -t "ignores generated artifacts|keeps generated artifacts"` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 无 console error。
 - 是否已修复完: 是
 - commit hash: `TBD`
+
+## 6. Agnes 分镜生图画布顺序错乱
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/Ddrpr0cubeJt3ZcsRvzc5hj2nwd
+- 真实 record id: `recvm88hzesMTd`
+- Bug 原因: Agnes/local-agent 路径会通过 `generate_image` 提交多个后台生图 job，后端在每个 job 成功后才读取当前 canvas 并自动计算插入位置；多个分镜图并发完成时，画布插入顺序跟 job 完成顺序绑定，而不是跟工具调用/分镜创建顺序绑定，录屏缩略图中聊天先生成 `Storyboard Shot 1 - Space Launch Scene`，画布左侧却先出现另一张分镜图。
+- 修复方案: 在 agent runtime 发起生图 job 时就为无显式 placement 的图片按工具调用顺序预留自动位置；预留序列读取一次当前 canvas，后续按顺序追加虚拟占位来计算下一张位置，job 完成后使用预留位置写入 canvas。显式 `placementX/placementY` 仍优先，Agnes/local-agent 与 server job 路径共用该逻辑。
+- 验证方式和结果: 新增 `apps/server/src/features/canvas/canvas-element-writer.test.ts` 用例，验证连续预留位置会按请求顺序排布，而不依赖图片完成后的真实写入顺序；`pnpm --filter @aimc/server test -- src/features/canvas/canvas-element-writer.test.ts` 通过（实际运行 25 个 server 测试文件均通过）；`pnpm --filter @aimc/server typecheck` 通过。
+- 是否已修复完: 是
+- commit hash: `TBD`
