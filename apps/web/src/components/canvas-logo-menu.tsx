@@ -33,6 +33,7 @@ import {
   scaleToFit,
 } from "@/lib/canvas-elements";
 import { withNormalizedCanvasElementIndices } from "@/lib/canvas-normalize";
+import { fitAllCanvasElements } from "@/lib/canvas-view";
 import { deleteProject } from "@/lib/server-api";
 
 type DuplicableCanvasElement = {
@@ -274,7 +275,9 @@ export function CanvasLogoMenu({
 
           {/* Group 5 — View controls */}
           <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => excalidrawApi?.scrollToContent()}>
+            <DropdownMenuItem
+              onClick={() => fitAllCanvasElements(excalidrawApi)}
+            >
               <Maximize2 className="size-4" />
               {t("logoMenu.fitAll")}
             </DropdownMenuItem>

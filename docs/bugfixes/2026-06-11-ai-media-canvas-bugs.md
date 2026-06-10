@@ -9,3 +9,13 @@
 - 验证方式和结果: 新增 `apps/server/src/local/store.test.ts` 回归用例，验证删除 session 会取消 run/job 且 late success/failure 不会覆盖 canceled；`pnpm --filter @aimc/server test -- src/local/store.test.ts` 通过；`pnpm --filter @aimc/server typecheck` 通过。
 - 是否已修复完: 是
 - commit hash: `92c01ca`
+
+## 2. 显示所有元素未完整适配当前窗口
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/XQ5Pr0WKneuoJDcymRhcS8WInAd
+- 真实 record id: `recvm7ZDepRVMG`
+- Bug 原因: 底部缩放菜单和 Logo 菜单的“显示全部/显示画布所有元素”仅调用 `scrollToContent()` 空参数，Excalidraw 可能只滚动到内容附近，不会在 100% 缩放或大画布内容时强制重新缩放到当前 viewport。
+- 修复方案: 增加共享 `fitAllCanvasElements` helper，两个入口统一调用 `scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: 0.92, animate: true })`，明确要求 Excalidraw 按当前视口显示全部元素。
+- 验证方式和结果: 新增 `apps/web/test/canvas-bottom-bar.test.tsx`，并扩展 `apps/web/test/canvas-logo-menu.test.tsx`，覆盖两个入口的 fit 参数；`pnpm --filter @aimc/web test -- --run test/canvas-bottom-bar.test.tsx test/canvas-logo-menu.test.tsx` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 点击“显示全部”菜单后菜单关闭且无 console error。
+- 是否已修复完: 是
+- commit hash: `TBD`

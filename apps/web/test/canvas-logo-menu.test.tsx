@@ -124,6 +124,29 @@ describe("CanvasLogoMenu", () => {
     ).toBeInTheDocument();
   });
 
+  it("fits every canvas element into the current viewport", async () => {
+    await i18n.changeLanguage("en");
+    const scrollToContent = vi.fn();
+
+    render(
+      <CanvasLogoMenu
+        projectId="project-1"
+        canvasId="canvas-1"
+        excalidrawApi={{ scrollToContent }}
+      />,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Show all canvas elements" }),
+    );
+
+    expect(scrollToContent).toHaveBeenCalledWith(undefined, {
+      animate: true,
+      fitToViewport: true,
+      viewportZoomFactor: 0.92,
+    });
+  });
+
   it("keeps the menu action in confirm mode before archiving the project", async () => {
     render(
       <CanvasLogoMenu
