@@ -9,6 +9,23 @@
   },
   "closeFiles": "Close files panel",
   "closeLayers": "Close layers panel",
+  "contextMenu": {
+    "downloadImage": "Download image",
+    "native": {
+      "canvasAndShapeProperties": "Canvas & Shape properties",
+      "copyImage": "Copy image",
+      "copyLinkToObject": "Copy link to object",
+      "cropImage": "Crop image",
+      "duplicate": "Duplicate",
+      "paste": "Paste",
+      "selectAll": "Select all",
+      "snapToObjects": "Snap to objects",
+      "toggleGrid": "Toggle grid",
+      "viewMode": "View mode",
+      "wrapSelectionInFrame": "Wrap selection in frame",
+      "zenMode": "Zen mode"
+    }
+  },
   "empty": "Type an idea to start creating",
   "files": {
     "download": "Download {{name}}",

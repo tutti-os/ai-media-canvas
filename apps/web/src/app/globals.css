@@ -411,17 +411,11 @@
 .excalidraw .context-menu li[data-testid="flipVertical"],
 .excalidraw .context-menu li[data-testid="hyperlink"],
 .excalidraw .context-menu li[data-testid="copyElementLink"],
-.excalidraw .context-menu li[data-testid="toggleElementLock"] {
+.excalidraw .context-menu li[data-testid="toggleElementLock"],
+.excalidraw .context-menu li[data-testid="zenMode"],
+.excalidraw .context-menu li[data-testid="viewMode"],
+.excalidraw .context-menu li[data-testid="stats"] {
   display: none !important;
-}
-
-.excalidraw .context-menu li[data-testid="copyAsPng"] .context-menu-item__label {
-  font-size: 0;
-}
-
-.excalidraw .context-menu li[data-testid="copyAsPng"] .context-menu-item__label::after {
-  content: "Copy image";
-  font-size: 1rem;
 }
 
 .excalidraw .context-menu {

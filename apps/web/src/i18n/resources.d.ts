@@ -19,6 +19,23 @@ export default interface Resources {
     },
     "closeFiles": "关闭生成文件面板",
     "closeLayers": "关闭图层面板",
+    "contextMenu": {
+      "downloadImage": "下载图片",
+      "native": {
+        "canvasAndShapeProperties": "画布和形状属性",
+        "copyImage": "复制图片",
+        "copyLinkToObject": "复制对象链接",
+        "cropImage": "裁剪图片",
+        "duplicate": "复制",
+        "paste": "粘贴",
+        "selectAll": "全选",
+        "snapToObjects": "吸附到对象",
+        "toggleGrid": "显示/隐藏网格",
+        "viewMode": "视图模式",
+        "wrapSelectionInFrame": "用画框包裹选区",
+        "zenMode": "禅模式"
+      }
+    },
     "empty": "输入你的想法开始创作",
     "files": {
       "download": "下载 {{name}}",
