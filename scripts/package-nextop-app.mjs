@@ -198,13 +198,13 @@ const CLI_COMMANDS = [
     path: ["generation", "image"],
     summary: "Queue image generation",
     description:
-      "Queue an image generation job. Use models image to inspect available model ids, and jobs get or jobs list to monitor status.",
+      "Queue an image generation job. Use aimc models image to inspect available model ids first, pass one with --model, and use jobs get or jobs list to monitor status.",
     properties: {
       prompt: { type: "string", description: "Image prompt." },
       model: {
         type: "string",
         description:
-          "Optional image model id from models image. If omitted, the first currently registered image model is used.",
+          "Required image model id from aimc models image, for example agnes-image/agnes-image-2.1-flash.",
       },
       "project-id": { type: "string", description: "Optional project id." },
       "canvas-id": { type: "string", description: "Optional canvas id." },
@@ -221,17 +221,20 @@ const CLI_COMMANDS = [
         description: "Optional comma-separated input image URLs.",
       },
     },
-    required: ["prompt"],
+    required: ["prompt", "model"],
     timeoutMs: 60000,
   },
   {
     path: ["generation", "video"],
     summary: "Queue video generation",
     description:
-      "Queue a video generation job. Use jobs get or jobs list to monitor status.",
+      "Queue a video generation job. Use aimc models video to inspect available model ids first, pass one with --model, and use jobs get or jobs list to monitor status.",
     properties: {
       prompt: { type: "string", description: "Video prompt." },
-      model: { type: "string", description: "Optional video model id." },
+      model: {
+        type: "string",
+        description: "Required video model id from aimc models video.",
+      },
       "project-id": { type: "string", description: "Optional project id." },
       "canvas-id": { type: "string", description: "Optional canvas id." },
       "session-id": { type: "string", description: "Optional session id." },
@@ -259,7 +262,7 @@ const CLI_COMMANDS = [
         description: "Optional audio generation flag.",
       },
     },
-    required: ["prompt"],
+    required: ["prompt", "model"],
     timeoutMs: 60000,
   },
   {

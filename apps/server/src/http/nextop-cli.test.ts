@@ -93,6 +93,84 @@ describe("registerNextopCliRoutes", () => {
     });
   });
 
+  it("requires generation image commands to pass a model", async () => {
+    const jobOperations = {
+      createImageJob: vi.fn(),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/nextop/cli/generation/image",
+      payload: {
+        prompt: "A launch poster",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(jobOperations.createImageJob).not.toHaveBeenCalled();
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "application_error",
+        message: "Invalid command input.",
+      },
+    });
+  });
+
+  it("requires generation video commands to pass a model", async () => {
+    const jobOperations = {
+      createVideoJob: vi.fn(),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/nextop/cli/generation/video",
+      payload: {
+        prompt: "A launch video",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(jobOperations.createVideoJob).not.toHaveBeenCalled();
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "application_error",
+        message: "Invalid command input.",
+      },
+    });
+  });
+
+  it("forwards explicit generation models to job operations", async () => {
+    const jobOperations = {
+      createImageJob: vi.fn(async (input) => ({
+        job: {
+          id: "job-1",
+          payload: input,
+          status: "queued",
+        },
+      })),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/nextop/cli/generation/image",
+      payload: {
+        prompt: "A launch poster",
+        model: "agnes-image/agnes-image-2.1-flash",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(jobOperations.createImageJob).toHaveBeenCalledWith({
+      prompt: "A launch poster",
+      model: "agnes-image/agnes-image-2.1-flash",
+    });
+  });
+
   it("returns CLI errors for missing required inputs", async () => {
     const app = buildTestApp();
 

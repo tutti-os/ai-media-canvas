@@ -72,7 +72,7 @@ const jobListCliBodySchema = z.object({
 });
 const generationImageCliBodySchema = z.object({
   prompt: z.string().min(1),
-  model: z.string().min(1).optional(),
+  model: z.string().min(1),
   "project-id": z.string().min(1).optional(),
   "canvas-id": z.string().min(1).optional(),
   "session-id": z.string().min(1).optional(),
@@ -84,7 +84,7 @@ const generationImageCliBodySchema = z.object({
 });
 const generationVideoCliBodySchema = z.object({
   prompt: z.string().min(1),
-  model: z.string().min(1).optional(),
+  model: z.string().min(1),
   "project-id": z.string().min(1).optional(),
   "canvas-id": z.string().min(1).optional(),
   "session-id": z.string().min(1).optional(),
@@ -257,7 +257,7 @@ export async function registerNextopCliRoutes(
       return options.jobOperations.createImageJob(
         createImageJobRequestSchema.parse({
           prompt: payload.prompt,
-          ...(payload.model ? { model: payload.model } : {}),
+          model: payload.model,
           ...(payload["project-id"]
             ? { project_id: payload["project-id"] }
             : {}),
@@ -286,7 +286,7 @@ export async function registerNextopCliRoutes(
       return options.jobOperations.createVideoJob(
         createVideoJobRequestSchema.parse({
           prompt: payload.prompt,
-          ...(payload.model ? { model: payload.model } : {}),
+          model: payload.model,
           ...(payload["project-id"]
             ? { project_id: payload["project-id"] }
             : {}),
