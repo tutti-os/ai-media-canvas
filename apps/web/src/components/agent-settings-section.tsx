@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   InstallableAgentProviderId,
   ModelInfo,
+  NextopManagedConnection,
   WorkspaceSettings,
 } from "@aimc/shared";
 
@@ -14,10 +15,22 @@ import {
   type AgentModelSourceTab,
   formatLocalCliProviderLabel,
   getAgentModelSourceTab,
+  getModelSourceTab,
   isApiProvider,
   isLocalCliProvider,
 } from "@/lib/agent-model-groups";
-import { fetchModels, installAgentProvider } from "@/lib/server-api";
+import {
+  connectNextopManagedModels,
+  disconnectNextopManagedModels,
+  fetchModels,
+  fetchNextopManagedConnection,
+  installAgentProvider,
+} from "@/lib/server-api";
+import {
+  hasNextopManagedCredentialBridge,
+  openNextopManagedModelSettings,
+  requestNextopManagedGrant,
+} from "@/lib/nextop-managed-credentials";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { LocalCliProviderIcon } from "./local-cli-provider-icon";
 import { Button } from "./ui/button";
@@ -35,6 +48,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
 interface AgentSettingsSectionProps {
+  initialSourceTab?: AgentModelSourceTab | undefined;
   settings: WorkspaceSettings;
   onSave: (settings: WorkspaceSettings) => Promise<void>;
   surface?: "page" | "dialog";
@@ -337,6 +351,11 @@ function applyProviderModelUpdate(
     defaultModel: allConfiguredModels.includes(current.defaultModel)
       ? current.defaultModel
       : getFirstConfiguredModel(providerModels),
+    defaultModelSource: allConfiguredModels.includes(current.defaultModel)
+      ? current.defaultModelSource
+      : getFirstConfiguredModel(providerModels)
+        ? "api-provider"
+        : undefined,
   };
 }
 
@@ -384,6 +403,13 @@ function withApiProviderBaseUrl(
   return settings;
 }
 
+function inferDefaultModelSource(settings: WorkspaceSettings) {
+  return settings.defaultModel
+    ? (settings.defaultModelSource ??
+        getAgentModelSourceTab(settings.defaultModel))
+    : undefined;
+}
+
 function applyApiProviderPreset(
   current: WorkspaceSettings,
   provider: AgentProtocolId,
@@ -408,6 +434,7 @@ function applyApiProviderPreset(
       ...current,
       providerModels,
       defaultModel,
+      defaultModelSource: defaultModel ? "api-provider" : undefined,
     },
     provider,
     preset?.baseUrl ?? "",
@@ -872,6 +899,7 @@ function LocalCliProviderModelPicker({
 }
 
 export function AgentSettingsSection({
+  initialSourceTab,
   settings: initialSettings,
   onSave,
   surface = "page",
@@ -879,6 +907,7 @@ export function AgentSettingsSection({
   const { t } = useAppTranslation("settings");
   const [settings, setSettings] = useState<WorkspaceSettings>({
     ...initialSettings,
+    defaultModelSource: inferDefaultModelSource(initialSettings),
     providerModels: {
       openai: initialSettings.providerModels?.openai ?? [],
       anthropic: initialSettings.providerModels?.anthropic ?? [],
@@ -888,6 +917,14 @@ export function AgentSettingsSection({
     },
   });
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [nextopManagedConnection, setNextopManagedConnection] =
+    useState<NextopManagedConnection>({
+      connected: false,
+      providers: [],
+      models: [],
+    });
+  const [connectingNextopManaged, setConnectingNextopManaged] = useState(false);
+  const [nextopBridgeAvailable, setNextopBridgeAvailable] = useState(false);
   const [activeProtocol, setActiveProtocol] = useState<AgentProtocolId>(() =>
     getInitialProtocol(initialSettings),
   );
@@ -895,7 +932,10 @@ export function AgentSettingsSection({
     getModelProvider(initialSettings.defaultModel),
   );
   const [activeSourceTab, setActiveSourceTab] = useState<AgentModelSourceTab>(
-    () => getAgentModelSourceTab(initialSettings.defaultModel),
+    () =>
+      initialSourceTab ??
+      inferDefaultModelSource(initialSettings) ??
+      getAgentModelSourceTab(initialSettings.defaultModel),
   );
   const [saving, setSaving] = useState(false);
   const [installingLocalProvider, setInstallingLocalProvider] =
@@ -908,6 +948,7 @@ export function AgentSettingsSection({
   useEffect(() => {
     setSettings({
       ...initialSettings,
+      defaultModelSource: inferDefaultModelSource(initialSettings),
       providerModels: {
         openai: initialSettings.providerModels?.openai ?? [],
         anthropic: initialSettings.providerModels?.anthropic ?? [],
@@ -918,10 +959,19 @@ export function AgentSettingsSection({
     });
   }, [initialSettings]);
 
+  useEffect(() => {
+    if (!initialSourceTab) return;
+    setActiveSourceTab(initialSourceTab);
+  }, [initialSourceTab]);
+
   const refreshAvailableModels = useCallback(async () => {
     try {
-      const response = await fetchModels();
+      const [response, connectionResponse] = await Promise.all([
+        fetchModels(),
+        fetchNextopManagedConnection(),
+      ]);
       setAvailableModels(response.models);
+      setNextopManagedConnection(connectionResponse.connection);
     } catch {
       setAvailableModels([]);
     }
@@ -930,6 +980,10 @@ export function AgentSettingsSection({
   useEffect(() => {
     void refreshAvailableModels();
   }, [refreshAvailableModels]);
+
+  useEffect(() => {
+    setNextopBridgeAvailable(hasNextopManagedCredentialBridge());
+  }, []);
 
   useEffect(() => {
     if (availableModels.length === 0) return;
@@ -945,7 +999,17 @@ export function AgentSettingsSection({
   const normalizedCurrent = JSON.stringify(settings);
   const hasChanges = normalizedInitial !== normalizedCurrent;
   const localCliModels = useMemo(
-    () => availableModels.filter((model) => isLocalCliProvider(model.provider)),
+    () =>
+      availableModels.filter(
+        (model) => getModelSourceTab(model) === "local-agent",
+      ),
+    [availableModels],
+  );
+  const nextopManagedModels = useMemo(
+    () =>
+      availableModels.filter(
+        (model) => getModelSourceTab(model) === "nextop-managed",
+      ),
     [availableModels],
   );
   const localCliProviderGroups = useMemo(
@@ -994,10 +1058,19 @@ export function AgentSettingsSection({
   const selectedModelName = useMemo(
     () =>
       isApiProvider(settings.defaultModel.split(":")[0] ?? "")
+        && inferDefaultModelSource(settings) === "api-provider"
         ? (availableModels.find((model) => model.id === settings.defaultModel)
             ?.name ?? settings.defaultModel)
         : "",
-    [availableModels, settings.defaultModel],
+    [availableModels, settings],
+  );
+  const selectedNextopManagedModelName = useMemo(
+    () =>
+      inferDefaultModelSource(settings) === "nextop-managed"
+        ? (nextopManagedModels.find((model) => model.id === settings.defaultModel)
+            ?.name ?? "")
+        : "",
+    [nextopManagedModels, settings],
   );
 
   function updateField<Key extends keyof WorkspaceSettings>(
@@ -1005,6 +1078,17 @@ export function AgentSettingsSection({
     value: WorkspaceSettings[Key],
   ) {
     setSettings((current) => ({ ...current, [key]: value }));
+  }
+
+  function selectDefaultModel(
+    modelId: string,
+    source: NonNullable<WorkspaceSettings["defaultModelSource"]>,
+  ) {
+    setSettings((current) => ({
+      ...current,
+      defaultModel: modelId,
+      defaultModelSource: modelId ? source : undefined,
+    }));
   }
 
   async function handleInstallLocalProvider(
@@ -1029,6 +1113,76 @@ export function AgentSettingsSection({
       });
     } finally {
       setInstallingLocalProvider(null);
+    }
+  }
+
+  async function handleConnectNextopManaged() {
+    setFeedback(null);
+    setConnectingNextopManaged(true);
+    try {
+      const grant = await requestNextopManagedGrant();
+      const response = await connectNextopManagedModels(grant);
+      setNextopManagedConnection(response.connection);
+      await refreshAvailableModels();
+      setActiveSourceTab("nextop-managed");
+      setFeedback({
+        type: "success",
+        message: t("agentSettings.nextopManaged.feedback.connected"),
+      });
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("agentSettings.nextopManaged.feedback.connectFailed"),
+      });
+    } finally {
+      setConnectingNextopManaged(false);
+    }
+  }
+
+  async function handleDisconnectNextopManaged() {
+    setFeedback(null);
+    setConnectingNextopManaged(true);
+    try {
+      const response = await disconnectNextopManagedModels();
+      setNextopManagedConnection(response.connection);
+      await refreshAvailableModels();
+      if (
+        nextopManagedModels.some((model) => model.id === settings.defaultModel)
+      ) {
+        updateField("defaultModel", "");
+        updateField("defaultModelSource", undefined);
+      }
+      setFeedback({
+        type: "success",
+        message: t("agentSettings.nextopManaged.feedback.disconnected"),
+      });
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("agentSettings.nextopManaged.feedback.disconnectFailed"),
+      });
+    } finally {
+      setConnectingNextopManaged(false);
+    }
+  }
+
+  async function handleOpenNextopManagedSettings() {
+    try {
+      await openNextopManagedModelSettings();
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("agentSettings.nextopManaged.feedback.openSettingsFailed"),
+      });
     }
   }
 
@@ -1077,15 +1231,23 @@ export function AgentSettingsSection({
               : "space-y-5 pb-24"
           }
         >
-          <div className="grid grid-cols-2 rounded-xl border bg-muted/30 p-1">
+          <div className="grid grid-cols-3 rounded-xl border bg-muted/30 p-1">
             {[
               {
-                id: "local-cli" as const,
+                id: "local-agent" as const,
                 label: t("agentSettings.source.localAgent"),
                 description: t("agentSettings.source.detected", {
                   cliCount: localCliProviderCount,
                 }),
                 icon: Terminal,
+              },
+              {
+                id: "nextop-managed" as const,
+                label: t("agentSettings.source.nextopManaged"),
+                description: nextopManagedConnection.connected
+                  ? t("agentSettings.nextopManaged.connected")
+                  : t("agentSettings.nextopManaged.notConnected"),
+                icon: Cloud,
               },
               {
                 id: "api-provider" as const,
@@ -1121,17 +1283,124 @@ export function AgentSettingsSection({
             })}
           </div>
 
-          {activeSourceTab === "local-cli" ? (
+          {activeSourceTab === "local-agent" ? (
             <LocalCliProviderModelPicker
               providerGroups={localCliProviderGroups}
               activeProvider={activeLocalProvider}
               selectedModel={settings.defaultModel}
               onProviderChange={setActiveLocalProvider}
-              onSelect={(modelId) => updateField("defaultModel", modelId)}
+              onSelect={(modelId) => selectDefaultModel(modelId, "local-agent")}
               onRescan={refreshAvailableModels}
               onInstallProvider={handleInstallLocalProvider}
               installingProvider={installingLocalProvider}
             />
+          ) : null}
+
+          {activeSourceTab === "nextop-managed" ? (
+            <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold">
+                    {t("agentSettings.nextopManaged.title")}
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {t("agentSettings.nextopManaged.description")}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleOpenNextopManagedSettings}
+                  >
+                    {t("agentSettings.nextopManaged.manageInNextop")}
+                  </Button>
+                  {nextopManagedConnection.connected ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={connectingNextopManaged}
+                      onClick={handleDisconnectNextopManaged}
+                    >
+                      {t("agentSettings.nextopManaged.disconnect")}
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    disabled={
+                      connectingNextopManaged ||
+                      !nextopBridgeAvailable
+                    }
+                    onClick={handleConnectNextopManaged}
+                  >
+                    {connectingNextopManaged ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : null}
+                    {nextopManagedConnection.connected
+                      ? t("agentSettings.nextopManaged.reauthorize")
+                      : t("agentSettings.nextopManaged.connect")}
+                  </Button>
+                </div>
+              </div>
+
+              {!nextopBridgeAvailable ? (
+                <div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
+                  {t("agentSettings.nextopManaged.bridgeUnavailable")}
+                </div>
+              ) : null}
+
+              <div className="rounded-xl border bg-muted/20 p-4">
+                <p className="text-sm font-medium text-foreground">
+                  {t("agentSettings.nextopManaged.defaultModel")}
+                </p>
+                <p className="mt-2 truncate text-sm text-foreground">
+                  {selectedNextopManagedModelName ||
+                    t("agentSettings.nextopManaged.noModelSelected")}
+                </p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {selectedNextopManagedModelName
+                    ? settings.defaultModel
+                    : t("agentSettings.nextopManaged.chooseModel")}
+                </p>
+              </div>
+
+              {nextopManagedModels.length > 0 ? (
+                <div className="space-y-2">
+                  {nextopManagedModels.map((model) => (
+                    <button
+                      key={model.id}
+                      type="button"
+                      onClick={() =>
+                        selectDefaultModel(model.id, "nextop-managed")
+                      }
+                      className={`flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
+                        settings.defaultModel === model.id
+                          ? "border-accent bg-accent/10"
+                          : "border-border hover:border-accent/40"
+                      }`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {model.name}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {model.id}
+                        </span>
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {model.provider}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border bg-muted/20 p-5 text-sm text-muted-foreground">
+                  {nextopManagedConnection.connected
+                    ? t("agentSettings.nextopManaged.emptyModels")
+                    : t("agentSettings.nextopManaged.connectFirst")}
+                </div>
+              )}
+            </section>
           ) : null}
 
           {activeSourceTab === "api-provider" ? (
@@ -1192,7 +1461,7 @@ export function AgentSettingsSection({
                           <DropdownMenuRadioGroup
                             value={settings.defaultModel}
                             onValueChange={(value) =>
-                              updateField("defaultModel", value as string)
+                              selectDefaultModel(value as string, "api-provider")
                             }
                           >
                             {modelPickerGroups.map((protocol, groupIndex) => (

@@ -83,6 +83,7 @@ describe("registerModelRoutes", () => {
       id: "agnes:agnes-2.0-flash",
       name: "Agnes 2.0 Flash",
       provider: "agnes",
+      source: "api-provider",
     });
   });
 
@@ -138,6 +139,7 @@ describe("registerModelRoutes", () => {
       id: "anthropic:claude-sonnet-4-5",
       name: "Claude Sonnet 4.5",
       provider: "anthropic",
+      source: "api-provider",
     });
   });
 
@@ -185,11 +187,13 @@ describe("registerModelRoutes", () => {
           id: "openai:deepseek-chat",
           name: "deepseek-chat",
           provider: "openai",
+          source: "api-provider",
         },
         {
           id: "openai:qwen-plus",
           name: "qwen-plus",
           provider: "openai",
+          source: "api-provider",
         },
       ]),
     );
@@ -238,11 +242,13 @@ describe("registerModelRoutes", () => {
         id: "openai:gpt-5.4",
         name: "gpt-5.4",
         provider: "openai",
+        source: "api-provider",
       },
       {
         id: "openai:gpt-5.3-codex",
         name: "gpt-5.3-codex",
         provider: "openai",
+        source: "api-provider",
       },
     ]);
   });
@@ -317,26 +323,31 @@ describe("registerModelRoutes", () => {
           id: "codex:default",
           name: "Default (CLI config)",
           provider: "codex",
+          source: "local-agent",
         },
         {
           id: "codex:gpt-live",
           name: "gpt-live",
           provider: "codex",
+          source: "local-agent",
         },
         {
           id: "claude:sonnet",
           name: "Sonnet (alias)",
           provider: "claude",
+          source: "local-agent",
         },
         {
           id: "claude:opus",
           name: "Scoped Opus",
           provider: "claude",
+          source: "local-agent",
         },
         {
           id: "hermes:openai-codex:gpt-5.4",
           name: "Hermes GPT",
           provider: "hermes",
+          source: "local-agent",
         },
       ]),
     );

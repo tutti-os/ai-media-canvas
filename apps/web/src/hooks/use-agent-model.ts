@@ -1,10 +1,18 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
+import type { AgentModelSource } from "@aimc/shared";
 
 const STORAGE_KEY = "aimc:agent-model";
+const SOURCE_STORAGE_KEY = "aimc:agent-model-source";
 
 type AgentModel = string | null; // null = let AI Media Canvas pick a sensible local default
+type AgentModelSelection = {
+  model: AgentModel;
+  source: AgentModelSource | null;
+};
+
+const EMPTY_SELECTION: AgentModelSelection = { model: null, source: null };
 
 // Listeners for cross-component reactivity
 const listeners = new Set<() => void>();
@@ -14,23 +22,37 @@ function emitChange() {
 
 // Cache parsed result -- useSyncExternalStore requires stable references
 let cachedRaw: string | null | undefined;
-let cachedModel: AgentModel = null;
+let cachedSourceRaw: string | null | undefined;
+let cachedSelection: AgentModelSelection = EMPTY_SELECTION;
 
-function getSnapshot(): AgentModel {
+function normalizeSource(value: string | null): AgentModelSource | null {
+  return value === "local-agent" ||
+    value === "nextop-managed" ||
+    value === "api-provider"
+    ? value
+    : null;
+}
+
+function getSnapshot(): AgentModelSelection {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw !== cachedRaw) {
+    const sourceRaw = localStorage.getItem(SOURCE_STORAGE_KEY);
+    if (raw !== cachedRaw || sourceRaw !== cachedSourceRaw) {
       cachedRaw = raw;
-      cachedModel = raw || null;
+      cachedSourceRaw = sourceRaw;
+      cachedSelection = {
+        model: raw || null,
+        source: raw ? normalizeSource(sourceRaw) : null,
+      };
     }
-    return cachedModel;
+    return cachedSelection;
   } catch {
-    return null;
+    return EMPTY_SELECTION;
   }
 }
 
-function getServerSnapshot(): AgentModel {
-  return null;
+function getServerSnapshot(): AgentModelSelection {
+  return EMPTY_SELECTION;
 }
 
 function subscribe(callback: () => void): () => void {
@@ -39,16 +61,26 @@ function subscribe(callback: () => void): () => void {
 }
 
 export function useAgentModel() {
-  const model = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const selection = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
 
-  const setModel = useCallback((next: AgentModel) => {
+  const setModel = useCallback((next: AgentModel, source?: AgentModelSource) => {
     if (next) {
       localStorage.setItem(STORAGE_KEY, next);
+      if (source) {
+        localStorage.setItem(SOURCE_STORAGE_KEY, source);
+      } else {
+        localStorage.removeItem(SOURCE_STORAGE_KEY);
+      }
     } else {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(SOURCE_STORAGE_KEY);
     }
     emitChange();
   }, []);
 
-  return { model, setModel };
+  return { model: selection.model, modelSource: selection.source, setModel };
 }

@@ -25,6 +25,9 @@ import type {
   ChatMessageCreateRequest,
   ChatSessionSummary,
   ImageGenerationPayload,
+  NextopManagedConnection,
+  NextopManagedModel,
+  NextopManagedProviderId,
   ProjectCreateRequest,
   ProjectSummary,
   ProjectUpdateRequest,
@@ -51,6 +54,7 @@ const DEFAULT_DISPLAY_NAME = "Local User";
 const DEFAULT_STALE_RUNNING_JOB_MS = 35 * 60 * 1_000;
 const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   defaultModel: "",
+  defaultModelSource: undefined,
   providerModels: {
     openai: [],
     anthropic: [],
@@ -73,6 +77,11 @@ const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   volcesApiKey: "",
   volcesBaseUrl: "",
 };
+const EMPTY_NEXTOP_MANAGED_CONNECTION: NextopManagedConnection = {
+  connected: false,
+  providers: [],
+  models: [],
+};
 
 function normalizeProviderModelsForStore(
   providerModels: Partial<WorkspaceSettings["providerModels"]> | undefined,
@@ -85,6 +94,82 @@ function normalizeProviderModelsForStore(
     agnes: Array.isArray(providerModels?.agnes) ? providerModels.agnes : [],
     google: Array.isArray(providerModels?.google) ? providerModels.google : [],
     vertex: Array.isArray(providerModels?.vertex) ? providerModels.vertex : [],
+  };
+}
+
+function normalizeAgentModelSourceForStore(
+  source: string | undefined,
+): WorkspaceSettings["defaultModelSource"] | undefined {
+  return source === "local-agent" ||
+    source === "nextop-managed" ||
+    source === "api-provider"
+    ? source
+    : undefined;
+}
+
+function normalizeNextopManagedProviders(
+  providers: readonly string[] | undefined,
+): NextopManagedProviderId[] {
+  const supported = new Set(["agnes", "openai", "anthropic"]);
+  const seen = new Set<string>();
+  const normalized: NextopManagedProviderId[] = [];
+
+  for (const provider of providers ?? []) {
+    const value = provider.trim();
+    if (!supported.has(value) || seen.has(value)) continue;
+    seen.add(value);
+    normalized.push(value as NextopManagedProviderId);
+  }
+
+  return normalized;
+}
+
+function normalizeNextopManagedModels(
+  models: readonly NextopManagedModel[] | undefined,
+): NextopManagedModel[] {
+  const seen = new Set<string>();
+  const normalized: NextopManagedModel[] = [];
+
+  for (const model of models ?? []) {
+    const provider = model.provider.trim();
+    const id = model.id.trim();
+    const name = model.name.trim() || id;
+    if (!id) continue;
+    const [normalizedProvider] = normalizeNextopManagedProviders([provider]);
+    if (!normalizedProvider) continue;
+    const modelId = id.includes(":") ? id : `${normalizedProvider}:${id}`;
+    if (seen.has(modelId)) continue;
+    seen.add(modelId);
+    normalized.push({
+      id: modelId,
+      name,
+      provider: normalizedProvider,
+    });
+  }
+
+  return normalized;
+}
+
+function normalizeNextopManagedConnection(
+  connection: NextopManagedConnection,
+): NextopManagedConnection {
+  if (!connection.connected || !connection.grantRef?.trim()) {
+    return { ...EMPTY_NEXTOP_MANAGED_CONNECTION };
+  }
+
+  const models = normalizeNextopManagedModels(connection.models);
+  const providers = normalizeNextopManagedProviders(
+    connection.providers.length > 0
+      ? connection.providers
+      : models.map((model) => model.provider),
+  );
+
+  return {
+    connected: true,
+    grantRef: connection.grantRef.trim(),
+    ...(connection.expiresAt ? { expiresAt: connection.expiresAt } : {}),
+    providers,
+    models,
   };
 }
 
@@ -231,6 +316,7 @@ export function createLocalStore(options: {
     CREATE TABLE IF NOT EXISTS workspace_settings (
       workspace_id TEXT PRIMARY KEY,
       default_model TEXT NOT NULL DEFAULT '',
+      default_model_source TEXT,
       provider_models_json TEXT NOT NULL DEFAULT '{}',
       openai_api_key TEXT NOT NULL DEFAULT '',
       openai_api_base TEXT NOT NULL DEFAULT '',
@@ -246,6 +332,14 @@ export function createLocalStore(options: {
       replicate_api_token TEXT NOT NULL DEFAULT '',
       volces_api_key TEXT NOT NULL DEFAULT '',
       volces_base_url TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS nextop_managed_model_connection (
+      workspace_id TEXT PRIMARY KEY,
+      grant_ref TEXT NOT NULL,
+      expires_at TEXT,
+      providers_json TEXT NOT NULL DEFAULT '[]',
+      models_json TEXT NOT NULL DEFAULT '[]',
+      updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -449,6 +543,7 @@ export function createLocalStore(options: {
         INSERT OR IGNORE INTO workspace_settings (
           workspace_id,
           default_model,
+          default_model_source,
           provider_models_json,
           openai_api_key,
           openai_api_base,
@@ -464,7 +559,7 @@ export function createLocalStore(options: {
           replicate_api_token,
           volces_api_key,
           volces_base_url
-        ) VALUES (?, '', '{}', '', '', '', '', '', '', '', '', '', '', '', '', '', '')
+        ) VALUES (?, '', NULL, '{}', '', '', '', '', '', '', '', '', '', '', '', '', '', '')
       `,
     ).run(LOCAL_WORKSPACE_ID);
   }
@@ -487,6 +582,7 @@ export function createLocalStore(options: {
     }
 
     const missingColumns: Array<[string, string]> = [
+      ["default_model_source", "TEXT"],
       ["provider_models_json", "TEXT NOT NULL DEFAULT '{}'"],
       ["openai_api_key", "TEXT NOT NULL DEFAULT ''"],
       ["openai_api_base", "TEXT NOT NULL DEFAULT ''"],
@@ -760,6 +856,7 @@ export function createLocalStore(options: {
         `
           SELECT
             default_model,
+            default_model_source,
             provider_models_json,
             openai_api_key,
             openai_api_base,
@@ -782,6 +879,7 @@ export function createLocalStore(options: {
       .get(LOCAL_WORKSPACE_ID) as
       | {
           default_model: string;
+          default_model_source: string | null;
           provider_models_json: string;
           openai_api_key: string;
           openai_api_base: string;
@@ -834,6 +932,9 @@ export function createLocalStore(options: {
 
     return {
       defaultModel: row.default_model ?? "",
+      defaultModelSource: normalizeAgentModelSourceForStore(
+        row.default_model_source ?? undefined,
+      ),
       providerModels,
       openAIApiKey: row.openai_api_key ?? "",
       openAIApiBase: row.openai_api_base ?? "",
@@ -858,6 +959,9 @@ export function createLocalStore(options: {
     const normalizedSettings: WorkspaceSettings = {
       ...EMPTY_WORKSPACE_SETTINGS,
       ...settings,
+      defaultModelSource: settings.defaultModel
+        ? normalizeAgentModelSourceForStore(settings.defaultModelSource)
+        : undefined,
       providerModels: normalizeProviderModelsForStore(settings.providerModels),
     };
 
@@ -868,6 +972,7 @@ export function createLocalStore(options: {
             id,
             workspace_id,
             default_model,
+            default_model_source,
             provider_models_json,
             openai_api_key,
             openai_api_base,
@@ -883,10 +988,11 @@ export function createLocalStore(options: {
             replicate_api_token,
             volces_api_key,
             volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             workspace_id = excluded.workspace_id,
             default_model = excluded.default_model,
+            default_model_source = excluded.default_model_source,
             provider_models_json = excluded.provider_models_json,
             openai_api_key = excluded.openai_api_key,
             openai_api_base = excluded.openai_api_base,
@@ -907,6 +1013,7 @@ export function createLocalStore(options: {
         1,
         LOCAL_WORKSPACE_ID,
         normalizedSettings.defaultModel,
+        normalizedSettings.defaultModelSource ?? null,
         JSON.stringify(normalizedSettings.providerModels),
         normalizedSettings.openAIApiKey,
         normalizedSettings.openAIApiBase,
@@ -929,6 +1036,7 @@ export function createLocalStore(options: {
           INSERT INTO workspace_settings (
             workspace_id,
             default_model,
+            default_model_source,
             provider_models_json,
             openai_api_key,
             openai_api_base,
@@ -944,9 +1052,10 @@ export function createLocalStore(options: {
             replicate_api_token,
             volces_api_key,
             volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(workspace_id) DO UPDATE SET
             default_model = excluded.default_model,
+            default_model_source = excluded.default_model_source,
             provider_models_json = excluded.provider_models_json,
             openai_api_key = excluded.openai_api_key,
             openai_api_base = excluded.openai_api_base,
@@ -966,6 +1075,7 @@ export function createLocalStore(options: {
       ).run(
         LOCAL_WORKSPACE_ID,
         normalizedSettings.defaultModel,
+        normalizedSettings.defaultModelSource ?? null,
         JSON.stringify(normalizedSettings.providerModels),
         normalizedSettings.openAIApiKey,
         normalizedSettings.openAIApiBase,
@@ -985,6 +1095,87 @@ export function createLocalStore(options: {
     }
 
     return getWorkspaceSettings();
+  }
+
+  function getNextopManagedConnection(): NextopManagedConnection {
+    const row = db
+      .prepare(
+        `
+          SELECT grant_ref, expires_at, providers_json, models_json
+          FROM nextop_managed_model_connection
+          WHERE workspace_id = ?
+        `,
+      )
+      .get(LOCAL_WORKSPACE_ID) as
+      | {
+          grant_ref: string;
+          expires_at: string | null;
+          providers_json: string;
+          models_json: string;
+        }
+      | undefined;
+
+    if (!row) {
+      return { ...EMPTY_NEXTOP_MANAGED_CONNECTION };
+    }
+
+    return normalizeNextopManagedConnection({
+      connected: true,
+      grantRef: row.grant_ref,
+      ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
+      providers: parseJson<NextopManagedProviderId[]>(
+        row.providers_json,
+        [],
+      ),
+      models: parseJson<NextopManagedModel[]>(row.models_json, []),
+    });
+  }
+
+  function updateNextopManagedConnection(
+    connection: NextopManagedConnection,
+  ): NextopManagedConnection {
+    const normalized = normalizeNextopManagedConnection(connection);
+    if (!normalized.connected || !normalized.grantRef) {
+      clearNextopManagedConnection();
+      return { ...EMPTY_NEXTOP_MANAGED_CONNECTION };
+    }
+
+    db.prepare(
+      `
+        INSERT INTO nextop_managed_model_connection (
+          workspace_id,
+          grant_ref,
+          expires_at,
+          providers_json,
+          models_json,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(workspace_id) DO UPDATE SET
+          grant_ref = excluded.grant_ref,
+          expires_at = excluded.expires_at,
+          providers_json = excluded.providers_json,
+          models_json = excluded.models_json,
+          updated_at = excluded.updated_at
+      `,
+    ).run(
+      LOCAL_WORKSPACE_ID,
+      normalized.grantRef,
+      normalized.expiresAt ?? null,
+      JSON.stringify(normalized.providers),
+      JSON.stringify(normalized.models),
+      new Date().toISOString(),
+    );
+
+    return getNextopManagedConnection();
+  }
+
+  function clearNextopManagedConnection() {
+    db.prepare(
+      `
+        DELETE FROM nextop_managed_model_connection
+        WHERE workspace_id = ?
+      `,
+    ).run(LOCAL_WORKSPACE_ID);
   }
 
   function getAssetRow(assetId: string) {
@@ -3297,6 +3488,9 @@ export function createLocalStore(options: {
     updateProfile,
     getWorkspaceSettings,
     updateWorkspaceSettings,
+    getNextopManagedConnection,
+    updateNextopManagedConnection,
+    clearNextopManagedConnection,
     listProjects,
     createProject,
     getProject,

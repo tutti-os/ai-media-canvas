@@ -26,14 +26,19 @@ vi.mock("../src/hooks/use-agent-model", () => ({
 
 vi.mock("../src/components/settings-dialog", () => ({
   SettingsDialog: ({
+    initialAgentSourceTab,
     initialTab,
     open,
   }: {
+    initialAgentSourceTab?: string;
     initialTab?: string;
     open: boolean;
   }) =>
     open ? (
-      <div data-testid="settings-dialog">{initialTab ?? "agent"}</div>
+      <div data-testid="settings-dialog">
+        {initialTab ?? "agent"}
+        {initialAgentSourceTab ? `:${initialAgentSourceTab}` : ""}
+      </div>
     ) : null,
 }));
 
@@ -212,6 +217,31 @@ describe("AgentModelSelector", () => {
     expect(screen.queryByText("Codex")).not.toBeInTheDocument();
   });
 
+  it("opens agent settings on the Nextop Managed panel from the empty state", async () => {
+    fetchModelsMock.mockResolvedValue({
+      models: [{ id: "codex:gpt-5.5", name: "Codex", provider: "codex" }],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Nextop Managed" }),
+    );
+
+    expect(
+      await screen.findByText("No Nextop Managed models connected."),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connect in settings" }),
+    );
+
+    expect(screen.getByTestId("settings-dialog")).toHaveTextContent(
+      "agent:nextop-managed",
+    );
+  });
+
   it("shows local CLI provider icons in the model groups", async () => {
     fetchModelsMock.mockResolvedValue({
       models: [
@@ -326,7 +356,7 @@ describe("AgentModelSelector", () => {
       await screen.findByRole("button", { name: "Default (CLI config)" }),
     );
 
-    expect(setModelMock).toHaveBeenCalledWith("codex:gpt-5.5");
+    expect(setModelMock).toHaveBeenCalledWith("codex:gpt-5.5", "local-agent");
   });
 
   it("refreshes the trigger when workspace settings are saved elsewhere", async () => {
@@ -408,6 +438,9 @@ describe("AgentModelSelector", () => {
       screen.getByRole("button", { name: "Use custom model" }),
     );
 
-    expect(setModelMock).toHaveBeenCalledWith("anthropic:minimax-m2.5");
+    expect(setModelMock).toHaveBeenCalledWith(
+      "anthropic:minimax-m2.5",
+      "api-provider",
+    );
   });
 });

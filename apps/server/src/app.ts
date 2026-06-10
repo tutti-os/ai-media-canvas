@@ -69,6 +69,7 @@ import { registerImageModelRoutes } from "./http/image-models.js";
 import { createJobOperations } from "./http/job-operations.js";
 import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
+import { registerNextopManagedModelConnectionRoutes } from "./http/nextop-managed-model-connection.js";
 import { registerNextopCliRoutes } from "./http/nextop-cli.js";
 import { createProjectOperations } from "./http/project-operations.js";
 import { registerProjectRoutes } from "./http/projects.js";
@@ -77,6 +78,7 @@ import { createSkillOperations } from "./http/skill-operations.js";
 import { registerSkillRoutes } from "./http/skills.js";
 import { registerUploadRoutes } from "./http/uploads.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
+import { createNextopManagedCredentialService } from "./features/nextop-managed/credential-service.js";
 import { type LocalStore, createLocalStore } from "./local/store.js";
 import { createLocalUserClient } from "./local/user-client.js";
 import { ConnectionManager } from "./ws/connection-manager.js";
@@ -740,6 +742,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const skillService = buildSkillService(store);
   const jobService = createJobService(store);
   const settingsService = createSettingsService(store, env);
+  const nextopManagedCredentials = createNextopManagedCredentialService({
+    env,
+    store,
+  });
   const projectOperations = createProjectOperations({
     localUser,
     projectService,
@@ -926,13 +932,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       );
     }
 
-    const effectiveEnv =
-      await settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID);
-    const runtimeEnv = createStandaloneAgentEnv(effectiveEnv);
+    const [effectiveEnv, workspaceSettings] = await Promise.all([
+      settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID),
+      settingsService.getWorkspaceSettings(localUser, LOCAL_WORKSPACE_ID),
+    ]);
+    const baseRuntimeEnv = createStandaloneAgentEnv(effectiveEnv);
     let resolvedModel: string | undefined;
     try {
       resolvedModel = resolveAgentRunModel({
-        defaultModel: runtimeEnv.agentModel,
+        defaultModel: baseRuntimeEnv.agentModel,
         ...(payload.model ? { requestedModel: payload.model } : {}),
         ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
         ...(payload.runtimeProvider
@@ -949,6 +957,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       }
       throw error;
     }
+    const runtimeEnv = await nextopManagedCredentials.resolveEnvForModel(
+      baseRuntimeEnv,
+      resolvedModel ?? baseRuntimeEnv.agentModel,
+      payload.model ? payload.modelSource : workspaceSettings.defaultModelSource,
+    );
     if (
       runtimeEnv.trustedLocalAgentMode === false &&
       isLocalAgentRuntimeRequested({
@@ -1070,7 +1083,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     uploadService,
   });
   void registerSettingsRoutes(app, { localUser, settingsService });
-  void registerModelRoutes(app, env, settingsService);
+  void registerNextopManagedModelConnectionRoutes(app, {
+    nextopManagedCredentials,
+  });
+  void registerModelRoutes(app, env, settingsService, {
+    nextopManagedCredentials,
+  });
   void registerImageModelRoutes(app, env, settingsService);
   void registerVideoModelRoutes(app, env, settingsService);
   void registerJobRoutes(app, { localUser, jobOperations, jobService });
@@ -1091,6 +1109,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     chatOperations,
     env,
     jobOperations,
+    nextopManagedCredentials,
     projectOperations,
     settingsService,
     skillOperations,
@@ -1099,6 +1118,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     await wsApp.register(websocket);
     await registerWsRoute(wsApp, {
       agentRuns,
+      nextopManagedCredentials,
       agentRunOrchestrator,
       agentRunPersistence: {
         appendEvent: store.appendAgentRunEvent,

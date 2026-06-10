@@ -5,7 +5,7 @@ import {
   type AgentModelSourceTab,
   formatLocalCliProviderLabel,
   getAgentModelSourceTab,
-  isApiProvider,
+  getModelSourceTab,
   isLocalCliProvider,
 } from "@/lib/agent-model-groups";
 import { fetchModels, fetchWorkspaceSettings } from "@/lib/server-api";
@@ -23,7 +23,12 @@ import { useAppTranslation } from "../i18n";
 import { LocalCliProviderIcon } from "./local-cli-provider-icon";
 import { SettingsDialog } from "./settings-dialog";
 
-type ModelOption = { id: string; name: string; provider: string };
+type ModelOption = {
+  id: string;
+  name: string;
+  provider: string;
+  source?: AgentModelSourceTab | undefined;
+};
 
 // Sparkle icon SVG path from design spec
 const SPARKLE_ICON_PATH =
@@ -162,16 +167,20 @@ export function AgentModelSelector({
   tooltipPlacement?: "top" | "bottom";
 } = {}) {
   const { t } = useAppTranslation("chat");
-  const { model, setModel } = useAgentModel();
+  const { model, modelSource, setModel } = useAgentModel();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialSourceTab, setSettingsInitialSourceTab] =
+    useState<AgentModelSourceTab | undefined>();
   const [models, setModels] = useState<ModelOption[]>([]);
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
     string | null
   >(null);
+  const [workspaceDefaultModelSource, setWorkspaceDefaultModelSource] =
+    useState<AgentModelSourceTab | null>(null);
   const [customModelDraft, setCustomModelDraft] = useState("");
   const [activeModelTab, setActiveModelTab] =
-    useState<AgentModelSourceTab>("local-cli");
+    useState<AgentModelSourceTab>("local-agent");
   const btnRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -181,9 +190,12 @@ export function AgentModelSelector({
       .catch(() => {});
 
     fetchWorkspaceSettings()
-      .then((data) =>
-        setWorkspaceDefaultModel(data.settings.defaultModel || null),
-      )
+      .then((data) => {
+        setWorkspaceDefaultModel(data.settings.defaultModel || null);
+        setWorkspaceDefaultModelSource(
+          data.settings.defaultModelSource ?? null,
+        );
+      })
       .catch(() => {});
   }, []);
 
@@ -217,8 +229,23 @@ export function AgentModelSelector({
   useEffect(() => {
     if (!open) return;
     setCustomModelDraft(model ?? workspaceDefaultModel ?? "");
-    setActiveModelTab(getAgentModelSourceTab(model));
-  }, [model, open, workspaceDefaultModel]);
+    const selected = models.find((item) => item.id === model);
+    setActiveModelTab(
+      modelSource ??
+        (selected
+          ? getModelSourceTab(selected)
+          : !model && workspaceDefaultModelSource
+            ? workspaceDefaultModelSource
+            : getAgentModelSourceTab(model)),
+    );
+  }, [
+    model,
+    modelSource,
+    models,
+    open,
+    workspaceDefaultModel,
+    workspaceDefaultModelSource,
+  ]);
 
   // Close on outside click
   useEffect(() => {
@@ -280,31 +307,36 @@ export function AgentModelSelector({
   useLayoutEffect(() => {
     if (!open || !btnRef.current) return;
     const rect = btnRef.current.getBoundingClientRect();
-    const popoverHeight = 360;
+    const popoverWidth = Math.min(416, Math.max(280, window.innerWidth - 32));
+    const popoverHeight = 420;
     const spaceBelow = window.innerHeight - rect.bottom;
     const openAbove = spaceBelow < popoverHeight && rect.top > spaceBelow;
+    const left = Math.min(
+      Math.max(16, rect.left),
+      window.innerWidth - popoverWidth - 16,
+    );
 
     if (openAbove) {
       setPopoverStyle({
         position: "fixed",
         bottom: window.innerHeight - rect.top + 8,
-        left: rect.left,
+        left,
+        width: popoverWidth,
         zIndex: 9999,
       });
     } else {
       setPopoverStyle({
         position: "fixed",
         top: rect.bottom + 8,
-        left: rect.left,
+        left,
+        width: popoverWidth,
         zIndex: 9999,
       });
     }
   }, [open]);
 
-  const visibleModels = models.filter((item) =>
-    activeModelTab === "local-cli"
-      ? isLocalCliProvider(item.provider)
-      : isApiProvider(item.provider),
+  const visibleModels = models.filter(
+    (item) => getModelSourceTab(item) === activeModelTab,
   );
 
   // Deduplicate provider list from actual models
@@ -329,7 +361,7 @@ export function AgentModelSelector({
 
   function applyCustomModel() {
     if (!trimmedCustomModelDraft) return;
-    setModel(trimmedCustomModelDraft);
+    setModel(trimmedCustomModelDraft, "api-provider");
     setOpen(false);
   }
 
@@ -383,7 +415,7 @@ export function AgentModelSelector({
           <div
             ref={popoverRef}
             style={popoverStyle}
-            className="max-h-[min(28rem,calc(100vh-2rem))] w-56 overflow-y-auto rounded-xl border border-border bg-popover p-2 shadow-lg"
+            className="max-h-[min(28rem,calc(100vh-2rem))] overflow-y-auto rounded-xl border border-border bg-popover p-2 shadow-lg"
           >
             <div className="mb-2 flex items-center justify-between gap-2 px-2">
               <div className="text-xs font-medium text-muted-foreground">
@@ -394,6 +426,7 @@ export function AgentModelSelector({
                 aria-label={t("agentModelSelector.openSettings")}
                 onClick={() => {
                   setOpen(false);
+                  setSettingsInitialSourceTab(undefined);
                   setSettingsOpen(true);
                 }}
                 className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -402,12 +435,17 @@ export function AgentModelSelector({
                 {t("agentModelSelector.settings")}
               </button>
             </div>
-            <div className="mb-2 grid grid-cols-2 rounded-full border border-border bg-muted/30 p-0.5">
+            <div className="mb-2 grid grid-cols-3 rounded-full border border-border bg-muted/30 p-0.5">
               {[
                 {
-                  id: "local-cli" as const,
+                  id: "local-agent" as const,
                   label: t("agentModelSelector.localAgent"),
                   icon: Terminal,
+                },
+                {
+                  id: "nextop-managed" as const,
+                  label: t("agentModelSelector.nextopManaged"),
+                  icon: Cloud,
                 },
                 {
                   id: "api-provider" as const,
@@ -423,14 +461,14 @@ export function AgentModelSelector({
                     type="button"
                     aria-pressed={selected}
                     onClick={() => setActiveModelTab(tab.id)}
-                    className={`inline-flex h-8 items-center justify-center gap-1 rounded-full px-2 text-[11px] font-medium transition-colors ${
+                    className={`inline-flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-full px-2 text-[12px] font-medium leading-tight transition-colors ${
                       selected
                         ? "bg-background text-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    <Icon className="h-3 w-3" />
-                    {tab.label}
+                    <Icon className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{tab.label}</span>
                   </button>
                 );
               })}
@@ -490,7 +528,10 @@ export function AgentModelSelector({
                       key={m.id}
                       type="button"
                       onClick={() => {
-                        setModel(resolveExecutableModelId(m.id, models));
+                        setModel(
+                          resolveExecutableModelId(m.id, models),
+                          getModelSourceTab(m),
+                        );
                         setOpen(false);
                       }}
                       className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors ${
@@ -516,10 +557,27 @@ export function AgentModelSelector({
               );
             })}
             {providers.length === 0 ? (
-              <div className="rounded-lg px-2 py-4 text-xs text-muted-foreground">
-                {activeModelTab === "local-cli"
-                  ? t("agentModelSelector.noLocalCliModels")
-                  : t("agentModelSelector.noApiProviderModels")}
+              <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                <p>
+                  {activeModelTab === "local-agent"
+                    ? t("agentModelSelector.noLocalCliModels")
+                    : activeModelTab === "nextop-managed"
+                      ? t("agentModelSelector.noNextopManagedModels")
+                    : t("agentModelSelector.noApiProviderModels")}
+                </p>
+                {activeModelTab === "nextop-managed" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      setSettingsInitialSourceTab("nextop-managed");
+                      setSettingsOpen(true);
+                    }}
+                    className="mt-3 inline-flex h-8 items-center rounded-full border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    {t("agentModelSelector.connectNextopManaged")}
+                  </button>
+                ) : null}
               </div>
             ) : null}
             {activeModelTab === "api-provider" ? (
@@ -562,6 +620,7 @@ export function AgentModelSelector({
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
+        initialAgentSourceTab={settingsInitialSourceTab}
         initialTab="agent"
       />
     </>

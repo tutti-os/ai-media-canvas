@@ -25,6 +25,11 @@ export type ServerEnv = {
   googleVertexVideoLocation?: string;
   openAIApiBase?: string;
   openAIApiKey?: string;
+  nextopApiBaseUrl?: string;
+  nextopAppId?: string;
+  nextopAppInstallationId?: string;
+  nextopAppServerToken?: string;
+  nextopWorkspaceId?: string;
   port: number;
   replicateApiToken?: string;
   skillsRoot?: string;
@@ -99,6 +104,30 @@ export function loadServerEnv(
   const openAIApiKey =
     overrides.openAIApiKey ??
     normalizeOptionalString(source.AIMC_OPENAI_API_KEY ?? source.OPENAI_API_KEY);
+  const nextopApiBaseUrl =
+    overrides.nextopApiBaseUrl ??
+    normalizeOptionalString(
+      source.NEXTOP_API_BASE_URL ?? source.AIMC_NEXTOP_API_BASE_URL,
+    );
+  const nextopAppId =
+    overrides.nextopAppId ??
+    normalizeOptionalString(source.NEXTOP_APP_ID ?? source.AIMC_NEXTOP_APP_ID);
+  const nextopAppInstallationId =
+    overrides.nextopAppInstallationId ??
+    normalizeOptionalString(
+      source.NEXTOP_APP_INSTALLATION_ID ??
+        source.AIMC_NEXTOP_APP_INSTALLATION_ID,
+    );
+  const nextopAppServerToken =
+    overrides.nextopAppServerToken ??
+    normalizeOptionalString(
+      source.NEXTOP_APP_SERVER_TOKEN ?? source.AIMC_NEXTOP_APP_SERVER_TOKEN,
+    );
+  const nextopWorkspaceId =
+    overrides.nextopWorkspaceId ??
+    normalizeOptionalString(
+      source.NEXTOP_WORKSPACE_ID ?? source.AIMC_NEXTOP_WORKSPACE_ID,
+    );
   const googleApiKey =
     overrides.googleApiKey ??
     normalizeOptionalString(source.AIMC_GOOGLE_API_KEY ?? source.GOOGLE_API_KEY);
@@ -176,6 +205,11 @@ export function loadServerEnv(
     ...(anthropicBaseUrl ? { anthropicBaseUrl } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
     ...(openAIApiKey ? { openAIApiKey } : {}),
+    ...(nextopApiBaseUrl ? { nextopApiBaseUrl } : {}),
+    ...(nextopAppId ? { nextopAppId } : {}),
+    ...(nextopAppInstallationId ? { nextopAppInstallationId } : {}),
+    ...(nextopAppServerToken ? { nextopAppServerToken } : {}),
+    ...(nextopWorkspaceId ? { nextopWorkspaceId } : {}),
     ...(googleApiKey ? { googleApiKey } : {}),
     ...(googleApplicationCredentials ? { googleApplicationCredentials } : {}),
     ...(googleVertexProject ? { googleVertexProject } : {}),

@@ -7,6 +7,10 @@ import {
   chatMessageSchema,
   chatSessionSummarySchema,
   modelInfoSchema,
+  nextopManagedConnectChallengeSchema,
+  nextopManagedConnectionSchema,
+  nextopManagedGrantRequestSchema,
+  nextopManagedPublicConnectionSchema,
   projectSummarySchema,
   runIdSchema,
   viewerProfileSchema,
@@ -150,6 +154,17 @@ export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),
 });
 
+export const nextopManagedConnectionResponseSchema = z.object({
+  connectChallenge: nextopManagedConnectChallengeSchema.optional(),
+  connection: nextopManagedPublicConnectionSchema,
+});
+
+export const nextopManagedGrantResponseSchema =
+  nextopManagedConnectionResponseSchema;
+
+export const nextopManagedGrantCreateRequestSchema =
+  nextopManagedGrantRequestSchema;
+
 export const installableAgentProviderIdSchema = z.enum(["codex", "claude"]);
 
 export const agentProviderInstallResponseSchema = z.object({
@@ -191,6 +206,15 @@ export type WorkspaceSettingsUpdateRequest = z.infer<
   typeof workspaceSettingsUpdateRequestSchema
 >;
 export type ModelListResponse = z.infer<typeof modelListResponseSchema>;
+export type NextopManagedConnectionResponse = z.infer<
+  typeof nextopManagedConnectionResponseSchema
+>;
+export type NextopManagedGrantCreateRequest = z.infer<
+  typeof nextopManagedGrantCreateRequestSchema
+>;
+export type NextopManagedGrantResponse = z.infer<
+  typeof nextopManagedGrantResponseSchema
+>;
 export type InstallableAgentProviderId = z.infer<
   typeof installableAgentProviderIdSchema
 >;

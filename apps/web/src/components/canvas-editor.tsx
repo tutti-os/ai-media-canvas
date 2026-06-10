@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { WebSocketHandle } from "../hooks/use-websocket";
+import { useAppTranslation } from "../i18n";
 import { fetchAsDataURL, isVideoUrl } from "../lib/canvas-elements";
 import {
   prepareCanvasImageFiles,
@@ -145,6 +146,9 @@ export function CanvasEditor({
   onSelectionChange,
 }: CanvasEditorProps) {
   const { resolvedTheme } = useTheme();
+  const { i18n } = useAppTranslation();
+  const excalidrawLangCode =
+    (i18n.resolvedLanguage ?? i18n.language).startsWith("en") ? "en" : "zh-CN";
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbnailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canvasIdRef = useRef(canvasId);
@@ -645,6 +649,7 @@ export function CanvasEditor({
       <div className="h-full w-full relative">
         <Excalidraw
           theme={resolvedTheme === "dark" ? "dark" : "light"}
+          langCode={excalidrawLangCode}
           initialData={
             {
               elements: initialElements,

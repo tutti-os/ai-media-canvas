@@ -16,6 +16,7 @@ import type { ServerEnv } from "../config/env.js";
 import { CanvasServiceError } from "../features/canvas/canvas-service.js";
 import { ChatServiceError } from "../features/chat/chat-service.js";
 import { JobServiceError } from "../features/jobs/job-service.js";
+import type { NextopManagedCredentialService } from "../features/nextop-managed/credential-service.js";
 import { ProjectServiceError } from "../features/projects/project-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { SkillServiceError } from "../features/skills/skill-service.js";
@@ -110,6 +111,7 @@ export async function registerNextopCliRoutes(
     chatOperations: ChatOperations;
     env: ServerEnv;
     jobOperations: JobOperations;
+    nextopManagedCredentials?: NextopManagedCredentialService;
     projectOperations: ProjectOperations;
     settingsService?: SettingsService;
     skillOperations: SkillOperations;
@@ -336,6 +338,9 @@ export async function registerNextopCliRoutes(
     models: await listAgentModels({
       env: options.env,
       logger: app.log,
+      ...(options.nextopManagedCredentials
+        ? { nextopManagedCredentials: options.nextopManagedCredentials }
+        : {}),
       ...(options.settingsService
         ? { settingsService: options.settingsService }
         : {}),

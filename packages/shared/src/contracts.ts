@@ -100,6 +100,9 @@ export const runCreateRequestSchema = z
     videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
     mentions: z.array(messageMentionSchema).optional(),
     model: z.string().optional(),
+    modelSource: z
+      .enum(["local-agent", "nextop-managed", "api-provider"])
+      .optional(),
     resumeFromRunId: runIdSchema.optional(),
     resumeMode: agentRunResumeModeSchema.optional(),
     runtimeKind: runtimeKindSchema.optional(),
@@ -183,6 +186,9 @@ export const profileUpdateRequestSchema = z.object({
 
 export const workspaceSettingsSchema = z.object({
   defaultModel: z.string(),
+  defaultModelSource: z
+    .enum(["local-agent", "nextop-managed", "api-provider"])
+    .optional(),
   providerModels: z.object({
     openai: z.array(z.string().min(1)),
     anthropic: z.array(z.string().min(1)),
@@ -206,10 +212,58 @@ export const workspaceSettingsSchema = z.object({
   volcesBaseUrl: z.string(),
 });
 
+export const agentModelSourceSchema = z.enum([
+  "local-agent",
+  "nextop-managed",
+  "api-provider",
+]);
+
 export const modelInfoSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   provider: z.string().min(1),
+  source: agentModelSourceSchema.optional(),
+});
+
+export const nextopManagedProviderIdSchema = z.enum([
+  "agnes",
+  "openai",
+  "anthropic",
+]);
+
+export const nextopManagedModelSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  provider: nextopManagedProviderIdSchema,
+});
+
+export const nextopManagedConnectionSchema = z.object({
+  connected: z.boolean(),
+  grantRef: z.string().min(1).optional(),
+  expiresAt: timestampSchema.optional(),
+  providers: z.array(nextopManagedProviderIdSchema),
+  models: z.array(nextopManagedModelSchema),
+});
+
+export const nextopManagedPublicConnectionSchema =
+  nextopManagedConnectionSchema.omit({
+    grantRef: true,
+  });
+
+export const nextopManagedConnectChallengeSchema = z.object({
+  expiresAt: timestampSchema,
+  nonce: z.string().trim().min(16),
+  state: z.string().trim().min(16),
+});
+
+export const nextopManagedGrantRequestSchema = z.object({
+  contextToken: z.string().trim().min(1),
+  grantCode: z.string().trim().min(1),
+  nonce: z.string().trim().min(16),
+  state: z.string().trim().min(16),
+  expiresAt: timestampSchema.optional(),
+  providers: z.array(nextopManagedProviderIdSchema).optional(),
+  models: z.array(nextopManagedModelSchema).optional(),
 });
 
 export const toolStatusSchema = z.enum([
@@ -355,6 +409,7 @@ export type RuntimeKind = z.infer<typeof runtimeKindSchema>;
 export type AgentRuntimeProvider = z.infer<
   typeof agentRuntimeProviderSchema
 >;
+export type AgentModelSource = z.infer<typeof agentModelSourceSchema>;
 export type AgentRunResumeMode = z.infer<typeof agentRunResumeModeSchema>;
 export type ChatSessionSummary = z.infer<typeof chatSessionSummarySchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
@@ -362,6 +417,22 @@ export type ChatMessageCreateRequest = z.infer<typeof chatMessageCreateRequestSc
 export type ChatToolActivity = z.infer<typeof chatToolActivitySchema>;
 export type ProfileUpdateRequest = z.infer<typeof profileUpdateRequestSchema>;
 export type ModelInfo = z.infer<typeof modelInfoSchema>;
+export type NextopManagedProviderId = z.infer<
+  typeof nextopManagedProviderIdSchema
+>;
+export type NextopManagedModel = z.infer<typeof nextopManagedModelSchema>;
+export type NextopManagedConnection = z.infer<
+  typeof nextopManagedConnectionSchema
+>;
+export type NextopManagedPublicConnection = z.infer<
+  typeof nextopManagedPublicConnectionSchema
+>;
+export type NextopManagedConnectChallenge = z.infer<
+  typeof nextopManagedConnectChallengeSchema
+>;
+export type NextopManagedGrantRequest = z.infer<
+  typeof nextopManagedGrantRequestSchema
+>;
 export type RunCreateRequest = z.infer<typeof runCreateRequestSchema>;
 export type RunCreateResponse = z.infer<typeof runCreateResponseSchema>;
 export type ViewerProfile = z.infer<typeof viewerProfileSchema>;

@@ -19,6 +19,23 @@ export default interface Resources {
     },
     "closeFiles": "关闭生成文件面板",
     "closeLayers": "关闭图层面板",
+    "contextMenu": {
+      "downloadImage": "下载图片",
+      "native": {
+        "canvasAndShapeProperties": "画布和形状属性",
+        "copyImage": "复制图片",
+        "copyLinkToObject": "复制对象链接",
+        "cropImage": "裁剪图片",
+        "duplicate": "复制",
+        "paste": "粘贴",
+        "selectAll": "全选",
+        "snapToObjects": "吸附到对象",
+        "toggleGrid": "显示/隐藏网格",
+        "viewMode": "视图模式",
+        "wrapSelectionInFrame": "用画框包裹选区",
+        "zenMode": "禅模式"
+      }
+    },
     "empty": "输入你的想法开始创作",
     "files": {
       "download": "下载 {{name}}",
@@ -80,11 +97,14 @@ export default interface Resources {
     "agentModelSelector": {
       "apiProvider": "API provider",
       "assistantMode": "助手模式",
+      "connectNextopManaged": "去设置连接",
       "customModelId": "自定义模型 ID",
       "localAgent": "本地 Agent",
       "localAssistant": "本地助手",
+      "nextopManaged": "Nextop Managed",
       "noApiProviderModels": "未配置 API provider 模型。",
       "noLocalCliModels": "未检测到本地 CLI 模型。",
+      "noNextopManagedModels": "未连接 Nextop Managed 模型。",
       "openSettings": "打开 Agent 设置",
       "settings": "设置",
       "tooltip": "选择 Agent 模型",
@@ -468,10 +488,34 @@ export default interface Resources {
         "selectCliFirst": "请先选择 CLI...",
         "selectModel": "选择模型..."
       },
+      "nextopManaged": {
+        "bridgeUnavailable": "请在 Nextop 中打开 AI Media Canvas 后授权托管模型。",
+        "chooseModel": "请在下方选择 Nextop Managed 模型。",
+        "connect": "连接",
+        "connectFirst": "连接 Nextop Managed 后导入可用模型。",
+        "connected": "已连接",
+        "defaultModel": "默认模型",
+        "description": "使用由 Nextop 托管的模型凭证，不在当前应用中保存 provider key。",
+        "disconnect": "断开",
+        "emptyModels": "暂无可用的 Nextop Managed 模型。请在 Nextop 设置中配置 provider。",
+        "feedback": {
+          "connectFailed": "无法连接 Nextop Managed 模型。",
+          "connected": "Nextop Managed 模型已连接。",
+          "disconnectFailed": "无法断开 Nextop Managed 模型。",
+          "disconnected": "Nextop Managed 模型已断开。",
+          "openSettingsFailed": "无法打开 Nextop 设置。"
+        },
+        "manageInNextop": "在 Nextop 中管理",
+        "noModelSelected": "未选择 Nextop Managed 模型",
+        "notConnected": "未连接",
+        "reauthorize": "重新授权",
+        "title": "Nextop Managed"
+      },
       "source": {
         "apiProvider": "API provider",
         "detected": "已检测 {{cliCount}} 个",
-        "localAgent": "本地 Agent"
+        "localAgent": "本地 Agent",
+        "nextopManaged": "Nextop Managed"
       }
     },
     "dialogTitle": "设置",

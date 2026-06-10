@@ -8,6 +8,7 @@ import { AgentSettingsSection } from "@/components/agent-settings-section";
 import { MediaSettingsSection } from "@/components/media-settings-section";
 import { SettingsSkeleton } from "@/components/skeletons/settings-skeleton";
 import { Button } from "@/components/ui/button";
+import type { AgentModelSourceTab } from "@/lib/agent-model-groups";
 import {
   Select,
   SelectContent,
@@ -66,11 +67,13 @@ export function isSettingsTab(value: string | null): value is SettingsTab {
 
 interface SettingsPanelProps {
   initialTab?: SettingsTab;
+  initialAgentSourceTab?: AgentModelSourceTab | undefined;
   surface?: "page" | "dialog";
 }
 
 export function SettingsPanel({
   initialTab = "agent",
+  initialAgentSourceTab,
   surface = "page",
 }: SettingsPanelProps) {
   const { t } = useAppTranslation("settings");
@@ -122,6 +125,7 @@ export function SettingsPanel({
       case "agent":
         return (
           <AgentSettingsSection
+            initialSourceTab={initialAgentSourceTab}
             settings={workspaceSettings}
             onSave={handleWorkspaceSettingsSave}
             surface={surface}
@@ -135,7 +139,13 @@ export function SettingsPanel({
           />
         );
     }
-  }, [activeTab, handleWorkspaceSettingsSave, surface, workspaceSettings]);
+  }, [
+    activeTab,
+    handleWorkspaceSettingsSave,
+    initialAgentSourceTab,
+    surface,
+    workspaceSettings,
+  ]);
 
   if (panelLoading) {
     return <SettingsSkeleton />;

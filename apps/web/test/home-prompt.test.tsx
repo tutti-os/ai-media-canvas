@@ -172,6 +172,7 @@ describe("HomePrompt", () => {
       undefined,
       undefined,
       "local:assistant",
+      undefined,
     );
   });
 

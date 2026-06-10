@@ -25,6 +25,9 @@ describe("canvas context menu", () => {
       "hyperlink",
       "copyElementLink",
       "toggleElementLock",
+      "zenMode",
+      "viewMode",
+      "stats",
     ];
 
     for (const actionName of hiddenActions) {
@@ -32,9 +35,8 @@ describe("canvas context menu", () => {
     }
   });
 
-  it("renames the PNG clipboard action to Copy image", () => {
-    expect(contextMenuCss).toContain('li[data-testid="copyAsPng"]');
-    expect(contextMenuCss).toContain('content: "Copy image"');
+  it("does not hard-code the PNG clipboard action label in CSS", () => {
+    expect(contextMenuCss).not.toContain('content: "Copy image"');
   });
 
   it("draws AIMC section dividers for retained menu groups", () => {

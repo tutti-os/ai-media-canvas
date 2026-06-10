@@ -22,6 +22,7 @@ import {
 } from "../agent/local-agent-provider-installer.js";
 import { createAimcLocalAgentProviderPlugins } from "../agent/local-agent-providers.js";
 import type { ServerEnv } from "../config/env.js";
+import type { NextopManagedCredentialService } from "../features/nextop-managed/credential-service.js";
 import {
   LOCAL_WORKSPACE_ID,
   type SettingsService,
@@ -80,6 +81,13 @@ type ModelDiscoveryLogger = {
   warn: (payload: unknown, message: string) => void;
 };
 
+function withModelSource(
+  models: ModelInfo[],
+  source: NonNullable<ModelInfo["source"]>,
+): ModelInfo[] {
+  return models.map((model) => ({ ...model, source }));
+}
+
 function buildConfiguredModels(
   provider: keyof WorkspaceSettings["providerModels"],
   values: string[],
@@ -92,6 +100,7 @@ function buildConfiguredModels(
       id: normalizedId,
       name,
       provider,
+      source: "api-provider",
     };
   });
 }
@@ -189,6 +198,7 @@ function normalizeOpenAICompatibleModels(payload: unknown): ModelInfo[] {
       id: `openai:${modelId}`,
       name: modelId,
       provider: "openai",
+      source: "api-provider",
     });
   }
 
@@ -244,6 +254,7 @@ function buildLocalAgentModels(
         id,
         name: model.label || model.id,
         provider: String(detection.provider),
+        source: "local-agent",
       });
     }
   }
@@ -278,6 +289,7 @@ export async function registerModelRoutes(
   options?: {
     localAgentModelDiscovery?: LocalAgentModelDiscovery;
     localAgentProviderInstaller?: LocalAgentProviderInstaller;
+    nextopManagedCredentials?: NextopManagedCredentialService;
   },
 ) {
   const localAgentModelDiscovery =
@@ -291,6 +303,9 @@ export async function registerModelRoutes(
       env,
       localAgentModelDiscovery,
       logger: app.log,
+      ...(options?.nextopManagedCredentials
+        ? { nextopManagedCredentials: options.nextopManagedCredentials }
+        : {}),
       ...(settingsService ? { settingsService } : {}),
     });
     return reply.code(200).send(modelListResponseSchema.parse({ models }));
@@ -357,6 +372,7 @@ export async function listAgentModels(options: {
   env: ServerEnv;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
+  nextopManagedCredentials?: NextopManagedCredentialService;
   settingsService?: SettingsService;
 }) {
   const localAgentModelDiscovery =
@@ -396,7 +412,7 @@ export async function listAgentModels(options: {
       }
     }
 
-    models.push(...openAIModels);
+    models.push(...withModelSource(openAIModels, "api-provider"));
   }
   if (effectiveEnv.anthropicApiKey) {
     models.push(
@@ -405,14 +421,14 @@ export async function listAgentModels(options: {
             "anthropic",
             workspaceSettings.providerModels.anthropic,
           )
-        : ANTHROPIC_MODELS),
+        : withModelSource(ANTHROPIC_MODELS, "api-provider")),
     );
   }
   if (effectiveEnv.agnesApiKey) {
     models.push(
       ...(workspaceSettings?.providerModels.agnes.length
         ? buildConfiguredModels("agnes", workspaceSettings.providerModels.agnes)
-        : AGNES_MODELS),
+        : withModelSource(AGNES_MODELS, "api-provider")),
     );
   }
   if (
@@ -425,7 +441,7 @@ export async function listAgentModels(options: {
             "google",
             workspaceSettings.providerModels.google,
           )
-        : GOOGLE_MODELS),
+        : withModelSource(GOOGLE_MODELS, "api-provider")),
     );
   }
   if (
@@ -451,6 +467,9 @@ export async function listAgentModels(options: {
         "Failed to load local-agent models; omitting local providers.",
       );
     }
+  }
+  if (options.nextopManagedCredentials) {
+    models.push(...(await options.nextopManagedCredentials.listModels()));
   }
   return models;
 }

@@ -7,6 +7,7 @@ import {
   type RunCreateRequest,
   type RuntimeKind,
   type StreamEvent,
+  type WorkspaceSettings,
   wsCommandSchema,
   wsRpcResponseSchema,
 } from "@aimc/shared";
@@ -26,6 +27,7 @@ import type { ServerEnv } from "../config/env.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
+import type { NextopManagedCredentialService } from "../features/nextop-managed/credential-service.js";
 import {
   LOCAL_WORKSPACE_ID,
   type SettingsService,
@@ -68,6 +70,7 @@ type RegisterWsOptions = {
   chatService?: ChatService;
   connectionManager: ConnectionManager;
   eventBuffer?: CanvasEventBuffer;
+  nextopManagedCredentials?: NextopManagedCredentialService;
   settingsService?: SettingsService;
   threadService?: ThreadService;
   viewerService?: ViewerService;
@@ -350,7 +353,7 @@ async function handleRunCommand(
   log.info("started", { prompt: payload.prompt.slice(0, 80) });
 
   // Resolve thread + model in parallel
-  const [threadId, effectiveEnv] = await Promise.all([
+  const [threadId, runtimeSettings] = await Promise.all([
     (async (): Promise<string | undefined> => {
       if (!services.threadService) return undefined;
       try {
@@ -367,14 +370,24 @@ async function handleRunCommand(
         return undefined;
       }
     })(),
-    (async (): Promise<ServerEnv | undefined> => {
+    (async (): Promise<
+      { env: ServerEnv; settings: WorkspaceSettings } | undefined
+    > => {
       if (!services.settingsService || !services.viewerService)
         return undefined;
       try {
         await services.viewerService.ensureViewer(authenticatedUser);
-        return await services.settingsService.getEffectiveServerEnv(
-          LOCAL_WORKSPACE_ID,
-        );
+        const [env, settings] = await Promise.all([
+          services.settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID),
+          services.settingsService.getWorkspaceSettings(
+            authenticatedUser,
+            LOCAL_WORKSPACE_ID,
+          ),
+        ]);
+        return {
+          env,
+          settings,
+        };
       } catch (error) {
         log.warn("model_resolve_failed", {
           error: error instanceof Error ? error.message : String(error),
@@ -383,6 +396,7 @@ async function handleRunCommand(
       }
     })(),
   ]);
+  const effectiveEnv = runtimeSettings?.env;
   const model = effectiveEnv?.agentModel;
   let resolvedModel: string | undefined;
   try {
@@ -405,9 +419,19 @@ async function handleRunCommand(
     }
     throw error;
   }
+  const runtimeEnv =
+    effectiveEnv && resolvedModel && services.nextopManagedCredentials
+      ? await services.nextopManagedCredentials.resolveEnvForModel(
+          effectiveEnv,
+          resolvedModel,
+          payload.model
+            ? payload.modelSource
+            : runtimeSettings?.settings.defaultModelSource,
+        )
+      : effectiveEnv;
   log.lap("resolve", { threadId: !!threadId, model: resolvedModel });
   if (
-    effectiveEnv?.trustedLocalAgentMode === false &&
+    runtimeEnv?.trustedLocalAgentMode === false &&
     isLocalAgentRuntimeRequested({
       model: resolvedModel,
       ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
@@ -448,7 +472,7 @@ async function handleRunCommand(
     accessToken: authenticatedUser.accessToken,
     ...(assistantMessageId ? { assistantMessageId } : {}),
     connectionId,
-    ...(effectiveEnv ? { env: effectiveEnv } : {}),
+    ...(runtimeEnv ? { env: runtimeEnv } : {}),
     userId: authenticatedUser.id,
     ...(resolvedModel ? { model: resolvedModel } : {}),
     ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),

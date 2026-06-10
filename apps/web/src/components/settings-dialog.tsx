@@ -2,18 +2,21 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { useAppTranslation } from "@/i18n";
+import type { AgentModelSourceTab } from "@/lib/agent-model-groups";
 import { SettingsPanel, type SettingsTab } from "./settings-panel";
 
 interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialTab?: SettingsTab;
+  initialAgentSourceTab?: AgentModelSourceTab | undefined;
 }
 
 export function SettingsDialog({
   open,
   onOpenChange,
   initialTab = "agent",
+  initialAgentSourceTab,
 }: SettingsDialogProps) {
   const { t } = useAppTranslation("settings");
 
@@ -28,7 +31,11 @@ export function SettingsDialog({
             {t("dialogTitle")}
           </DialogTitle>
         </DialogHeader>
-        <SettingsPanel initialTab={initialTab} surface="dialog" />
+        <SettingsPanel
+          initialTab={initialTab}
+          initialAgentSourceTab={initialAgentSourceTab}
+          surface="dialog"
+        />
       </DialogContent>
     </Dialog>
   );
