@@ -140,6 +140,8 @@ export function ChatSidebar({
   selectedCanvasElementsRef.current = selectedCanvasElements;
   const prevConnectedRef = useRef(false);
   const replayedArtifactKeysRef = useRef<Set<string>>(new Set());
+  const currentCanvasIdRef = useRef(canvasId);
+  currentCanvasIdRef.current = canvasId;
 
   useEffect(() => {
     setStreaming(
@@ -592,12 +594,24 @@ export function ChatSidebar({
           resolveStream = r;
         });
         const runIdRef = { current: "" };
+        const runCanvasId = canvasId;
 
         const cleanup = ws.onEvent((entry) => {
           const event = entry.event;
           if (!runIdRef.current || event.runId !== runIdRef.current) return;
           if (abortRef.current) {
             resolveStream();
+            return;
+          }
+          const isCurrentCanvas = currentCanvasIdRef.current === runCanvasId;
+          if (!isCurrentCanvas) {
+            if (
+              event.type === "run.completed" ||
+              event.type === "run.failed" ||
+              event.type === "run.canceled"
+            ) {
+              resolveStream();
+            }
             return;
           }
 

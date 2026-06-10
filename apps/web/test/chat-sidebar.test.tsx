@@ -532,6 +532,162 @@ describe("ChatSidebar", () => {
     );
   });
 
+  it("ignores generated artifacts from a run after switching canvases", async () => {
+    const imageGeneratedSpy = vi.fn();
+    const listeners: Array<
+      (entry: {
+        event: Record<string, unknown>;
+        replayed?: boolean;
+        eventId?: string;
+        seq?: number;
+      }) => void
+    > = [];
+    mockWs = {
+      ...mockWs,
+      onEvent: vi.fn((nextListener) => {
+        const listener = nextListener as (typeof listeners)[number];
+        listeners.push(listener);
+        return () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) listeners.splice(index, 1);
+        };
+      }),
+    };
+
+    const { rerender } = render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          onImageGenerated={imageGeneratedSpy}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "generate image{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+
+    rerender(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-2"
+          open
+          onToggle={() => {}}
+          onImageGenerated={imageGeneratedSpy}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    for (const listener of [...listeners]) {
+      listener({
+        event: {
+          type: "tool.completed",
+          runId: "run_123",
+          toolCallId: "tool-old-canvas",
+          toolName: "generate_image",
+          artifacts: [
+            {
+              type: "image",
+              title: "Old canvas image",
+              url: "https://example.com/old-canvas.png",
+              mimeType: "image/png",
+              width: 1024,
+              height: 1024,
+            },
+          ],
+          timestamp: "2026-06-04T00:00:00.000Z",
+        },
+      });
+    }
+
+    for (const listener of [...listeners]) {
+      listener({
+        event: {
+          type: "run.completed",
+          runId: "run_123",
+          timestamp: "2026-06-04T00:00:01.000Z",
+        },
+      });
+    }
+
+    expect(imageGeneratedSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps generated artifacts on the active canvas", async () => {
+    const imageGeneratedSpy = vi.fn();
+    const listeners: Array<
+      (entry: {
+        event: Record<string, unknown>;
+        replayed?: boolean;
+        eventId?: string;
+        seq?: number;
+      }) => void
+    > = [];
+    mockWs = {
+      ...mockWs,
+      onEvent: vi.fn((nextListener) => {
+        const listener = nextListener as (typeof listeners)[number];
+        listeners.push(listener);
+        return () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) listeners.splice(index, 1);
+        };
+      }),
+    };
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          onImageGenerated={imageGeneratedSpy}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "generate image{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+
+    for (const listener of [...listeners]) {
+      listener({
+        event: {
+          type: "tool.completed",
+          runId: "run_123",
+          toolCallId: "tool-active-canvas",
+          toolName: "generate_image",
+          artifacts: [
+            {
+              type: "image",
+              title: "Active canvas image",
+              url: "https://example.com/active-canvas.png",
+              mimeType: "image/png",
+              width: 1024,
+              height: 1024,
+            },
+          ],
+          timestamp: "2026-06-04T00:00:00.000Z",
+        },
+      });
+    }
+
+    expect(imageGeneratedSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "image",
+        url: "https://example.com/active-canvas.png",
+      }),
+    );
+  });
+
   it("opens the settings dialog from the chat header action", async () => {
     render(
       <ToastProvider>

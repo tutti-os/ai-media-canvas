@@ -39,3 +39,13 @@
 - 验证方式和结果: 新增 `apps/web/test/chat-sidebar.test.tsx` 回归用例，先让画布中存在被选中的图片，再点击“分镜故事板”，断言 `startRun` 不包含 attachments；修复前该用例复现失败，修复后 `pnpm --filter @aimc/web test -- --run test/chat-sidebar.test.tsx -t "does not attach selected canvas images"` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 无 console error。
 - 是否已修复完: 是
 - commit hash: `TBD`
+
+## 5. 上一个项目生成结果落入新项目画布
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/JTVXrcoxleJlMucBzmccovJLn72
+- 真实 record id: `recvm886lykM5s`
+- Bug 原因: 同一个 canvas 页面在切换到新项目后，旧项目未结束 run 的 WebSocket 监听仍可能收到 `tool.completed` 事件，并通过当前页面的 Excalidraw API 插入图片；同时旧项目已登记的生成任务 fallback 轮询也可能在新 canvas 上成功回调，导致上一个项目的生图结果显示在新项目画布。
+- 修复方案: 在 `ChatSidebar` 中记录当前 `canvasId`，每个 run 事件只允许在其启动时的 canvas 仍为当前 canvas 时执行画布插入、同步和 fallback 转发；旧 canvas 的终态事件只用于结束该流。Canvas 页面在 `canvasId` 变化时取消所有已登记的 fallback 生成任务订阅，防止旧任务晚到。
+- 验证方式和结果: 新增 `apps/web/test/chat-sidebar.test.tsx` 回归用例，模拟旧 canvas 启动 run、切到新 canvas 后派发旧 run 的 `tool.completed`，修复前会触发 `onImageGenerated`，修复后不触发；同时覆盖当前 canvas 的正常生成 artifact 仍会插入；`pnpm --filter @aimc/web test -- --run test/chat-sidebar.test.tsx -t "ignores generated artifacts|keeps generated artifacts"` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 无 console error。
+- 是否已修复完: 是
+- commit hash: `TBD`
