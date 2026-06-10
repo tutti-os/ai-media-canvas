@@ -29,3 +29,13 @@
 - 验证方式和结果: 新增 `apps/web/test/chat-sidebar.test.tsx` 回归用例，覆盖旧 session 运行中时新 session 仍可发送；同时保留快速重复 Enter 只触发一次发送的既有保护；`pnpm --filter @aimc/web test -- --run test/chat-sidebar.test.tsx -t "allows a new session|rapid duplicate"` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 无 console error。
 - 是否已修复完: 是
 - commit hash: `TBD`
+
+## 4. 本地模板误带上一会话画布图片
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/L8sarmMYOeE1uQcXDfucfswNnKb
+- 真实 record id: `recvm85z6uFRmx`
+- Bug 原因: `ChatSidebar` 在发送消息时会自动把当前选中的画布图片作为 canvas-ref attachment；本地创造模板直接复用 `handleSend`，未传入显式空附件，因此从“Logo 与品牌”切换到“分镜故事板”时，如果上一会话图片仍处于选中状态，模板消息会被错误附带该图片。
+- 修复方案: 仅在本地模板入口传入空 `attachmentsOverride` 和空 `mentionsOverride`，明确表示模板发送不继承当前画布选择；保留普通聊天输入自动引用选中画布图片的行为。
+- 验证方式和结果: 新增 `apps/web/test/chat-sidebar.test.tsx` 回归用例，先让画布中存在被选中的图片，再点击“分镜故事板”，断言 `startRun` 不包含 attachments；修复前该用例复现失败，修复后 `pnpm --filter @aimc/web test -- --run test/chat-sidebar.test.tsx -t "does not attach selected canvas images"` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 无 console error。
+- 是否已修复完: 是
+- commit hash: `TBD`

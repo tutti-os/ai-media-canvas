@@ -496,6 +496,42 @@ describe("ChatSidebar", () => {
     );
   });
 
+  it("does not attach selected canvas images when sending a local template", async () => {
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+          selectedCanvasElements={[
+            {
+              id: "canvas-image-1",
+              type: "image",
+              x: 0,
+              y: 0,
+              width: 320,
+              height: 240,
+              fileId: "file-1",
+              storageUrl: "https://example.test/brand.png",
+            },
+          ]}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "分镜故事板" }));
+
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+    expect(mockWs.startRun).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        attachments: expect.any(Array),
+      }),
+      expect.any(Function),
+    );
+  });
+
   it("opens the settings dialog from the chat header action", async () => {
     render(
       <ToastProvider>
