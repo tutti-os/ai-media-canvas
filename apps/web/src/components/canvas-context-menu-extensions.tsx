@@ -168,8 +168,13 @@ async function copySelectedImagesToClipboard(
   await pngBlob;
 }
 
-function closeNativeContextMenu() {
-  document.dispatchEvent(
+function closeNativeContextMenu(triggerElement?: HTMLElement | null) {
+  const target =
+    triggerElement ??
+    (document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : document.body);
+  target.dispatchEvent(
     new KeyboardEvent("keydown", {
       key: "Escape",
       code: "Escape",
@@ -200,7 +205,7 @@ function replaceImageCopyContextMenuItem(
     "click",
     () => {
       const copyPromise = copySelectedImagesToClipboard(excalidrawApi);
-      closeNativeContextMenu();
+      closeNativeContextMenu(copyButton);
       void copyPromise
         .then(onImageCopied)
         .catch((error) => {
