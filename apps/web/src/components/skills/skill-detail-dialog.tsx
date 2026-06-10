@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import type { SkillDetail, SkillFileEntry, SkillSource } from "@aimc/shared";
 import {
   Calendar,
   ChevronRight,
@@ -9,7 +9,7 @@ import {
   UserPen,
   Users,
 } from "lucide-react";
-import type { SkillDetail, SkillFileEntry, SkillSource } from "@aimc/shared";
+import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -117,9 +117,14 @@ export function SkillDetailDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {skill.name}
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+          <DialogTitle className="flex items-start gap-3 pr-12">
+            <span className="min-w-0 flex-1 break-words text-left">
+              {skill.name}
+            </span>
+            <span
+              data-testid="skill-detail-source-badge"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+            >
               <SourceIcon className="size-3" />
               {t(sourceEntry.labelKey)}
             </span>

@@ -99,3 +99,13 @@
 - 验证方式和结果: 新增 `apps/web/test/canvas-context-menu-extensions.test.tsx` 回归，模拟 `exportToBlob` 长时间 pending，点击“下载图片”后立即断言已派发 `Escape`，并验证仍按选中图片调用导出；`pnpm --filter @aimc/web exec vitest run test/canvas-context-menu-extensions.test.tsx -t download` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/canvas-context-menu-extensions.tsx apps/web/test/canvas-context-menu-extensions.test.tsx` 通过；浏览器打开 `http://localhost:3000/canvas` 无 console error。一次通过 npm 脚本误触发的 web 全量测试中，目标文件 5 个测试通过，但无关 `test/canvas-page.test.tsx` 的视频轮询用例失败，未作为本 bug 阻塞。
 - 是否已修复完: 是
 - commit hash: `TBD`
+
+## 11. 导入 Skill 详情右上角来源标识拥挤
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/DRbfrKELCeSAjecppercbdb3nAc
+- 真实 record id: `recvm8cSdG1Wtk`
+- Bug 原因: 导入 skill 的详情弹窗把长标题和“自定义”来源胶囊放在同一个无右侧预留空间的 `DialogTitle` flex 行内；标题换行后会把来源胶囊推到右上角，和 shadcn 默认关闭按钮视觉上挤在一起，截图中红箭头指向的就是这个拥挤区域。
+- 修复方案: 重构详情标题行布局：标题文本使用 `min-w-0 flex-1 break-words` 作为可换行主区域，来源胶囊使用 `shrink-0` 固定在右侧，并给标题行增加 `pr-12` 为关闭按钮预留空间，避免来源标识和关闭按钮重叠或贴得过近。
+- 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 回归，模拟导入 skill 长标题并打开详情弹窗，断言标题文本、标题行和来源胶囊具备防挤压布局类；`pnpm --filter @aimc/web exec vitest run test/skills-page.test.tsx -t "imported skill detail"` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/skills/skill-detail-dialog.tsx apps/web/test/skills-page.test.tsx` 通过；浏览器打开 `http://localhost:3000/skills` 无 console error。
+- 是否已修复完: 是
+- commit hash: `TBD`

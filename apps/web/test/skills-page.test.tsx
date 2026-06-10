@@ -197,11 +197,9 @@ license: MIT
 
 # PUA 我们不养闲 Agent
 `;
-    const skillFile = new File(
-      [skillContent],
-      "SKILL.md",
-      { type: "text/markdown" },
-    );
+    const skillFile = new File([skillContent], "SKILL.md", {
+      type: "text/markdown",
+    });
     Object.defineProperty(skillFile, "text", {
       value: async () => skillContent,
     });
@@ -265,16 +263,67 @@ license: MIT
     fireEvent.click(screen.getByRole("button", { name: "添加技能" }));
 
     const dialog = screen.getByRole("dialog");
-    expect(dialog).toHaveClass(
-      "max-h-[calc(100vh-6rem)]",
-      "overflow-hidden",
-    );
+    expect(dialog).toHaveClass("max-h-[calc(100vh-6rem)]", "overflow-hidden");
     const scrollBody = screen.getByTestId("create-skill-dialog-scroll");
     expect(scrollBody).toHaveClass("min-h-0", "overflow-y-auto");
     expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "添加技能" }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps imported skill detail badges away from the close button", async () => {
+    const longSkillName = "PUA 我们不养闲 Agent，一个提高agent积极性的 skill。";
+    const importedSkill = {
+      id: "skill-imported",
+      name: longSkillName,
+      slug: "pua",
+      description: "Imported local skill.",
+      author: "Local User",
+      version: "1.0.0",
+      category: "custom",
+      iconName: null,
+      source: "user",
+      isFeatured: false,
+      metadata: {},
+      installed: true,
+      enabled: true,
+      installedAt: "2026-06-10T00:00:00Z",
+      createdAt: "2026-06-10T00:00:00Z",
+      updatedAt: "2026-06-10T00:00:00Z",
+      license: "Local",
+      skillContent: "# PUA",
+      createdBy: "Local User",
+      sourceUrl: null,
+      packageName: null,
+      files: [],
+    };
+    fetchInstalledSkillsMock.mockResolvedValue({ skills: [importedSkill] });
+    fetchSkillCatalogMock.mockResolvedValue({ skills: [] });
+    fetchSkillDetailMock.mockResolvedValue({ skill: importedSkill });
+
+    render(
+      <ToastProvider>
+        <SkillsPage />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "详情" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const titleText = Array.from(dialog.querySelectorAll("span")).find(
+      (element) => element.textContent === longSkillName,
+    ) as HTMLElement;
+
+    expect(titleText).toHaveClass("min-w-0", "flex-1", "break-words");
+    expect(titleText.parentElement).toHaveClass(
+      "items-start",
+      "gap-3",
+      "pr-12",
+    );
+    expect(screen.getByTestId("skill-detail-source-badge")).toHaveClass(
+      "shrink-0",
+    );
   });
 
   it("uninstalls a skill with local state updates instead of refetching the installed list", async () => {
