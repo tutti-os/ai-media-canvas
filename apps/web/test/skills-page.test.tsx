@@ -224,6 +224,29 @@ describe("Skills page", () => {
     expect(fetchInstalledSkillsMock).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the custom skill dialog within the viewport with a scrollable body", async () => {
+    render(
+      <ToastProvider>
+        <SkillsPage />
+      </ToastProvider>,
+    );
+
+    await screen.findByText("Canvas Director");
+    fireEvent.click(screen.getByRole("button", { name: "添加技能" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveClass(
+      "max-h-[calc(100vh-6rem)]",
+      "overflow-hidden",
+    );
+    const scrollBody = screen.getByTestId("create-skill-dialog-scroll");
+    expect(scrollBody).toHaveClass("min-h-0", "overflow-y-auto");
+    expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "添加技能" }),
+    ).toBeInTheDocument();
+  });
+
   it("uninstalls a skill with local state updates instead of refetching the installed list", async () => {
     render(
       <ToastProvider>

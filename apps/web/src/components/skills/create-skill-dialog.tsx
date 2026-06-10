@@ -154,138 +154,143 @@ export function CreateSkillDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[calc(100vh-6rem)] flex-col overflow-hidden sm:max-w-lg">
+        <DialogHeader className="shrink-0 pr-8">
           <DialogTitle>{t("createDialog.title")}</DialogTitle>
           <DialogDescription>{t("createDialog.description")}</DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="skill-name">{t("fields.name")}</Label>
-            <Input
-              id="skill-name"
-              placeholder="e.g. UI Design Expert"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={200}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="skill-category">{t("fields.category")}</Label>
-            <select
-              id="skill-category"
-              value={category}
-              onChange={(event) =>
-                setCategory(event.target.value as SkillCategory)
-              }
-              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              {CATEGORY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="skill-desc">{t("fields.description")}</Label>
-            <textarea
-              id="skill-desc"
-              rows={2}
-              placeholder={t("createDialog.descriptionPlaceholder")}
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              maxLength={2000}
-              className="w-full resize-none rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="skill-content">SKILL.md</Label>
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                onClick={() => setSkillContent(SKILL_TEMPLATE)}
-              >
-                {t("createDialog.useTemplate")}
-              </Button>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div
+            className="-mx-1 min-h-0 flex-1 space-y-4 overflow-y-auto px-1 pb-4"
+            data-testid="create-skill-dialog-scroll"
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="skill-name">{t("fields.name")}</Label>
+              <Input
+                id="skill-name"
+                placeholder="e.g. UI Design Expert"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={200}
+              />
             </div>
-            <textarea
-              id="skill-content"
-              rows={12}
-              placeholder="# Skill Name..."
-              value={skillContent}
-              onChange={(event) => setSkillContent(event.target.value)}
-              className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            />
-          </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>{t("detail.attachments")}</Label>
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                onClick={addFile}
+            <div className="space-y-1.5">
+              <Label htmlFor="skill-category">{t("fields.category")}</Label>
+              <select
+                id="skill-category"
+                value={category}
+                onChange={(event) =>
+                  setCategory(event.target.value as SkillCategory)
+                }
+                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                <Plus className="size-3.5" />
-                {t("createDialog.addFile")}
-              </Button>
+                {CATEGORY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
-            {files.map((file, index) => {
-              const pathValid =
-                file.filePath.trim().length === 0 ||
-                isValidFilePath(file.filePath.trim());
-              return (
-                <div
-                  key={`${index}-${file.filePath}`}
-                  className="space-y-2 rounded-lg border border-border p-3"
+
+            <div className="space-y-1.5">
+              <Label htmlFor="skill-desc">{t("fields.description")}</Label>
+              <textarea
+                id="skill-desc"
+                rows={2}
+                placeholder={t("createDialog.descriptionPlaceholder")}
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                maxLength={2000}
+                className="w-full resize-none rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="skill-content">SKILL.md</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={() => setSkillContent(SKILL_TEMPLATE)}
                 >
-                  <div className="flex items-center gap-2">
-                    <FileText className="size-4 text-muted-foreground" />
-                    <Input
-                      placeholder="scripts/tool.ts"
-                      value={file.filePath}
+                  {t("createDialog.useTemplate")}
+                </Button>
+              </div>
+              <textarea
+                id="skill-content"
+                rows={12}
+                placeholder="# Skill Name..."
+                value={skillContent}
+                onChange={(event) => setSkillContent(event.target.value)}
+                className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>{t("detail.attachments")}</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={addFile}
+                >
+                  <Plus className="size-3.5" />
+                  {t("createDialog.addFile")}
+                </Button>
+              </div>
+              {files.map((file, index) => {
+                const pathValid =
+                  file.filePath.trim().length === 0 ||
+                  isValidFilePath(file.filePath.trim());
+                return (
+                  <div
+                    key={`${index}-${file.filePath}`}
+                    className="space-y-2 rounded-lg border border-border p-3"
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileText className="size-4 text-muted-foreground" />
+                      <Input
+                        placeholder="scripts/tool.ts"
+                        value={file.filePath}
+                        onChange={(event) =>
+                          updateFile(index, "filePath", event.target.value)
+                        }
+                        className={pathValid ? "" : "border-destructive"}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => removeFile(index)}
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+                    {!pathValid ? (
+                      <p className="text-[11px] text-destructive">
+                        {t("createDialog.invalidPath")}
+                      </p>
+                    ) : null}
+                    <textarea
+                      rows={4}
+                      placeholder={t("createDialog.fileContentPlaceholder")}
+                      value={file.content}
                       onChange={(event) =>
-                        updateFile(index, "filePath", event.target.value)
+                        updateFile(index, "content", event.target.value)
                       }
-                      className={pathValid ? "" : "border-destructive"}
+                      className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                     />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => removeFile(index)}
-                    >
-                      <X className="size-3.5" />
-                    </Button>
                   </div>
-                  {!pathValid ? (
-                    <p className="text-[11px] text-destructive">
-                      {t("createDialog.invalidPath")}
-                    </p>
-                  ) : null}
-                  <textarea
-                    rows={4}
-                    placeholder={t("createDialog.fileContentPlaceholder")}
-                    value={file.content}
-                    onChange={(event) =>
-                      updateFile(index, "content", event.target.value)
-                    }
-                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                  />
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button
               type="button"
               variant="outline"

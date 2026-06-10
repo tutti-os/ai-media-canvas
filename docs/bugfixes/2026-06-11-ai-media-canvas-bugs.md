@@ -59,3 +59,13 @@
 - 验证方式和结果: 新增 `apps/server/src/features/canvas/canvas-element-writer.test.ts` 用例，验证连续预留位置会按请求顺序排布，而不依赖图片完成后的真实写入顺序；`pnpm --filter @aimc/server test -- src/features/canvas/canvas-element-writer.test.ts` 通过（实际运行 25 个 server 测试文件均通过）；`pnpm --filter @aimc/server typecheck` 通过。
 - 是否已修复完: 是
 - commit hash: `TBD`
+
+## 7. 添加自定义技能弹窗高度溢出
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/Apqqr6mLbeuE5Wc4sm7cWJUjnte
+- 真实 record id: `recvm8aIDdwf0e`
+- Bug 原因: `CreateSkillDialog` 的 `DialogContent` 只限制了宽度，没有限制 viewport 内最大高度；长表单直接撑高整个弹窗，导致标题区域贴近/被窗口顶栏遮挡，底部按钮也容易贴边或被挤出可视区域。
+- 修复方案: 将弹窗内容改为纵向 flex 布局，设置 `max-h-[calc(100vh-6rem)]` 和 `overflow-hidden`；表单主体单独设置 `overflow-y-auto`，底部 `DialogFooter` 固定在滚动区外，保证长内容可滚动且操作按钮始终可见。
+- 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 回归用例，验证添加技能弹窗具备最大高度、外层隐藏溢出和内部滚动区；`pnpm --filter @aimc/web test -- --run test/skills-page.test.tsx -t "custom skill dialog|creates a skill"` 通过（实际运行 45 个 web 测试文件均通过）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm check:i18n` 通过；本地 `localhost:3000/skills` 打开弹窗实测在 1470x797 视口内 top=62/bottom=735，且无 console error。
+- 是否已修复完: 是
+- commit hash: `TBD`
