@@ -26,14 +26,19 @@ vi.mock("../src/hooks/use-agent-model", () => ({
 
 vi.mock("../src/components/settings-dialog", () => ({
   SettingsDialog: ({
+    initialAgentSourceTab,
     initialTab,
     open,
   }: {
+    initialAgentSourceTab?: string;
     initialTab?: string;
     open: boolean;
   }) =>
     open ? (
-      <div data-testid="settings-dialog">{initialTab ?? "agent"}</div>
+      <div data-testid="settings-dialog">
+        {initialTab ?? "agent"}
+        {initialAgentSourceTab ? `:${initialAgentSourceTab}` : ""}
+      </div>
     ) : null,
 }));
 
@@ -210,6 +215,31 @@ describe("AgentModelSelector", () => {
     ).toHaveAttribute("aria-pressed", "true");
     expect(await screen.findByText("gpt-5.4")).toBeInTheDocument();
     expect(screen.queryByText("Codex")).not.toBeInTheDocument();
+  });
+
+  it("opens agent settings on the Nextop Managed panel from the empty state", async () => {
+    fetchModelsMock.mockResolvedValue({
+      models: [{ id: "codex:gpt-5.5", name: "Codex", provider: "codex" }],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Nextop Managed" }),
+    );
+
+    expect(
+      await screen.findByText("No Nextop Managed models connected."),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connect in settings" }),
+    );
+
+    expect(screen.getByTestId("settings-dialog")).toHaveTextContent(
+      "agent:nextop-managed",
+    );
   });
 
   it("shows local CLI provider icons in the model groups", async () => {

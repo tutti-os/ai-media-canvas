@@ -7,6 +7,7 @@
   "agentModelSelector": {
     "apiProvider": "API provider",
     "assistantMode": "Assistant Mode",
+    "connectNextopManaged": "Connect in settings",
     "customModelId": "Custom model ID",
     "localAgent": "Local agent",
     "localAssistant": "Local Assistant",

@@ -80,6 +80,7 @@ export default interface Resources {
     "agentModelSelector": {
       "apiProvider": "API provider",
       "assistantMode": "助手模式",
+      "connectNextopManaged": "去设置连接",
       "customModelId": "自定义模型 ID",
       "localAgent": "本地 Agent",
       "localAssistant": "本地助手",

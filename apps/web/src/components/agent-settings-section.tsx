@@ -48,6 +48,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
 interface AgentSettingsSectionProps {
+  initialSourceTab?: AgentModelSourceTab | undefined;
   settings: WorkspaceSettings;
   onSave: (settings: WorkspaceSettings) => Promise<void>;
   surface?: "page" | "dialog";
@@ -898,6 +899,7 @@ function LocalCliProviderModelPicker({
 }
 
 export function AgentSettingsSection({
+  initialSourceTab,
   settings: initialSettings,
   onSave,
   surface = "page",
@@ -931,6 +933,7 @@ export function AgentSettingsSection({
   );
   const [activeSourceTab, setActiveSourceTab] = useState<AgentModelSourceTab>(
     () =>
+      initialSourceTab ??
       inferDefaultModelSource(initialSettings) ??
       getAgentModelSourceTab(initialSettings.defaultModel),
   );
@@ -955,6 +958,11 @@ export function AgentSettingsSection({
       },
     });
   }, [initialSettings]);
+
+  useEffect(() => {
+    if (!initialSourceTab) return;
+    setActiveSourceTab(initialSourceTab);
+  }, [initialSourceTab]);
 
   const refreshAvailableModels = useCallback(async () => {
     try {

@@ -170,6 +170,8 @@ export function AgentModelSelector({
   const { model, modelSource, setModel } = useAgentModel();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialSourceTab, setSettingsInitialSourceTab] =
+    useState<AgentModelSourceTab | undefined>();
   const [models, setModels] = useState<ModelOption[]>([]);
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
     string | null
@@ -305,22 +307,29 @@ export function AgentModelSelector({
   useLayoutEffect(() => {
     if (!open || !btnRef.current) return;
     const rect = btnRef.current.getBoundingClientRect();
-    const popoverHeight = 360;
+    const popoverWidth = Math.min(416, Math.max(280, window.innerWidth - 32));
+    const popoverHeight = 420;
     const spaceBelow = window.innerHeight - rect.bottom;
     const openAbove = spaceBelow < popoverHeight && rect.top > spaceBelow;
+    const left = Math.min(
+      Math.max(16, rect.left),
+      window.innerWidth - popoverWidth - 16,
+    );
 
     if (openAbove) {
       setPopoverStyle({
         position: "fixed",
         bottom: window.innerHeight - rect.top + 8,
-        left: rect.left,
+        left,
+        width: popoverWidth,
         zIndex: 9999,
       });
     } else {
       setPopoverStyle({
         position: "fixed",
         top: rect.bottom + 8,
-        left: rect.left,
+        left,
+        width: popoverWidth,
         zIndex: 9999,
       });
     }
@@ -406,7 +415,7 @@ export function AgentModelSelector({
           <div
             ref={popoverRef}
             style={popoverStyle}
-            className="max-h-[min(28rem,calc(100vh-2rem))] w-56 overflow-y-auto rounded-xl border border-border bg-popover p-2 shadow-lg"
+            className="max-h-[min(28rem,calc(100vh-2rem))] overflow-y-auto rounded-xl border border-border bg-popover p-2 shadow-lg"
           >
             <div className="mb-2 flex items-center justify-between gap-2 px-2">
               <div className="text-xs font-medium text-muted-foreground">
@@ -417,6 +426,7 @@ export function AgentModelSelector({
                 aria-label={t("agentModelSelector.openSettings")}
                 onClick={() => {
                   setOpen(false);
+                  setSettingsInitialSourceTab(undefined);
                   setSettingsOpen(true);
                 }}
                 className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -451,14 +461,14 @@ export function AgentModelSelector({
                     type="button"
                     aria-pressed={selected}
                     onClick={() => setActiveModelTab(tab.id)}
-                    className={`inline-flex h-8 items-center justify-center gap-1 rounded-full px-2 text-[11px] font-medium transition-colors ${
+                    className={`inline-flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-full px-2 text-[12px] font-medium leading-tight transition-colors ${
                       selected
                         ? "bg-background text-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    <Icon className="h-3 w-3" />
-                    {tab.label}
+                    <Icon className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{tab.label}</span>
                   </button>
                 );
               })}
@@ -547,12 +557,27 @@ export function AgentModelSelector({
               );
             })}
             {providers.length === 0 ? (
-              <div className="rounded-lg px-2 py-4 text-xs text-muted-foreground">
-                {activeModelTab === "local-agent"
-                  ? t("agentModelSelector.noLocalCliModels")
-                  : activeModelTab === "nextop-managed"
-                    ? t("agentModelSelector.noNextopManagedModels")
-                  : t("agentModelSelector.noApiProviderModels")}
+              <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                <p>
+                  {activeModelTab === "local-agent"
+                    ? t("agentModelSelector.noLocalCliModels")
+                    : activeModelTab === "nextop-managed"
+                      ? t("agentModelSelector.noNextopManagedModels")
+                    : t("agentModelSelector.noApiProviderModels")}
+                </p>
+                {activeModelTab === "nextop-managed" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      setSettingsInitialSourceTab("nextop-managed");
+                      setSettingsOpen(true);
+                    }}
+                    className="mt-3 inline-flex h-8 items-center rounded-full border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    {t("agentModelSelector.connectNextopManaged")}
+                  </button>
+                ) : null}
               </div>
             ) : null}
             {activeModelTab === "api-provider" ? (
@@ -595,6 +620,7 @@ export function AgentModelSelector({
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
+        initialAgentSourceTab={settingsInitialSourceTab}
         initialTab="agent"
       />
     </>
