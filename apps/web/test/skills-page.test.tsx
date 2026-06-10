@@ -172,7 +172,7 @@ describe("Skills page", () => {
   });
 
   it("offers both file import and directory import for local skill packages", async () => {
-    render(
+    const { container } = render(
       <ToastProvider>
         <SkillsPage />
       </ToastProvider>,
@@ -186,6 +186,36 @@ describe("Skills page", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "选择目录" }),
+    ).toBeInTheDocument();
+
+    const fileInput = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const skillContent = `name: pua
+description: "Use when the user explicitly requests PUA mode or signals frustration."
+license: MIT
+
+# PUA 我们不养闲 Agent
+`;
+    const skillFile = new File(
+      [skillContent],
+      "SKILL.md",
+      { type: "text/markdown" },
+    );
+    Object.defineProperty(skillFile, "text", {
+      value: async () => skillContent,
+    });
+    Object.defineProperty(skillFile, "webkitRelativePath", {
+      value: "pua/SKILL.md",
+    });
+
+    fireEvent.change(fileInput, { target: { files: [skillFile] } });
+
+    expect(await screen.findByDisplayValue("pua")).toBeInTheDocument();
+    expect(
+      await screen.findByDisplayValue(
+        "Use when the user explicitly requests PUA mode or signals frustration.",
+      ),
     ).toBeInTheDocument();
   });
 

@@ -69,3 +69,13 @@
 - 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 回归用例，验证添加技能弹窗具备最大高度、外层隐藏溢出和内部滚动区；`pnpm --filter @aimc/web test -- --run test/skills-page.test.tsx -t "custom skill dialog|creates a skill"` 通过（实际运行 45 个 web 测试文件均通过）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm check:i18n` 通过；本地 `localhost:3000/skills` 打开弹窗实测在 1470x797 视口内 top=62/bottom=735，且无 console error。
 - 是否已修复完: 是
 - commit hash: `TBD`
+
+## 8. 导入 Skill 未从 SKILL.md 提取名称和描述
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/K8IirYXp3ean1VcK3WEc8aRfnwc
+- 真实 record id: `recvm8cp3qk5Za`
+- Bug 原因: 导入面板只检测 `SKILL.md` 是否存在，没有解析文件内容来预填名称和描述；服务端兜底也只支持一级标题和 `## Description` 段落，截图中的 `SKILL.md` 使用顶部 `name:` / `description:` frontmatter，因此 UI 保持占位，导入结果也可能无法使用文件内元数据。
+- 修复方案: 前端选择文件后解析 `SKILL.md` 的 loose YAML frontmatter、一级标题和 `## Description` 段落，在用户未手动编辑时自动预填名称/描述；服务端 `importSkill` 同步支持 frontmatter 兜底，并在 `SKILL.md` 无标题时用父目录名作为更合理的名称来源。
+- 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 导入回归，模拟 `pua/SKILL.md` 含 `name: pua` 和 `description: ...`，断言导入表单自动填入名称/描述；新增 `apps/server/src/local/store.test.ts` 回归，断言服务端导入同类文件后落库名称/描述正确；`pnpm --filter @aimc/web test -- --run test/skills-page.test.tsx -t "file import"` 通过（实际运行 45 个 web 测试文件均通过）；`pnpm --filter @aimc/server test -- src/local/store.test.ts` 通过（实际运行 25 个 server 测试文件均通过）；`pnpm --filter @aimc/web typecheck`、`pnpm --filter @aimc/server typecheck`、`pnpm check:i18n` 均通过；本地 `localhost:3000/skills` 模拟选择文件后名称为 `pua`、描述正确预填且无 console error。
+- 是否已修复完: 是
+- commit hash: `TBD`

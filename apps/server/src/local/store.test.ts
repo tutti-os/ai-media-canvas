@@ -716,6 +716,26 @@ Help the assistant break an idea into storyboard beats.
     expect(imported).not.toBeNull();
     expect(imported?.name).toBe("Local Storyboard Skill");
 
+    const frontmatterSkill = store.importSkill({
+      files: [
+        {
+          filePath: "pua/SKILL.md",
+          content: `name: pua
+description: "Use when the user explicitly requests PUA mode or signals frustration."
+license: MIT
+
+# PUA 我们不养闲 Agent
+`,
+        },
+      ],
+    });
+
+    expect(frontmatterSkill).not.toBeNull();
+    expect(frontmatterSkill?.name).toBe("pua");
+    expect(frontmatterSkill?.description).toBe(
+      "Use when the user explicitly requests PUA mode or signals frustration.",
+    );
+
     const enabled = store.listEnabledSkills().map((skill) => skill.id);
     expect(enabled).toContain(bundled!.id);
     expect(enabled).toContain(imported!.id);

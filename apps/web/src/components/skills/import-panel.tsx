@@ -41,6 +41,8 @@ export function ImportPanel({
   const { success, error: showError } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const directoryInputRef = useRef<HTMLInputElement>(null);
+  const nameTouchedRef = useRef(false);
+  const descriptionTouchedRef = useRef(false);
   const [files, setFiles] = useState<SelectedImportFile[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -64,6 +66,21 @@ export function ImportPanel({
         })),
       );
       setFiles(nextFiles);
+      const nextSkillFile = nextFiles.find((file) =>
+        /(^|\/)SKILL\.md$/i.test(file.filePath),
+      );
+      if (nextSkillFile) {
+        const metadata = extractSkillMetadata(
+          nextSkillFile.content,
+          nextSkillFile.filePath,
+        );
+        if (!nameTouchedRef.current) {
+          setName(metadata.name ?? "");
+        }
+        if (!descriptionTouchedRef.current) {
+          setDescription(metadata.description ?? "");
+        }
+      }
       setSuccessName(null);
     },
     [],
@@ -96,6 +113,8 @@ export function ImportPanel({
     setFiles([]);
     setName("");
     setDescription("");
+    nameTouchedRef.current = false;
+    descriptionTouchedRef.current = false;
     setCategory("custom");
     setSuccessName(null);
     if (fileInputRef.current) {
@@ -199,7 +218,10 @@ export function ImportPanel({
             </span>
             <input
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                nameTouchedRef.current = true;
+                setName(event.target.value);
+              }}
               placeholder={t("importPanel.namePlaceholder")}
               className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
@@ -231,7 +253,10 @@ export function ImportPanel({
           <textarea
             rows={3}
             value={description}
-            onChange={(event) => setDescription(event.target.value)}
+            onChange={(event) => {
+              descriptionTouchedRef.current = true;
+              setDescription(event.target.value);
+            }}
             placeholder={t("importPanel.descriptionPlaceholder")}
             className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
@@ -288,5 +313,60 @@ export function ImportPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+function extractSkillMetadata(content: string, filePath: string) {
+  const frontmatter = parseLooseFrontmatter(content);
+  return {
+    name:
+      frontmatter.name ??
+      /^#\s+(.+)$/m.exec(content)?.[1]?.trim() ??
+      deriveNameFromPath(filePath),
+    description:
+      frontmatter.description ?? extractDescriptionSection(content) ?? "",
+  };
+}
+
+function parseLooseFrontmatter(content: string) {
+  const lines = content.trimStart().split(/\r?\n/);
+  const metadata: Record<string, string> = {};
+  let index = lines[0]?.trim() === "---" ? 1 : 0;
+
+  for (; index < lines.length; index++) {
+    const line = lines[index];
+    if (!line) break;
+    const trimmed = line.trim();
+    if (!trimmed || trimmed === "---" || trimmed.startsWith("#")) break;
+    const match = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(trimmed);
+    if (!match) break;
+    metadata[match[1]!.toLowerCase()] = stripYamlScalar(match[2] ?? "");
+  }
+
+  return metadata;
+}
+
+function stripYamlScalar(value: string) {
+  const trimmed = value.trim();
+  const quoted = /^(['"])([\s\S]*)\1$/.exec(trimmed);
+  return (quoted?.[2] ?? trimmed).trim();
+}
+
+function extractDescriptionSection(content: string) {
+  const match = /## Description\s+([\s\S]*?)(?:\n## |\n# |$)/i.exec(content);
+  return match?.[1]?.trim();
+}
+
+function deriveNameFromPath(filePath: string) {
+  const parts = filePath.split("/").filter(Boolean);
+  const basename = parts.at(-1) ?? filePath;
+  const source =
+    /^SKILL\.md$/i.test(basename) && parts.length > 1
+      ? parts.at(-2)!
+      : basename.replace(/\.[^.]+$/, "");
+  return (
+    source
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase()) || "Imported Skill"
   );
 }
