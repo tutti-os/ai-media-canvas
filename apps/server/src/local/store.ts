@@ -1743,6 +1743,50 @@ export function createLocalStore(options: {
 
   function deleteSession(sessionId: string) {
     if (!hasSession(sessionId)) return false;
+    const timestamp = nowIso();
+    const activeRuns = db
+      .prepare(
+        `
+          SELECT id, canvas_id
+          FROM agent_runs
+          WHERE session_id = ?
+            AND status IN ('accepted', 'running')
+        `,
+      )
+      .all(sessionId) as Array<{
+        canvas_id: string | null;
+        id: string;
+      }>;
+
+    for (const run of activeRuns) {
+      updateAgentRun({
+        runId: run.id,
+        status: "canceled",
+      });
+      appendAgentRunEvent({
+        ...(run.canvas_id ? { canvasId: run.canvas_id } : {}),
+        runId: run.id,
+        event: {
+          type: "run.canceled",
+          runId: run.id,
+          timestamp,
+        },
+      });
+    }
+
+    db.prepare(
+      `
+        UPDATE background_jobs
+        SET status = 'canceled',
+            updated_at = ?,
+            canceled_at = ?,
+            locked_at = NULL,
+            locked_by = NULL
+        WHERE session_id = ?
+          AND status IN ('queued', 'running', 'failed')
+      `,
+    ).run(timestamp, timestamp, sessionId);
+
     db.prepare(`DELETE FROM chat_messages WHERE session_id = ?`).run(sessionId);
     db.prepare(`DELETE FROM chat_sessions WHERE id = ?`).run(sessionId);
     return true;
@@ -3278,6 +3322,8 @@ export function createLocalStore(options: {
             locked_at = NULL,
             locked_by = NULL
         WHERE id = ?
+          AND status != 'canceled'
+          AND canceled_at IS NULL
       `,
     ).run(JSON.stringify(resultPayload), updatedAt, updatedAt, jobId);
     return getBackgroundJob(jobId);
@@ -3311,6 +3357,8 @@ export function createLocalStore(options: {
             locked_at = NULL,
             locked_by = NULL
         WHERE id = ?
+          AND status != 'canceled'
+          AND canceled_at IS NULL
       `,
     ).run(
       nextStatus,

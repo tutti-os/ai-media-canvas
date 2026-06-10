@@ -129,6 +129,74 @@ describe("createLocalStore", () => {
     expect(row?.completed_at).toEqual(expect.any(String));
   });
 
+  it("cancels active session work before deleting the session", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const project = store.createProject({ name: "Session cleanup" });
+    const session = store.createSession(project.primaryCanvas.id, "Deleting session");
+    expect(session).not.toBeNull();
+
+    const assistantMessage = store.createMessage(session!.id, {
+      role: "assistant",
+      content: "",
+      contentBlocks: [],
+    });
+    expect(assistantMessage).not.toBeNull();
+
+    store.createAgentRun({
+      assistantMessageId: assistantMessage!.id,
+      canvasId: project.primaryCanvas.id,
+      model: "agnes:agnes-2.0-flash",
+      runtimeKind: "server-deepagent",
+      runId: "run-delete-session",
+      sessionId: session!.id,
+    });
+    store.updateAgentRun({
+      runId: "run-delete-session",
+      status: "running",
+    });
+    const job = store.createBackgroundJob({
+      jobType: "image_generation",
+      queueName: "image_generation_jobs",
+      projectId: project.id,
+      canvasId: project.primaryCanvas.id,
+      sessionId: session!.id,
+      payload: {
+        prompt: "A social carousel",
+        model: "gpt-image-1",
+      },
+    });
+
+    expect(store.deleteSession(session!.id)).toBe(true);
+
+    expect(store.getAgentRun("run-delete-session")?.status).toBe("canceled");
+    expect(
+      store.listAgentRunEvents("run-delete-session").at(-1)?.event,
+    ).toMatchObject({
+      type: "run.canceled",
+      runId: "run-delete-session",
+    });
+    expect(store.getBackgroundJob(job.id)?.status).toBe("canceled");
+    expect(
+      store.markBackgroundJobSucceeded(job.id, {
+        signed_url: "https://example.test/image.png",
+      })?.status,
+    ).toBe("canceled");
+    expect(
+      store.markBackgroundJobFailed({
+        jobId: job.id,
+        errorCode: "late_failure",
+        errorMessage: "Late worker failure",
+      })?.status,
+    ).toBe("canceled");
+  });
+
   it("reclaims stale running background jobs without incrementing attempts", () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
     tempDirs.push(dataRoot);
