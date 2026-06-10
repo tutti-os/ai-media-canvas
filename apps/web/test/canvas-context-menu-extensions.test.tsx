@@ -137,6 +137,7 @@ describe("CanvasContextMenuExtensions", () => {
 
   it("copies selected images as PNG without triggering the native PNG copy action", async () => {
     const user = userEvent.setup();
+    const nativeCopyClick = vi.fn();
     const copyAsPngClick = vi.fn();
     const keydownEvents: KeyboardEvent[] = [];
     const clipboardWrite = vi.fn().mockResolvedValue(undefined);
@@ -165,6 +166,9 @@ describe("CanvasContextMenuExtensions", () => {
         </ul>
       </div>
     `;
+    document
+      .querySelector('[data-testid="copy"] button')
+      ?.addEventListener("click", nativeCopyClick);
     document
       .querySelector('[data-testid="copyAsPng"] button')
       ?.addEventListener("click", copyAsPngClick);
@@ -209,6 +213,7 @@ describe("CanvasContextMenuExtensions", () => {
     await waitFor(() => {
       expect(clipboardWrite).toHaveBeenCalledTimes(1);
     });
+    expect(nativeCopyClick).not.toHaveBeenCalled();
     expect(copyAsPngClick).not.toHaveBeenCalled();
     expect(keydownEvents).toEqual([
       expect.objectContaining({ key: "Escape", code: "Escape" }),

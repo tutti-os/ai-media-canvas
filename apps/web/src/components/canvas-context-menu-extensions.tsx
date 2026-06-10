@@ -44,6 +44,16 @@ const NATIVE_CONTEXT_MENU_LABEL_KEYS: Record<string, string> = {
   "复制": "canvas:contextMenu.native.duplicate",
 };
 
+function isCanvasContextMenuApi(
+  excalidrawApi: CanvasContextMenuExtensionsProps["excalidrawApi"],
+): excalidrawApi is CanvasContextMenuApi {
+  return (
+    typeof excalidrawApi?.getAppState === "function" &&
+    typeof excalidrawApi?.getFiles === "function" &&
+    typeof excalidrawApi?.getSceneElements === "function"
+  );
+}
+
 function hideNativeContextMenuItems(menuElement: HTMLUListElement) {
   for (const item of menuElement.querySelectorAll<HTMLLIElement>("li")) {
     if (
@@ -168,27 +178,27 @@ function closeNativeContextMenu() {
   );
 }
 
-function enhanceCopyContextMenuItem(
+function replaceImageCopyContextMenuItem(
   menuElement: HTMLUListElement,
   excalidrawApi: CanvasContextMenuApi,
   onImageCopied: () => void,
   onImageCopyFailed: () => void,
 ) {
+  if (!canCopySelectionAsImage(excalidrawApi)) return;
+
   const copyItem = menuElement.querySelector<HTMLLIElement>(
     'li[data-testid="copy"]',
   );
-  const copyButton = copyItem?.querySelector<HTMLButtonElement>("button");
-  if (!copyButton || copyButton.dataset.aimcCopyImageHandler === "true") return;
+  if (!copyItem || copyItem.dataset.aimcCopyImageItem === "true") return;
 
-  copyButton.dataset.aimcCopyImageHandler = "true";
+  const imageCopyItem = copyItem.cloneNode(true) as HTMLLIElement;
+  imageCopyItem.dataset.testid = "aimcCopyImage";
+  imageCopyItem.dataset.aimcCopyImageItem = "true";
+  const copyButton = imageCopyItem.querySelector<HTMLButtonElement>("button");
+  if (!copyButton) return;
   copyButton.addEventListener(
     "click",
-    (event) => {
-      if (!canCopySelectionAsImage(excalidrawApi)) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
+    () => {
       const copyPromise = copySelectedImagesToClipboard(excalidrawApi);
       closeNativeContextMenu();
       void copyPromise
@@ -198,8 +208,8 @@ function enhanceCopyContextMenuItem(
           onImageCopyFailed();
         });
     },
-    true,
   );
+  copyItem.replaceWith(imageCopyItem);
 }
 
 export function CanvasContextMenuExtensions({
@@ -217,8 +227,8 @@ export function CanvasContextMenuExtensions({
         hideNativeContextMenuItems(nativeMenuElement);
         markContextMenuSections(nativeMenuElement);
         localizeNativeContextMenuLabels(nativeMenuElement, t);
-        if (excalidrawApi) {
-          enhanceCopyContextMenuItem(
+        if (isCanvasContextMenuApi(excalidrawApi)) {
+          replaceImageCopyContextMenuItem(
             nativeMenuElement,
             excalidrawApi,
             () => {
