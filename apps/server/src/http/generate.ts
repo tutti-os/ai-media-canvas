@@ -13,6 +13,7 @@ import {
   refreshGenerationProviders,
 } from "../features/settings/settings-service.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
+import { getDefaultImageModelId } from "../generation/default-models.js";
 import { loadGeneratedAsset } from "../generation/generated-asset.js";
 import { generateImage } from "../generation/image-generation.js";
 import { resolveImageProviderName } from "../generation/providers/registry.js";
@@ -80,7 +81,6 @@ export async function registerGenerateRoutes(
       );
     }
 
-    const model = payload.model ?? "black-forest-labs/flux-kontext-pro";
     try {
       const effectiveEnv = options.settingsService
         ? await options.settingsService.getEffectiveServerEnv(
@@ -89,6 +89,7 @@ export async function registerGenerateRoutes(
         : options.env;
       applyEffectiveProviderEnv(effectiveEnv);
       refreshGenerationProviders(effectiveEnv);
+      const model = payload.model ?? getDefaultImageModelId();
       const providerName = resolveImageProviderName(model);
       const generated = await generateImage(providerName, {
         prompt: payload.prompt,

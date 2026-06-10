@@ -2,35 +2,41 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
   applicationErrorResponseSchema,
-  canvasGetResponseSchema,
   canvasSaveRequestSchema,
-  canvasSaveResponseSchema,
 } from "@aimc/shared";
 
-import {
-  CanvasServiceError,
-  type CanvasService,
-} from "../features/canvas/canvas-service.js";
 import type { AuthenticatedUser } from "../auth/types.js";
+import {
+  type CanvasService,
+  CanvasServiceError,
+} from "../features/canvas/canvas-service.js";
+import {
+  type CanvasOperations,
+  createCanvasOperations,
+} from "./canvas-operations.js";
 
 export async function registerCanvasRoutes(
   app: FastifyInstance,
   options: {
     localUser: AuthenticatedUser;
     canvasService: CanvasService;
+    canvasOperations?: CanvasOperations;
   },
 ) {
+  const canvasOperations =
+    options.canvasOperations ??
+    createCanvasOperations({
+      localUser: options.localUser,
+      canvasService: options.canvasService,
+    });
+
   app.get<{ Params: { canvasId: string } }>(
     "/api/canvases/:canvasId",
     async (request, reply) => {
       try {
-        const canvas = await options.canvasService.getCanvas(
-          options.localUser,
-          request.params.canvasId,
-        );
         return reply
           .code(200)
-          .send(canvasGetResponseSchema.parse({ canvas }));
+          .send(await canvasOperations.getCanvas(request.params.canvasId));
       } catch (error) {
         return sendCanvasError(error, reply);
       }
@@ -43,8 +49,7 @@ export async function registerCanvasRoutes(
     async (request, reply) => {
       try {
         const payload = canvasSaveRequestSchema.parse(request.body);
-        await options.canvasService.saveCanvasContent(
-          options.localUser,
+        const response = await canvasOperations.saveCanvas(
           request.params.canvasId,
           payload.content,
         );
@@ -53,9 +58,7 @@ export async function registerCanvasRoutes(
           { canvasId: request.params.canvasId, bodyBytes: bodySize },
           "canvas.save OK",
         );
-        return reply
-          .code(200)
-          .send(canvasSaveResponseSchema.parse({ ok: true }));
+        return reply.code(200).send(response);
       } catch (error) {
         request.log.error(
           { canvasId: request.params.canvasId, err: error },

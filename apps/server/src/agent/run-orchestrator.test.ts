@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AgentRunModelResolutionError,
   createAgentRunOrchestrator,
   createAssistantMessageProjection,
   createRuntimeControlPlane,
@@ -8,19 +9,18 @@ import {
   inferRuntimeKind,
   isLocalAgentRuntimeRequested,
   projectStreamEventToAssistantMessage,
+  resolveAgentRunModel,
   resolveResumeMode,
 } from "./run-orchestrator.js";
 
-function createRuntimeProvider(
-  runtime: {
-    id: string;
-    kind: "server-deepagent" | "local-agent";
-    provider?: "codex";
-    mode: "server" | "local";
-    status?: "online" | "offline" | "degraded";
-    maxConcurrentRuns?: number;
-  },
-) {
+function createRuntimeProvider(runtime: {
+  id: string;
+  kind: "server-deepagent" | "local-agent";
+  provider?: "codex";
+  mode: "server" | "local";
+  status?: "online" | "offline" | "degraded";
+  maxConcurrentRuns?: number;
+}) {
   return {
     runtime: {
       capabilities: {
@@ -46,7 +46,8 @@ function createRuntimeProvider(
 
 describe("agent run orchestrator", () => {
   it("records run state, persists stream events, and projects assistant state", () => {
-    const persisted: Array<{ type: string; runId: string; canvasId?: string }> = [];
+    const persisted: Array<{ type: string; runId: string; canvasId?: string }> =
+      [];
     const runStoreCalls: Array<Record<string, unknown>> = [];
     const orchestrator = createAgentRunOrchestrator({
       eventPersistence: {
@@ -153,7 +154,8 @@ describe("agent run orchestrator", () => {
   });
 
   it("owns stream event persistence, projection, publish, and assistant update", async () => {
-    const persisted: Array<{ type: string; runId: string; canvasId?: string }> = [];
+    const persisted: Array<{ type: string; runId: string; canvasId?: string }> =
+      [];
     const published: Array<{
       event: { type: string };
       envelope: { eventId?: string; seq?: number };
@@ -435,6 +437,26 @@ describe("agent run orchestrator", () => {
     expect(
       isLocalAgentRuntimeRequested({ model: "agnes:agnes-2.0-flash" }),
     ).toBe(false);
+  });
+
+  it("uses the local provider default model for local-agent runs without a requested model", () => {
+    expect(
+      resolveAgentRunModel({
+        defaultModel: "agnes:agnes-2.0-flash",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      }),
+    ).toBe("codex:default");
+  });
+
+  it("rejects a server model when a local provider is requested", () => {
+    expect(() =>
+      resolveAgentRunModel({
+        requestedModel: "agnes:agnes-2.0-flash",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      }),
+    ).toThrow(AgentRunModelResolutionError);
   });
 
   it("fills the only local provider when a legacy request omits it", () => {

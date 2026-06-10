@@ -11,21 +11,32 @@ import {
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import {
-  SkillServiceError,
   type SkillService,
+  SkillServiceError,
 } from "../features/skills/skill-service.js";
+import {
+  type SkillOperations,
+  createSkillOperations,
+} from "./skill-operations.js";
 
 export async function registerSkillRoutes(
   app: FastifyInstance,
   options: {
     localUser: AuthenticatedUser;
     skillService: SkillService;
+    skillOperations?: SkillOperations;
   },
 ) {
+  const skillOperations =
+    options.skillOperations ??
+    createSkillOperations({
+      localUser: options.localUser,
+      skillService: options.skillService,
+    });
+
   app.get("/api/skills", async (_request, reply) => {
     try {
-      const skills = await options.skillService.listInstalledSkills(options.localUser);
-      return reply.code(200).send(skillListResponseSchema.parse({ skills }));
+      return reply.code(200).send(await skillOperations.listInstalledSkills());
     } catch (error) {
       return sendSkillError(error, reply, "skill_query_failed");
     }
@@ -33,7 +44,9 @@ export async function registerSkillRoutes(
 
   app.get("/api/skills/catalog", async (_request, reply) => {
     try {
-      const skills = await options.skillService.listCatalogSkills(options.localUser);
+      const skills = await options.skillService.listCatalogSkills(
+        options.localUser,
+      );
       return reply.code(200).send(skillListResponseSchema.parse({ skills }));
     } catch (error) {
       return sendSkillError(error, reply, "skill_query_failed");
@@ -43,8 +56,7 @@ export async function registerSkillRoutes(
   app.get("/api/skills/:skillId", async (request, reply) => {
     try {
       const { skillId } = request.params as { skillId: string };
-      const skill = await options.skillService.getSkillDetail(options.localUser, skillId);
-      return reply.code(200).send(skillDetailResponseSchema.parse({ skill }));
+      return reply.code(200).send(await skillOperations.getSkill(skillId));
     } catch (error) {
       return sendSkillError(error, reply, "skill_query_failed");
     }
@@ -53,7 +65,10 @@ export async function registerSkillRoutes(
   app.post("/api/skills", async (request, reply) => {
     try {
       const payload = skillCreateRequestSchema.parse(request.body);
-      const skill = await options.skillService.createSkill(options.localUser, payload);
+      const skill = await options.skillService.createSkill(
+        options.localUser,
+        payload,
+      );
       return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));
     } catch (error) {
       if (isZodError(error)) {
@@ -66,7 +81,10 @@ export async function registerSkillRoutes(
   app.post("/api/skills/import", async (request, reply) => {
     try {
       const payload = skillImportRequestSchema.parse(request.body);
-      const skill = await options.skillService.importSkill(options.localUser, payload);
+      const skill = await options.skillService.importSkill(
+        options.localUser,
+        payload,
+      );
       return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));
     } catch (error) {
       if (isZodError(error)) {
@@ -79,8 +97,9 @@ export async function registerSkillRoutes(
   app.post("/api/skills/catalog/:skillId/install", async (request, reply) => {
     try {
       const { skillId } = request.params as { skillId: string };
-      const skill = await options.skillService.installCatalogSkill(options.localUser, skillId);
-      return reply.code(200).send(skillDetailResponseSchema.parse({ skill }));
+      return reply
+        .code(200)
+        .send(await skillOperations.installCatalogSkill(skillId));
     } catch (error) {
       return sendSkillError(error, reply, "skill_install_failed");
     }
@@ -90,8 +109,9 @@ export async function registerSkillRoutes(
     try {
       const payload = skillToggleRequestSchema.parse(request.body);
       const { skillId } = request.params as { skillId: string };
-      const skill = await options.skillService.toggleSkill(options.localUser, skillId, payload);
-      return reply.code(200).send(skillDetailResponseSchema.parse({ skill }));
+      return reply
+        .code(200)
+        .send(await skillOperations.toggleSkill(skillId, payload.enabled));
     } catch (error) {
       if (isZodError(error)) {
         return sendValidationError(reply);
