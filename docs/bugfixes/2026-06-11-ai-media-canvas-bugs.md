@@ -79,3 +79,13 @@
 - 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 导入回归，模拟 `pua/SKILL.md` 含 `name: pua` 和 `description: ...`，断言导入表单自动填入名称/描述；新增 `apps/server/src/local/store.test.ts` 回归，断言服务端导入同类文件后落库名称/描述正确；`pnpm --filter @aimc/web test -- --run test/skills-page.test.tsx -t "file import"` 通过（实际运行 45 个 web 测试文件均通过）；`pnpm --filter @aimc/server test -- src/local/store.test.ts` 通过（实际运行 25 个 server 测试文件均通过）；`pnpm --filter @aimc/web typecheck`、`pnpm --filter @aimc/server typecheck`、`pnpm check:i18n` 均通过；本地 `localhost:3000/skills` 模拟选择文件后名称为 `pua`、描述正确预填且无 console error。
 - 是否已修复完: 是
 - commit hash: `TBD`
+
+## 9. BYOK Agnes 链路读取并使用 Skill 失败
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/RxxFrbUaYeoNsWcuSrKcRtXvnWd
+- 真实 record id: `recvm8dGIaWCQA`
+- Bug 原因: 附件截图显示 BYOK/Agnes local-agent 在读取选中 skill 时出现 `Store is required but not available in runtime`，后续 shell 执行 `cat /workspace-skills/.../SKILL.md` 又报文件不存在。根因是 workspace skill 只通过 server deepagent 的虚拟 `/workspace-skills/` store route 暴露，但 generic ACP/BYOK local-agent provider 不会自动物化 `skillManifest`，且提示中的绝对路径会让 shell 去系统根目录查找。
+- 修复方案: 在 AI Media Canvas 的 local-agent wrapper 层启动 provider 前，将已启用 workspace skill 的 `SKILL.md` 和附属文件写入当前 run 目录下的 `workspace-skills/<slug>/`，并对写入路径做目录逃逸保护；local-agent prompt 中把 `/workspace-skills/...` 规范为相对 `workspace-skills/...`，让 BYOK/Agnes 的读文件与 shell 命令都基于运行目录访问同一份 skill 文件。
+- 验证方式和结果: 扩展 `apps/server/src/agent/runtime.test.ts`，在 local-agent provider mock 入口断言 `cwd/workspace-skills/canvas-director/SKILL.md` 已存在且包含 skill 内容，并断言 prompt 使用相对 `workspace-skills/canvas-director/SKILL.md` 而不是绝对 `/workspace-skills/...`；`pnpm --filter @aimc/server test -- src/agent/runtime.test.ts -t "passes enabled local workspace skills"` 通过（实际运行 25 个 server 测试文件均通过）；`pnpm --filter @aimc/server typecheck` 通过。
+- 是否已修复完: 是
+- commit hash: `TBD`

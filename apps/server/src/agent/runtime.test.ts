@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -754,7 +754,18 @@ describe("createAgentRunService", () => {
       dataRoot,
     });
     const project = store.createProject({ name: "Runtime Skills" });
-    const localRun = vi.fn(async function* () {
+    let capturedPrompt = "";
+    const localRun = vi.fn(async function* (input: {
+      cwd: string;
+      prompt: string;
+    }) {
+      capturedPrompt = input.prompt;
+      expect(
+        readFileSync(
+          join(input.cwd, "workspace-skills", "canvas-director", "SKILL.md"),
+          "utf8",
+        ),
+      ).toContain("Inspect the real element bounds");
       yield {
         type: "done" as const,
         reason: "completed" as const,
@@ -786,6 +797,14 @@ describe("createAgentRunService", () => {
       {
         canvasId: project.primaryCanvas.id,
         conversationId: project.primaryCanvas.id,
+        mentions: [
+          {
+            id: "skill-system-canvas-director",
+            label: "Canvas Director",
+            mentionType: "skill",
+            slug: "canvas-director",
+          },
+        ],
         prompt: "有看到 Canvas Director 这一个 skill 吗",
         sessionId: "session-1",
       },
@@ -811,6 +830,12 @@ describe("createAgentRunService", () => {
           }),
         ]),
       }),
+    );
+    expect(capturedPrompt).toContain(
+      "workspace-skills/canvas-director/SKILL.md",
+    );
+    expect(capturedPrompt).not.toContain(
+      "/workspace-skills/canvas-director/SKILL.md",
     );
   });
 
