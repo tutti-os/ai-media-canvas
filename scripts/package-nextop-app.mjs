@@ -140,7 +140,7 @@ const CLI_COMMANDS = [
     path: ["agent", "run"],
     summary: "Start an agent run",
     description:
-      "Start an AI Media Canvas agent run for a session and conversation. Poll agent events with agent events using the returned runId.",
+      "Start an AI Media Canvas agent run for a session and conversation. Poll events with aimc agent events --run-id <runId>. For local agents, pass --runtime-kind local-agent --runtime-provider codex or --runtime-provider claude; when model is omitted the provider default is used. If model is provided with a local provider, use a matching provider-prefixed model such as codex:default or claude:default from aimc models list.",
     properties: {
       "session-id": { type: "string", description: "Chat session id." },
       "conversation-id": {
@@ -153,14 +153,19 @@ const CLI_COMMANDS = [
         type: "string",
         description: "Optional canvas id for canvas event replay.",
       },
-      model: { type: "string", description: "Optional agent model id." },
+      model: {
+        type: "string",
+        description:
+          "Optional agent model id. For local agents use a provider-prefixed id from aimc models list, for example codex:default or claude:default.",
+      },
       "runtime-kind": {
         type: "string",
         description: "Optional runtime kind, for example local-agent.",
       },
       "runtime-provider": {
         type: "string",
-        description: "Optional local agent provider id.",
+        description:
+          "Optional local agent provider id such as codex or claude. Requires runtime-kind=local-agent.",
       },
     },
     required: ["session-id", "conversation-id", "prompt"],
@@ -193,10 +198,14 @@ const CLI_COMMANDS = [
     path: ["generation", "image"],
     summary: "Queue image generation",
     description:
-      "Queue an image generation job. Use jobs get or jobs list to monitor status.",
+      "Queue an image generation job. Use models image to inspect available model ids, and jobs get or jobs list to monitor status.",
     properties: {
       prompt: { type: "string", description: "Image prompt." },
-      model: { type: "string", description: "Optional image model id." },
+      model: {
+        type: "string",
+        description:
+          "Optional image model id from models image. If omitted, the first currently registered image model is used.",
+      },
       "project-id": { type: "string", description: "Optional project id." },
       "canvas-id": { type: "string", description: "Optional canvas id." },
       "session-id": { type: "string", description: "Optional session id." },

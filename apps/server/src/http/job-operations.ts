@@ -8,21 +8,46 @@ import {
 } from "@aimc/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
+import type { ServerEnv } from "../config/env.js";
 import type { JobService } from "../features/jobs/job-service.js";
-
-const LOCAL_WORKSPACE_ID = "local-workspace";
-const DEFAULT_IMAGE_MODEL = "black-forest-labs/flux-kontext-pro";
-const DEFAULT_VIDEO_MODEL = "google-official/veo-3.1-generate-preview";
+import {
+  LOCAL_WORKSPACE_ID,
+  type SettingsService,
+  refreshGenerationProviders,
+} from "../features/settings/settings-service.js";
+import {
+  getDefaultImageModelId,
+  getDefaultVideoModelId,
+} from "../generation/default-models.js";
 
 export type JobOperations = ReturnType<typeof createJobOperations>;
 
 export function createJobOperations(options: {
+  env?: ServerEnv;
   localUser: AuthenticatedUser;
   jobService: JobService;
+  settingsService?: SettingsService;
 }) {
+  const getEffectiveEnv = async () => {
+    if (options.settingsService) {
+      return options.settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID);
+    }
+    return options.env;
+  };
+
+  const resolveDefaultModel = async (kind: "image" | "video") => {
+    const effectiveEnv = await getEffectiveEnv();
+    if (effectiveEnv) {
+      refreshGenerationProviders(effectiveEnv);
+    }
+    return kind === "image"
+      ? getDefaultImageModelId()
+      : getDefaultVideoModelId();
+  };
+
   return {
     async createImageJob(payload: CreateImageJobRequest) {
-      const model = payload.model ?? DEFAULT_IMAGE_MODEL;
+      const model = payload.model ?? (await resolveDefaultModel("image"));
       const job = await options.jobService.createJob(options.localUser, {
         workspaceId: LOCAL_WORKSPACE_ID,
         ...(payload.project_id ? { projectId: payload.project_id } : {}),
@@ -47,7 +72,7 @@ export function createJobOperations(options: {
       return jobResponseSchema.parse({ job });
     },
     async createVideoJob(payload: CreateVideoJobRequest) {
-      const model = payload.model ?? DEFAULT_VIDEO_MODEL;
+      const model = payload.model ?? (await resolveDefaultModel("video"));
       const job = await options.jobService.createJob(options.localUser, {
         workspaceId: LOCAL_WORKSPACE_ID,
         ...(payload.project_id ? { projectId: payload.project_id } : {}),

@@ -9,8 +9,8 @@ import { DEFAULT_LOCAL_AGENT_PROVIDER_IDS } from "@nextop-os/agent-acp-kit";
 import type {
   AgentRuntimeCapabilities,
   AgentRuntimeMode,
-  AgentRuntimeRecord as PackageAgentRuntimeRecord,
   AgentRuntimeStatus,
+  AgentRuntimeRecord as PackageAgentRuntimeRecord,
   RuntimeKindSelector as PackageRuntimeKindSelector,
   RuntimeKindSelectorInput as PackageRuntimeKindSelectorInput,
   RuntimeLease as PackageRuntimeLease,
@@ -22,11 +22,7 @@ import {
   inferRuntimeKind as inferPackageRuntimeKind,
 } from "@nextop-os/agent-acp-kit/runtime-control-plane";
 
-export type {
-  AgentRuntimeCapabilities,
-  AgentRuntimeMode,
-  AgentRuntimeStatus,
-};
+export type { AgentRuntimeCapabilities, AgentRuntimeMode, AgentRuntimeStatus };
 
 export type AgentRuntimeRecord = PackageAgentRuntimeRecord<
   RuntimeKind,
@@ -70,7 +66,9 @@ export function createRuntimeControlPlane<TContext>(
   >(providers, options);
 }
 
-export function inferRuntimeKind(input: RuntimeKindSelectorInput): RuntimeTarget {
+export function inferRuntimeKind(
+  input: RuntimeKindSelectorInput,
+): RuntimeTarget {
   return inferPackageRuntimeKind<RuntimeKind, AgentRuntimeProvider>(input);
 }
 
@@ -78,16 +76,69 @@ const LOCAL_AGENT_MODEL_PREFIXES = DEFAULT_LOCAL_AGENT_PROVIDER_IDS.map(
   (provider) => `${provider}:`,
 );
 
+function getModelProvider(model: string) {
+  return model.includes(":") ? (model.split(":", 1)[0] ?? "") : "";
+}
+
 export function isLocalAgentRuntimeRequested(input: {
   model?: string | undefined;
   runtimeKind?: RuntimeKind | undefined;
   runtimeProvider?: AgentRuntimeProvider | undefined;
 }) {
+  const model = input.model;
   return (
     input.runtimeKind === "local-agent" ||
     Boolean(input.runtimeProvider) ||
-    (typeof input.model === "string" &&
-      LOCAL_AGENT_MODEL_PREFIXES.some((prefix) => input.model!.startsWith(prefix)))
+    (typeof model === "string" &&
+      LOCAL_AGENT_MODEL_PREFIXES.some((prefix) => model.startsWith(prefix)))
+  );
+}
+
+export class AgentRunModelResolutionError extends Error {
+  readonly code = "invalid_model";
+  readonly statusCode = 400;
+}
+
+export function resolveAgentRunModel(input: {
+  defaultModel?: string | undefined;
+  requestedModel?: string | undefined;
+  runtimeKind?: RuntimeKind | undefined;
+  runtimeProvider?: AgentRuntimeProvider | undefined;
+}) {
+  const requestedModel = input.requestedModel?.trim();
+  const defaultModel = input.defaultModel?.trim();
+
+  if (
+    !isLocalAgentRuntimeRequested({
+      ...(requestedModel ? { model: requestedModel } : {}),
+      ...(input.runtimeKind ? { runtimeKind: input.runtimeKind } : {}),
+      ...(input.runtimeProvider
+        ? { runtimeProvider: input.runtimeProvider }
+        : {}),
+    })
+  ) {
+    return requestedModel || defaultModel;
+  }
+
+  if (!input.runtimeProvider) {
+    return requestedModel || defaultModel;
+  }
+
+  if (!requestedModel) {
+    return `${input.runtimeProvider}:default`;
+  }
+
+  const modelProvider = getModelProvider(requestedModel);
+  if (!modelProvider) {
+    return `${input.runtimeProvider}:${requestedModel}`;
+  }
+
+  if (modelProvider === input.runtimeProvider) {
+    return requestedModel;
+  }
+
+  throw new AgentRunModelResolutionError(
+    `Model ${requestedModel} is not compatible with local agent provider ${input.runtimeProvider}. Use ${input.runtimeProvider}:default or list compatible models first.`,
   );
 }
 
@@ -102,8 +153,9 @@ export function inferAimcRuntimeTarget(
       const localTargets = input.availableRuntimeTargets.filter(
         (target) => target.kind === "local-agent" && target.provider,
       );
-      if (localTargets.length === 1) {
-        return localTargets[0]!;
+      const onlyLocalTarget = localTargets[0];
+      if (localTargets.length === 1 && onlyLocalTarget) {
+        return onlyLocalTarget;
       }
     }
     return {
@@ -135,7 +187,11 @@ export function inferAimcRuntimeTarget(
     return serverRuntime;
   }
 
-  return input.availableRuntimeTargets[0]!;
+  const fallbackTarget = input.availableRuntimeTargets[0];
+  if (!fallbackTarget) {
+    throw new Error("No runtime targets are available");
+  }
+  return fallbackTarget;
 }
 
 export type AssistantMessageProjection = {
@@ -167,8 +223,7 @@ export function projectStreamEventToAssistantMessage(
 
   if (event.type === "tool.started") {
     const index = state.blocks.findIndex(
-      (block) =>
-        block.type === "tool" && block.toolCallId === event.toolCallId,
+      (block) => block.type === "tool" && block.toolCallId === event.toolCallId,
     );
     const nextBlock = {
       type: "tool",
@@ -187,8 +242,7 @@ export function projectStreamEventToAssistantMessage(
 
   if (event.type === "tool.completed" || event.type === "tool.failed") {
     const index = state.blocks.findIndex(
-      (block) =>
-        block.type === "tool" && block.toolCallId === event.toolCallId,
+      (block) => block.type === "tool" && block.toolCallId === event.toolCallId,
     );
     const currentBlock =
       index >= 0
@@ -259,7 +313,9 @@ export function buildReplayEnvelope(
   return {
     ...(persistedEvent?.duplicate ? { duplicate: true } : {}),
     ...(persistedEvent?.eventId ? { eventId: persistedEvent.eventId } : {}),
-    ...(persistedEvent?.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
+    ...(persistedEvent?.canvasSeq != null
+      ? { seq: persistedEvent.canvasSeq }
+      : {}),
   };
 }
 
@@ -271,7 +327,9 @@ function isTerminalStreamEvent(event: StreamEvent) {
   );
 }
 
-function statusForTerminalEvent(event: StreamEvent): AgentRunStatus | undefined {
+function statusForTerminalEvent(
+  event: StreamEvent,
+): AgentRunStatus | undefined {
   switch (event.type) {
     case "run.canceled":
       return "canceled";
@@ -284,7 +342,11 @@ function statusForTerminalEvent(event: StreamEvent): AgentRunStatus | undefined 
   }
 }
 
-export type AgentRunResumeMode = "native" | "provider-local" | "handoff" | "fresh";
+export type AgentRunResumeMode =
+  | "native"
+  | "provider-local"
+  | "handoff"
+  | "fresh";
 
 export type AgentRunResumeContext = {
   mode: AgentRunResumeMode;
@@ -313,7 +375,12 @@ export function resolveResumeMode(input: {
   return "handoff";
 }
 
-type AgentRunStatus = "accepted" | "canceled" | "completed" | "failed" | "running";
+type AgentRunStatus =
+  | "accepted"
+  | "canceled"
+  | "completed"
+  | "failed"
+  | "running";
 
 export type AgentRunRecordStore = {
   createRun(input: {

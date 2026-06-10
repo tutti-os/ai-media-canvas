@@ -19,8 +19,10 @@ import {
 
 import { createLocalToolGatewayService } from "./agent/local-agent-host/tool-gateway.js";
 import {
+  AgentRunModelResolutionError,
   createAgentRunOrchestrator,
   isLocalAgentRuntimeRequested,
+  resolveAgentRunModel,
 } from "./agent/run-orchestrator.js";
 import { createAgentRunService } from "./agent/runtime.js";
 import type { RequestAuthenticator } from "./auth/request.js";
@@ -751,8 +753,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     localUser,
   });
   const jobOperations = createJobOperations({
+    env,
     jobService,
     localUser,
+    settingsService,
   });
   const skillOperations = createSkillOperations({
     localUser,
@@ -925,11 +929,30 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     const effectiveEnv =
       await settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID);
     const runtimeEnv = createStandaloneAgentEnv(effectiveEnv);
-    const resolvedModel = payload.model ?? runtimeEnv.agentModel;
+    let resolvedModel: string | undefined;
+    try {
+      resolvedModel = resolveAgentRunModel({
+        defaultModel: runtimeEnv.agentModel,
+        ...(payload.model ? { requestedModel: payload.model } : {}),
+        ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
+        ...(payload.runtimeProvider
+          ? { runtimeProvider: payload.runtimeProvider }
+          : {}),
+      });
+    } catch (error) {
+      if (error instanceof AgentRunModelResolutionError) {
+        throw new LocalAgentRunError(
+          error.code,
+          error.message,
+          error.statusCode,
+        );
+      }
+      throw error;
+    }
     if (
       runtimeEnv.trustedLocalAgentMode === false &&
       isLocalAgentRuntimeRequested({
-        model: resolvedModel,
+        ...(resolvedModel ? { model: resolvedModel } : {}),
         ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
         ...(payload.runtimeProvider
           ? { runtimeProvider: payload.runtimeProvider }
