@@ -302,6 +302,12 @@ describe("ChatSidebar", () => {
         expect.any(Function),
       ),
     );
+    await waitFor(() =>
+      expect(updateSessionTitleMock).toHaveBeenCalledWith(
+        "session-real",
+        "ref.png",
+      ),
+    );
     expect(sessionStorage.getItem(INITIAL_ATTACHMENTS_KEY)).toBeNull();
   });
 

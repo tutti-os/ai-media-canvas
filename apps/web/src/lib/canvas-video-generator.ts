@@ -1,4 +1,5 @@
 import { getViewportCenter } from "./canvas-elements";
+import { withNormalizedCanvasElementIndices } from "./canvas-normalize";
 
 const RATIO_DIMENSIONS: Record<string, { w: number; h: number }> = {
   "16:9": { w: 1024, h: 576 },
@@ -106,7 +107,10 @@ export function createVideoGeneratorElement(
   };
 
   api.updateScene({
-    elements: [...api.getSceneElements(), element],
+    elements: withNormalizedCanvasElementIndices([
+      ...api.getSceneElements(),
+      element,
+    ]),
     captureUpdate: "IMMEDIATELY",
   });
 

@@ -141,6 +141,19 @@ export function ChatSidebar({
   const prevConnectedRef = useRef(false);
   const replayedArtifactKeysRef = useRef<Set<string>>(new Set());
 
+  const buildAutoTitleSource = useCallback(
+    (text: string, attachments: ReadyAttachment[]) => {
+      const normalized = text.trim();
+      if (normalized) return normalized;
+
+      return attachments
+        .map((attachment) => attachment.name?.trim())
+        .filter((name): name is string => Boolean(name))
+        .join(", ");
+    },
+    [],
+  );
+
   const artifactReplayKey = useCallback(
     (toolCallId: string, url: string) => `${toolCallId}:${url}`,
     [],
@@ -526,8 +539,9 @@ export function ChatSidebar({
         ],
       });
 
-      // Auto-title from first user message
-      autoTitleSession(text);
+      // Auto-title from first user message, falling back to attachment names
+      // for image-only initial runs from the home prompt.
+      autoTitleSession(buildAutoTitleSource(text, currentAttachments));
 
       // Create assistant placeholder
       const assistantIdRef = { current: `assistant-${Date.now()}` };
@@ -729,6 +743,7 @@ export function ChatSidebar({
       clearAttachments,
       ws,
       autoTitleSession,
+      buildAutoTitleSource,
       activeSessionIdRef,
       ensureAgentModelConfigured,
       setStreaming,

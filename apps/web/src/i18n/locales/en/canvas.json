@@ -10,13 +10,15 @@
   "closeFiles": "Close files panel",
   "closeLayers": "Close layers panel",
   "contextMenu": {
+    "copyImageFailed": "Image copy failed",
+    "copyImageSuccess": "Image copied",
     "downloadImage": "Download image",
     "native": {
       "canvasAndShapeProperties": "Canvas & Shape properties",
       "copyImage": "Copy image",
       "copyLinkToObject": "Copy link to object",
       "cropImage": "Crop image",
-      "duplicate": "Duplicate",
+      "duplicate": "Duplicate node",
       "paste": "Paste",
       "selectAll": "Select all",
       "snapToObjects": "Snap to objects",

@@ -4,10 +4,19 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useAppTranslation } from "../i18n";
+import { useToast } from "./toast";
 
 type CanvasContextMenuExtensionsProps = {
   // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
   excalidrawApi: any;
+};
+
+type CanvasContextMenuApi = {
+  getAppState: () => {
+    selectedElementIds?: Record<string, boolean>;
+  } & Record<string, unknown>;
+  getFiles: () => Record<string, unknown>;
+  getSceneElements: () => readonly Record<string, unknown>[];
 };
 
 function getNativeContextMenu() {
@@ -15,6 +24,7 @@ function getNativeContextMenu() {
 }
 
 const SECTION_START_LABELS = new Set(["Crop image", "Duplicate"]);
+const HIDDEN_NATIVE_CONTEXT_MENU_TEST_IDS = new Set(["copyAsPng"]);
 const NATIVE_CONTEXT_MENU_LABEL_KEYS: Record<string, string> = {
   "Canvas & Shape properties":
     "canvas:contextMenu.native.canvasAndShapeProperties",
@@ -31,7 +41,19 @@ const NATIVE_CONTEXT_MENU_LABEL_KEYS: Record<string, string> = {
   "Wrap selection in frame": "canvas:contextMenu.native.wrapSelectionInFrame",
   "Zen mode": "canvas:contextMenu.native.zenMode",
   "复制为 PNG 到剪贴板": "canvas:contextMenu.native.copyImage",
+  "复制": "canvas:contextMenu.native.duplicate",
 };
+
+function hideNativeContextMenuItems(menuElement: HTMLUListElement) {
+  for (const item of menuElement.querySelectorAll<HTMLLIElement>("li")) {
+    if (
+      item.dataset.testid &&
+      HIDDEN_NATIVE_CONTEXT_MENU_TEST_IDS.has(item.dataset.testid)
+    ) {
+      item.hidden = true;
+    }
+  }
+}
 
 function markContextMenuSections(menuElement: HTMLUListElement) {
   for (const item of menuElement.querySelectorAll<HTMLLIElement>(
@@ -79,10 +101,112 @@ function localizeNativeContextMenuLabels(
   }
 }
 
+function getSelectedElements(excalidrawApi: CanvasContextMenuApi) {
+  const appState = excalidrawApi.getAppState();
+  const selectedIds = Object.entries(
+    appState.selectedElementIds ?? {},
+  ).flatMap(([id, selected]) => (selected ? [id] : []));
+  if (selectedIds.length === 0) return [];
+
+  const selectedIdSet = new Set(selectedIds);
+  return excalidrawApi
+    .getSceneElements()
+    .filter(
+      (element: Record<string, unknown>) =>
+        !element.isDeleted && selectedIdSet.has(element.id as string),
+    );
+}
+
+function canCopySelectionAsImage(excalidrawApi: CanvasContextMenuApi) {
+  const selectedElements = getSelectedElements(excalidrawApi);
+  return (
+    selectedElements.length > 0 &&
+    selectedElements.every(
+      (element: Record<string, unknown>) => element.type === "image",
+    )
+  );
+}
+
+async function exportSelectionToPngBlob(
+  excalidrawApi: CanvasContextMenuApi,
+  selectedElements: readonly Record<string, unknown>[],
+) {
+  const appState = excalidrawApi.getAppState();
+  const { exportToBlob } = await import("@excalidraw/excalidraw");
+  return exportToBlob({
+    elements: selectedElements as never,
+    appState: { ...appState, exportBackground: true },
+    files: excalidrawApi.getFiles() as never,
+    mimeType: "image/png",
+  });
+}
+
+async function copySelectedImagesToClipboard(
+  excalidrawApi: CanvasContextMenuApi,
+) {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+    throw new Error("PNG clipboard writes are not supported in this browser.");
+  }
+
+  const selectedElements = getSelectedElements(excalidrawApi);
+  const pngBlob = exportSelectionToPngBlob(excalidrawApi, selectedElements);
+  await navigator.clipboard.write([
+    new ClipboardItem({
+      "image/png": pngBlob,
+    }),
+  ]);
+  await pngBlob;
+}
+
+function closeNativeContextMenu() {
+  document.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Escape",
+      code: "Escape",
+      bubbles: true,
+    }),
+  );
+}
+
+function enhanceCopyContextMenuItem(
+  menuElement: HTMLUListElement,
+  excalidrawApi: CanvasContextMenuApi,
+  onImageCopied: () => void,
+  onImageCopyFailed: () => void,
+) {
+  const copyItem = menuElement.querySelector<HTMLLIElement>(
+    'li[data-testid="copy"]',
+  );
+  const copyButton = copyItem?.querySelector<HTMLButtonElement>("button");
+  if (!copyButton || copyButton.dataset.aimcCopyImageHandler === "true") return;
+
+  copyButton.dataset.aimcCopyImageHandler = "true";
+  copyButton.addEventListener(
+    "click",
+    (event) => {
+      if (!canCopySelectionAsImage(excalidrawApi)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const copyPromise = copySelectedImagesToClipboard(excalidrawApi);
+      closeNativeContextMenu();
+      void copyPromise
+        .then(onImageCopied)
+        .catch((error) => {
+          console.warn("[canvas-context-menu] copy image failed:", error);
+          onImageCopyFailed();
+        });
+    },
+    true,
+  );
+}
+
 export function CanvasContextMenuExtensions({
   excalidrawApi,
 }: CanvasContextMenuExtensionsProps) {
   const { i18n, t } = useAppTranslation("canvas");
+  const { success: toastSuccess, error: toastError } = useToast();
   const renderedLanguage = i18n.resolvedLanguage ?? i18n.language;
   const [menuElement, setMenuElement] = useState<HTMLUListElement | null>(null);
 
@@ -90,8 +214,21 @@ export function CanvasContextMenuExtensions({
     const syncMenuElement = () => {
       const nativeMenuElement = getNativeContextMenu();
       if (nativeMenuElement) {
+        hideNativeContextMenuItems(nativeMenuElement);
         markContextMenuSections(nativeMenuElement);
         localizeNativeContextMenuLabels(nativeMenuElement, t);
+        if (excalidrawApi) {
+          enhanceCopyContextMenuItem(
+            nativeMenuElement,
+            excalidrawApi,
+            () => {
+              toastSuccess(t("contextMenu.copyImageSuccess"));
+            },
+            () => {
+              toastError(t("contextMenu.copyImageFailed"));
+            },
+          );
+        }
       }
       setMenuElement(nativeMenuElement);
     };
@@ -100,7 +237,7 @@ export function CanvasContextMenuExtensions({
     const observer = new MutationObserver(syncMenuElement);
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [renderedLanguage]);
+  }, [renderedLanguage, excalidrawApi, t, toastError, toastSuccess]);
 
   const handleDownloadImage = useCallback(async () => {
     if (!excalidrawApi) return;
@@ -140,7 +277,7 @@ export function CanvasContextMenuExtensions({
     anchor.click();
     anchor.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    closeNativeContextMenu();
   }, [excalidrawApi]);
 
   if (!menuElement) return null;

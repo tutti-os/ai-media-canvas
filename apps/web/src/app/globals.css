@@ -398,6 +398,7 @@
 
 /* Hide advanced native Excalidraw context-menu actions for AIMC. */
 .excalidraw .context-menu .context-menu-item-separator,
+.excalidraw .context-menu li[data-testid="copyAsPng"],
 .excalidraw .context-menu li[data-testid="copyStyles"],
 .excalidraw .context-menu li[data-testid="pasteStyles"],
 .excalidraw .context-menu li[data-testid="wrapSelectionInFrame"],
@@ -432,6 +433,12 @@
 
   background: var(--popover) !important;
   color: var(--popover-foreground) !important;
+  position: relative;
+  z-index: 220 !important;
+}
+
+.excalidraw .popover:has(.context-menu) {
+  z-index: 220 !important;
 }
 
 .excalidraw .context-menu .context-menu-item:hover,

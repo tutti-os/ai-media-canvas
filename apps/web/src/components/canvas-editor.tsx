@@ -13,7 +13,10 @@ import {
   prepareCanvasImageFiles,
   serializeExcalidrawFiles,
 } from "../lib/canvas-file-serialization";
-import { normalizeCanvasElements } from "../lib/canvas-normalize";
+import {
+  normalizeCanvasElementIndices,
+  normalizeCanvasElements,
+} from "../lib/canvas-normalize";
 import { getServerBaseUrl } from "../lib/env";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
 import { CanvasContextMenuExtensions } from "./canvas-context-menu-extensions";
@@ -178,16 +181,21 @@ export function CanvasEditor({
   } | null>(null);
 
   // Separate inline files (ready) from storage URLs (need async fetch)
-  const preparedInitialContent = useMemo(
-    () => prepareCanvasImageFiles(initialContent),
-    [initialContent],
-  );
+  const preparedInitialContent = useMemo(() => {
+    const prepared = prepareCanvasImageFiles(initialContent);
+    const elements = prepared.elements.map((element) => ({ ...element }));
+    const indicesChanged = normalizeCanvasElementIndices(elements);
+    return { ...prepared, elements, indicesChanged };
+  }, [initialContent]);
   const {
     elements: initialElements,
     files: initialFiles,
     inlineFiles,
     pendingUrls,
+    indicesChanged: initialIndicesChanged,
   } = preparedInitialContent;
+  const initialIndicesChangedRef = useRef(initialIndicesChanged);
+  initialIndicesChangedRef.current = initialIndicesChanged;
 
   // Ref to hold recovered file metadata for storageUrl lookup in handleChange
   // without adding the full initialContent to the dependency array.
@@ -263,7 +271,7 @@ export function CanvasEditor({
         const mutableElements = sceneElements.map((el) => ({ ...el }));
         const { changed } = normalizeCanvasElements(mutableElements);
 
-        if (changed) {
+        if (changed || initialIndicesChangedRef.current) {
           console.log("[canvas-editor] normalized agent-created elements");
           excalidrawApi.updateScene({
             elements: mutableElements,

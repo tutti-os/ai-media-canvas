@@ -49,6 +49,7 @@ import {
   type GenerationJobSubscription,
   generationJobService,
 } from "../lib/generation-job-service";
+import { withNormalizedCanvasElementIndices } from "../lib/canvas-normalize";
 import { useAppTranslation } from "../i18n";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
@@ -507,7 +508,7 @@ export function CanvasToolMenu({
           item.id === current.id ? { ...item, isDeleted: true } : item,
         );
       excalidrawApi.updateScene({
-        elements: [...elements, imageElement],
+        elements: withNormalizedCanvasElementIndices([...elements, imageElement]),
         captureUpdate: "IMMEDIATELY",
       });
     },
@@ -569,7 +570,10 @@ export function CanvasToolMenu({
           item.id === current.id ? { ...item, isDeleted: true } : item,
         );
       excalidrawApi.updateScene({
-        elements: [...elements, ...newElements],
+        elements: withNormalizedCanvasElementIndices([
+          ...elements,
+          ...newElements,
+        ]),
         captureUpdate: "IMMEDIATELY",
       });
     },

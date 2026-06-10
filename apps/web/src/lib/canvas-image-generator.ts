@@ -1,4 +1,5 @@
 import { getViewportCenter } from "./canvas-elements";
+import { withNormalizedCanvasElementIndices } from "./canvas-normalize";
 
 // Aspect ratio to pixel dimensions mapping (at 1K base)
 const RATIO_DIMENSIONS: Record<string, { w: number; h: number }> = {
@@ -125,7 +126,10 @@ export function createImageGeneratorElement(
   };
 
   api.updateScene({
-    elements: [...api.getSceneElements(), element],
+    elements: withNormalizedCanvasElementIndices([
+      ...api.getSceneElements(),
+      element,
+    ]),
     captureUpdate: "IMMEDIATELY",
   });
 
