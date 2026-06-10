@@ -25,6 +25,7 @@ import { registerHealthRoutes } from "./http/health.js";
 import { registerImageModelRoutes } from "./http/image-models.js";
 import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
+import { registerNextopManagedModelConnectionRoutes } from "./http/nextop-managed-model-connection.js";
 import { registerProjectRoutes } from "./http/projects.js";
 import { registerSettingsRoutes } from "./http/settings.js";
 import { registerSkillRoutes } from "./http/skills.js";
@@ -58,6 +59,7 @@ import {
   type SkillService,
 } from "./features/skills/skill-service.js";
 import { createJobService } from "./features/jobs/job-service.js";
+import { createNextopManagedCredentialService } from "./features/nextop-managed/credential-service.js";
 import {
   createSettingsService,
   LOCAL_WORKSPACE_ID,
@@ -680,6 +682,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const skillService = buildSkillService(store);
   const jobService = createJobService(store);
   const settingsService = createSettingsService(store, env);
+  const nextopManagedCredentials = createNextopManagedCredentialService({
+    env,
+    store,
+  });
   const createUserClient = (_accessToken: string) =>
     createLocalUserClient(store);
   const localToolGateway = createLocalToolGatewayService({
@@ -818,7 +824,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     uploadService,
   });
   void registerSettingsRoutes(app, { localUser, settingsService });
-  void registerModelRoutes(app, env, settingsService);
+  void registerNextopManagedModelConnectionRoutes(app, {
+    nextopManagedCredentials,
+  });
+  void registerModelRoutes(app, env, settingsService, {
+    nextopManagedCredentials,
+  });
   void registerImageModelRoutes(app, env, settingsService);
   void registerVideoModelRoutes(app, env, settingsService);
   void registerJobRoutes(app, { localUser, jobService });
@@ -833,6 +844,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     await wsApp.register(websocket);
     await registerWsRoute(wsApp, {
       agentRuns,
+      nextopManagedCredentials,
       agentRunOrchestrator,
       agentRunPersistence: {
         appendEvent: store.appendAgentRunEvent,
@@ -911,7 +923,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       const effectiveEnv = await settingsService.getEffectiveServerEnv(
         LOCAL_WORKSPACE_ID,
       );
-      const runtimeEnv = createStandaloneAgentEnv(effectiveEnv);
+      const workspaceSettings = await settingsService.getWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+      );
+      const baseRuntimeEnv = createStandaloneAgentEnv(effectiveEnv);
+      const requestedModel = payload.model ?? baseRuntimeEnv.agentModel;
+      const requestedModelSource = payload.model
+        ? payload.modelSource
+        : workspaceSettings.defaultModelSource;
+      const runtimeEnv = await nextopManagedCredentials.resolveEnvForModel(
+        baseRuntimeEnv,
+        requestedModel,
+        requestedModelSource,
+      );
       const resolvedModel = payload.model ?? runtimeEnv.agentModel;
       if (
         runtimeEnv.trustedLocalAgentMode === false &&

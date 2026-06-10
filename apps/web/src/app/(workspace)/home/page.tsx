@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  AgentModelSource,
   ImageGenerationPreference,
   ProjectSummary,
   VideoGenerationPreference,
@@ -149,6 +150,7 @@ export default function HomePage() {
       imageGenerationPreference?: ImageGenerationPreference,
       videoGenerationPreference?: VideoGenerationPreference,
       model?: string,
+      modelSource?: AgentModelSource,
     ) => {
       setSelectedExample(null);
       clearAttachments();
@@ -158,6 +160,7 @@ export default function HomePage() {
         ...(imageGenerationPreference ? { imageGenerationPreference } : {}),
         ...(videoGenerationPreference ? { videoGenerationPreference } : {}),
         ...(model ? { model } : {}),
+        ...(model && modelSource ? { modelSource } : {}),
       });
     },
     [clearAttachments, createNewProject],

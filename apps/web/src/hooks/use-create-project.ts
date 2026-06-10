@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  AgentModelSource,
   ImageGenerationPreference,
   VideoGenerationPreference,
 } from "@aimc/shared";
@@ -19,12 +20,14 @@ export const INITIAL_IMAGE_GENERATION_PREFERENCE_KEY =
 export const INITIAL_VIDEO_GENERATION_PREFERENCE_KEY =
   "aimc:initial-video-generation-preference";
 export const INITIAL_AGENT_MODEL_KEY = "aimc:initial-agent-model";
+export const INITIAL_AGENT_MODEL_SOURCE_KEY = "aimc:initial-agent-model-source";
 
 function clearInitialCreateProjectState() {
   sessionStorage.removeItem(INITIAL_ATTACHMENTS_KEY);
   sessionStorage.removeItem(INITIAL_IMAGE_GENERATION_PREFERENCE_KEY);
   sessionStorage.removeItem(INITIAL_VIDEO_GENERATION_PREFERENCE_KEY);
   sessionStorage.removeItem(INITIAL_AGENT_MODEL_KEY);
+  sessionStorage.removeItem(INITIAL_AGENT_MODEL_SOURCE_KEY);
 }
 
 /**
@@ -48,6 +51,7 @@ export function useCreateProject() {
       imageGenerationPreference?: ImageGenerationPreference;
       videoGenerationPreference?: VideoGenerationPreference;
       model?: string;
+      modelSource?: AgentModelSource;
     }) => {
       if (creatingRef.current) return;
       creatingRef.current = true;
@@ -97,11 +101,20 @@ export function useCreateProject() {
       if (opts?.model) {
         try {
           sessionStorage.setItem(INITIAL_AGENT_MODEL_KEY, opts.model);
+          if (opts.modelSource) {
+            sessionStorage.setItem(
+              INITIAL_AGENT_MODEL_SOURCE_KEY,
+              opts.modelSource,
+            );
+          } else {
+            sessionStorage.removeItem(INITIAL_AGENT_MODEL_SOURCE_KEY);
+          }
         } catch {
           // sessionStorage write failure is non-fatal
         }
       } else {
         sessionStorage.removeItem(INITIAL_AGENT_MODEL_KEY);
+        sessionStorage.removeItem(INITIAL_AGENT_MODEL_SOURCE_KEY);
       }
 
       const newTab = window.open("/loading-preview", "_blank");

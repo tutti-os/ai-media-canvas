@@ -23,6 +23,7 @@ export const LOCAL_WORKSPACE_ID = "local-workspace";
 
 export const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   defaultModel: "",
+  defaultModelSource: undefined,
   providerModels: {
     openai: [],
     anthropic: [],
@@ -99,8 +100,17 @@ export type SettingsService = {
 export function normalizeWorkspaceSettings(
   input: Partial<WorkspaceSettings>,
 ): WorkspaceSettings {
+  const defaultModel = input.defaultModel?.trim() ?? "";
+  const defaultModelSource =
+    defaultModel &&
+    (input.defaultModelSource === "local-agent" ||
+      input.defaultModelSource === "nextop-managed" ||
+      input.defaultModelSource === "api-provider")
+      ? input.defaultModelSource
+      : undefined;
   return {
-    defaultModel: input.defaultModel?.trim() ?? "",
+    defaultModel,
+    defaultModelSource,
     providerModels: normalizeProviderModels(input.providerModels),
     openAIApiKey: input.openAIApiKey?.trim() ?? "",
     openAIApiBase: input.openAIApiBase?.trim() ?? "",

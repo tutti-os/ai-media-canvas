@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  AgentModelSource,
   ImageGenerationPreference,
   VideoGenerationPreference,
 } from "@aimc/shared";
@@ -44,6 +45,7 @@ type HomePromptProps = {
     imageGenerationPreference?: ImageGenerationPreference,
     videoGenerationPreference?: VideoGenerationPreference,
     model?: string,
+    modelSource?: AgentModelSource,
   ) => void;
   disabled?: boolean;
   attachments?: ImageAttachmentState[];
@@ -143,6 +145,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const {
       isAgentModelConfigured,
       model: agentModel,
+      modelSource: agentModelSource,
       ensureAgentModelConfigured,
     } = agentRequirement;
     const { missingImageModel, missingVideoModel } =
@@ -222,6 +225,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
           ? videoPreference
           : undefined,
         agentModel ?? undefined,
+        agentModel ? agentModelSource ?? undefined : undefined,
       );
       setValue("");
       if (textareaRef.current) {
@@ -229,6 +233,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       }
     }, [
       agentModel,
+      agentModelSource,
       attachments,
       disabled,
       ensureAgentModelConfigured,

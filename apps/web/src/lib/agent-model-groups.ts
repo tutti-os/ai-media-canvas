@@ -1,6 +1,9 @@
 "use client";
 
-export type AgentModelSourceTab = "local-cli" | "api-provider";
+export type AgentModelSourceTab =
+  | "local-agent"
+  | "nextop-managed"
+  | "api-provider";
 
 const API_PROVIDER_IDS = new Set([
   "agnes",
@@ -44,7 +47,15 @@ export function isLocalCliProvider(provider: string) {
 
 export function getAgentModelSourceTab(modelId: string | null | undefined) {
   const provider = modelId?.split(":")[0] ?? "";
-  return provider && isApiProvider(provider) ? "api-provider" : "local-cli";
+  return provider && isApiProvider(provider) ? "api-provider" : "local-agent";
+}
+
+export function getModelSourceTab(model: {
+  provider: string;
+  source?: AgentModelSourceTab | undefined;
+}) {
+  if (model.source) return model.source;
+  return isApiProvider(model.provider) ? "api-provider" : "local-agent";
 }
 
 export function formatLocalCliProviderLabel(provider: string) {

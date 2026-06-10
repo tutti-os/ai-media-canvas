@@ -326,7 +326,7 @@ describe("AgentModelSelector", () => {
       await screen.findByRole("button", { name: "Default (CLI config)" }),
     );
 
-    expect(setModelMock).toHaveBeenCalledWith("codex:gpt-5.5");
+    expect(setModelMock).toHaveBeenCalledWith("codex:gpt-5.5", "local-agent");
   });
 
   it("refreshes the trigger when workspace settings are saved elsewhere", async () => {
@@ -408,6 +408,9 @@ describe("AgentModelSelector", () => {
       screen.getByRole("button", { name: "Use custom model" }),
     );
 
-    expect(setModelMock).toHaveBeenCalledWith("anthropic:minimax-m2.5");
+    expect(setModelMock).toHaveBeenCalledWith(
+      "anthropic:minimax-m2.5",
+      "api-provider",
+    );
   });
 });

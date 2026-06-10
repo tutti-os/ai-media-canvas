@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { AgentModelSource } from "@aimc/shared";
 
 import { fetchWorkspaceSettings } from "@/lib/server-api";
 import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "@/lib/workspace-settings-events";
@@ -10,17 +11,21 @@ import { useAgentModel } from "./use-agent-model";
 export const AGENT_MODEL_REQUIRED_MESSAGE = "请先配置或选择一个 Agent 模型。";
 
 export function useAgentModelRequirement() {
-  const { model } = useAgentModel();
+  const { model, modelSource } = useAgentModel();
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
     string | null
   >(null);
+  const [workspaceDefaultModelSource, setWorkspaceDefaultModelSource] =
+    useState<AgentModelSource | null>(null);
   const [isAgentModelConfigurationLoaded, setIsAgentModelConfigurationLoaded] =
     useState(false);
 
   const refreshWorkspaceDefaultModel = useCallback(async () => {
     const response = await fetchWorkspaceSettings();
     const defaultModel = response.settings.defaultModel.trim();
+    const defaultModelSource = response.settings.defaultModelSource ?? null;
     setWorkspaceDefaultModel(defaultModel || null);
+    setWorkspaceDefaultModelSource(defaultModel ? defaultModelSource : null);
     return defaultModel;
   }, []);
 
@@ -34,6 +39,7 @@ export function useAgentModelRequirement() {
       })
       .catch(() => {
         if (!cancelled) setWorkspaceDefaultModel(null);
+        if (!cancelled) setWorkspaceDefaultModelSource(null);
       })
       .finally(() => {
         if (!cancelled) setIsAgentModelConfigurationLoaded(true);
@@ -50,6 +56,7 @@ export function useAgentModelRequirement() {
       void refreshWorkspaceDefaultModel()
         .catch(() => {
           setWorkspaceDefaultModel(null);
+          setWorkspaceDefaultModelSource(null);
         })
         .finally(() => {
           setIsAgentModelConfigurationLoaded(true);
@@ -80,7 +87,9 @@ export function useAgentModelRequirement() {
 
   return {
     model,
+    modelSource,
     workspaceDefaultModel,
+    workspaceDefaultModelSource,
     isAgentModelConfigured: Boolean(model?.trim() || workspaceDefaultModel),
     isAgentModelConfigurationLoaded,
     ensureAgentModelConfigured,

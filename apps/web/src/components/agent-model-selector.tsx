@@ -5,7 +5,7 @@ import {
   type AgentModelSourceTab,
   formatLocalCliProviderLabel,
   getAgentModelSourceTab,
-  isApiProvider,
+  getModelSourceTab,
   isLocalCliProvider,
 } from "@/lib/agent-model-groups";
 import { fetchModels, fetchWorkspaceSettings } from "@/lib/server-api";
@@ -23,7 +23,12 @@ import { useAppTranslation } from "../i18n";
 import { LocalCliProviderIcon } from "./local-cli-provider-icon";
 import { SettingsDialog } from "./settings-dialog";
 
-type ModelOption = { id: string; name: string; provider: string };
+type ModelOption = {
+  id: string;
+  name: string;
+  provider: string;
+  source?: AgentModelSourceTab | undefined;
+};
 
 // Sparkle icon SVG path from design spec
 const SPARKLE_ICON_PATH =
@@ -162,16 +167,18 @@ export function AgentModelSelector({
   tooltipPlacement?: "top" | "bottom";
 } = {}) {
   const { t } = useAppTranslation("chat");
-  const { model, setModel } = useAgentModel();
+  const { model, modelSource, setModel } = useAgentModel();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
     string | null
   >(null);
+  const [workspaceDefaultModelSource, setWorkspaceDefaultModelSource] =
+    useState<AgentModelSourceTab | null>(null);
   const [customModelDraft, setCustomModelDraft] = useState("");
   const [activeModelTab, setActiveModelTab] =
-    useState<AgentModelSourceTab>("local-cli");
+    useState<AgentModelSourceTab>("local-agent");
   const btnRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -181,9 +188,12 @@ export function AgentModelSelector({
       .catch(() => {});
 
     fetchWorkspaceSettings()
-      .then((data) =>
-        setWorkspaceDefaultModel(data.settings.defaultModel || null),
-      )
+      .then((data) => {
+        setWorkspaceDefaultModel(data.settings.defaultModel || null);
+        setWorkspaceDefaultModelSource(
+          data.settings.defaultModelSource ?? null,
+        );
+      })
       .catch(() => {});
   }, []);
 
@@ -217,8 +227,23 @@ export function AgentModelSelector({
   useEffect(() => {
     if (!open) return;
     setCustomModelDraft(model ?? workspaceDefaultModel ?? "");
-    setActiveModelTab(getAgentModelSourceTab(model));
-  }, [model, open, workspaceDefaultModel]);
+    const selected = models.find((item) => item.id === model);
+    setActiveModelTab(
+      modelSource ??
+        (selected
+          ? getModelSourceTab(selected)
+          : !model && workspaceDefaultModelSource
+            ? workspaceDefaultModelSource
+            : getAgentModelSourceTab(model)),
+    );
+  }, [
+    model,
+    modelSource,
+    models,
+    open,
+    workspaceDefaultModel,
+    workspaceDefaultModelSource,
+  ]);
 
   // Close on outside click
   useEffect(() => {
@@ -301,10 +326,8 @@ export function AgentModelSelector({
     }
   }, [open]);
 
-  const visibleModels = models.filter((item) =>
-    activeModelTab === "local-cli"
-      ? isLocalCliProvider(item.provider)
-      : isApiProvider(item.provider),
+  const visibleModels = models.filter(
+    (item) => getModelSourceTab(item) === activeModelTab,
   );
 
   // Deduplicate provider list from actual models
@@ -329,7 +352,7 @@ export function AgentModelSelector({
 
   function applyCustomModel() {
     if (!trimmedCustomModelDraft) return;
-    setModel(trimmedCustomModelDraft);
+    setModel(trimmedCustomModelDraft, "api-provider");
     setOpen(false);
   }
 
@@ -402,12 +425,17 @@ export function AgentModelSelector({
                 {t("agentModelSelector.settings")}
               </button>
             </div>
-            <div className="mb-2 grid grid-cols-2 rounded-full border border-border bg-muted/30 p-0.5">
+            <div className="mb-2 grid grid-cols-3 rounded-full border border-border bg-muted/30 p-0.5">
               {[
                 {
-                  id: "local-cli" as const,
+                  id: "local-agent" as const,
                   label: t("agentModelSelector.localAgent"),
                   icon: Terminal,
+                },
+                {
+                  id: "nextop-managed" as const,
+                  label: t("agentModelSelector.nextopManaged"),
+                  icon: Cloud,
                 },
                 {
                   id: "api-provider" as const,
@@ -490,7 +518,10 @@ export function AgentModelSelector({
                       key={m.id}
                       type="button"
                       onClick={() => {
-                        setModel(resolveExecutableModelId(m.id, models));
+                        setModel(
+                          resolveExecutableModelId(m.id, models),
+                          getModelSourceTab(m),
+                        );
                         setOpen(false);
                       }}
                       className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors ${
@@ -517,8 +548,10 @@ export function AgentModelSelector({
             })}
             {providers.length === 0 ? (
               <div className="rounded-lg px-2 py-4 text-xs text-muted-foreground">
-                {activeModelTab === "local-cli"
+                {activeModelTab === "local-agent"
                   ? t("agentModelSelector.noLocalCliModels")
+                  : activeModelTab === "nextop-managed"
+                    ? t("agentModelSelector.noNextopManagedModels")
                   : t("agentModelSelector.noApiProviderModels")}
               </div>
             ) : null}

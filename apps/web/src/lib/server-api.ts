@@ -8,6 +8,9 @@ import type {
   MessageCreateResponse,
   MessageListResponse,
   ModelListResponse,
+  NextopManagedConnectionResponse,
+  NextopManagedGrantCreateRequest,
+  NextopManagedGrantResponse,
   ProfileUpdateResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
@@ -190,6 +193,39 @@ export async function fetchModels(): Promise<ModelListResponse> {
     throw new Error(`Failed to fetch models: ${response.status}`);
   }
   return (await response.json()) as ModelListResponse;
+}
+
+export async function fetchNextopManagedConnection(): Promise<NextopManagedConnectionResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/nextop/managed-model-connection`,
+    { cache: "no-store" },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as NextopManagedConnectionResponse;
+}
+
+export async function connectNextopManagedModels(
+  data: NextopManagedGrantCreateRequest,
+): Promise<NextopManagedGrantResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/nextop/managed-model-connection/grant`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(data),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as NextopManagedGrantResponse;
+}
+
+export async function disconnectNextopManagedModels(): Promise<NextopManagedConnectionResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/nextop/managed-model-connection`,
+    { method: "DELETE" },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as NextopManagedConnectionResponse;
 }
 
 export async function installAgentProvider(

@@ -4,6 +4,7 @@ import { Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
+  AgentModelSource,
   ContentBlock,
   ImageGenerationPreference,
   MessageMention,
@@ -20,6 +21,7 @@ import {
 } from "../hooks/use-chat-stream";
 import {
   INITIAL_AGENT_MODEL_KEY,
+  INITIAL_AGENT_MODEL_SOURCE_KEY,
   INITIAL_ATTACHMENTS_KEY,
   INITIAL_IMAGE_GENERATION_PREFERENCE_KEY,
   INITIAL_VIDEO_GENERATION_PREFERENCE_KEY,
@@ -233,10 +235,16 @@ export function ChatSidebar({
   );
   activeVideoGenerationPreferenceRef.current = activeVideoGenerationPreference;
 
-  const { model: agentModel, ensureAgentModelConfigured } =
+  const {
+    model: agentModel,
+    modelSource: agentModelSource,
+    ensureAgentModelConfigured,
+  } =
     useAgentModelRequirement();
   const agentModelRef = useRef(agentModel);
   agentModelRef.current = agentModel;
+  const agentModelSourceRef = useRef(agentModelSource);
+  agentModelSourceRef.current = agentModelSource;
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const { toast: showToast } = useToast();
@@ -650,6 +658,9 @@ export function ChatSidebar({
               ...(agentModelRef.current
                 ? { model: agentModelRef.current }
                 : {}),
+              ...(agentModelRef.current && agentModelSourceRef.current
+                ? { modelSource: agentModelSourceRef.current }
+                : {}),
             },
             (ack) => {
               clearTimeout(timeout);
@@ -797,6 +808,7 @@ export function ChatSidebar({
     let storedImageGenerationPreference: ImageGenerationPreference | undefined;
     let storedVideoGenerationPreference: VideoGenerationPreference | undefined;
     let storedAgentModel: string | undefined;
+    let storedAgentModelSource: AgentModelSource | undefined;
     try {
       const raw = sessionStorage.getItem(INITIAL_ATTACHMENTS_KEY);
       if (raw) {
@@ -829,6 +841,17 @@ export function ChatSidebar({
         storedAgentModel = modelRaw;
         sessionStorage.removeItem(INITIAL_AGENT_MODEL_KEY);
       }
+      const modelSourceRaw = sessionStorage.getItem(
+        INITIAL_AGENT_MODEL_SOURCE_KEY,
+      );
+      if (
+        modelSourceRaw === "local-agent" ||
+        modelSourceRaw === "nextop-managed" ||
+        modelSourceRaw === "api-provider"
+      ) {
+        storedAgentModelSource = modelSourceRaw;
+        sessionStorage.removeItem(INITIAL_AGENT_MODEL_SOURCE_KEY);
+      }
     } catch {
       // Malformed JSON or unavailable storage
     }
@@ -839,6 +862,7 @@ export function ChatSidebar({
 
     if (storedAgentModel) {
       agentModelRef.current = storedAgentModel;
+      agentModelSourceRef.current = storedAgentModelSource ?? null;
     }
 
     const timer = setTimeout(() => {

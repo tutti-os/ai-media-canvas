@@ -13,11 +13,17 @@ import {
 } from "../src/i18n";
 
 const {
+  connectNextopManagedModelsMock,
+  disconnectNextopManagedModelsMock,
+  fetchNextopManagedConnectionMock,
   fetchWorkspaceSettingsMock,
   fetchModelsMock,
   installAgentProviderMock,
   updateWorkspaceSettingsMock,
 } = vi.hoisted(() => ({
+  connectNextopManagedModelsMock: vi.fn(),
+  disconnectNextopManagedModelsMock: vi.fn(),
+  fetchNextopManagedConnectionMock: vi.fn(),
   fetchWorkspaceSettingsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
   installAgentProviderMock: vi.fn(),
@@ -29,7 +35,10 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("../src/lib/server-api", () => ({
+  connectNextopManagedModels: connectNextopManagedModelsMock,
+  disconnectNextopManagedModels: disconnectNextopManagedModelsMock,
   fetchModels: fetchModelsMock,
+  fetchNextopManagedConnection: fetchNextopManagedConnectionMock,
   fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
   installAgentProvider: installAgentProviderMock,
   updateWorkspaceSettings: updateWorkspaceSettingsMock,
@@ -51,9 +60,19 @@ describe("SettingsPage", () => {
     void i18n.changeLanguage("en");
     fetchWorkspaceSettingsMock.mockReset();
     fetchModelsMock.mockReset();
+    fetchNextopManagedConnectionMock.mockReset();
+    connectNextopManagedModelsMock.mockReset();
+    disconnectNextopManagedModelsMock.mockReset();
     installAgentProviderMock.mockReset();
     updateWorkspaceSettingsMock.mockReset();
     fetchModelsMock.mockResolvedValue({ models: [] });
+    fetchNextopManagedConnectionMock.mockResolvedValue({
+      connection: {
+        connected: false,
+        models: [],
+        providers: [],
+      },
+    });
     installAgentProviderMock.mockResolvedValue({
       provider: "codex",
       status: "succeeded",
@@ -379,6 +398,7 @@ describe("SettingsPage", () => {
     await waitFor(() =>
       expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith({
         defaultModel: "google:gemini-2.5-flash",
+        defaultModelSource: "api-provider",
         providerModels: {
           openai: ["openai:gpt-4.1"],
           anthropic: ["anthropic:claude-sonnet-4-5"],
