@@ -4,19 +4,36 @@ import type {
   NextopManagedProviderId,
 } from "@aimc/shared";
 
+import { fetchNextopManagedConnection } from "./server-api";
+
 type NextopManagedGrantResult = {
   grantCode: string;
-  grantRef: string;
   expiresAt?: string;
   providers?: NextopManagedProviderId[];
   models?: NextopManagedModel[];
 };
 
+type NextopAppContext = {
+  appId?: string;
+  contextToken?: string;
+  installationId?: string;
+  workspaceId?: string;
+};
+
 type NextopBridge = {
+  appContext?: {
+    get?: () => Promise<NextopAppContext>;
+  };
   managedCredentials?: {
     requestGrant?: (input: {
+      appId?: string;
+      contextToken: string;
+      installationId?: string;
+      nonce: string;
       providers: NextopManagedProviderId[];
       scopes: string[];
+      state: string;
+      workspaceId?: string;
     }) => Promise<NextopManagedGrantResult>;
   };
   workspace?: {
@@ -36,6 +53,7 @@ declare global {
 
 export function hasNextopManagedCredentialBridge() {
   return typeof window !== "undefined" &&
+    typeof window.nextop?.appContext?.get === "function" &&
     typeof window.nextop?.managedCredentials?.requestGrant === "function";
 }
 
@@ -44,15 +62,37 @@ export async function requestNextopManagedGrant(): Promise<NextopManagedGrantCre
   if (typeof requestGrant !== "function") {
     throw new Error("Nextop Managed bridge is unavailable.");
   }
+  const context = await window.nextop?.appContext?.get?.();
+  if (!context?.contextToken) {
+    throw new Error("Nextop app context is unavailable.");
+  }
+  const connection = await fetchNextopManagedConnection();
+  if (!connection.connectChallenge) {
+    throw new Error("Nextop Managed connect challenge is unavailable.");
+  }
+  const { nonce, state } = connection.connectChallenge;
 
   const result = await requestGrant({
+    ...(context.appId ? { appId: context.appId } : {}),
+    contextToken: context.contextToken,
+    ...(context.installationId
+      ? { installationId: context.installationId }
+      : {}),
+    nonce,
     providers: ["agnes", "openai", "anthropic"],
-    scopes: ["models:read", "credentials:exchange"],
+    scopes: [
+      "managed_models.models.read",
+      "managed_models.credentials.use",
+    ],
+    state,
+    ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
   });
 
   return {
+    contextToken: context.contextToken,
     grantCode: result.grantCode,
-    grantRef: result.grantRef,
+    nonce,
+    state,
     ...(result.expiresAt ? { expiresAt: result.expiresAt } : {}),
     ...(result.providers ? { providers: result.providers } : {}),
     ...(result.models ? { models: result.models } : {}),

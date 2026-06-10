@@ -391,7 +391,7 @@ export async function registerModelRoutes(
       }
     }
     if (options?.nextopManagedCredentials) {
-      models.push(...options.nextopManagedCredentials.listModels());
+      models.push(...(await options.nextopManagedCredentials.listModels()));
     }
     return reply.code(200).send(modelListResponseSchema.parse({ models }));
   });

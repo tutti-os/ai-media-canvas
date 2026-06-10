@@ -7,8 +7,10 @@ import {
   chatMessageSchema,
   chatSessionSummarySchema,
   modelInfoSchema,
+  nextopManagedConnectChallengeSchema,
   nextopManagedConnectionSchema,
   nextopManagedGrantRequestSchema,
+  nextopManagedPublicConnectionSchema,
   projectSummarySchema,
   runIdSchema,
   viewerProfileSchema,
@@ -153,7 +155,8 @@ export const modelListResponseSchema = z.object({
 });
 
 export const nextopManagedConnectionResponseSchema = z.object({
-  connection: nextopManagedConnectionSchema,
+  connectChallenge: nextopManagedConnectChallengeSchema.optional(),
+  connection: nextopManagedPublicConnectionSchema,
 });
 
 export const nextopManagedGrantResponseSchema =

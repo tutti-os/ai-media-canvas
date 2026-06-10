@@ -18,7 +18,11 @@ export async function registerNextopManagedModelConnectionRoutes(
   app.get("/api/nextop/managed-model-connection", async (_request, reply) => {
     return reply.code(200).send(
       nextopManagedConnectionResponseSchema.parse({
-        connection: options.nextopManagedCredentials.getConnection(),
+        connectChallenge:
+          options.nextopManagedCredentials.createConnectChallenge(),
+        connection: publicConnection(
+          options.nextopManagedCredentials.getConnection(),
+        ),
       }),
     );
   });
@@ -44,7 +48,7 @@ export async function registerNextopManagedModelConnectionRoutes(
       );
       return reply.code(200).send(
         nextopManagedGrantResponseSchema.parse({
-          connection,
+          connection: publicConnection(connection),
         }),
       );
     } catch (error) {
@@ -64,8 +68,22 @@ export async function registerNextopManagedModelConnectionRoutes(
     const connection = await options.nextopManagedCredentials.clearConnection();
     return reply.code(200).send(
       nextopManagedConnectionResponseSchema.parse({
-        connection,
+        connection: publicConnection(connection),
       }),
     );
   });
+}
+
+function publicConnection(connection: {
+  connected: boolean;
+  expiresAt?: string | undefined;
+  models: unknown[];
+  providers: unknown[];
+}) {
+  return {
+    connected: connection.connected,
+    ...(connection.expiresAt ? { expiresAt: connection.expiresAt } : {}),
+    models: connection.models,
+    providers: connection.providers,
+  };
 }

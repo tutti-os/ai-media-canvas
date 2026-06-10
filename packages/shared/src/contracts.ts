@@ -245,9 +245,22 @@ export const nextopManagedConnectionSchema = z.object({
   models: z.array(nextopManagedModelSchema),
 });
 
+export const nextopManagedPublicConnectionSchema =
+  nextopManagedConnectionSchema.omit({
+    grantRef: true,
+  });
+
+export const nextopManagedConnectChallengeSchema = z.object({
+  expiresAt: timestampSchema,
+  nonce: z.string().trim().min(16),
+  state: z.string().trim().min(16),
+});
+
 export const nextopManagedGrantRequestSchema = z.object({
+  contextToken: z.string().trim().min(1),
   grantCode: z.string().trim().min(1),
-  grantRef: z.string().trim().min(1),
+  nonce: z.string().trim().min(16),
+  state: z.string().trim().min(16),
   expiresAt: timestampSchema.optional(),
   providers: z.array(nextopManagedProviderIdSchema).optional(),
   models: z.array(nextopManagedModelSchema).optional(),
@@ -410,6 +423,12 @@ export type NextopManagedProviderId = z.infer<
 export type NextopManagedModel = z.infer<typeof nextopManagedModelSchema>;
 export type NextopManagedConnection = z.infer<
   typeof nextopManagedConnectionSchema
+>;
+export type NextopManagedPublicConnection = z.infer<
+  typeof nextopManagedPublicConnectionSchema
+>;
+export type NextopManagedConnectChallenge = z.infer<
+  typeof nextopManagedConnectChallengeSchema
 >;
 export type NextopManagedGrantRequest = z.infer<
   typeof nextopManagedGrantRequestSchema
