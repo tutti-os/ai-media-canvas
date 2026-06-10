@@ -89,3 +89,13 @@
 - 验证方式和结果: 扩展 `apps/server/src/agent/runtime.test.ts`，在 local-agent provider mock 入口断言 `cwd/workspace-skills/canvas-director/SKILL.md` 已存在且包含 skill 内容，并断言 prompt 使用相对 `workspace-skills/canvas-director/SKILL.md` 而不是绝对 `/workspace-skills/...`；`pnpm --filter @aimc/server test -- src/agent/runtime.test.ts -t "passes enabled local workspace skills"` 通过（实际运行 25 个 server 测试文件均通过）；`pnpm --filter @aimc/server typecheck` 通过。
 - 是否已修复完: 是
 - commit hash: `TBD`
+
+## 10. Download image 导出后菜单仍聚焦
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/QT8yr7Jf3eEhETcQkircCvrQnch
+- 真实 record id: `recvm7I9WbBRFI`
+- Bug 原因: 右键菜单中的 `Download image` 自定义项在 `exportToBlob`、创建下载链接并触发点击之后才调用 `closeNativeContextMenu()`；导出或浏览器下载处理期间，原生菜单仍保持打开/聚焦状态，和录屏中导出后仍停留在导出选项上的现象一致。
+- 修复方案: 将菜单关闭动作提前到下载按钮点击的同步阶段，点击后立即向触发按钮派发 `Escape` 关闭 Excalidraw 原生菜单；导出 PNG 和下载链接创建继续异步执行，不改变导出内容与文件名逻辑。
+- 验证方式和结果: 新增 `apps/web/test/canvas-context-menu-extensions.test.tsx` 回归，模拟 `exportToBlob` 长时间 pending，点击“下载图片”后立即断言已派发 `Escape`，并验证仍按选中图片调用导出；`pnpm --filter @aimc/web exec vitest run test/canvas-context-menu-extensions.test.tsx -t download` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/canvas-context-menu-extensions.tsx apps/web/test/canvas-context-menu-extensions.test.tsx` 通过；浏览器打开 `http://localhost:3000/canvas` 无 console error。一次通过 npm 脚本误触发的 web 全量测试中，目标文件 5 个测试通过，但无关 `test/canvas-page.test.tsx` 的视频轮询用例失败，未作为本 bug 阻塞。
+- 是否已修复完: 是
+- commit hash: `TBD`

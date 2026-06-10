@@ -74,6 +74,56 @@ describe("CanvasContextMenuExtensions", () => {
     });
   });
 
+  it("closes the native menu immediately when downloading an image", async () => {
+    const user = userEvent.setup();
+    const keydownEvents: KeyboardEvent[] = [];
+    const imageElement = {
+      id: "image-1",
+      type: "image",
+      isDeleted: false,
+      x: 0,
+      y: 0,
+      width: 320,
+      height: 320,
+    };
+    const excalidrawApi = {
+      getAppState: () => ({
+        selectedElementIds: { "image-1": true },
+        viewBackgroundColor: "#ffffff",
+      }),
+      getFiles: () => ({}),
+      getSceneElements: () => [imageElement],
+    };
+
+    document.body.innerHTML = `
+      <div class="excalidraw">
+        <ul class="context-menu"></ul>
+      </div>
+    `;
+    document.addEventListener("keydown", (event) => {
+      keydownEvents.push(event);
+    });
+    exportToBlobMock.mockReturnValue(new Promise<Blob>(() => {}));
+
+    render(
+      <ToastProvider>
+        <CanvasContextMenuExtensions excalidrawApi={excalidrawApi} />
+      </ToastProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "下载图片" }));
+
+    expect(keydownEvents).toEqual([
+      expect.objectContaining({ key: "Escape", code: "Escape" }),
+    ]);
+    expect(exportToBlobMock).toHaveBeenCalledWith({
+      elements: [imageElement],
+      appState: expect.objectContaining({ exportBackground: true }),
+      files: {},
+      mimeType: "image/png",
+    });
+  });
+
   it("localizes retained native menu labels and marks group dividers", async () => {
     document.body.innerHTML = `
       <div class="excalidraw">
@@ -224,7 +274,8 @@ describe("CanvasContextMenuExtensions", () => {
       files: {},
       mimeType: "image/png",
     });
-    const clipboardItems = clipboardWrite.mock.calls[0][0] as TestClipboardItem[];
+    const clipboardItems = clipboardWrite.mock
+      .calls[0][0] as TestClipboardItem[];
     await expect(clipboardItems[0].items["image/png"]).resolves.toBe(pngBlob);
     expect(screen.getByText("图片已复制")).toBeInTheDocument();
   });
