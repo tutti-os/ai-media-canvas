@@ -7,8 +7,10 @@ import { inflateSync } from "node:zlib";
 
 import {
   assertNoSymlinks,
+  createCliManifest,
   createWebBuildEnv,
   createManifest,
+  renderCommandsGuide,
   renderAgentsGuide,
   renderBootstrap,
   validatePackageRoot,
@@ -127,6 +129,9 @@ test("createManifest returns the Nextop package manifest contract", () => {
       bootstrap: "bootstrap.sh",
       healthcheckPath: "/api/health",
     },
+    cli: {
+      manifest: "nextop.cli.json",
+    },
     localizationInfo: {
       defaultLocale: "en",
       additionalLocales: [
@@ -144,6 +149,69 @@ test("createManifest returns the Nextop package manifest contract", () => {
     },
     tags: ["generated", "local-first", "media-canvas"],
   });
+});
+
+test("createCliManifest returns the Nextop CLI manifest contract", () => {
+  const manifest = createCliManifest();
+
+  assert.equal(manifest.schemaVersion, "nextop.app.cli.v1");
+  assert.equal(manifest.scope, "aimc");
+  assert.equal(manifest.documentation.file, "COMMANDS.md");
+  assert.ok(manifest.commands.length >= 20);
+  assert.deepEqual(
+    manifest.commands.find((command) => command.path.join(" ") === "projects create"),
+    {
+      path: ["projects", "create"],
+      summary: "Create a project",
+      description:
+        "Create a local AI Media Canvas project. Use the returned primaryCanvas.id before saving canvas content.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Project name." },
+          description: { type: "string", description: "Optional project description." },
+        },
+        required: ["name"],
+      },
+      output: {
+        defaultMode: "json",
+        json: true,
+      },
+      handler: {
+        kind: "http",
+        method: "POST",
+        path: "/nextop/cli/projects/create",
+        timeoutMs: 30000,
+      },
+    },
+  );
+});
+
+test("createCliManifest keeps command metadata discoverable for agents", () => {
+  const manifest = createCliManifest();
+
+  for (const command of manifest.commands) {
+    assert.match(command.handler.path, /^\/nextop\/cli\//);
+    assert.equal(command.handler.path, `/nextop/cli/${command.path.join("/")}`);
+    assert.ok(command.summary.length > 0);
+    assert.ok(command.description.length > command.summary.length);
+
+    const required = command.inputSchema.required ?? [];
+    for (const propertyName of required) {
+      assert.ok(
+        command.inputSchema.properties[propertyName]?.description,
+        `${command.path.join(" ")} must describe required input ${propertyName}`,
+      );
+    }
+  }
+});
+
+test("renderCommandsGuide documents CLI commands", () => {
+  const guide = renderCommandsGuide();
+
+  assert.match(guide, /AI Media Canvas CLI Commands/);
+  assert.match(guide, /`aimc projects create --name <required> --description`/);
+  assert.match(guide, /\/nextop\/cli\/agent\/run/);
 });
 
 test("renderBootstrap maps Nextop runtime env into AI Media Canvas env", () => {
@@ -233,6 +301,11 @@ test("validatePackageRoot requires the files Nextop imports", async () => {
     path.join(packageRoot, "nextop.app.json"),
     `${JSON.stringify(createManifest({ version: "1.2.3" }))}\n`,
   );
+  await writeFile(
+    path.join(packageRoot, "nextop.cli.json"),
+    `${JSON.stringify(createCliManifest())}\n`,
+  );
+  await writeFile(path.join(packageRoot, "COMMANDS.md"), renderCommandsGuide());
   await writeFile(path.join(packageRoot, "AGENTS.md"), "Package guide\n");
   await writeFile(path.join(packageRoot, "bootstrap.sh"), renderBootstrap());
   await mkdir(path.join(packageRoot, "server"));

@@ -1,52 +1,39 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
+  type BackgroundJobStatus,
+  type BackgroundJobType,
   applicationErrorResponseSchema,
   createImageJobRequestSchema,
   createVideoJobRequestSchema,
-  jobListResponseSchema,
-  jobResponseSchema,
-  type BackgroundJobStatus,
-  type BackgroundJobType,
 } from "@aimc/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import {
-  JobServiceError,
   type JobService,
+  JobServiceError,
 } from "../features/jobs/job-service.js";
-
-const LOCAL_WORKSPACE_ID = "local-workspace";
+import { type JobOperations, createJobOperations } from "./job-operations.js";
 
 export async function registerJobRoutes(
   app: FastifyInstance,
   options: {
     localUser: AuthenticatedUser;
     jobService: JobService;
+    jobOperations?: JobOperations;
   },
 ) {
+  const jobOperations =
+    options.jobOperations ??
+    createJobOperations({
+      localUser: options.localUser,
+      jobService: options.jobService,
+    });
+
   app.post("/api/jobs/image-generation", async (request, reply) => {
     try {
       const payload = createImageJobRequestSchema.parse(request.body);
-      const model = payload.model ?? "black-forest-labs/flux-kontext-pro";
-      const job = await options.jobService.createJob(options.localUser, {
-        workspaceId: LOCAL_WORKSPACE_ID,
-        ...(payload.project_id ? { projectId: payload.project_id } : {}),
-        ...(payload.canvas_id ? { canvasId: payload.canvas_id } : {}),
-        ...(payload.session_id ? { sessionId: payload.session_id } : {}),
-        ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
-        jobType: "image_generation",
-        payload: {
-          prompt: payload.prompt,
-          model,
-          ...(payload.aspect_ratio ? { aspect_ratio: payload.aspect_ratio } : {}),
-          ...(payload.quality ? { quality: payload.quality } : {}),
-          ...(payload.input_images ? { input_images: payload.input_images } : {}),
-          ...(payload.size ? { size: payload.size } : {}),
-          ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
-        },
-      });
-      return reply.code(201).send(jobResponseSchema.parse({ job }));
+      return reply.code(201).send(await jobOperations.createImageJob(payload));
     } catch (error) {
       if (isZodError(error)) return sendValidationError(reply);
       return sendJobError(error, reply, "job_create_failed");
@@ -56,39 +43,7 @@ export async function registerJobRoutes(
   app.post("/api/jobs/video-generation", async (request, reply) => {
     try {
       const payload = createVideoJobRequestSchema.parse(request.body);
-      const model = payload.model ?? "google-official/veo-3.1-generate-preview";
-      const job = await options.jobService.createJob(options.localUser, {
-        workspaceId: LOCAL_WORKSPACE_ID,
-        ...(payload.project_id ? { projectId: payload.project_id } : {}),
-        ...(payload.canvas_id ? { canvasId: payload.canvas_id } : {}),
-        ...(payload.session_id ? { sessionId: payload.session_id } : {}),
-        ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
-        jobType: "video_generation",
-        payload: {
-          prompt: payload.prompt,
-          model,
-          ...(payload.duration ? { duration: payload.duration } : {}),
-          ...(payload.resolution ? { resolution: payload.resolution } : {}),
-          ...(payload.aspect_ratio ? { aspect_ratio: payload.aspect_ratio } : {}),
-          ...(payload.input_images ? { input_images: payload.input_images } : {}),
-          ...(payload.input_video ? { input_video: payload.input_video } : {}),
-          ...(payload.video_mode ? { video_mode: payload.video_mode } : {}),
-          ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
-          ...(payload.negative_prompt
-            ? { negative_prompt: payload.negative_prompt }
-            : {}),
-          ...(payload.frame_rate !== undefined
-            ? { frame_rate: payload.frame_rate }
-            : {}),
-          ...(payload.num_frames !== undefined
-            ? { num_frames: payload.num_frames }
-            : {}),
-          ...(payload.enable_audio !== undefined
-            ? { enable_audio: payload.enable_audio }
-            : {}),
-        },
-      });
-      return reply.code(201).send(jobResponseSchema.parse({ job }));
+      return reply.code(201).send(await jobOperations.createVideoJob(payload));
     } catch (error) {
       if (isZodError(error)) return sendValidationError(reply);
       return sendJobError(error, reply, "job_create_failed");
@@ -98,8 +53,7 @@ export async function registerJobRoutes(
   app.get("/api/jobs/:jobId", async (request, reply) => {
     try {
       const { jobId } = request.params as { jobId: string };
-      const job = await options.jobService.getJob(options.localUser, jobId);
-      return reply.code(200).send(jobResponseSchema.parse({ job }));
+      return reply.code(200).send(await jobOperations.getJob(jobId));
     } catch (error) {
       return sendJobError(error, reply, "job_query_failed");
     }
@@ -108,11 +62,13 @@ export async function registerJobRoutes(
   app.get("/api/jobs", async (request, reply) => {
     try {
       const query = request.query as { status?: string; job_type?: string };
-      const filters: { status?: BackgroundJobStatus; jobType?: BackgroundJobType } = {};
+      const filters: {
+        status?: BackgroundJobStatus;
+        jobType?: BackgroundJobType;
+      } = {};
       if (query.status) filters.status = query.status as BackgroundJobStatus;
       if (query.job_type) filters.jobType = query.job_type as BackgroundJobType;
-      const jobs = await options.jobService.listJobs(options.localUser, filters);
-      return reply.code(200).send(jobListResponseSchema.parse({ jobs }));
+      return reply.code(200).send(await jobOperations.listJobs(filters));
     } catch (error) {
       return sendJobError(error, reply, "job_query_failed");
     }
@@ -121,8 +77,7 @@ export async function registerJobRoutes(
   app.post("/api/jobs/:jobId/cancel", async (request, reply) => {
     try {
       const { jobId } = request.params as { jobId: string };
-      const job = await options.jobService.cancelJob(options.localUser, jobId);
-      return reply.code(200).send(jobResponseSchema.parse({ job }));
+      return reply.code(200).send(await jobOperations.cancelJob(jobId));
     } catch (error) {
       return sendJobError(error, reply, "job_cancel_failed");
     }
@@ -143,10 +98,7 @@ function sendValidationError(reply: FastifyReply) {
 function sendJobError(
   error: unknown,
   reply: FastifyReply,
-  fallbackCode:
-    | "job_create_failed"
-    | "job_query_failed"
-    | "job_cancel_failed",
+  fallbackCode: "job_create_failed" | "job_query_failed" | "job_cancel_failed",
 ) {
   if (error instanceof JobServiceError) {
     return reply.code(error.statusCode).send(

@@ -11,28 +11,30 @@ import {
   wsCommandSchema,
   wsRpcResponseSchema,
 } from "@aimc/shared";
+import {
+  AgentRunModelResolutionError,
+  type AgentRunOrchestrator,
+  createAgentRunOrchestrator,
+  isLocalAgentRuntimeRequested,
+  resolveAgentRunModel,
+} from "../agent/run-orchestrator.js";
 import type { AgentRunService } from "../agent/runtime.js";
+import type {
+  AuthenticatedUser,
+  RequestAuthenticator,
+} from "../auth/request.js";
+import type { ServerEnv } from "../config/env.js";
+import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
 import type { NextopManagedCredentialService } from "../features/nextop-managed/credential-service.js";
 import {
   LOCAL_WORKSPACE_ID,
   type SettingsService,
 } from "../features/settings/settings-service.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "../auth/request.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";
-import type { ChatService } from "../features/chat/chat-service.js";
 import { createPipelineLogger } from "./logger.js";
-import type { ServerEnv } from "../config/env.js";
-import {
-  createAgentRunOrchestrator,
-  isLocalAgentRuntimeRequested,
-  type AgentRunOrchestrator,
-} from "../agent/run-orchestrator.js";
 
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
@@ -44,7 +46,10 @@ type RegisterWsOptions = {
       runId: string;
     }) => { canvasSeq?: number; eventId: string; seq: number };
     getLatestCanvasSeq?: (canvasId: string) => number;
-    getActiveRun?: (canvasId: string, sessionId: string) => {
+    getActiveRun?: (
+      canvasId: string,
+      sessionId: string,
+    ) => {
       assistantMessageId: string | null;
       runId: string;
       runtimeKind: RuntimeKind | null;
@@ -52,7 +57,10 @@ type RegisterWsOptions = {
       sessionId: string;
       status: "accepted" | "running" | "completed" | "failed" | "canceled";
     } | null;
-    listCanvasEvents?: (canvasId: string, cursor?: number) => Array<{
+    listCanvasEvents?: (
+      canvasId: string,
+      cursor?: number,
+    ) => Array<{
       event: StreamEvent;
       eventId: string;
       canvasSeq: number;
@@ -74,17 +82,28 @@ export async function registerWsRoute(
 ) {
   const { agentRuns, connectionManager } = options;
 
-  app.get("/api/ws", { websocket: true }, (socket: WebSocket, request: FastifyRequest) => {
-    const url = new URL(request.url, `http://${request.headers.host}`);
-    const token = url.searchParams.get("token");
+  app.get(
+    "/api/ws",
+    { websocket: true },
+    (socket: WebSocket, request: FastifyRequest) => {
+      const url = new URL(request.url, `http://${request.headers.host}`);
+      const token = url.searchParams.get("token");
 
-    if (!token || !options.auth) {
-      socket.close(4001, "Unauthorized");
-      return;
-    }
+      if (!token || !options.auth) {
+        socket.close(4001, "Unauthorized");
+        return;
+      }
 
-    void authenticateAndBind(socket, token, request, options, agentRuns, connectionManager);
-  });
+      void authenticateAndBind(
+        socket,
+        token,
+        request,
+        options,
+        agentRuns,
+        connectionManager,
+      );
+    },
+  );
 }
 
 async function authenticateAndBind(
@@ -99,10 +118,15 @@ async function authenticateAndBind(
 
   let authenticatedUser: AuthenticatedUser;
   try {
+    if (!options.auth) {
+      log.warn("auth_rejected", { reason: "missing_authenticator" });
+      socket.close(4001, "Unauthorized");
+      return;
+    }
     const fakeRequest = {
       headers: { authorization: `Bearer ${token}` },
     } as unknown as FastifyRequest;
-    const user = await options.auth!.authenticate(fakeRequest);
+    const user = await options.auth.authenticate(fakeRequest);
     if (!user) {
       log.warn("auth_rejected", { reason: "invalid_token" });
       socket.close(4001, "Unauthorized");
@@ -111,7 +135,9 @@ async function authenticateAndBind(
     authenticatedUser = user;
     log.info("connected", { userId: user.id });
   } catch (err) {
-    log.warn("auth_error", { error: err instanceof Error ? err.message : String(err) });
+    log.warn("auth_error", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     socket.close(4001, "Unauthorized");
     return;
   }
@@ -120,19 +146,22 @@ async function authenticateAndBind(
 
   // Use client-provided connectionId for reconnect identity; fallback to server UUID
   const urlForParams = new URL(_request.url, `http://${_request.headers.host}`);
-  const connectionId = urlForParams.searchParams.get("connectionId") || randomUUID();
+  const connectionId =
+    urlForParams.searchParams.get("connectionId") || randomUUID();
   connectionManager.register(connectionId, authenticatedUser.id, socket);
 
   // Heartbeat with pong timeout (spec §1.3: 60s no-pong → disconnect)
   let lastPong = Date.now();
-  socket.on("pong", () => { lastPong = Date.now(); });
+  socket.on("pong", () => {
+    lastPong = Date.now();
+  });
 
   const pingInterval = setInterval(() => {
-      if (Date.now() - lastPong > 60_000) {
-        log.warn("pong_timeout", { userId: authenticatedUser.id });
-        socket.terminate();
-        return;
-      }
+    if (Date.now() - lastPong > 60_000) {
+      log.warn("pong_timeout", { userId: authenticatedUser.id });
+      socket.terminate();
+      return;
+    }
     if (socket.readyState === 1) {
       socket.ping();
     }
@@ -141,7 +170,9 @@ async function authenticateAndBind(
   socket.on("message", (raw: Buffer | string) => {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(typeof raw === "string" ? raw : raw.toString("utf-8"));
+      parsed = JSON.parse(
+        typeof raw === "string" ? raw : raw.toString("utf-8"),
+      );
     } catch {
       socket.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
       return;
@@ -155,8 +186,12 @@ async function authenticateAndBind(
         connectionManager.handleRpcResponse(connectionId, {
           type: rpcResponse.type,
           id: rpcResponse.id,
-          ...(rpcResponse.result !== undefined ? { result: rpcResponse.result } : {}),
-          ...(rpcResponse.error !== undefined ? { error: rpcResponse.error } : {}),
+          ...(rpcResponse.result !== undefined
+            ? { result: rpcResponse.result }
+            : {}),
+          ...(rpcResponse.error !== undefined
+            ? { error: rpcResponse.error }
+            : {}),
         });
       } catch {
         // Ignore malformed RPC responses
@@ -165,11 +200,13 @@ async function authenticateAndBind(
     }
 
     if (obj.type === "command") {
-      let msg;
+      let msg: ReturnType<typeof wsCommandSchema.parse>;
       try {
         msg = wsCommandSchema.parse(parsed);
       } catch {
-        socket.send(JSON.stringify({ type: "error", message: "Invalid command format" }));
+        socket.send(
+          JSON.stringify({ type: "error", message: "Invalid command format" }),
+        );
         return;
       }
 
@@ -182,30 +219,37 @@ async function authenticateAndBind(
           },
           connectionId,
           {
-          sessionId: p.sessionId,
-          conversationId: p.conversationId,
-          prompt: p.prompt,
-          ...(p.canvasId !== undefined ? { canvasId: p.canvasId } : {}),
-          ...(p.attachments !== undefined ? { attachments: p.attachments } : {}),
-          ...(p.imageGenerationPreference !== undefined
-            ? { imageGenerationPreference: p.imageGenerationPreference }
-            : {}),
-          ...(p.videoGenerationPreference !== undefined
-            ? { videoGenerationPreference: p.videoGenerationPreference }
-            : {}),
-          ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
-          ...(p.model !== undefined ? { model: p.model } : {}),
-          ...(p.runtimeKind !== undefined ? { runtimeKind: p.runtimeKind } : {}),
-          ...(p.runtimeProvider !== undefined
-            ? { runtimeProvider: p.runtimeProvider }
-            : {}),
+            sessionId: p.sessionId,
+            conversationId: p.conversationId,
+            prompt: p.prompt,
+            ...(p.canvasId !== undefined ? { canvasId: p.canvasId } : {}),
+            ...(p.attachments !== undefined
+              ? { attachments: p.attachments }
+              : {}),
+            ...(p.imageGenerationPreference !== undefined
+              ? { imageGenerationPreference: p.imageGenerationPreference }
+              : {}),
+            ...(p.videoGenerationPreference !== undefined
+              ? { videoGenerationPreference: p.videoGenerationPreference }
+              : {}),
+            ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
+            ...(p.model !== undefined ? { model: p.model } : {}),
+            ...(p.runtimeKind !== undefined
+              ? { runtimeKind: p.runtimeKind }
+              : {}),
+            ...(p.runtimeProvider !== undefined
+              ? { runtimeProvider: p.runtimeProvider }
+              : {}),
           },
           agentRuns,
           connectionManager,
           options,
         );
       } else if (msg.action === "agent.cancel") {
-        log.info("run_cancel", { userId: authenticatedUser.id, runId: msg.payload.runId });
+        log.info("run_cancel", {
+          userId: authenticatedUser.id,
+          runId: msg.payload.runId,
+        });
         void handleCancelCommand(
           msg.payload.runId,
           agentRuns,
@@ -215,23 +259,34 @@ async function authenticateAndBind(
         );
       } else if (msg.action === "canvas.resume") {
         const p = msg.payload;
-        log.info("canvas_resume", { userId: authenticatedUser.id, canvasId: p.canvasId, lastSeq: p.lastSeq });
+        log.info("canvas_resume", {
+          userId: authenticatedUser.id,
+          canvasId: p.canvasId,
+          lastSeq: p.lastSeq,
+        });
 
         // Re-bind this connection to the canvas
         connectionManager.bindCanvas(connectionId, p.canvasId);
 
         const missed = p.skipReplay
           ? []
-          : (options.agentRunPersistence?.listCanvasEvents?.(p.canvasId, p.lastSeq)
-            ?? options.eventBuffer?.getAfter(p.canvasId, p.lastSeq)
-            ?? []);
+          : (options.agentRunPersistence?.listCanvasEvents?.(
+              p.canvasId,
+              p.lastSeq,
+            ) ??
+            options.eventBuffer?.getAfter(p.canvasId, p.lastSeq) ??
+            []);
         const activeRun =
           connectionManager.getActiveRun(p.canvasId, p.sessionId) ??
-          options.agentRunPersistence?.getActiveRun?.(p.canvasId, p.sessionId) ??
+          options.agentRunPersistence?.getActiveRun?.(
+            p.canvasId,
+            p.sessionId,
+          ) ??
           null;
         const latestPersistedSeq =
           options.agentRunPersistence?.getLatestCanvasSeq?.(p.canvasId) ?? 0;
-        const latestBufferedSeq = options.eventBuffer?.getLatestSeq(p.canvasId) ?? 0;
+        const latestBufferedSeq =
+          options.eventBuffer?.getLatestSeq(p.canvasId) ?? 0;
 
         // IMPORTANT: Send ACK FIRST so client registers event listener
         // BEFORE replay events arrive. Otherwise replayed events have no handler.
@@ -302,10 +357,11 @@ async function handleRunCommand(
     (async (): Promise<string | undefined> => {
       if (!services.threadService) return undefined;
       try {
-        const sessionThread = await services.threadService.resolveOwnedSessionThread(
-          authenticatedUser,
-          payload.sessionId,
-        );
+        const sessionThread =
+          await services.threadService.resolveOwnedSessionThread(
+            authenticatedUser,
+            payload.sessionId,
+          );
         return sessionThread.threadId;
       } catch (error) {
         log.warn("thread_resolve_failed", {
@@ -317,7 +373,8 @@ async function handleRunCommand(
     (async (): Promise<
       { env: ServerEnv; settings: WorkspaceSettings } | undefined
     > => {
-      if (!services.settingsService || !services.viewerService) return undefined;
+      if (!services.settingsService || !services.viewerService)
+        return undefined;
       try {
         await services.viewerService.ensureViewer(authenticatedUser);
         const [env, settings] = await Promise.all([
@@ -341,17 +398,35 @@ async function handleRunCommand(
   ]);
   const effectiveEnv = runtimeSettings?.env;
   const model = effectiveEnv?.agentModel;
-  // Client-provided model takes priority over workspace default
-  const resolvedModel = payload.model ?? model;
-  const resolvedModelSource = payload.model
-    ? payload.modelSource
-    : runtimeSettings?.settings.defaultModelSource;
+  let resolvedModel: string | undefined;
+  try {
+    resolvedModel = resolveAgentRunModel({
+      defaultModel: model,
+      ...(payload.model ? { requestedModel: payload.model } : {}),
+      ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
+      ...(payload.runtimeProvider
+        ? { runtimeProvider: payload.runtimeProvider }
+        : {}),
+    });
+  } catch (error) {
+    if (error instanceof AgentRunModelResolutionError) {
+      connectionManager.sendTo(connectionId, {
+        type: "error",
+        code: error.code,
+        message: error.message,
+      });
+      return;
+    }
+    throw error;
+  }
   const runtimeEnv =
     effectiveEnv && resolvedModel && services.nextopManagedCredentials
       ? await services.nextopManagedCredentials.resolveEnvForModel(
           effectiveEnv,
           resolvedModel,
-          resolvedModelSource,
+          payload.model
+            ? payload.modelSource
+            : runtimeSettings?.settings.defaultModelSource,
         )
       : effectiveEnv;
   log.lap("resolve", { threadId: !!threadId, model: resolvedModel });
@@ -463,19 +538,17 @@ async function handleRunCommand(
     services.eventBuffer?.push(canvasId, input.event, input.envelope);
     connectionManager.pushToCanvas(canvasId, input.event, input.envelope);
   };
+  const chatService = services.chatService;
+  const assistantId = assistantMessageId;
   const updateAssistant =
-    services.chatService && assistantMessageId
+    chatService && assistantId
       ? async () => {
           try {
-            await services.chatService!.updateMessage(
-              authenticatedUser,
-              assistantMessageId!,
-              {
-                role: "assistant",
-                content: assistantProjection.textParts.join(""),
-                contentBlocks: assistantProjection.blocks,
-              },
-            );
+            await chatService.updateMessage(authenticatedUser, assistantId, {
+              role: "assistant",
+              content: assistantProjection.textParts.join(""),
+              contentBlocks: assistantProjection.blocks,
+            });
           } catch (error) {
             log.warn("assistant_message_update_failed", {
               error: error instanceof Error ? error.message : String(error),
@@ -504,7 +577,10 @@ async function handleRunCommand(
     }
     log.lap("stream_done", { runId });
   } catch (error) {
-    log.error("stream_error", { runId, error: error instanceof Error ? error.message : "unknown" });
+    log.error("stream_error", {
+      runId,
+      error: error instanceof Error ? error.message : "unknown",
+    });
     const failedEvent = {
       type: "run.failed" as const,
       runId,
@@ -537,7 +613,9 @@ async function handleCancelCommand(
 ) {
   const cancelResult = agentRuns.cancelRun(runId);
   if (!cancelResult) {
-    socket.send(JSON.stringify({ type: "error", message: `Run not found: ${runId}` }));
+    socket.send(
+      JSON.stringify({ type: "error", message: `Run not found: ${runId}` }),
+    );
     return;
   }
 

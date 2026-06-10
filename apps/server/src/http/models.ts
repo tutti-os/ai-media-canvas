@@ -77,6 +77,9 @@ type LocalAgentModelDiscovery = Pick<
 type LocalAgentProviderInstaller = (
   provider: InstallableAgentProviderId,
 ) => Promise<AgentProviderInstallResult>;
+type ModelDiscoveryLogger = {
+  warn: (payload: unknown, message: string) => void;
+};
 
 function withModelSource(
   models: ModelInfo[],
@@ -296,103 +299,15 @@ export async function registerModelRoutes(
     options?.localAgentProviderInstaller ?? installAgentProvider;
 
   app.get("/api/models", async (_request, reply) => {
-    const workspaceSettings = settingsService
-      ? await settingsService.getWorkspaceSettings(null, LOCAL_WORKSPACE_ID)
-      : undefined;
-    const effectiveEnv = settingsService
-      ? await settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID)
-      : env;
-    const models: ModelInfo[] = [];
-    if (effectiveEnv.openAIApiKey) {
-      let openAIModels = workspaceSettings?.providerModels.openai.length
-        ? buildConfiguredModels(
-            "openai",
-            workspaceSettings.providerModels.openai,
-          )
-        : OPENAI_MODELS;
-
-      if (
-        !workspaceSettings?.providerModels.openai.length &&
-        effectiveEnv.openAIApiBase
-      ) {
-        try {
-          const dynamicModels = await fetchOpenAICompatibleModels(
-            effectiveEnv.openAIApiBase,
-            effectiveEnv.openAIApiKey,
-          );
-          if (dynamicModels.length > 0) {
-            openAIModels = dynamicModels;
-          }
-        } catch (error) {
-          app.log.warn(
-            { err: error },
-            "Failed to load OpenAI-compatible models; using fallback list.",
-          );
-        }
-      }
-
-      models.push(...withModelSource(openAIModels, "api-provider"));
-    }
-    if (effectiveEnv.anthropicApiKey) {
-      models.push(
-        ...(workspaceSettings?.providerModels.anthropic.length
-          ? buildConfiguredModels(
-              "anthropic",
-              workspaceSettings.providerModels.anthropic,
-            )
-          : withModelSource(ANTHROPIC_MODELS, "api-provider")),
-      );
-    }
-    if (effectiveEnv.agnesApiKey) {
-      models.push(
-        ...(workspaceSettings?.providerModels.agnes.length
-          ? buildConfiguredModels(
-              "agnes",
-              workspaceSettings.providerModels.agnes,
-            )
-          : withModelSource(AGNES_MODELS, "api-provider")),
-      );
-    }
-    if (
-      effectiveEnv.googleApiKey ||
-      (effectiveEnv.googleVertexProject && effectiveEnv.googleVertexLocation)
-    ) {
-      models.push(
-        ...(workspaceSettings?.providerModels.google.length
-          ? buildConfiguredModels(
-              "google",
-              workspaceSettings.providerModels.google,
-            )
-          : withModelSource(GOOGLE_MODELS, "api-provider")),
-      );
-    }
-    if (
-      effectiveEnv.googleVertexProject &&
-      effectiveEnv.googleVertexLocation &&
-      workspaceSettings?.providerModels.vertex.length
-    ) {
-      models.push(
-        ...buildConfiguredModels(
-          "vertex",
-          workspaceSettings.providerModels.vertex,
-        ),
-      );
-    }
-    if (effectiveEnv.trustedLocalAgentMode !== false) {
-      try {
-        models.push(
-          ...buildLocalAgentModels(await localAgentModelDiscovery.detect()),
-        );
-      } catch (error) {
-        app.log.warn(
-          { err: error },
-          "Failed to load local-agent models; omitting local providers.",
-        );
-      }
-    }
-    if (options?.nextopManagedCredentials) {
-      models.push(...(await options.nextopManagedCredentials.listModels()));
-    }
+    const models = await listAgentModels({
+      env,
+      localAgentModelDiscovery,
+      logger: app.log,
+      ...(options?.nextopManagedCredentials
+        ? { nextopManagedCredentials: options.nextopManagedCredentials }
+        : {}),
+      ...(settingsService ? { settingsService } : {}),
+    });
     return reply.code(200).send(modelListResponseSchema.parse({ models }));
   });
 
@@ -451,4 +366,110 @@ export async function registerModelRoutes(
       }
     },
   );
+}
+
+export async function listAgentModels(options: {
+  env: ServerEnv;
+  localAgentModelDiscovery?: LocalAgentModelDiscovery;
+  logger?: ModelDiscoveryLogger;
+  nextopManagedCredentials?: NextopManagedCredentialService;
+  settingsService?: SettingsService;
+}) {
+  const localAgentModelDiscovery =
+    options.localAgentModelDiscovery ?? createDefaultLocalAgentModelDiscovery();
+  const workspaceSettings = options.settingsService
+    ? await options.settingsService.getWorkspaceSettings(
+        null,
+        LOCAL_WORKSPACE_ID,
+      )
+    : undefined;
+  const effectiveEnv = options.settingsService
+    ? await options.settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID)
+    : options.env;
+  const models: ModelInfo[] = [];
+  if (effectiveEnv.openAIApiKey) {
+    let openAIModels = workspaceSettings?.providerModels.openai.length
+      ? buildConfiguredModels("openai", workspaceSettings.providerModels.openai)
+      : OPENAI_MODELS;
+
+    if (
+      !workspaceSettings?.providerModels.openai.length &&
+      effectiveEnv.openAIApiBase
+    ) {
+      try {
+        const dynamicModels = await fetchOpenAICompatibleModels(
+          effectiveEnv.openAIApiBase,
+          effectiveEnv.openAIApiKey,
+        );
+        if (dynamicModels.length > 0) {
+          openAIModels = dynamicModels;
+        }
+      } catch (error) {
+        options.logger?.warn(
+          { err: error },
+          "Failed to load OpenAI-compatible models; using fallback list.",
+        );
+      }
+    }
+
+    models.push(...withModelSource(openAIModels, "api-provider"));
+  }
+  if (effectiveEnv.anthropicApiKey) {
+    models.push(
+      ...(workspaceSettings?.providerModels.anthropic.length
+        ? buildConfiguredModels(
+            "anthropic",
+            workspaceSettings.providerModels.anthropic,
+          )
+        : withModelSource(ANTHROPIC_MODELS, "api-provider")),
+    );
+  }
+  if (effectiveEnv.agnesApiKey) {
+    models.push(
+      ...(workspaceSettings?.providerModels.agnes.length
+        ? buildConfiguredModels("agnes", workspaceSettings.providerModels.agnes)
+        : withModelSource(AGNES_MODELS, "api-provider")),
+    );
+  }
+  if (
+    effectiveEnv.googleApiKey ||
+    (effectiveEnv.googleVertexProject && effectiveEnv.googleVertexLocation)
+  ) {
+    models.push(
+      ...(workspaceSettings?.providerModels.google.length
+        ? buildConfiguredModels(
+            "google",
+            workspaceSettings.providerModels.google,
+          )
+        : withModelSource(GOOGLE_MODELS, "api-provider")),
+    );
+  }
+  if (
+    effectiveEnv.googleVertexProject &&
+    effectiveEnv.googleVertexLocation &&
+    workspaceSettings?.providerModels.vertex.length
+  ) {
+    models.push(
+      ...buildConfiguredModels(
+        "vertex",
+        workspaceSettings.providerModels.vertex,
+      ),
+    );
+  }
+  if (effectiveEnv.trustedLocalAgentMode !== false) {
+    try {
+      models.push(
+        ...buildLocalAgentModels(await localAgentModelDiscovery.detect()),
+      );
+    } catch (error) {
+      options.logger?.warn(
+        { err: error },
+        "Failed to load local-agent models; omitting local providers.",
+      );
+    }
+  }
+  if (options.nextopManagedCredentials) {
+    models.push(...(await options.nextopManagedCredentials.listModels()));
+  }
+  return models;
 }

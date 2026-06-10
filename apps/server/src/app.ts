@@ -6,78 +6,81 @@ import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import {
+  type RunCreateRequest,
+  type StreamEvent,
   applicationErrorResponseSchema,
   healthResponseSchema,
   profileUpdateRequestSchema,
   profileUpdateResponseSchema,
-  type RunCreateRequest,
   runCreateRequestSchema,
   runCreateResponseSchema,
-  type StreamEvent,
   viewerResponseSchema,
 } from "@aimc/shared";
 
+import { createLocalToolGatewayService } from "./agent/local-agent-host/tool-gateway.js";
+import {
+  AgentRunModelResolutionError,
+  createAgentRunOrchestrator,
+  isLocalAgentRuntimeRequested,
+  resolveAgentRunModel,
+} from "./agent/run-orchestrator.js";
+import { createAgentRunService } from "./agent/runtime.js";
+import type { RequestAuthenticator } from "./auth/request.js";
+import { type ServerEnv, loadServerEnv } from "./config/env.js";
+import type { ViewerService } from "./features/bootstrap/ensure-user-foundation.js";
+import {
+  type BrandKitService,
+  BrandKitServiceError,
+} from "./features/brand-kit/brand-kit-service.js";
+import {
+  type CanvasService,
+  CanvasServiceError,
+} from "./features/canvas/canvas-service.js";
+import {
+  type ChatService,
+  ChatServiceError,
+} from "./features/chat/chat-service.js";
+import { createJobService } from "./features/jobs/job-service.js";
+import {
+  type ProjectService,
+  ProjectServiceError,
+} from "./features/projects/project-service.js";
+import {
+  LOCAL_WORKSPACE_ID,
+  createSettingsService,
+} from "./features/settings/settings-service.js";
+import {
+  type SkillService,
+  SkillServiceError,
+} from "./features/skills/skill-service.js";
+import {
+  type UploadService,
+  UploadServiceError,
+} from "./features/uploads/upload-service.js";
+import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerBrandKitRoutes } from "./http/brand-kits.js";
+import { createCanvasOperations } from "./http/canvas-operations.js";
 import { registerCanvasRoutes } from "./http/canvases.js";
+import { createChatOperations } from "./http/chat-operations.js";
 import { registerChatRoutes } from "./http/chat.js";
 import { registerGenerateRoutes } from "./http/generate.js";
 import { registerHealthRoutes } from "./http/health.js";
 import { registerImageModelRoutes } from "./http/image-models.js";
+import { createJobOperations } from "./http/job-operations.js";
 import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
 import { registerNextopManagedModelConnectionRoutes } from "./http/nextop-managed-model-connection.js";
+import { registerNextopCliRoutes } from "./http/nextop-cli.js";
+import { createProjectOperations } from "./http/project-operations.js";
 import { registerProjectRoutes } from "./http/projects.js";
 import { registerSettingsRoutes } from "./http/settings.js";
+import { createSkillOperations } from "./http/skill-operations.js";
 import { registerSkillRoutes } from "./http/skills.js";
 import { registerUploadRoutes } from "./http/uploads.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
-import {
-  BrandKitServiceError,
-  type BrandKitService,
-} from "./features/brand-kit/brand-kit-service.js";
-import {
-  CanvasServiceError,
-  type CanvasService,
-} from "./features/canvas/canvas-service.js";
-import {
-  ChatServiceError,
-  type ChatService,
-} from "./features/chat/chat-service.js";
-import {
-  type ViewerService,
-} from "./features/bootstrap/ensure-user-foundation.js";
-import {
-  ProjectServiceError,
-  type ProjectService,
-} from "./features/projects/project-service.js";
-import {
-  UploadServiceError,
-  type UploadService,
-} from "./features/uploads/upload-service.js";
-import {
-  SkillServiceError,
-  type SkillService,
-} from "./features/skills/skill-service.js";
-import { createJobService } from "./features/jobs/job-service.js";
 import { createNextopManagedCredentialService } from "./features/nextop-managed/credential-service.js";
-import {
-  createSettingsService,
-  LOCAL_WORKSPACE_ID,
-} from "./features/settings/settings-service.js";
-import { registerAllProviders } from "./generation/providers/register-all.js";
-import { loadServerEnv, type ServerEnv } from "./config/env.js";
-import { createAgentRunService } from "./agent/runtime.js";
-import {
-  createAgentRunOrchestrator,
-  isLocalAgentRuntimeRequested,
-} from "./agent/run-orchestrator.js";
-import { createLocalToolGatewayService } from "./agent/local-agent-host/tool-gateway.js";
-import {
-  createLocalStore,
-  type LocalStore,
-} from "./local/store.js";
+import { type LocalStore, createLocalStore } from "./local/store.js";
 import { createLocalUserClient } from "./local/user-client.js";
-import type { RequestAuthenticator } from "./auth/request.js";
 import { ConnectionManager } from "./ws/connection-manager.js";
 import { CanvasEventBuffer } from "./ws/event-buffer.js";
 import { registerWsRoute } from "./ws/handler.js";
@@ -86,7 +89,9 @@ export type BuildAppOptions = {
   env?: Partial<ServerEnv>;
 };
 
-const DEFAULT_WEB_DIST_DIR = fileURLToPath(new URL("../../web/out/", import.meta.url));
+const DEFAULT_WEB_DIST_DIR = fileURLToPath(
+  new URL("../../web/out/", import.meta.url),
+);
 const DEFAULT_SKILLS_ROOT = fileURLToPath(
   new URL("../../../skills/", import.meta.url),
 );
@@ -114,14 +119,34 @@ const STATIC_CONTENT_TYPES: Record<string, string> = {
 };
 
 const LOCAL_FONT_LIBRARY = [
-  { family: "Inter", category: "sans-serif", variants: ["regular", "500", "700"] },
-  { family: "Noto Sans SC", category: "sans-serif", variants: ["regular", "500", "700"] },
-  { family: "Source Han Serif SC", category: "serif", variants: ["regular", "600", "700"] },
+  {
+    family: "Inter",
+    category: "sans-serif",
+    variants: ["regular", "500", "700"],
+  },
+  {
+    family: "Noto Sans SC",
+    category: "sans-serif",
+    variants: ["regular", "500", "700"],
+  },
+  {
+    family: "Source Han Serif SC",
+    category: "serif",
+    variants: ["regular", "600", "700"],
+  },
   { family: "Merriweather", category: "serif", variants: ["regular", "700"] },
-  { family: "Playfair Display", category: "display", variants: ["regular", "700"] },
+  {
+    family: "Playfair Display",
+    category: "display",
+    variants: ["regular", "700"],
+  },
   { family: "Bebas Neue", category: "display", variants: ["regular"] },
   { family: "Caveat", category: "handwriting", variants: ["regular", "700"] },
-  { family: "JetBrains Mono", category: "monospace", variants: ["regular", "700"] },
+  {
+    family: "JetBrains Mono",
+    category: "monospace",
+    variants: ["regular", "700"],
+  },
 ];
 
 function isAllowedLocalOrigin(origin: string, expectedOrigin: string) {
@@ -165,11 +190,11 @@ function buildProjectService(store: LocalStore): ProjectService {
         return store.createProject(input);
       } catch (error) {
         if (error instanceof Error && error.message === "project_slug_taken") {
-        throw new ProjectServiceError(
-          "project_slug_taken",
-          "Project slug is already taken in this app.",
-          409,
-        );
+          throw new ProjectServiceError(
+            "project_slug_taken",
+            "Project slug is already taken in this app.",
+            409,
+          );
         }
         throw new ProjectServiceError(
           "project_create_failed",
@@ -228,13 +253,21 @@ function buildCanvasService(store: LocalStore): CanvasService {
     async getCanvas(_user, canvasId) {
       const canvas = store.getCanvas(canvasId);
       if (!canvas) {
-        throw new CanvasServiceError("canvas_not_found", "Canvas not found.", 404);
+        throw new CanvasServiceError(
+          "canvas_not_found",
+          "Canvas not found.",
+          404,
+        );
       }
       return canvas;
     },
     async saveCanvasContent(_user, canvasId, content) {
       if (!store.saveCanvas(canvasId, content)) {
-        throw new CanvasServiceError("canvas_not_found", "Canvas not found.", 404);
+        throw new CanvasServiceError(
+          "canvas_not_found",
+          "Canvas not found.",
+          404,
+        );
       }
     },
   };
@@ -427,13 +460,19 @@ function buildUploadService(store: LocalStore): UploadService {
         fileName: input.fileName,
         fileBuffer: input.fileBuffer,
         mimeType: input.mimeType,
-        ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+        ...(input.projectId !== undefined
+          ? { projectId: input.projectId }
+          : {}),
       });
     },
     async getAssetUrl(_user, assetId) {
       const url = store.getAssetUrl(assetId);
       if (!url) {
-        throw new UploadServiceError("asset_not_found", "Asset not found.", 404);
+        throw new UploadServiceError(
+          "asset_not_found",
+          "Asset not found.",
+          404,
+        );
       }
       return url;
     },
@@ -447,7 +486,11 @@ function buildUploadService(store: LocalStore): UploadService {
             409,
           );
         }
-        throw new UploadServiceError("asset_not_found", "Asset not found.", 404);
+        throw new UploadServiceError(
+          "asset_not_found",
+          "Asset not found.",
+          404,
+        );
       }
     },
   };
@@ -525,7 +568,10 @@ function buildSkillService(store: LocalStore): SkillService {
 }
 
 function getStaticContentType(filePath: string) {
-  return STATIC_CONTENT_TYPES[extname(filePath).toLowerCase()] ?? "application/octet-stream";
+  return (
+    STATIC_CONTENT_TYPES[extname(filePath).toLowerCase()] ??
+    "application/octet-stream"
+  );
 }
 
 function normalizeStaticCandidate(pathname: string) {
@@ -597,24 +643,36 @@ function sendStandaloneFeatureUnavailable(
 
 type LocalAgentRunState = {
   assistantMessageId: string | null;
+  canvasId: string | null;
   controller: AbortController | null;
   done: boolean;
   lastUpdatedAt: number;
 };
 
-function createLocalAgentRunState(assistantMessageId: string | null): LocalAgentRunState {
+class LocalAgentRunError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly statusCode = 500,
+  ) {
+    super(message);
+  }
+}
+
+function createLocalAgentRunState(
+  assistantMessageId: string | null,
+  canvasId: string | null,
+): LocalAgentRunState {
   return {
     assistantMessageId,
+    canvasId,
     controller: null,
     done: false,
     lastUpdatedAt: Date.now(),
   };
 }
 
-function appendLocalAgentEvent(
-  state: LocalAgentRunState,
-  event: StreamEvent,
-) {
+function appendLocalAgentEvent(state: LocalAgentRunState, event: StreamEvent) {
   state.lastUpdatedAt = Date.now();
   if (
     event.type === "run.completed" ||
@@ -634,7 +692,6 @@ function createStandaloneAgentEnv(baseEnv: ServerEnv): ServerEnv {
       : { agentFilesRoot: DEFAULT_AGENT_FILES_ROOT }),
   };
 }
-
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const env = loadServerEnv(options.env);
@@ -662,7 +719,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     reply.header("Access-Control-Allow-Origin", allowOrigin);
     reply.header("Vary", "Origin");
     reply.header("Access-Control-Allow-Headers", "Content-Type");
-    reply.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    reply.header(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+    );
     if (request.method === "OPTIONS") {
       reply.code(204).send();
     }
@@ -685,6 +745,28 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const nextopManagedCredentials = createNextopManagedCredentialService({
     env,
     store,
+  });
+  const projectOperations = createProjectOperations({
+    localUser,
+    projectService,
+  });
+  const canvasOperations = createCanvasOperations({
+    canvasService,
+    localUser,
+  });
+  const chatOperations = createChatOperations({
+    chatService,
+    localUser,
+  });
+  const jobOperations = createJobOperations({
+    env,
+    jobService,
+    localUser,
+    settingsService,
+  });
+  const skillOperations = createSkillOperations({
+    localUser,
+    skillService,
   });
   const createUserClient = (_accessToken: string) =>
     createLocalUserClient(store);
@@ -723,13 +805,21 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         event,
         runId,
       });
-      eventBuffer.push(canvasId, event, {
+      const eventMetadata = {
         eventId: persistedEvent.eventId,
-        ...(persistedEvent.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
-      });
+        ...(persistedEvent.canvasSeq != null
+          ? { seq: persistedEvent.canvasSeq }
+          : {}),
+      };
+      eventBuffer.push(canvasId, event, eventMetadata);
+      if (canvasId) {
+        connectionManager.pushToCanvas(canvasId, event, eventMetadata);
+      }
       return {
         eventId: persistedEvent.eventId,
-        ...(persistedEvent.canvasSeq != null ? { seq: persistedEvent.canvasSeq } : {}),
+        ...(persistedEvent.canvasSeq != null
+          ? { seq: persistedEvent.canvasSeq }
+          : {}),
       };
     },
     toolGateway: localToolGateway,
@@ -756,15 +846,32 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     runState: LocalAgentRunState;
   }) => {
     void (async () => {
-      const replayCanvasId = options.payload.canvasId ?? options.payload.conversationId;
-      const assistantMessageState = agentRunOrchestrator.createAssistantProjection();
+      const replayCanvasId =
+        options.payload.canvasId ?? options.payload.conversationId;
+      const publishToCanvas = replayCanvasId
+        ? ({
+            envelope,
+            event,
+          }: {
+            envelope: { eventId?: string; seq?: number };
+            event: StreamEvent;
+          }) => {
+            connectionManager.pushToCanvas(replayCanvasId, event, envelope);
+          }
+        : undefined;
+      const assistantMessageState =
+        agentRunOrchestrator.createAssistantProjection();
       const updateAssistantMessage = async () => {
         if (!options.runState.assistantMessageId) return;
-        await chatService.updateMessage(localUser, options.runState.assistantMessageId, {
-          role: "assistant",
-          content: assistantMessageState.textParts.join(""),
-          contentBlocks: assistantMessageState.blocks,
-        });
+        await chatService.updateMessage(
+          localUser,
+          options.runState.assistantMessageId,
+          {
+            role: "assistant",
+            content: assistantMessageState.textParts.join(""),
+            contentBlocks: assistantMessageState.blocks,
+          },
+        );
       };
 
       try {
@@ -772,6 +879,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           await agentRunOrchestrator.handleStreamEvent({
             ...(replayCanvasId ? { canvasId: replayCanvasId } : {}),
             event,
+            ...(publishToCanvas ? { publish: publishToCanvas } : {}),
             project: assistantMessageState,
             runId: options.runId,
             updateAssistant: updateAssistantMessage,
@@ -788,15 +896,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           error: {
             code: "run_failed",
             message:
-              error instanceof Error
-                ? error.message
-                : "Model request failed.",
+              error instanceof Error ? error.message : "Model request failed.",
           },
           timestamp: new Date().toISOString(),
         } satisfies StreamEvent;
         await agentRunOrchestrator.handleStreamEvent({
           ...(replayCanvasId ? { canvasId: replayCanvasId } : {}),
           event: failedEvent,
+          ...(publishToCanvas ? { publish: publishToCanvas } : {}),
           project: assistantMessageState,
           runId: options.runId,
           updateAssistant: updateAssistantMessage,
@@ -806,19 +913,171 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         options.runState.controller = null;
         options.runState.done = true;
         options.runState.lastUpdatedAt = Date.now();
-        setTimeout(() => {
-          localAgentRuns.delete(options.runId);
-        }, 10 * 60 * 1000).unref?.();
+        setTimeout(
+          () => {
+            localAgentRuns.delete(options.runId);
+          },
+          10 * 60 * 1000,
+        ).unref?.();
       }
     })();
   };
 
+  const startLocalAgentRun = async (payload: RunCreateRequest) => {
+    if (store.listMessages(payload.sessionId) === null) {
+      throw new LocalAgentRunError(
+        "session_not_found",
+        "Chat session not found.",
+        404,
+      );
+    }
+
+    const [effectiveEnv, workspaceSettings] = await Promise.all([
+      settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID),
+      settingsService.getWorkspaceSettings(localUser, LOCAL_WORKSPACE_ID),
+    ]);
+    const baseRuntimeEnv = createStandaloneAgentEnv(effectiveEnv);
+    let resolvedModel: string | undefined;
+    try {
+      resolvedModel = resolveAgentRunModel({
+        defaultModel: baseRuntimeEnv.agentModel,
+        ...(payload.model ? { requestedModel: payload.model } : {}),
+        ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
+        ...(payload.runtimeProvider
+          ? { runtimeProvider: payload.runtimeProvider }
+          : {}),
+      });
+    } catch (error) {
+      if (error instanceof AgentRunModelResolutionError) {
+        throw new LocalAgentRunError(
+          error.code,
+          error.message,
+          error.statusCode,
+        );
+      }
+      throw error;
+    }
+    const runtimeEnv = await nextopManagedCredentials.resolveEnvForModel(
+      baseRuntimeEnv,
+      resolvedModel ?? baseRuntimeEnv.agentModel,
+      payload.model ? payload.modelSource : workspaceSettings.defaultModelSource,
+    );
+    if (
+      runtimeEnv.trustedLocalAgentMode === false &&
+      isLocalAgentRuntimeRequested({
+        ...(resolvedModel ? { model: resolvedModel } : {}),
+        ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
+        ...(payload.runtimeProvider
+          ? { runtimeProvider: payload.runtimeProvider }
+          : {}),
+      })
+    ) {
+      throw new LocalAgentRunError(
+        "application_error",
+        "Local agent runtime is disabled for this server.",
+        403,
+      );
+    }
+    const assistantMessage = await chatService.createMessage(
+      localUser,
+      payload.sessionId,
+      {
+        role: "assistant",
+        content: "",
+        contentBlocks: [],
+      },
+    );
+    const response = runCreateResponseSchema.parse(
+      agentRuns.createRun(payload, {
+        accessToken: LOCAL_AGENT_ACCESS_TOKEN,
+        assistantMessageId: assistantMessage.id,
+        env: runtimeEnv,
+        ...(resolvedModel ? { model: resolvedModel } : {}),
+        ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
+        ...(payload.runtimeProvider
+          ? { runtimeProvider: payload.runtimeProvider }
+          : {}),
+        userId: localUser.id,
+      }),
+    );
+    const runState = createLocalAgentRunState(
+      response.assistantMessageId ?? null,
+      payload.canvasId ?? payload.conversationId,
+    );
+    localAgentRuns.set(response.runId, runState);
+    launchLocalAgentRun({
+      payload,
+      runId: response.runId,
+      runState,
+    });
+    return response;
+  };
+
+  const listLocalAgentRunEvents = async (runId: string, cursor: number) => {
+    const run = store.getAgentRun(runId);
+    if (!run) {
+      throw new LocalAgentRunError("run_not_found", "Run not found.", 404);
+    }
+
+    const events = store.listAgentRunEvents(runId, cursor);
+    const nextCursor = events.at(-1)?.seq ?? cursor;
+
+    return {
+      done:
+        run.status === "completed" ||
+        run.status === "failed" ||
+        run.status === "canceled",
+      events: events.map((entry) => ({
+        event: entry.event,
+        eventId: entry.eventId,
+        seq: entry.seq,
+      })),
+      nextCursor,
+    };
+  };
+
+  const cancelLocalAgentRun = async (runId: string) => {
+    const state = localAgentRuns.get(runId);
+    if (!state) {
+      throw new LocalAgentRunError("run_not_found", "Run not found.", 404);
+    }
+
+    const canceledRun = agentRuns.cancelRun(runId);
+    if (!canceledRun) {
+      throw new LocalAgentRunError("run_not_found", "Run not found.", 404);
+    }
+
+    if (state.canvasId) {
+      const cancelCanvasId = state.canvasId;
+      await agentRunOrchestrator.emitTerminalCancel({
+        canvasId: cancelCanvasId,
+        publish: ({ envelope, event }) => {
+          connectionManager.pushToCanvas(cancelCanvasId, event, envelope);
+        },
+        runId,
+      });
+    } else {
+      await agentRunOrchestrator.emitTerminalCancel({
+        runId,
+      });
+    }
+    return canceledRun;
+  };
+
   void registerHealthRoutes(app, env);
-  void registerProjectRoutes(app, { localUser, projectService });
-  void registerCanvasRoutes(app, { localUser, canvasService });
-  void registerChatRoutes(app, { localUser, chatService });
+  void registerProjectRoutes(app, {
+    localUser,
+    projectOperations,
+    projectService,
+  });
+  void registerCanvasRoutes(app, {
+    canvasOperations,
+    localUser,
+    canvasService,
+  });
+  void registerChatRoutes(app, { chatOperations, localUser, chatService });
   void registerBrandKitRoutes(app, { localUser, brandKitService });
-  void registerSkillRoutes(app, { localUser, skillService });
+  void registerSkillRoutes(app, { localUser, skillOperations, skillService });
   void registerUploadRoutes(app, {
     localUser,
     uploadService,
@@ -832,13 +1091,28 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
   void registerImageModelRoutes(app, env, settingsService);
   void registerVideoModelRoutes(app, env, settingsService);
-  void registerJobRoutes(app, { localUser, jobService });
+  void registerJobRoutes(app, { localUser, jobOperations, jobService });
   void registerGenerateRoutes(app, {
     env,
     localUser,
     jobService,
     settingsService,
     uploadService,
+  });
+  void registerNextopCliRoutes(app, {
+    agentOperations: {
+      cancelRun: cancelLocalAgentRun,
+      listRunEvents: listLocalAgentRunEvents,
+      startRun: startLocalAgentRun,
+    },
+    canvasOperations,
+    chatOperations,
+    env,
+    jobOperations,
+    nextopManagedCredentials,
+    projectOperations,
+    settingsService,
+    skillOperations,
   });
   void app.register(async (wsApp) => {
     await wsApp.register(websocket);
@@ -896,7 +1170,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
 
   app.get("/api/fonts", async (request, reply) => {
-    const query = request.query as { search?: string; category?: string } | undefined;
+    const query = request.query as
+      | { search?: string; category?: string }
+      | undefined;
     const search = query?.search?.trim().toLowerCase() ?? "";
     const category = query?.category?.trim().toLowerCase() ?? "";
     const fonts = LOCAL_FONT_LIBRARY.filter((font) => {
@@ -911,77 +1187,16 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.post("/api/agent/runs", async (request, reply) => {
     try {
       const payload = runCreateRequestSchema.parse(request.body);
-      if (store.listMessages(payload.sessionId) === null) {
+      return reply.code(202).send(await startLocalAgentRun(payload));
+    } catch (error) {
+      if (error instanceof LocalAgentRunError) {
         return sendApplicationError(
           reply,
-          "session_not_found",
-          "Chat session not found.",
-          404,
+          error.code,
+          error.message,
+          error.statusCode,
         );
       }
-
-      const effectiveEnv = await settingsService.getEffectiveServerEnv(
-        LOCAL_WORKSPACE_ID,
-      );
-      const workspaceSettings = await settingsService.getWorkspaceSettings(
-        localUser,
-        LOCAL_WORKSPACE_ID,
-      );
-      const baseRuntimeEnv = createStandaloneAgentEnv(effectiveEnv);
-      const requestedModel = payload.model ?? baseRuntimeEnv.agentModel;
-      const requestedModelSource = payload.model
-        ? payload.modelSource
-        : workspaceSettings.defaultModelSource;
-      const runtimeEnv = await nextopManagedCredentials.resolveEnvForModel(
-        baseRuntimeEnv,
-        requestedModel,
-        requestedModelSource,
-      );
-      const resolvedModel = payload.model ?? runtimeEnv.agentModel;
-      if (
-        runtimeEnv.trustedLocalAgentMode === false &&
-        isLocalAgentRuntimeRequested({
-          model: resolvedModel,
-          ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
-          ...(payload.runtimeProvider
-            ? { runtimeProvider: payload.runtimeProvider }
-            : {}),
-        })
-      ) {
-        return sendApplicationError(
-          reply,
-          "application_error",
-          "Local agent runtime is disabled for this server.",
-          403,
-        );
-      }
-      const assistantMessage = await chatService.createMessage(localUser, payload.sessionId, {
-        role: "assistant",
-        content: "",
-        contentBlocks: [],
-      });
-      const response = runCreateResponseSchema.parse(
-        agentRuns.createRun(payload, {
-          accessToken: LOCAL_AGENT_ACCESS_TOKEN,
-          assistantMessageId: assistantMessage.id,
-          env: runtimeEnv,
-          ...(resolvedModel ? { model: resolvedModel } : {}),
-          ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
-          ...(payload.runtimeProvider
-            ? { runtimeProvider: payload.runtimeProvider }
-            : {}),
-          userId: localUser.id,
-        }),
-      );
-      const runState = createLocalAgentRunState(response.assistantMessageId ?? null);
-      localAgentRuns.set(response.runId, runState);
-      launchLocalAgentRun({
-        payload,
-        runId: response.runId,
-        runState,
-      });
-      return reply.code(202).send(response);
-    } catch {
       return sendApplicationError(
         reply,
         "application_error",
@@ -992,70 +1207,52 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.get("/api/agent/runs/:runId/events", async (request, reply) => {
     const { runId } = request.params as { runId: string };
-    const run = store.getAgentRun(runId);
-    if (!run) {
-      return sendApplicationError(
-        reply,
-        "run_not_found",
-        "Run not found.",
-        404,
-      );
-    }
-
     const query = request.query as { cursor?: string } | undefined;
     const parsedCursor = Number.parseInt(query?.cursor ?? "0", 10);
     const cursor =
       Number.isFinite(parsedCursor) && parsedCursor >= 0 ? parsedCursor : 0;
-    const events = store.listAgentRunEvents(runId, cursor);
-    const nextCursor = events.at(-1)?.seq ?? cursor;
-
-    return reply.code(200).send({
-      done:
-        run.status === "completed" ||
-        run.status === "failed" ||
-        run.status === "canceled",
-      events: events.map((entry) => ({
-        event: entry.event,
-        eventId: entry.eventId,
-        seq: entry.seq,
-      })),
-      nextCursor,
-    });
+    try {
+      return reply.code(200).send(await listLocalAgentRunEvents(runId, cursor));
+    } catch (error) {
+      if (error instanceof LocalAgentRunError) {
+        return sendApplicationError(
+          reply,
+          error.code,
+          error.message,
+          error.statusCode,
+        );
+      }
+      throw error;
+    }
   });
 
   app.post("/api/agent/runs/:runId/cancel", async (request, reply) => {
     const { runId } = request.params as { runId: string };
-    const state = localAgentRuns.get(runId);
-    if (!state) {
-      return sendApplicationError(
-        reply,
-        "run_not_found",
-        "Run not found.",
-        404,
-      );
+    try {
+      return reply.code(202).send(await cancelLocalAgentRun(runId));
+    } catch (error) {
+      if (error instanceof LocalAgentRunError) {
+        return sendApplicationError(
+          reply,
+          error.code,
+          error.message,
+          error.statusCode,
+        );
+      }
+      throw error;
     }
-
-    const canceledRun = agentRuns.cancelRun(runId);
-    if (!canceledRun) {
-      return sendApplicationError(
-        reply,
-        "run_not_found",
-        "Run not found.",
-        404,
-      );
-    }
-
-    await agentRunOrchestrator.emitTerminalCancel({
-      runId,
-    });
-    return reply.code(202).send(canceledRun);
   });
 
   app.get("/api/agent-tools/manifest", async (request, reply) => {
     const authorization = request.headers.authorization;
     const token = authorization?.replace(/^Bearer\s+/i, "").trim() ?? "";
     if (!token) {
-      return sendApplicationError(reply, "application_error", "Missing tool token.", 401);
+      return sendApplicationError(
+        reply,
+        "application_error",
+        "Missing tool token.",
+        401,
+      );
     }
 
     try {
@@ -1066,7 +1263,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       return sendApplicationError(
         reply,
         "application_error",
-        error instanceof Error ? error.message : "Unable to load tool manifest.",
+        error instanceof Error
+          ? error.message
+          : "Unable to load tool manifest.",
         401,
       );
     }
@@ -1118,7 +1317,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       }
 
       const bytes = Buffer.from(await upstream.arrayBuffer());
-      const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
+      const contentType =
+        upstream.headers.get("content-type") ?? "application/octet-stream";
       reply.header("content-type", contentType);
       reply.header("cache-control", "public, max-age=3600");
       return reply.code(200).send(bytes);
@@ -1148,7 +1348,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         : {};
 
     if (!token) {
-      return sendApplicationError(reply, "application_error", "Missing tool token.", 401);
+      return sendApplicationError(
+        reply,
+        "application_error",
+        "Missing tool token.",
+        401,
+      );
     }
 
     try {
@@ -1210,7 +1415,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         );
       }
 
-      if (requestPath === "/local-assets" || requestPath.startsWith("/local-assets/")) {
+      if (
+        requestPath === "/local-assets" ||
+        requestPath.startsWith("/local-assets/")
+      ) {
         return reply.code(404).send(
           applicationErrorResponseSchema.parse({
             error: {
