@@ -231,4 +231,54 @@ describe("createNextopManagedCredentialService", () => {
     expect(modelAEnvAgain.agnesApiKey).toBe("key-for-model-a");
     expect(requestedModels).toEqual(["model-a", "model-b"]);
   });
+
+  it("treats stored grants as disconnected when Nextop runtime env is not configured", async () => {
+    const store = createStore();
+    store.updateNextopManagedConnection({
+      connected: true,
+      grantRef: "stale-grant-ref",
+      providers: ["openai"],
+      models: [
+        {
+          id: "nextop:openai:gpt-5.1",
+          name: "GPT-5.1",
+          provider: "openai",
+        },
+      ],
+    });
+    const requestedModels: string[] = [];
+    const service = createNextopManagedCredentialService({
+      env: {
+        agentBackendMode: "state",
+        agentModel: "openai:gpt-5.1",
+        openAIApiKey: "api-provider-key",
+        port: 3001,
+        version: "test",
+        webOrigin: "http://localhost:3000",
+      },
+      providerCredentialClient: async ({ model }) => {
+        requestedModels.push(model);
+        return {
+          credential: {
+            provider: "openai",
+            apiKey: "nextop-managed-key",
+          },
+        };
+      },
+      store,
+    });
+
+    expect(service.getConnection().connected).toBe(false);
+    await expect(service.listModels()).resolves.toEqual([]);
+    const env = await service.resolveEnvForModel(
+      createEnv(),
+      "nextop:openai:gpt-5.1",
+      "nextop-managed",
+    );
+    expect(env.openAIApiKey).toBe("api-provider-key");
+    expect(requestedModels).toEqual([]);
+
+    await service.clearConnection();
+    expect(store.getNextopManagedConnection().connected).toBe(false);
+  });
 });

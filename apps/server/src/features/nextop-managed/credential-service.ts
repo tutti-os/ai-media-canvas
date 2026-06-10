@@ -111,6 +111,13 @@ export function createNextopManagedCredentialService(options: {
     options.revokeClient ?? createDefaultNextopManagedRevokeClient();
 
   function getConnection() {
+    if (!isNextopManagedRuntimeConfigured(options.env)) {
+      return {
+        connected: false,
+        providers: [],
+        models: [],
+      };
+    }
     return options.store.getNextopManagedConnection();
   }
 
@@ -128,8 +135,8 @@ export function createNextopManagedCredentialService(options: {
   }
 
   async function clearConnection() {
-    const connection = getConnection();
-    if (connection.grantRef) {
+    const connection = options.store.getNextopManagedConnection();
+    if (connection.grantRef && isNextopManagedRuntimeConfigured(options.env)) {
       clearGrantCache(connection.grantRef);
       await revokeClient({
         env: options.env,
@@ -403,23 +410,37 @@ function createDefaultNextopManagedRevokeClient(): NextopManagedRevokeClient {
 }
 
 function createNextopManagedGrantCollectionUrl(env: ServerEnv) {
-  const baseUrl = env.nextopApiBaseUrl;
-  const workspaceId = env.nextopWorkspaceId;
-  const appId = env.nextopAppId;
-  const token = env.nextopAppServerToken;
-  if (!baseUrl || !workspaceId || !appId || !token) {
+  if (!isNextopManagedRuntimeConfigured(env)) {
     throw new Error("Nextop Managed runtime environment is not configured.");
   }
 
   return {
-    token,
+    token: env.nextopAppServerToken,
     url: new URL(
       `/v1/workspaces/${encodeURIComponent(
-        workspaceId,
-      )}/apps/${encodeURIComponent(appId)}/managed-model-grants`,
-      baseUrl,
+        env.nextopWorkspaceId,
+      )}/apps/${encodeURIComponent(env.nextopAppId)}/managed-model-grants`,
+      env.nextopApiBaseUrl,
     ),
   };
+}
+
+function isNextopManagedRuntimeConfigured(env: ServerEnv): env is ServerEnv &
+  Required<
+    Pick<
+      ServerEnv,
+      | "nextopApiBaseUrl"
+      | "nextopAppId"
+      | "nextopAppServerToken"
+      | "nextopWorkspaceId"
+    >
+  > {
+  return Boolean(
+    env.nextopApiBaseUrl &&
+      env.nextopWorkspaceId &&
+      env.nextopAppId &&
+      env.nextopAppServerToken,
+  );
 }
 
 function createNextopManagedGrantUrl(env: ServerEnv, grantRef: string) {
