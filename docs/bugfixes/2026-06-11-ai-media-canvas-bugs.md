@@ -230,4 +230,14 @@
 - 修复方案: 在 Canvas 页面给 `CanvasEditor` 增加 `key={canvasData.id}`，确保切换 canvas 时 editor 和 Excalidraw 实例完整重建，并显式取消旧 canvas fallback polling；在 `CanvasEditor` 的 debounced autosave 路径增加与 flush 一致的保护：如果初始加载有 live elements，而当前待保存 live elements 为 0，则跳过本次保存并清理 pending save，防止空 scene 覆盖已有内容。
 - 验证方式和结果: 扩展 `apps/web/test/canvas-editor-i18n.test.tsx`，模拟初始画布已有元素、水合完成后 Excalidraw 触发空元素 `onChange`，断言不会调用 `saveCanvas`；`pnpm --filter @aimc/web exec vitest run test/canvas-editor-i18n.test.tsx` 通过（3 个测试）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check --write apps/web/src/app/canvas/page.tsx apps/web/src/components/canvas-editor.tsx apps/web/test/canvas-editor-i18n.test.tsx` 通过。
 - 是否已修复完: 是
+- commit hash: `f9a0090`
+
+### 24. 项目会话运行中切出/缩小后重进会话中断且画布为空
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/PYtzr9AjbezqrdcSD4ScR5Ctnpd
+- 真实 record id: `recvmdxv7Zs08T`
+- Bug 原因: 附件截图显示缩小/切出后重进，右侧会话仍有记录但画布为空；日志包 `/tmp/nextop-lark/recvmdxv7Zs08T/nextop-logs-20260611-151834.zip` 显示多个画布在运行/重进后先有数 MB `canvas.save OK`，随后出现同一 canvas `bodyBytes: 176` 的保存，说明空 scene 被前端 autosave 覆盖。日志中还出现 `Store is required but not available in runtime` 和本地 Codex skill frontmatter 警告，前者已由此前 BYOK/workspace skill route 修复覆盖，后者来自用户本机无效 skill 文件；本条直接导致画布为空和会话读取中断感的根因是空 scene 覆盖保存。
+- 修复方案: 复用第 23 条代码修复：`CanvasEditor` 按 canvasId remount，切换 canvas 时取消旧 fallback polling；debounced autosave 增加“初始有元素但当前 live elements 为 0 则跳过保存”的保护，防止窗口缩小/切出/重进期间 Excalidraw 短暂空 scene 覆盖服务端画布内容。
+- 验证方式和结果: 复用第 23 条回归测试和验证命令：`pnpm --filter @aimc/web exec vitest run test/canvas-editor-i18n.test.tsx` 通过（3 个测试），其中新增用例模拟水合后空 `onChange` 并断言不调用 `saveCanvas`；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check --write apps/web/src/app/canvas/page.tsx apps/web/src/components/canvas-editor.tsx apps/web/test/canvas-editor-i18n.test.tsx` 通过。
+- 是否已修复完: 是
 - commit hash: `待提交后回填`
