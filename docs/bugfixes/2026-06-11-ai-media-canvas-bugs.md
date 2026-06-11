@@ -160,4 +160,4 @@
 - 修复方案: 辅助底栏改用 `max(16px, min(296px, calc(100% - 227px)))` 约束 left，并设置 `maxWidth: calc(100% - 32px)` 与横向滚动保护；主工具条增加 `max-w-[calc(100%_-_32px)]`、`overflow-x-auto`，按钮和分隔线固定不收缩，保证可用宽度不足时仍能完整访问工具。
 - 验证方式和结果: 扩展 `apps/web/test/canvas-bottom-bar.test.tsx`，断言辅助底栏在左侧面板打开时使用可用宽度约束和最大宽度；`pnpm --filter @aimc/web exec vitest run test/canvas-bottom-bar.test.tsx` 通过（3 个测试）；`pnpm --filter @aimc/web typecheck` 通过。本地整页复验时当前 canvas 数据加载失败，点击“重试”后仍无法挂载画布，无法完成真实视口截图；该加载失败和本条布局修复无关。
 - 是否已修复完: 是
-- commit hash: 待提交后回填
+- commit hash: `d4c6d1d`
