@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
-import { CheckCircle2, FileUp, FolderOpen, Loader2 } from "lucide-react";
 import type { SkillCategory } from "@aimc/shared";
+import { CheckCircle2, FileUp, FolderOpen, Loader2 } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast";
+import { Button } from "@/components/ui/button";
 import { useAppTranslation } from "@/i18n";
 import { ApiApplicationError } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,38 @@ const CATEGORY_OPTIONS: Array<{ value: SkillCategory; label: string }> = [
   { value: "writing", label: "Writing" },
   { value: "custom", label: "Custom" },
 ];
+
+const MAX_IMPORT_FILE_BYTES = 2 * 1024 * 1024;
+const TEXT_FILE_EXTENSIONS = new Set([
+  "cjs",
+  "css",
+  "csv",
+  "gitignore",
+  "html",
+  "js",
+  "json",
+  "jsx",
+  "md",
+  "mjs",
+  "py",
+  "sh",
+  "toml",
+  "ts",
+  "tsx",
+  "txt",
+  "xml",
+  "yaml",
+  "yml",
+]);
+const TEXT_MIME_TYPES = new Set([
+  "application/javascript",
+  "application/json",
+  "application/typescript",
+  "application/x-javascript",
+  "application/x-sh",
+  "application/x-yaml",
+  "application/xml",
+]);
 
 type SelectedImportFile = {
   filePath: string;
@@ -49,6 +81,7 @@ export function ImportPanel({
   const [category, setCategory] = useState<SkillCategory>("custom");
   const [loading, setLoading] = useState(false);
   const [successName, setSuccessName] = useState<string | null>(null);
+  const [skippedFileCount, setSkippedFileCount] = useState(0);
 
   const skillFile = useMemo(
     () => files.find((file) => /(^|\/)SKILL\.md$/i.test(file.filePath)),
@@ -58,8 +91,17 @@ export function ImportPanel({
   const handleFilesSelected = useCallback(
     async (selectedFiles: FileList | null) => {
       if (!selectedFiles || selectedFiles.length === 0) return;
+      const candidateFiles = Array.from(selectedFiles);
+      const importableFiles = candidateFiles.filter(isImportableSkillFile);
+      setSkippedFileCount(candidateFiles.length - importableFiles.length);
+      if (importableFiles.length === 0) {
+        setFiles([]);
+        setSuccessName(null);
+        showError(t("toasts.noImportableFiles"));
+        return;
+      }
       const nextFiles = await Promise.all(
-        Array.from(selectedFiles).map(async (file) => ({
+        importableFiles.map(async (file) => ({
           filePath: file.webkitRelativePath || file.name,
           content: await file.text(),
           mimeType: file.type || "text/plain",
@@ -83,7 +125,7 @@ export function ImportPanel({
       }
       setSuccessName(null);
     },
-    [],
+    [showError, t],
   );
 
   const handleImport = useCallback(async () => {
@@ -107,7 +149,7 @@ export function ImportPanel({
     } finally {
       setLoading(false);
     }
-  }, [category, description, files, name, onImported, showError, success]);
+  }, [category, description, files, name, onImported, showError, success, t]);
 
   const resetSelection = useCallback(() => {
     setFiles([]);
@@ -117,6 +159,7 @@ export function ImportPanel({
     descriptionTouchedRef.current = false;
     setCategory("custom");
     setSuccessName(null);
+    setSkippedFileCount(0);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -177,6 +220,11 @@ export function ImportPanel({
                   ? t("importPanel.detectedFile", { path: skillFile.filePath })
                   : t("importPanel.suggestion")}
               </p>
+              {skippedFileCount > 0 ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("importPanel.skippedFiles", { count: skippedFileCount })}
+                </p>
+              ) : null}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -340,7 +388,9 @@ function parseLooseFrontmatter(content: string) {
     if (!trimmed || trimmed === "---" || trimmed.startsWith("#")) break;
     const match = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(trimmed);
     if (!match) break;
-    metadata[match[1]!.toLowerCase()] = stripYamlScalar(match[2] ?? "");
+    const key = match[1];
+    if (!key) break;
+    metadata[key.toLowerCase()] = stripYamlScalar(match[2] ?? "");
   }
 
   return metadata;
@@ -362,11 +412,27 @@ function deriveNameFromPath(filePath: string) {
   const basename = parts.at(-1) ?? filePath;
   const source =
     /^SKILL\.md$/i.test(basename) && parts.length > 1
-      ? parts.at(-2)!
+      ? (parts.at(-2) ?? basename)
       : basename.replace(/\.[^.]+$/, "");
   return (
     source
       .replace(/[-_]+/g, " ")
       .replace(/\b\w/g, (char) => char.toUpperCase()) || "Imported Skill"
   );
+}
+
+function isImportableSkillFile(file: File) {
+  if (file.size > MAX_IMPORT_FILE_BYTES) {
+    return false;
+  }
+  const path = file.webkitRelativePath || file.name;
+  if (/(^|\/)SKILL\.md$/i.test(path)) {
+    return true;
+  }
+  const mimeType = file.type.toLowerCase();
+  if (mimeType.startsWith("text/") || TEXT_MIME_TYPES.has(mimeType)) {
+    return true;
+  }
+  const extension = /\.([^.\/]+)$/.exec(path)?.[1]?.toLowerCase();
+  return extension ? TEXT_FILE_EXTENSIONS.has(extension) : false;
 }

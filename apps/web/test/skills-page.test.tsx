@@ -11,6 +11,7 @@ const fetchInstalledSkillsMock = vi.fn();
 const fetchSkillCatalogMock = vi.fn();
 const fetchSkillDetailMock = vi.fn();
 const createSkillMock = vi.fn();
+const importSkillMock = vi.fn();
 const uninstallSkillMock = vi.fn();
 
 vi.mock("../src/lib/server-api", () => ({
@@ -19,7 +20,7 @@ vi.mock("../src/lib/server-api", () => ({
   fetchSkillCatalog: (...args: unknown[]) => fetchSkillCatalogMock(...args),
   fetchSkillDetail: (...args: unknown[]) => fetchSkillDetailMock(...args),
   createSkill: (...args: unknown[]) => createSkillMock(...args),
-  importSkill: vi.fn(),
+  importSkill: (...args: unknown[]) => importSkillMock(...args),
   installSkill: vi.fn(),
   toggleSkill: vi.fn(),
   uninstallSkill: (...args: unknown[]) => uninstallSkillMock(...args),
@@ -127,6 +128,32 @@ describe("Skills page", () => {
         files: [],
       },
     });
+    importSkillMock.mockResolvedValue({
+      skill: {
+        id: "skill-imported",
+        name: "pua",
+        slug: "pua",
+        description: "Imported local skill.",
+        author: "Local User",
+        version: "1.0.0",
+        category: "custom",
+        iconName: null,
+        source: "user",
+        isFeatured: false,
+        metadata: {},
+        installed: true,
+        enabled: true,
+        installedAt: "2026-06-03T00:00:00Z",
+        createdAt: "2026-06-03T00:00:00Z",
+        updatedAt: "2026-06-03T00:00:00Z",
+        license: "Local",
+        skillContent: "# PUA",
+        createdBy: "Local User",
+        sourceUrl: null,
+        packageName: null,
+        files: [],
+      },
+    });
     uninstallSkillMock.mockResolvedValue(undefined);
   });
 
@@ -215,6 +242,81 @@ license: MIT
         "Use when the user explicitly requests PUA mode or signals frustration.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("skips binary assets when importing a skill directory", async () => {
+    const { container } = render(
+      <ToastProvider>
+        <SkillsPage />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "导入" }));
+
+    const fileInputs = container.querySelectorAll('input[type="file"]');
+    const directoryInput = fileInputs.item(1) as HTMLInputElement;
+    const skillContent = `name: pua
+description: "Use text files only."
+
+# PUA
+`;
+    const skillFile = new File([skillContent], "SKILL.md", {
+      type: "text/markdown",
+    });
+    Object.defineProperty(skillFile, "text", {
+      value: async () => skillContent,
+    });
+    Object.defineProperty(skillFile, "webkitRelativePath", {
+      value: "agnes-ai-skill/SKILL.md",
+    });
+    const readmeFile = new File(["# README"], "README.md", {
+      type: "text/markdown",
+    });
+    Object.defineProperty(readmeFile, "text", {
+      value: async () => "# README",
+    });
+    Object.defineProperty(readmeFile, "webkitRelativePath", {
+      value: "agnes-ai-skill/README.md",
+    });
+    const imageFile = new File([new Uint8Array([1, 2, 3])], "preview.jpg", {
+      type: "image/jpeg",
+    });
+    const imageText = vi.fn(async () => {
+      throw new Error("binary file should not be read");
+    });
+    Object.defineProperty(imageFile, "text", {
+      value: imageText,
+    });
+    Object.defineProperty(imageFile, "webkitRelativePath", {
+      value: "agnes-ai-skill/assets/apps/preview.jpg",
+    });
+
+    fireEvent.change(directoryInput, {
+      target: { files: [skillFile, readmeFile, imageFile] },
+    });
+
+    expect(await screen.findByText("已选择 2 个本地文件")).toBeInTheDocument();
+    expect(
+      screen.getByText("已跳过 1 个非文本或过大的文件。"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "导入到本地" }));
+
+    await screen.findByText('技能 "pua" 导入成功');
+    expect(imageText).not.toHaveBeenCalled();
+    expect(importSkillMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        files: [
+          expect.objectContaining({
+            filePath: "agnes-ai-skill/SKILL.md",
+          }),
+          expect.objectContaining({
+            filePath: "agnes-ai-skill/README.md",
+          }),
+        ],
+      }),
+    );
+    expect(importSkillMock.mock.calls[0]?.[0].files).toHaveLength(2);
   });
 
   it("creates a skill with local state updates instead of refetching the installed list", async () => {
