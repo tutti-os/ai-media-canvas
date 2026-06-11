@@ -170,4 +170,14 @@
 - 修复方案: 对单张未裁剪图片，复制路径直接读取 Excalidraw file 的 `dataURL` 并写入剪贴板，避免经过画布显示尺寸重采样；无文件数据或多选时保留原有导出兜底。
 - 验证方式和结果: 扩展 `apps/web/test/canvas-context-menu-extensions.test.tsx`，断言单张图片复制会从原始 file `dataURL` 生成 PNG Blob，且不调用 `exportToBlob`；`pnpm --filter @aimc/web test -- canvas-context-menu-extensions.test.tsx` 通过（实际运行 46 个 web 测试文件、182 个测试，全部通过）；`pnpm exec biome check --write apps/web/src/components/canvas-context-menu-extensions.tsx apps/web/test/canvas-context-menu-extensions.test.tsx` 通过。
 - 是否已修复完: 是
+- commit hash: `1182077`
+
+### 18. 生成窗口遮挡视频/画布交互
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/HIYUrIyx4eahWLcZP4bc6osznib
+- 真实 record id: `recvmdoNhmBEF5`
+- Bug 原因: 附件截图显示右侧生成图片/视频浮窗停留在画布上方时，用户回到画布拖动视频窗口会被浮窗遮挡。代码中图片和视频生成面板只在外部点击时关闭下拉菜单/参数弹层，浮窗本身仍保持固定 `z-[100]` 覆盖画布区域，导致后续拖拽无法直接作用到被覆盖的画布元素。
+- 修复方案: 图片生成面板和视频生成面板监听到面板外 `mousedown` 时，同步关闭自身；用户点击或拖回画布时，浮窗会先退出，后续画布交互不再被固定浮层拦截。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-generation-panels.test.tsx`，分别覆盖图片生成面板和视频生成面板在点击画布区域时会调用 `onClose`；`pnpm --filter @aimc/web exec vitest run test/canvas-generation-panels.test.tsx` 通过（15 个测试）。`pnpm exec biome check --write apps/web/src/components/canvas/image-generator-panel.tsx apps/web/src/components/canvas/video-generator-panel.tsx apps/web/test/canvas-generation-panels.test.tsx` 已执行并完成格式化，但该命令仍报告两个生成面板文件中既有的 `any`/旧 SVG accessibility 等 lint 问题，和本次修复无关。
+- 是否已修复完: 是
 - commit hash: `待提交后回填`
