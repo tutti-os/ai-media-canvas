@@ -249,6 +249,7 @@ function CanvasPageContent() {
   }, []);
 
   useEffect(() => {
+    if (!canvasId) return;
     for (const subscription of fallbackSubscriptionsRef.current) {
       subscription.unsubscribe();
     }
@@ -415,6 +416,7 @@ function CanvasPageContent() {
       {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
       <div className="flex-1 relative min-w-0 overflow-hidden">
         <CanvasEditor
+          key={canvasData.id}
           canvasId={canvasData.id}
           projectId={canvasData.projectId}
           initialContent={canvasData.content}

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import type { ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,7 +29,9 @@ vi.mock("../src/lib/server-api", () => ({
 }));
 
 import { CanvasEditor } from "../src/components/canvas-editor";
+import { ToastProvider } from "../src/components/toast";
 import { i18n } from "../src/i18n";
+import { saveCanvas } from "../src/lib/server-api";
 
 const initialContent = {
   appState: {},
@@ -39,12 +41,16 @@ const initialContent = {
 
 describe("CanvasEditor i18n", () => {
   beforeEach(async () => {
+    vi.useRealTimers();
+    vi.mocked(saveCanvas).mockClear();
+    vi.mocked(saveCanvas).mockResolvedValue(undefined);
     excalidrawPropsRef.current = null;
     await i18n.changeLanguage("zh-CN");
   });
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
   });
 
   it("passes the current app locale to Excalidraw", () => {
@@ -71,5 +77,72 @@ describe("CanvasEditor i18n", () => {
     );
 
     expect(excalidrawPropsRef.current?.langCode).toBe("en");
+  });
+
+  it("does not save an empty scene over a hydrated canvas with existing elements", async () => {
+    vi.useFakeTimers();
+    const canvasApi = {
+      addFiles: vi.fn(),
+      getAppState: vi.fn(() => ({})),
+      getFiles: vi.fn(() => ({})),
+      getSceneElements: vi.fn(() => [
+        {
+          id: "shape-1",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          isDeleted: false,
+        },
+      ]),
+      onChange: vi.fn(() => () => {}),
+      updateScene: vi.fn(),
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasEditor
+          canvasId="canvas-1"
+          projectId="project-1"
+          initialContent={{
+            appState: {},
+            elements: [
+              {
+                id: "shape-1",
+                type: "rectangle",
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+              },
+            ],
+            files: {},
+          }}
+        />
+      </ToastProvider>,
+    );
+
+    await act(async () => {
+      (excalidrawPropsRef.current?.excalidrawAPI as (api: unknown) => void)(
+        canvasApi,
+      );
+    });
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+    });
+    vi.mocked(saveCanvas).mockClear();
+
+    act(() => {
+      (
+        excalidrawPropsRef.current?.onChange as (
+          elements: unknown[],
+          appState: unknown,
+        ) => void
+      )([], {});
+      vi.advanceTimersByTime(1500);
+    });
+
+    expect(saveCanvas).not.toHaveBeenCalled();
   });
 });

@@ -220,4 +220,14 @@
 - 修复方案: 给每个附属文件行创建稳定的 UI-only `id` 并作为 React key；更新/删除仍按 index 操作，提交前把 `id` 剥离，只提交 `{ filePath, content }`，避免影响 API payload。
 - 验证方式和结果: 扩展 `apps/web/test/skills-page.test.tsx`，打开添加技能弹窗、添加附属文件后连续输入 `scripts/tool.ts`，断言输入框值完整且仍保持 focus；`pnpm --filter @aimc/web exec vitest run test/skills-page.test.tsx -t "attachment file path|custom skill dialog"` 通过（2 个目标测试）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/skills/create-skill-dialog.tsx apps/web/test/skills-page.test.tsx` 通过。
 - 是否已修复完: 是
+- commit hash: `0f3a0fb`
+
+### 23. 重进旧项目后画布内容为空
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/CEs9rj4F6eaarxcDFQycJR9Snkc
+- 真实 record id: `recvmdn4ln6Pnm`
+- Bug 原因: 附件录屏/截图显示退出项目、新建项目后再回到上一个项目，聊天记录仍在但画布为空。结合第 8 条日志可见同类场景下服务端先保存数 MB 画布内容，随后在重进/切换后出现 `bodyBytes: 176` 的 `canvas.save OK`，说明前端在 Excalidraw 新场景尚未完成水合时把空 scene 通过 debounced autosave 覆盖到了服务端。现有空保存保护只覆盖 beforeunload/unmount flush，没有覆盖正常 debounce 保存；CanvasEditor 也没有按 canvasId remount，切换项目时可能复用旧 API/hydration 状态。
+- 修复方案: 在 Canvas 页面给 `CanvasEditor` 增加 `key={canvasData.id}`，确保切换 canvas 时 editor 和 Excalidraw 实例完整重建，并显式取消旧 canvas fallback polling；在 `CanvasEditor` 的 debounced autosave 路径增加与 flush 一致的保护：如果初始加载有 live elements，而当前待保存 live elements 为 0，则跳过本次保存并清理 pending save，防止空 scene 覆盖已有内容。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-editor-i18n.test.tsx`，模拟初始画布已有元素、水合完成后 Excalidraw 触发空元素 `onChange`，断言不会调用 `saveCanvas`；`pnpm --filter @aimc/web exec vitest run test/canvas-editor-i18n.test.tsx` 通过（3 个测试）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check --write apps/web/src/app/canvas/page.tsx apps/web/src/components/canvas-editor.tsx apps/web/test/canvas-editor-i18n.test.tsx` 通过。
+- 是否已修复完: 是
 - commit hash: `待提交后回填`
