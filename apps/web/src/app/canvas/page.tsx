@@ -248,6 +248,13 @@ function CanvasPageContent() {
     };
   }, []);
 
+  useEffect(() => {
+    for (const subscription of fallbackSubscriptionsRef.current) {
+      subscription.unsubscribe();
+    }
+    fallbackSubscriptionsRef.current = [];
+  }, [canvasId]);
+
   // Must be defined BEFORE useJobFallbackPolling which references it
   const handleCanvasSync = useCallback(async () => {
     const api = excalidrawApiRef.current;

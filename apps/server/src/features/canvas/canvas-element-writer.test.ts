@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createCanvasAutoPlacementSequence,
   insertImageElement,
   insertVideoElement,
 } from "./canvas-element-writer.js";
@@ -135,6 +136,41 @@ describe("canvas element writer", () => {
       y: 135,
       width: 600,
       height: 450,
+    });
+  });
+
+  it("reserves automatic placements in request order before images finish", async () => {
+    const client = createCanvasClient({
+      elements: [
+        {
+          id: "existing",
+          type: "image",
+          x: 100,
+          y: 100,
+          width: 200,
+          height: 120,
+          isDeleted: false,
+        },
+      ],
+      appState: {},
+      files: {},
+    });
+    const sequence = await createCanvasAutoPlacementSequence(client, "canvas-1");
+
+    const first = sequence.reserve({ width: 600, height: 338 });
+    const second = sequence.reserve({ width: 600, height: 338 });
+
+    expect(first).toMatchObject({
+      x: 340,
+      y: -9,
+      width: 600,
+      height: 338,
+    });
+    expect(second).toMatchObject({
+      x: 980,
+      y: -9,
+      width: 600,
+      height: 338,
     });
   });
 

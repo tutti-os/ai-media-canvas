@@ -1,0 +1,121 @@
+# 2026-06-11 AI Media Canvas Bug 修复记录
+
+## 1. 删除进行中会话后生成仍落入画布
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/Qbjfr1wk6e377McWdS2cIq6WnzG
+- 真实 record id: `recvm7X7X6pcSA`
+- Bug 原因: 删除 chat session 只删除了会话和消息数据，没有终止该 session 关联的 agent run 和后台生成 job；异步生成任务完成后仍可能被后续轮询/恢复逻辑写回画布。日志窗口 `2026-06-10 16:22:32 +/-30min` 内出现 cancel 请求但未形成有效终态，和会话生命周期未绑定一致。
+- 修复方案: 在本地 store 删除 session 前，将该 session 下 `accepted/running` 的 agent run 更新为 `canceled` 并写入 `run.canceled` 终态事件，同时取消关联的 `queued/running/failed` 后台 job；保护 job 的 succeeded/failed 写回，避免 canceled job 被晚到 worker 覆盖。
+- 验证方式和结果: 新增 `apps/server/src/local/store.test.ts` 回归用例，验证删除 session 会取消 run/job 且 late success/failure 不会覆盖 canceled；`pnpm --filter @aimc/server test -- src/local/store.test.ts` 通过；`pnpm --filter @aimc/server typecheck` 通过。
+- 是否已修复完: 是
+- commit hash: `7b7baf8`
+
+## 2. 显示所有元素未完整适配当前窗口
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/XQ5Pr0WKneuoJDcymRhcS8WInAd
+- 真实 record id: `recvm7ZDepRVMG`
+- Bug 原因: 底部缩放菜单和 Logo 菜单的“显示全部/显示画布所有元素”仅调用 `scrollToContent()` 空参数，Excalidraw 可能只滚动到内容附近，不会在 100% 缩放或大画布内容时强制重新缩放到当前 viewport。
+- 修复方案: 增加共享 `fitAllCanvasElements` helper，两个入口统一调用 `scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: 0.92, animate: true })`，明确要求 Excalidraw 按当前视口显示全部元素。
+- 验证方式和结果: 新增 `apps/web/test/canvas-bottom-bar.test.tsx`，并扩展 `apps/web/test/canvas-logo-menu.test.tsx`，覆盖两个入口的 fit 参数；`pnpm --filter @aimc/web test -- --run test/canvas-bottom-bar.test.tsx test/canvas-logo-menu.test.tsx` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 点击“显示全部”菜单后菜单关闭且无 console error。
+- 是否已修复完: 是
+- commit hash: `a1f26cf`
+
+## 3. 进行中会话阻塞新会话发送
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/GHE3rJDOgeiatNcZtdpc1OkGn2g
+- 真实 record id: `recvm81TdhBr94`
+- Bug 原因: `ChatSidebar` 使用单个全局 `sendingRef` 表示发送中状态；一个 session 的 run 未结束时，新建 session 后再次发送会被 `handleSend` 直接 return，导致输入消息不出现在详情里，本地创造模板点击也看起来无反应。
+- 修复方案: 将发送中状态改为按 session 维度的 in-flight set；同一 session 仍防重复提交，不同 session 可并行启动 run。`streaming` UI 状态只同步当前 active session，切换/新建会话不会被其他 session 的运行状态锁住。
+- 验证方式和结果: 新增 `apps/web/test/chat-sidebar.test.tsx` 回归用例，覆盖旧 session 运行中时新 session 仍可发送；同时保留快速重复 Enter 只触发一次发送的既有保护；`pnpm --filter @aimc/web test -- --run test/chat-sidebar.test.tsx -t "allows a new session|rapid duplicate"` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 无 console error。
+- 是否已修复完: 是
+- commit hash: `8eadc8e`
+
+## 4. 本地模板误带上一会话画布图片
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/L8sarmMYOeE1uQcXDfucfswNnKb
+- 真实 record id: `recvm85z6uFRmx`
+- Bug 原因: `ChatSidebar` 在发送消息时会自动把当前选中的画布图片作为 canvas-ref attachment；本地创造模板直接复用 `handleSend`，未传入显式空附件，因此从“Logo 与品牌”切换到“分镜故事板”时，如果上一会话图片仍处于选中状态，模板消息会被错误附带该图片。
+- 修复方案: 仅在本地模板入口传入空 `attachmentsOverride` 和空 `mentionsOverride`，明确表示模板发送不继承当前画布选择；保留普通聊天输入自动引用选中画布图片的行为。
+- 验证方式和结果: 新增 `apps/web/test/chat-sidebar.test.tsx` 回归用例，先让画布中存在被选中的图片，再点击“分镜故事板”，断言 `startRun` 不包含 attachments；修复前该用例复现失败，修复后 `pnpm --filter @aimc/web test -- --run test/chat-sidebar.test.tsx -t "does not attach selected canvas images"` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 无 console error。
+- 是否已修复完: 是
+- commit hash: `bde8b2e`
+
+## 5. 上一个项目生成结果落入新项目画布
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/JTVXrcoxleJlMucBzmccovJLn72
+- 真实 record id: `recvm886lykM5s`
+- Bug 原因: 同一个 canvas 页面在切换到新项目后，旧项目未结束 run 的 WebSocket 监听仍可能收到 `tool.completed` 事件，并通过当前页面的 Excalidraw API 插入图片；同时旧项目已登记的生成任务 fallback 轮询也可能在新 canvas 上成功回调，导致上一个项目的生图结果显示在新项目画布。
+- 修复方案: 在 `ChatSidebar` 中记录当前 `canvasId`，每个 run 事件只允许在其启动时的 canvas 仍为当前 canvas 时执行画布插入、同步和 fallback 转发；旧 canvas 的终态事件只用于结束该流。Canvas 页面在 `canvasId` 变化时取消所有已登记的 fallback 生成任务订阅，防止旧任务晚到。
+- 验证方式和结果: 新增 `apps/web/test/chat-sidebar.test.tsx` 回归用例，模拟旧 canvas 启动 run、切到新 canvas 后派发旧 run 的 `tool.completed`，修复前会触发 `onImageGenerated`，修复后不触发；同时覆盖当前 canvas 的正常生成 artifact 仍会插入；`pnpm --filter @aimc/web test -- --run test/chat-sidebar.test.tsx -t "ignores generated artifacts|keeps generated artifacts"` 通过（实际运行 45 个 web 测试均通过）；`pnpm --filter @aimc/web typecheck` 通过；本地 `localhost:3000/canvas` 无 console error。
+- 是否已修复完: 是
+- commit hash: `14213f0`
+
+## 6. Agnes 分镜生图画布顺序错乱
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/Ddrpr0cubeJt3ZcsRvzc5hj2nwd
+- 真实 record id: `recvm88hzesMTd`
+- Bug 原因: Agnes/local-agent 路径会通过 `generate_image` 提交多个后台生图 job，后端在每个 job 成功后才读取当前 canvas 并自动计算插入位置；多个分镜图并发完成时，画布插入顺序跟 job 完成顺序绑定，而不是跟工具调用/分镜创建顺序绑定，录屏缩略图中聊天先生成 `Storyboard Shot 1 - Space Launch Scene`，画布左侧却先出现另一张分镜图。
+- 修复方案: 在 agent runtime 发起生图 job 时就为无显式 placement 的图片按工具调用顺序预留自动位置；预留序列读取一次当前 canvas，后续按顺序追加虚拟占位来计算下一张位置，job 完成后使用预留位置写入 canvas。显式 `placementX/placementY` 仍优先，Agnes/local-agent 与 server job 路径共用该逻辑。
+- 验证方式和结果: 新增 `apps/server/src/features/canvas/canvas-element-writer.test.ts` 用例，验证连续预留位置会按请求顺序排布，而不依赖图片完成后的真实写入顺序；`pnpm --filter @aimc/server test -- src/features/canvas/canvas-element-writer.test.ts` 通过（实际运行 25 个 server 测试文件均通过）；`pnpm --filter @aimc/server typecheck` 通过。
+- 是否已修复完: 是
+- commit hash: `0f0c0a6`
+
+## 7. 添加自定义技能弹窗高度溢出
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/Apqqr6mLbeuE5Wc4sm7cWJUjnte
+- 真实 record id: `recvm8aIDdwf0e`
+- Bug 原因: `CreateSkillDialog` 的 `DialogContent` 只限制了宽度，没有限制 viewport 内最大高度；长表单直接撑高整个弹窗，导致标题区域贴近/被窗口顶栏遮挡，底部按钮也容易贴边或被挤出可视区域。
+- 修复方案: 将弹窗内容改为纵向 flex 布局，设置 `max-h-[calc(100vh-6rem)]` 和 `overflow-hidden`；表单主体单独设置 `overflow-y-auto`，底部 `DialogFooter` 固定在滚动区外，保证长内容可滚动且操作按钮始终可见。
+- 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 回归用例，验证添加技能弹窗具备最大高度、外层隐藏溢出和内部滚动区；`pnpm --filter @aimc/web test -- --run test/skills-page.test.tsx -t "custom skill dialog|creates a skill"` 通过（实际运行 45 个 web 测试文件均通过）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm check:i18n` 通过；本地 `localhost:3000/skills` 打开弹窗实测在 1470x797 视口内 top=62/bottom=735，且无 console error。
+- 是否已修复完: 是
+- commit hash: `7b24236`
+
+## 8. 导入 Skill 未从 SKILL.md 提取名称和描述
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/K8IirYXp3ean1VcK3WEc8aRfnwc
+- 真实 record id: `recvm8cp3qk5Za`
+- Bug 原因: 导入面板只检测 `SKILL.md` 是否存在，没有解析文件内容来预填名称和描述；服务端兜底也只支持一级标题和 `## Description` 段落，截图中的 `SKILL.md` 使用顶部 `name:` / `description:` frontmatter，因此 UI 保持占位，导入结果也可能无法使用文件内元数据。
+- 修复方案: 前端选择文件后解析 `SKILL.md` 的 loose YAML frontmatter、一级标题和 `## Description` 段落，在用户未手动编辑时自动预填名称/描述；服务端 `importSkill` 同步支持 frontmatter 兜底，并在 `SKILL.md` 无标题时用父目录名作为更合理的名称来源。
+- 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 导入回归，模拟 `pua/SKILL.md` 含 `name: pua` 和 `description: ...`，断言导入表单自动填入名称/描述；新增 `apps/server/src/local/store.test.ts` 回归，断言服务端导入同类文件后落库名称/描述正确；`pnpm --filter @aimc/web test -- --run test/skills-page.test.tsx -t "file import"` 通过（实际运行 45 个 web 测试文件均通过）；`pnpm --filter @aimc/server test -- src/local/store.test.ts` 通过（实际运行 25 个 server 测试文件均通过）；`pnpm --filter @aimc/web typecheck`、`pnpm --filter @aimc/server typecheck`、`pnpm check:i18n` 均通过；本地 `localhost:3000/skills` 模拟选择文件后名称为 `pua`、描述正确预填且无 console error。
+- 是否已修复完: 是
+- commit hash: `83084b2`
+
+## 9. BYOK Agnes 链路读取并使用 Skill 失败
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/RxxFrbUaYeoNsWcuSrKcRtXvnWd
+- 真实 record id: `recvm8dGIaWCQA`
+- Bug 原因: 复核后确认先前 `d1f6e84` 只覆盖了 generic local-agent provider 运行目录物化，未直接覆盖 BYOK Agnes 的 server deep-agent/API-provider 链路。BYOK Agnes 使用 skill 时，`/workspace-skills/...` 文件读取走 deepagents backend route；旧实现仍把该 route 指向 `StoreBackend`，而运行时未提供 LangGraph store 时会触发 `Store is required but not available in runtime`。
+- 修复方案: 将运行时已加载的 workspace skill 内容传入 agent backend 创建流程；production/dev backend 为每次 run 在 sandbox 下物化 `workspace-skills/<slug>/`，并用只读 `FilesystemBackend` 暴露 `/workspace-skills/` route，替代需要 store 的 workspace skill `StoreBackend`。保留先前 local-agent 相对路径物化，覆盖 local-agent shell 和 BYOK Agnes server `read_file` 两条路径。
+- 验证方式和结果: 新增 `apps/server/src/agent/backends/workspace-skills.test.ts`，断言无 store 的 backend 能读取 `/workspace-skills/canvas-director/SKILL.md` 和附属文件，且 workspace skill route 为只读；扩展 `apps/server/src/agent/runtime.test.ts`，用 `model: "agnes:agnes-2.0-flash"` 和 `runtimeKind: "server-deepagent"` 断言 Agnes server runtime 会把 enabled workspace skills 传入 backend 和 agent factory；`pnpm --filter @aimc/server exec vitest run src/agent/backends/workspace-skills.test.ts src/agent/runtime.test.ts -t "workspace skills|Agnes server backend|passes enabled local workspace skills"` 通过；`pnpm --filter @aimc/server test` 通过（26 个文件、133 个测试）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm exec biome check apps/server/src/agent/backends/index.ts apps/server/src/agent/backends/prod.ts apps/server/src/agent/backends/dev.ts apps/server/src/agent/backends/workspace-skills.ts apps/server/src/agent/backends/workspace-skills.test.ts` 通过。
+- 是否已修复完: 是
+- commit hash: `d1f6e84` + 追加修正 `c96ee4a`
+
+## 10. Download image 导出后菜单仍聚焦
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/QT8yr7Jf3eEhETcQkircCvrQnch
+- 真实 record id: `recvm7I9WbBRFI`
+- Bug 原因: 右键菜单中的 `Download image` 自定义项在 `exportToBlob`、创建下载链接并触发点击之后才调用 `closeNativeContextMenu()`；导出或浏览器下载处理期间，原生菜单仍保持打开/聚焦状态，和录屏中导出后仍停留在导出选项上的现象一致。
+- 修复方案: 将菜单关闭动作提前到下载按钮点击的同步阶段，点击后立即向触发按钮派发 `Escape` 关闭 Excalidraw 原生菜单；导出 PNG 和下载链接创建继续异步执行，不改变导出内容与文件名逻辑。
+- 验证方式和结果: 新增 `apps/web/test/canvas-context-menu-extensions.test.tsx` 回归，模拟 `exportToBlob` 长时间 pending，点击“下载图片”后立即断言已派发 `Escape`，并验证仍按选中图片调用导出；`pnpm --filter @aimc/web exec vitest run test/canvas-context-menu-extensions.test.tsx -t download` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/canvas-context-menu-extensions.tsx apps/web/test/canvas-context-menu-extensions.test.tsx` 通过；浏览器打开 `http://localhost:3000/canvas` 无 console error。一次通过 npm 脚本误触发的 web 全量测试中，目标文件 5 个测试通过，但无关 `test/canvas-page.test.tsx` 的视频轮询用例失败，未作为本 bug 阻塞。
+- 是否已修复完: 是
+- commit hash: `a7b9fa7`
+
+## 11. 导入 Skill 详情右上角来源标识拥挤
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/DRbfrKELCeSAjecppercbdb3nAc
+- 真实 record id: `recvm8cSdG1Wtk`
+- Bug 原因: 导入 skill 的详情弹窗把长标题和“自定义”来源胶囊放在同一个无右侧预留空间的 `DialogTitle` flex 行内；标题换行后会把来源胶囊推到右上角，和 shadcn 默认关闭按钮视觉上挤在一起，截图中红箭头指向的就是这个拥挤区域。
+- 修复方案: 重构详情标题行布局：标题文本使用 `min-w-0 flex-1 break-words` 作为可换行主区域，来源胶囊使用 `shrink-0` 固定在右侧，并给标题行增加 `pr-12` 为关闭按钮预留空间，避免来源标识和关闭按钮重叠或贴得过近。
+- 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 回归，模拟导入 skill 长标题并打开详情弹窗，断言标题文本、标题行和来源胶囊具备防挤压布局类；`pnpm --filter @aimc/web exec vitest run test/skills-page.test.tsx -t "imported skill detail"` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/skills/skill-detail-dialog.tsx apps/web/test/skills-page.test.tsx` 通过；浏览器打开 `http://localhost:3000/skills` 无 console error。
+- 是否已修复完: 是
+- commit hash: `8f7f2ff`
+
+## 12. Skill 详情中去掉删除入口
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/UuZ1roNmTerywUcmNtHcH8TDn2g
+- 真实 record id: `recvm8iz9B2On5`
+- Bug 原因: 自定义/导入 skill 详情弹窗底部同时展示“删除”确认区和“卸载”按钮；截图中左侧红框标出删除确认区，右侧红框标出卸载按钮。当前产品交互只需要在详情里保留卸载，删除入口会造成用户误解和高风险操作暴露。
+- 修复方案: 从 `SkillDetailDialog` 移除用户 skill 的删除确认状态、删除按钮、`onDelete` prop 和页面传入；保留安装/卸载主操作。顺手修正被触碰页面的 import 排序和装饰 SVG `aria-hidden`，保证静态检查通过。
+- 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 回归，模拟导入 skill 打开详情，断言不存在“删除”按钮和“确认删除?”文案，同时“卸载”按钮仍存在；`pnpm --filter @aimc/web exec vitest run test/skills-page.test.tsx -t "delete controls"` 通过；`pnpm --filter @aimc/web typecheck`、`pnpm check:i18n`、`pnpm exec biome check apps/web/src/app/(workspace)/skills/page.tsx apps/web/src/components/skills/skill-detail-dialog.tsx apps/web/test/skills-page.test.tsx` 均通过；浏览器打开 `http://localhost:3000/skills` 无 console error。
+- 是否已修复完: 是
+- commit hash: `dd03d89`

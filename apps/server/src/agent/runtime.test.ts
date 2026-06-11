@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -754,7 +754,18 @@ describe("createAgentRunService", () => {
       dataRoot,
     });
     const project = store.createProject({ name: "Runtime Skills" });
-    const localRun = vi.fn(async function* () {
+    let capturedPrompt = "";
+    const localRun = vi.fn(async function* (input: {
+      cwd: string;
+      prompt: string;
+    }) {
+      capturedPrompt = input.prompt;
+      expect(
+        readFileSync(
+          join(input.cwd, "workspace-skills", "canvas-director", "SKILL.md"),
+          "utf8",
+        ),
+      ).toContain("Inspect the real element bounds");
       yield {
         type: "done" as const,
         reason: "completed" as const,
@@ -786,6 +797,14 @@ describe("createAgentRunService", () => {
       {
         canvasId: project.primaryCanvas.id,
         conversationId: project.primaryCanvas.id,
+        mentions: [
+          {
+            id: "skill-system-canvas-director",
+            label: "Canvas Director",
+            mentionType: "skill",
+            slug: "canvas-director",
+          },
+        ],
         prompt: "有看到 Canvas Director 这一个 skill 吗",
         sessionId: "session-1",
       },
@@ -811,6 +830,102 @@ describe("createAgentRunService", () => {
           }),
         ]),
       }),
+    );
+    expect(capturedPrompt).toContain(
+      "workspace-skills/canvas-director/SKILL.md",
+    );
+    expect(capturedPrompt).not.toContain(
+      "/workspace-skills/canvas-director/SKILL.md",
+    );
+  });
+
+  it("passes enabled workspace skills into the Agnes server backend", async () => {
+    createAgentBackendMock.mockClear();
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-runtime-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = store.createProject({ name: "Agnes Skills" });
+
+    const agentFactory = vi.fn(() => ({
+      stream: vi.fn(),
+      streamEvents: vi.fn(() =>
+        (async function* () {
+          yield {
+            type: "run.completed" as const,
+            runId: "run-agnes-skills",
+            timestamp: "2026-06-11T00:00:00.000Z",
+          };
+        })(),
+      ),
+    }));
+
+    const runs = createAgentRunService({
+      agentFactory,
+      createUserClient: () => createLocalUserClient(store),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      loadSessionMessages: async () => [],
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: project.primaryCanvas.id,
+        conversationId: project.primaryCanvas.id,
+        mentions: [
+          {
+            id: "skill-system-canvas-director",
+            label: "Canvas Director",
+            mentionType: "skill",
+            slug: "canvas-director",
+          },
+        ],
+        prompt: "使用 Canvas Director 这个 skill 看一下画布",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "agnes:agnes-2.0-flash",
+        runtimeKind: "server-deepagent",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the server backend.
+    }
+
+    expect(agentFactory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceSkills: expect.arrayContaining([
+          expect.objectContaining({
+            content: expect.stringContaining("Inspect the real element bounds"),
+            name: "canvas-director",
+            path: "/workspace-skills/canvas-director/SKILL.md",
+          }),
+        ]),
+      }),
+    );
+    expect(createAgentBackendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+      }),
+      project.primaryCanvas.id,
+      {
+        workspaceSkills: expect.arrayContaining([
+          expect.objectContaining({
+            name: "canvas-director",
+          }),
+        ]),
+      },
     );
   });
 

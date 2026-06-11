@@ -1743,6 +1743,50 @@ export function createLocalStore(options: {
 
   function deleteSession(sessionId: string) {
     if (!hasSession(sessionId)) return false;
+    const timestamp = nowIso();
+    const activeRuns = db
+      .prepare(
+        `
+          SELECT id, canvas_id
+          FROM agent_runs
+          WHERE session_id = ?
+            AND status IN ('accepted', 'running')
+        `,
+      )
+      .all(sessionId) as Array<{
+        canvas_id: string | null;
+        id: string;
+      }>;
+
+    for (const run of activeRuns) {
+      updateAgentRun({
+        runId: run.id,
+        status: "canceled",
+      });
+      appendAgentRunEvent({
+        ...(run.canvas_id ? { canvasId: run.canvas_id } : {}),
+        runId: run.id,
+        event: {
+          type: "run.canceled",
+          runId: run.id,
+          timestamp,
+        },
+      });
+    }
+
+    db.prepare(
+      `
+        UPDATE background_jobs
+        SET status = 'canceled',
+            updated_at = ?,
+            canceled_at = ?,
+            locked_at = NULL,
+            locked_by = NULL
+        WHERE session_id = ?
+          AND status IN ('queued', 'running', 'failed')
+      `,
+    ).run(timestamp, timestamp, sessionId);
+
     db.prepare(`DELETE FROM chat_messages WHERE session_id = ?`).run(sessionId);
     db.prepare(`DELETE FROM chat_sessions WHERE id = ?`).run(sessionId);
     return true;
@@ -2449,19 +2493,60 @@ export function createLocalStore(options: {
   }
 
   function deriveSkillDescription(skillContent: string) {
+    const frontmatter = parseSkillFrontmatter(skillContent);
+    if (frontmatter.description) return frontmatter.description;
     const match = /## Description\s+([\s\S]*?)(?:\n## |\n# |$)/i.exec(skillContent);
     return match?.[1]?.trim() || "Imported local skill.";
   }
 
   function deriveSkillName(skillContent: string, filePath: string) {
+    const frontmatter = parseSkillFrontmatter(skillContent);
+    if (frontmatter.name) return frontmatter.name;
     const heading = /^#\s+(.+)$/m.exec(skillContent)?.[1]?.trim();
     if (heading) return heading;
+    const parts = filePath.split("/").filter(Boolean);
+    const basename = parts.at(-1) ?? filePath;
+    if (/^SKILL\.md$/i.test(basename) && parts.length > 1) {
+      return titleCaseSkillName(parts.at(-2) ?? "Imported Skill");
+    }
     return filePath
       .split("/")
       .at(-1)
       ?.replace(/\.[^.]+$/, "")
       .replace(/[-_]+/g, " ")
       .replace(/\b\w/g, (char) => char.toUpperCase()) || "Imported Skill";
+  }
+
+  function parseSkillFrontmatter(skillContent: string) {
+    const lines = skillContent.trimStart().split(/\r?\n/);
+    const metadata: Record<string, string> = {};
+    let index = lines[0]?.trim() === "---" ? 1 : 0;
+
+    for (; index < lines.length; index++) {
+      const line = lines[index];
+      if (!line) break;
+      const trimmed = line.trim();
+      if (!trimmed || trimmed === "---" || trimmed.startsWith("#")) break;
+      const match = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(trimmed);
+      if (!match) break;
+      metadata[match[1]!.toLowerCase()] = stripYamlScalar(match[2] ?? "");
+    }
+
+    return metadata;
+  }
+
+  function stripYamlScalar(value: string) {
+    const trimmed = value.trim();
+    const quoted = /^(['"])([\s\S]*)\1$/.exec(trimmed);
+    return (quoted?.[2] ?? trimmed).trim();
+  }
+
+  function titleCaseSkillName(value: string) {
+    return (
+      value
+        .replace(/[-_]+/g, " ")
+        .replace(/\b\w/g, (char) => char.toUpperCase()) || "Imported Skill"
+    );
   }
 
   function insertSkillRecord(input: {
@@ -3278,6 +3363,8 @@ export function createLocalStore(options: {
             locked_at = NULL,
             locked_by = NULL
         WHERE id = ?
+          AND status != 'canceled'
+          AND canceled_at IS NULL
       `,
     ).run(JSON.stringify(resultPayload), updatedAt, updatedAt, jobId);
     return getBackgroundJob(jobId);
@@ -3311,6 +3398,8 @@ export function createLocalStore(options: {
             locked_at = NULL,
             locked_by = NULL
         WHERE id = ?
+          AND status != 'canceled'
+          AND canceled_at IS NULL
       `,
     ).run(
       nextStatus,

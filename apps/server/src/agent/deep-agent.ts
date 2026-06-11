@@ -67,7 +67,10 @@ export function createAimcDeepAgent(options: {
   workspaceSkills?: WorkspaceSkillEntry[];
 }): AimcAgent {
   const backendResult =
-    options.backendResult ?? createAgentBackend(options.env, options.canvasId);
+    options.backendResult ??
+    createAgentBackend(options.env, options.canvasId, {
+      workspaceSkills: options.workspaceSkills ?? [],
+    });
 
   applyOpenAICompatEnv(options.env);
 

@@ -138,6 +138,57 @@ describe("canvas generation panels", () => {
     expect(panel.style.left).toBe("195px");
   });
 
+  it("resets image prompt and loading state when switching generator elements", async () => {
+    const user = userEvent.setup();
+    const excalidrawApi = createExcalidrawApiStub();
+    const { rerender } = render(
+      <ToastProvider>
+        <ImageGeneratorPanel
+          elementId="old-image"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 320 }}
+          data={{
+            type: "image-generator",
+            status: "generating",
+            prompt: "生成小女孩跳舞的图片",
+            model: "agnes-image/agnes-image-2.1-flash",
+            aspectRatio: "1:1",
+            quality: "hd",
+          }}
+          excalidrawApi={excalidrawApi}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    rerender(
+      <ToastProvider>
+        <ImageGeneratorPanel
+          elementId="new-image"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 320 }}
+          data={{
+            type: "image-generator",
+            status: "idle",
+            prompt: "",
+            model: "agnes-image/agnes-image-2.1-flash",
+            aspectRatio: "1:1",
+            quality: "hd",
+          }}
+          excalidrawApi={excalidrawApi}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    const promptInput = screen.getByPlaceholderText("今天我们要创作什么");
+    await waitFor(() => expect(promptInput).toHaveValue(""));
+    expect(promptInput).toBeEnabled();
+
+    await user.type(promptInput, "新的提示语");
+    expect(promptInput).toHaveValue("新的提示语");
+  });
+
   it("blocks image generation when no providers are configured", async () => {
     fetchImageModelsMock.mockResolvedValueOnce({ models: [] });
 

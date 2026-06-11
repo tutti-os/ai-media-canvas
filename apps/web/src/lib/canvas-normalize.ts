@@ -67,6 +67,80 @@ function validateBindings(elements: CanvasElement[]): boolean {
   return changed;
 }
 
+const ORDER_KEY_DIGITS =
+  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+function getOrderKeyIntegerLength(head: string): number {
+  if (head >= "a" && head <= "z") {
+    return head.charCodeAt(0) - "a".charCodeAt(0) + 2;
+  }
+  if (head >= "A" && head <= "Z") {
+    return "Z".charCodeAt(0) - head.charCodeAt(0) + 2;
+  }
+  return 2;
+}
+
+function incrementOrderKeyInteger(key: string): string {
+  const [head = "a", ...digits] = key.split("");
+  const nextDigits = digits;
+  let carry = true;
+  for (let i = nextDigits.length - 1; carry && i >= 0; i--) {
+    const digitIndex = ORDER_KEY_DIGITS.indexOf(nextDigits[i] ?? "0") + 1;
+    if (digitIndex === ORDER_KEY_DIGITS.length) {
+      nextDigits[i] = ORDER_KEY_DIGITS[0]!;
+    } else {
+      nextDigits[i] = ORDER_KEY_DIGITS[digitIndex]!;
+      carry = false;
+    }
+  }
+
+  if (!carry) return head + nextDigits.join("");
+  if (head === "Z") return `a${ORDER_KEY_DIGITS[0]}`;
+  const nextHead = String.fromCharCode(head.charCodeAt(0) + 1);
+  if (nextHead > "a") {
+    nextDigits.push(ORDER_KEY_DIGITS[0]!);
+  } else {
+    nextDigits.pop();
+  }
+  return nextHead + nextDigits.join("");
+}
+
+function createSequentialElementIndices(count: number): string[] {
+  const indices: string[] = [];
+  let current = "a0";
+  for (let i = 0; i < count; i++) {
+    indices.push(current);
+    current = incrementOrderKeyInteger(current);
+    while (current.length !== getOrderKeyIntegerLength(current[0] ?? "a")) {
+      current = incrementOrderKeyInteger(current);
+    }
+  }
+  return indices;
+}
+
+export function normalizeCanvasElementIndices(
+  elements: CanvasElement[],
+): boolean {
+  let changed = false;
+  const indices = createSequentialElementIndices(elements.length);
+  for (const [position, element] of elements.entries()) {
+    const index = indices[position];
+    if (element.index !== index) {
+      element.index = index;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+export function withNormalizedCanvasElementIndices<
+  T extends Record<string, unknown>,
+>(elements: readonly T[]): T[] {
+  const normalized = elements.map((element) => ({ ...element }));
+  normalizeCanvasElementIndices(normalized);
+  return normalized as T[];
+}
+
 function recenterBoundTextElements(elements: CanvasElement[]): boolean {
   const elementMap = new Map(elements.map((el) => [el.id as string, el]));
   let changed = false;
@@ -120,6 +194,7 @@ export function normalizeCanvasElements(
   elements: CanvasElement[],
 ): { elements: CanvasElement[]; changed: boolean } {
   let changed = false;
+  if (normalizeCanvasElementIndices(elements)) changed = true;
   if (validateBindings(elements)) changed = true;
   if (recenterBoundTextElements(elements)) changed = true;
   return { elements, changed };

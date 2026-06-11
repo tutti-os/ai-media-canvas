@@ -74,6 +74,9 @@
     "selectedFiles": "已选择 {{count}} 个本地文件",
     "selectedFiles_one": "已选择 {{count}} 个本地文件",
     "selectedFiles_other": "已选择 {{count}} 个本地文件",
+    "skippedFiles": "已跳过 {{count}} 个非文本或过大的文件。",
+    "skippedFiles_one": "已跳过 {{count}} 个非文本或过大的文件。",
+    "skippedFiles_other": "已跳过 {{count}} 个非文本或过大的文件。",
     "suggestion": "建议至少包含一个 SKILL.md 文件，并尽量保留原目录结构。",
     "title": "从本地导入技能",
     "viewInstalled": "查看已安装"
@@ -106,6 +109,7 @@
     "installed": "技能 \"{{name}}\" 已安装到本地",
     "installFailed": "技能安装失败",
     "loadFailed": "本地技能加载失败",
+    "noImportableFiles": "没有可导入的文本文件，请选择包含 SKILL.md 的技能目录。",
     "toggleFailed": "技能启停更新失败",
     "uninstalled": "技能已卸载",
     "uninstallFailed": "技能卸载失败"

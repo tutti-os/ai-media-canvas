@@ -16,6 +16,7 @@ import {
   fetchAsDataURL,
 } from "../../lib/canvas-elements";
 import { calculateCenteredGeneratorPanelPosition } from "../../lib/canvas-generator-panel-position";
+import { withNormalizedCanvasElementIndices } from "../../lib/canvas-normalize";
 import { formatProviderLabel } from "../../lib/provider-labels";
 
 type ImageGeneratorPanelProps = {
@@ -59,6 +60,28 @@ export function ImageGeneratorPanel({
   // AbortController for canceling only when a newer generation supersedes this one.
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
+  const modelRef = useRef(model);
+  const lastElementIdRef = useRef(elementId);
+  modelRef.current = model;
+
+  useEffect(() => {
+    if (lastElementIdRef.current === elementId) return;
+    lastElementIdRef.current = elementId;
+    setPrompt(data.prompt);
+    setModel(data.model);
+    setAspectRatio(data.aspectRatio);
+    setLoading(data.status === "generating");
+    setError(data.errorMessage ?? null);
+    setShowModelDropdown(false);
+    setShowRatioDropdown(false);
+  }, [
+    elementId,
+    data.prompt,
+    data.model,
+    data.aspectRatio,
+    data.status,
+    data.errorMessage,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,17 +97,15 @@ export function ImageGeneratorPanel({
         }
 
         setAvailabilityError(null);
-        setModel((currentModel) => {
-          if (response.models.some((item) => item.id === currentModel)) {
-            return currentModel;
-          }
-          const fallbackModel = response.models[0]?.id ?? currentModel;
-          if (fallbackModel !== currentModel) {
-            updateImageGeneratorElement(excalidrawApi, elementId, {
-              model: fallbackModel,
-            });
-          }
-          return fallbackModel;
+        const currentModel = modelRef.current;
+        if (response.models.some((item) => item.id === currentModel)) return;
+
+        const fallbackModel = response.models[0]?.id;
+        if (!fallbackModel || fallbackModel === currentModel) return;
+
+        setModel(fallbackModel);
+        updateImageGeneratorElement(excalidrawApi, elementId, {
+          model: fallbackModel,
         });
       })
       .catch((err) => {
@@ -221,7 +242,7 @@ export function ImageGeneratorPanel({
           return el;
         });
       excalidrawApi.updateScene({
-        elements: [...elements, imageElement],
+        elements: withNormalizedCanvasElementIndices([...elements, imageElement]),
         captureUpdate: "IMMEDIATELY",
       });
 

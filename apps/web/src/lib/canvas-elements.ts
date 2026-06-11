@@ -1,4 +1,5 @@
 import type { ImageArtifact, VideoArtifact } from "@aimc/shared";
+import { withNormalizedCanvasElementIndices } from "./canvas-normalize";
 import { getServerBaseUrl } from "./env";
 
 const VIDEO_EXTENSIONS = [".mp4", ".webm", ".ogg", ".mov"];
@@ -314,7 +315,10 @@ export async function insertImageOnCanvas(
   });
 
   api.updateScene({
-    elements: [...api.getSceneElements(), element],
+    elements: withNormalizedCanvasElementIndices([
+      ...api.getSceneElements(),
+      element,
+    ]),
     captureUpdate: "IMMEDIATELY",
   });
 }
@@ -393,7 +397,10 @@ export async function insertVideoOnCanvas(
   ]);
 
   api.updateScene({
-    elements: [...api.getSceneElements(), ...newElements],
+    elements: withNormalizedCanvasElementIndices([
+      ...api.getSceneElements(),
+      ...newElements,
+    ]),
     captureUpdate: "IMMEDIATELY",
   });
 }

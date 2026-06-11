@@ -133,13 +133,36 @@ export function ChatSidebar({
   const initialPromptSent = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef(false);
-  const sendingRef = useRef(false);
+  const inFlightSessionIdsRef = useRef<Set<string>>(new Set());
   const messageMentionsRef = useRef(messageMentions);
   messageMentionsRef.current = messageMentions;
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
   selectedCanvasElementsRef.current = selectedCanvasElements;
   const prevConnectedRef = useRef(false);
   const replayedArtifactKeysRef = useRef<Set<string>>(new Set());
+  const currentCanvasIdRef = useRef(canvasId);
+  currentCanvasIdRef.current = canvasId;
+
+  useEffect(() => {
+    setStreaming(
+      Boolean(
+        activeSessionId && inFlightSessionIdsRef.current.has(activeSessionId),
+      ),
+    );
+  }, [activeSessionId, setStreaming]);
+
+  const buildAutoTitleSource = useCallback(
+    (text: string, attachments: ReadyAttachment[]) => {
+      const normalized = text.trim();
+      if (normalized) return normalized;
+
+      return attachments
+        .map((attachment) => attachment.name?.trim())
+        .filter((name): name is string => Boolean(name))
+        .join(", ");
+    },
+    [],
+  );
 
   const artifactReplayKey = useCallback(
     (toolCallId: string, url: string) => `${toolCallId}:${url}`,
@@ -417,11 +440,22 @@ export function ChatSidebar({
       mentionsOverride?: MessageMention[],
     ) => {
       const currentSessionId = activeSessionIdRef.current;
-      if (sendingRef.current || !currentSessionId) return;
-      sendingRef.current = true;
+      if (
+        !currentSessionId ||
+        inFlightSessionIdsRef.current.has(currentSessionId)
+      ) {
+        return;
+      }
+      inFlightSessionIdsRef.current.add(currentSessionId);
+      if (activeSessionIdRef.current === currentSessionId) {
+        setStreaming(true);
+      }
 
       if (!(await ensureAgentModelConfigured())) {
-        sendingRef.current = false;
+        inFlightSessionIdsRef.current.delete(currentSessionId);
+        if (activeSessionIdRef.current === currentSessionId) {
+          setStreaming(false);
+        }
         setSettingsOpen(true);
         return;
       }
@@ -526,8 +560,9 @@ export function ChatSidebar({
         ],
       });
 
-      // Auto-title from first user message
-      autoTitleSession(text);
+      // Auto-title from first user message, falling back to attachment names
+      // for image-only initial runs from the home prompt.
+      autoTitleSession(buildAutoTitleSource(text, currentAttachments));
 
       // Create assistant placeholder
       const assistantIdRef = { current: `assistant-${Date.now()}` };
@@ -539,7 +574,9 @@ export function ChatSidebar({
           contentBlocks: [],
         },
       ]);
-      setStreaming(true);
+      if (activeSessionIdRef.current === currentSessionId) {
+        setStreaming(true);
+      }
       abortRef.current = false;
 
       try {
@@ -557,12 +594,24 @@ export function ChatSidebar({
           resolveStream = r;
         });
         const runIdRef = { current: "" };
+        const runCanvasId = canvasId;
 
         const cleanup = ws.onEvent((entry) => {
           const event = entry.event;
           if (!runIdRef.current || event.runId !== runIdRef.current) return;
           if (abortRef.current) {
             resolveStream();
+            return;
+          }
+          const isCurrentCanvas = currentCanvasIdRef.current === runCanvasId;
+          if (!isCurrentCanvas) {
+            if (
+              event.type === "run.completed" ||
+              event.type === "run.failed" ||
+              event.type === "run.canceled"
+            ) {
+              resolveStream();
+            }
             return;
           }
 
@@ -714,8 +763,10 @@ export function ChatSidebar({
           }),
         );
       } finally {
-        sendingRef.current = false;
-        setStreaming(false);
+        inFlightSessionIdsRef.current.delete(currentSessionId);
+        if (activeSessionIdRef.current === currentSessionId) {
+          setStreaming(false);
+        }
       }
     },
     [
@@ -729,6 +780,7 @@ export function ChatSidebar({
       clearAttachments,
       ws,
       autoTitleSession,
+      buildAutoTitleSource,
       activeSessionIdRef,
       ensureAgentModelConfigured,
       setStreaming,
@@ -963,8 +1015,10 @@ export function ChatSidebar({
           evt.type === "run.failed" ||
           evt.type === "run.canceled"
         ) {
-          sendingRef.current = false;
-          setStreaming(false);
+          inFlightSessionIdsRef.current.delete(sessionId);
+          if (activeSessionIdRef.current === sessionId) {
+            setStreaming(false);
+          }
         }
       };
 
@@ -1002,8 +1056,10 @@ export function ChatSidebar({
         const assistantMessageId = (ack.payload as Record<string, unknown>)
           .assistantMessageId;
         if (activeRunId && typeof activeRunId === "string") {
-          sendingRef.current = true;
-          setStreaming(true);
+          inFlightSessionIdsRef.current.add(sessionId);
+          if (activeSessionIdRef.current === sessionId) {
+            setStreaming(true);
+          }
 
           resumedRunId = activeRunId;
           resumedAssistantId =
@@ -1231,7 +1287,11 @@ export function ChatSidebar({
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
             </div>
           ) : messages.length === 0 ? (
-            <ChatTemplates onSend={handleSend} />
+            <ChatTemplates
+              onSend={(prompt) =>
+                handleSend(prompt, [], undefined, undefined, [])
+              }
+            />
           ) : (
             messages.map((msg) => (
               <ChatMessage

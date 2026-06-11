@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { HexColorPicker } from "react-colorful";
 
 import { useAppTranslation } from "@/i18n";
+import { fitAllCanvasElements } from "@/lib/canvas-view";
 
 /* ── Preset color swatches for background picker ── */
 const BG_PRESETS = [
@@ -307,7 +308,7 @@ export function CanvasBottomBar({
     [applyZoom],
   );
   const handleFitAll = useCallback(() => {
-    excalidrawApi?.scrollToContent();
+    fitAllCanvasElements(excalidrawApi);
     setZoomMenuOpen(false);
   }, [excalidrawApi]);
 

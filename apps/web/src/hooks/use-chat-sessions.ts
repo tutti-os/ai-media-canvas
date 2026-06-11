@@ -346,7 +346,11 @@ export function useChatSessions({
     const isFirstMessage = messagesRef.current.length === 0;
     if (!isFirstMessage) return;
 
-    const title = text.length > 50 ? `${text.slice(0, 47)}...` : text;
+    const normalized = text.trim();
+    if (!normalized) return;
+
+    const title =
+      normalized.length > 50 ? `${normalized.slice(0, 47)}...` : normalized;
     void updateSessionTitle(currentSessionId, title);
     setSessions((prev) =>
       prev.map((s) => (s.id === currentSessionId ? { ...s, title } : s)),

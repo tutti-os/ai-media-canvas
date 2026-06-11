@@ -4,10 +4,19 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useAppTranslation } from "../i18n";
+import { useToast } from "./toast";
 
 type CanvasContextMenuExtensionsProps = {
   // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
   excalidrawApi: any;
+};
+
+type CanvasContextMenuApi = {
+  getAppState: () => {
+    selectedElementIds?: Record<string, boolean>;
+  } & Record<string, unknown>;
+  getFiles: () => Record<string, unknown>;
+  getSceneElements: () => readonly Record<string, unknown>[];
 };
 
 function getNativeContextMenu() {
@@ -15,6 +24,7 @@ function getNativeContextMenu() {
 }
 
 const SECTION_START_LABELS = new Set(["Crop image", "Duplicate"]);
+const HIDDEN_NATIVE_CONTEXT_MENU_TEST_IDS = new Set(["copyAsPng"]);
 const NATIVE_CONTEXT_MENU_LABEL_KEYS: Record<string, string> = {
   "Canvas & Shape properties":
     "canvas:contextMenu.native.canvasAndShapeProperties",
@@ -31,7 +41,29 @@ const NATIVE_CONTEXT_MENU_LABEL_KEYS: Record<string, string> = {
   "Wrap selection in frame": "canvas:contextMenu.native.wrapSelectionInFrame",
   "Zen mode": "canvas:contextMenu.native.zenMode",
   "复制为 PNG 到剪贴板": "canvas:contextMenu.native.copyImage",
+  复制: "canvas:contextMenu.native.duplicate",
 };
+
+function isCanvasContextMenuApi(
+  excalidrawApi: CanvasContextMenuExtensionsProps["excalidrawApi"],
+): excalidrawApi is CanvasContextMenuApi {
+  return (
+    typeof excalidrawApi?.getAppState === "function" &&
+    typeof excalidrawApi?.getFiles === "function" &&
+    typeof excalidrawApi?.getSceneElements === "function"
+  );
+}
+
+function hideNativeContextMenuItems(menuElement: HTMLUListElement) {
+  for (const item of menuElement.querySelectorAll<HTMLLIElement>("li")) {
+    if (
+      item.dataset.testid &&
+      HIDDEN_NATIVE_CONTEXT_MENU_TEST_IDS.has(item.dataset.testid)
+    ) {
+      item.hidden = true;
+    }
+  }
+}
 
 function markContextMenuSections(menuElement: HTMLUListElement) {
   for (const item of menuElement.querySelectorAll<HTMLLIElement>(
@@ -43,9 +75,9 @@ function markContextMenuSections(menuElement: HTMLUListElement) {
   }
 
   for (const item of menuElement.querySelectorAll<HTMLLIElement>("li")) {
-    const label = item
-      .querySelector<HTMLElement>(".context-menu-item__label")
-      ?.dataset.aimcOriginalLabel ??
+    const label =
+      item.querySelector<HTMLElement>(".context-menu-item__label")?.dataset
+        .aimcOriginalLabel ??
       item
         .querySelector<HTMLElement>(".context-menu-item__label")
         ?.textContent?.trim();
@@ -79,19 +111,133 @@ function localizeNativeContextMenuLabels(
   }
 }
 
+function getSelectedElements(excalidrawApi: CanvasContextMenuApi) {
+  const appState = excalidrawApi.getAppState();
+  const selectedIds = Object.entries(appState.selectedElementIds ?? {}).flatMap(
+    ([id, selected]) => (selected ? [id] : []),
+  );
+  if (selectedIds.length === 0) return [];
+
+  const selectedIdSet = new Set(selectedIds);
+  return excalidrawApi
+    .getSceneElements()
+    .filter(
+      (element: Record<string, unknown>) =>
+        !element.isDeleted && selectedIdSet.has(element.id as string),
+    );
+}
+
+function canCopySelectionAsImage(excalidrawApi: CanvasContextMenuApi) {
+  const selectedElements = getSelectedElements(excalidrawApi);
+  return (
+    selectedElements.length > 0 &&
+    selectedElements.every(
+      (element: Record<string, unknown>) => element.type === "image",
+    )
+  );
+}
+
+async function exportSelectionToPngBlob(
+  excalidrawApi: CanvasContextMenuApi,
+  selectedElements: readonly Record<string, unknown>[],
+) {
+  const appState = excalidrawApi.getAppState();
+  const { exportToBlob } = await import("@excalidraw/excalidraw");
+  return exportToBlob({
+    elements: selectedElements as never,
+    appState: { ...appState, exportBackground: true },
+    files: excalidrawApi.getFiles() as never,
+    mimeType: "image/png",
+  });
+}
+
+async function copySelectedImagesToClipboard(
+  excalidrawApi: CanvasContextMenuApi,
+) {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+    throw new Error("PNG clipboard writes are not supported in this browser.");
+  }
+
+  const selectedElements = getSelectedElements(excalidrawApi);
+  const pngBlob = exportSelectionToPngBlob(excalidrawApi, selectedElements);
+  await navigator.clipboard.write([
+    new ClipboardItem({
+      "image/png": pngBlob,
+    }),
+  ]);
+  await pngBlob;
+}
+
+function closeNativeContextMenu(triggerElement?: HTMLElement | null) {
+  const target =
+    triggerElement ??
+    (document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : document.body);
+  target.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Escape",
+      code: "Escape",
+      bubbles: true,
+    }),
+  );
+}
+
+function replaceImageCopyContextMenuItem(
+  menuElement: HTMLUListElement,
+  excalidrawApi: CanvasContextMenuApi,
+  onImageCopied: () => void,
+  onImageCopyFailed: () => void,
+) {
+  if (!canCopySelectionAsImage(excalidrawApi)) return;
+
+  const copyItem = menuElement.querySelector<HTMLLIElement>(
+    'li[data-testid="copy"]',
+  );
+  if (!copyItem || copyItem.dataset.aimcCopyImageItem === "true") return;
+
+  const imageCopyItem = copyItem.cloneNode(true) as HTMLLIElement;
+  imageCopyItem.dataset.testid = "aimcCopyImage";
+  imageCopyItem.dataset.aimcCopyImageItem = "true";
+  const copyButton = imageCopyItem.querySelector<HTMLButtonElement>("button");
+  if (!copyButton) return;
+  copyButton.addEventListener("click", () => {
+    const copyPromise = copySelectedImagesToClipboard(excalidrawApi);
+    closeNativeContextMenu(copyButton);
+    void copyPromise.then(onImageCopied).catch((error) => {
+      console.warn("[canvas-context-menu] copy image failed:", error);
+      onImageCopyFailed();
+    });
+  });
+  copyItem.replaceWith(imageCopyItem);
+}
+
 export function CanvasContextMenuExtensions({
   excalidrawApi,
 }: CanvasContextMenuExtensionsProps) {
-  const { i18n, t } = useAppTranslation("canvas");
-  const renderedLanguage = i18n.resolvedLanguage ?? i18n.language;
+  const { t } = useAppTranslation("canvas");
+  const { success: toastSuccess, error: toastError } = useToast();
   const [menuElement, setMenuElement] = useState<HTMLUListElement | null>(null);
 
   useEffect(() => {
     const syncMenuElement = () => {
       const nativeMenuElement = getNativeContextMenu();
       if (nativeMenuElement) {
+        hideNativeContextMenuItems(nativeMenuElement);
         markContextMenuSections(nativeMenuElement);
         localizeNativeContextMenuLabels(nativeMenuElement, t);
+        if (isCanvasContextMenuApi(excalidrawApi)) {
+          replaceImageCopyContextMenuItem(
+            nativeMenuElement,
+            excalidrawApi,
+            () => {
+              toastSuccess(t("contextMenu.copyImageSuccess"));
+            },
+            () => {
+              toastError(t("contextMenu.copyImageFailed"));
+            },
+          );
+        }
       }
       setMenuElement(nativeMenuElement);
     };
@@ -100,48 +246,51 @@ export function CanvasContextMenuExtensions({
     const observer = new MutationObserver(syncMenuElement);
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [renderedLanguage]);
+  }, [excalidrawApi, t, toastError, toastSuccess]);
 
-  const handleDownloadImage = useCallback(async () => {
-    if (!excalidrawApi) return;
+  const handleDownloadImage = useCallback(
+    async (triggerElement: HTMLElement) => {
+      closeNativeContextMenu(triggerElement);
+      if (!excalidrawApi) return;
 
-    const appState = excalidrawApi.getAppState();
-    const selectedIds = Object.entries(
-      appState.selectedElementIds ?? {},
-    ).flatMap(([id, selected]) => (selected ? [id] : []));
-    const allElements = excalidrawApi
-      .getSceneElements()
-      .filter((element: Record<string, unknown>) => !element.isDeleted);
-    const elements =
-      selectedIds.length > 0
-        ? allElements.filter((element: Record<string, unknown>) =>
-            selectedIds.includes(element.id as string),
-          )
-        : allElements;
+      const appState = excalidrawApi.getAppState();
+      const selectedIds = Object.entries(
+        appState.selectedElementIds ?? {},
+      ).flatMap(([id, selected]) => (selected ? [id] : []));
+      const allElements = excalidrawApi
+        .getSceneElements()
+        .filter((element: Record<string, unknown>) => !element.isDeleted);
+      const elements =
+        selectedIds.length > 0
+          ? allElements.filter((element: Record<string, unknown>) =>
+              selectedIds.includes(element.id as string),
+            )
+          : allElements;
 
-    if (elements.length === 0) return;
+      if (elements.length === 0) return;
 
-    const { exportToBlob } = await import("@excalidraw/excalidraw");
-    const blob = await exportToBlob({
-      elements,
-      appState: { ...appState, exportBackground: true },
-      files: excalidrawApi.getFiles(),
-      mimeType: "image/png",
-    });
+      const { exportToBlob } = await import("@excalidraw/excalidraw");
+      const blob = await exportToBlob({
+        elements,
+        appState: { ...appState, exportBackground: true },
+        files: excalidrawApi.getFiles(),
+        mimeType: "image/png",
+      });
 
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download =
-      elements.length === 1
-        ? "ai-media-canvas-image.png"
-        : "ai-media-canvas-selection.png";
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-  }, [excalidrawApi]);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download =
+        elements.length === 1
+          ? "ai-media-canvas-image.png"
+          : "ai-media-canvas-selection.png";
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    },
+    [excalidrawApi],
+  );
 
   if (!menuElement) return null;
 
@@ -150,7 +299,9 @@ export function CanvasContextMenuExtensions({
       <button
         type="button"
         className="context-menu-item"
-        onClick={handleDownloadImage}
+        onClick={(event) => {
+          void handleDownloadImage(event.currentTarget);
+        }}
       >
         <div className="context-menu-item__label">
           {t("contextMenu.downloadImage")}

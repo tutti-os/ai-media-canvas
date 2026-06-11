@@ -11,6 +11,7 @@ const contextMenuCss = fs.readFileSync(
 describe("canvas context menu", () => {
   it("hides advanced Excalidraw actions from the right-click menu", () => {
     const hiddenActions = [
+      "copyAsPng",
       "copyStyles",
       "pasteStyles",
       "wrapSelectionInFrame",
@@ -55,6 +56,11 @@ describe("canvas context menu", () => {
       "background: var(--aimc-context-menu-hover)",
     );
     expect(contextMenuCss).toContain("color: var(--foreground)");
+  });
+
+  it("keeps the native context menu above canvas overlays", () => {
+    expect(contextMenuCss).toContain(".excalidraw .popover:has(.context-menu)");
+    expect(contextMenuCss).toContain("z-index: 220");
   });
 
   it("keeps native Excalidraw destructive actions red", () => {

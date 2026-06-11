@@ -74,6 +74,9 @@
     "selectedFiles": "{{count}} local files selected",
     "selectedFiles_one": "{{count}} local file selected",
     "selectedFiles_other": "{{count}} local files selected",
+    "skippedFiles": "{{count}} non-text or oversized files skipped.",
+    "skippedFiles_one": "{{count}} non-text or oversized file skipped.",
+    "skippedFiles_other": "{{count}} non-text or oversized files skipped.",
     "suggestion": "Include at least one SKILL.md file and preserve the original folder structure when possible.",
     "title": "Import local skill",
     "viewInstalled": "View installed"
@@ -106,6 +109,7 @@
     "installed": "Skill \"{{name}}\" installed locally",
     "installFailed": "Failed to install skill",
     "loadFailed": "Failed to load local skills",
+    "noImportableFiles": "No importable text files found. Choose a skill folder that includes SKILL.md.",
     "toggleFailed": "Failed to update skill state",
     "uninstalled": "Skill uninstalled",
     "uninstallFailed": "Failed to uninstall skill"

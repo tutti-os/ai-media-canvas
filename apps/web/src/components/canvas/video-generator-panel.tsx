@@ -13,6 +13,7 @@ import {
   type VideoGeneratorData,
 } from "../../lib/canvas-video-generator";
 import { calculateCenteredGeneratorPanelPosition } from "../../lib/canvas-generator-panel-position";
+import { withNormalizedCanvasElementIndices } from "../../lib/canvas-normalize";
 import { formatProviderLabel } from "../../lib/provider-labels";
 
 type VideoGeneratorPanelProps = {
@@ -327,7 +328,10 @@ export function VideoGeneratorPanel({
           el.id === elementId ? { ...el, isDeleted: true } : el,
         );
       excalidrawApi.updateScene({
-        elements: [...elements, ...newElements],
+        elements: withNormalizedCanvasElementIndices([
+          ...elements,
+          ...newElements,
+        ]),
         captureUpdate: "IMMEDIATELY",
       });
 

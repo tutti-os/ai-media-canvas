@@ -1,15 +1,14 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import type { SkillDetail, SkillFileEntry, SkillSource } from "@aimc/shared";
 import {
   Calendar,
   ChevronRight,
   ShieldCheck,
-  Trash2,
   UserPen,
   Users,
 } from "lucide-react";
-import type { SkillDetail, SkillFileEntry, SkillSource } from "@aimc/shared";
+import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -65,18 +64,15 @@ export function SkillDetailDialog({
   onOpenChange,
   onInstall,
   onUninstall,
-  onDelete,
 }: {
   skill: SkillDetail | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onInstall: (skillId: string) => Promise<void>;
   onUninstall: (skillId: string) => Promise<void>;
-  onDelete?: (skillId: string) => Promise<void>;
 }) {
   const { i18n, t } = useAppTranslation("skills");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const handleAction = useCallback(
     async (action: () => Promise<void>, label: string) => {
@@ -90,19 +86,10 @@ export function SkillDetailDialog({
     [],
   );
 
-  const handleOpenChange = useCallback(
-    (next: boolean) => {
-      if (!next) setConfirmDelete(false);
-      onOpenChange(next);
-    },
-    [onOpenChange],
-  );
-
   if (!skill) return null;
 
   const sourceEntry = SOURCE_CONFIG[skill.source] ?? SOURCE_CONFIG.system;
   const SourceIcon = sourceEntry.icon;
-  const isUserSkill = skill.source === "user";
   const isInstalled = skill.installed ?? false;
   const updatedDate = new Date(skill.updatedAt).toLocaleDateString(
     i18n.language === "en" ? "en" : "zh-CN",
@@ -114,12 +101,17 @@ export function SkillDetailDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {skill.name}
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+          <DialogTitle className="flex items-start gap-3 pr-12">
+            <span className="min-w-0 flex-1 break-words text-left">
+              {skill.name}
+            </span>
+            <span
+              data-testid="skill-detail-source-badge"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+            >
               <SourceIcon className="size-3" />
               {t(sourceEntry.labelKey)}
             </span>
@@ -176,44 +168,6 @@ export function SkillDetailDialog({
         ) : null}
 
         <DialogFooter>
-          {isUserSkill && onDelete ? (
-            confirmDelete ? (
-              <div className="mr-auto flex items-center gap-2">
-                <span className="text-xs text-destructive">
-                  {t("detail.confirmDelete")}
-                </span>
-                <Button
-                  variant="destructive"
-                  size="xs"
-                  disabled={actionLoading === "delete"}
-                  onClick={() =>
-                    handleAction(() => onDelete(skill.id), "delete")
-                  }
-                >
-                  <Trash2 className="size-3.5" />
-                  {t("actions.delete")}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => setConfirmDelete(false)}
-                >
-                  {t("actions.cancel")}
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="ghost"
-                size="xs"
-                className="mr-auto text-destructive"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 className="size-3.5" />
-                {t("actions.delete")}
-              </Button>
-            )
-          ) : null}
-
           {isInstalled ? (
             <Button
               variant="outline"

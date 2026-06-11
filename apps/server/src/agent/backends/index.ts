@@ -1,6 +1,7 @@
 import type { AnyBackendProtocol } from "deepagents";
 
 import type { ServerEnv } from "../../config/env.js";
+import type { WorkspaceSkillEntry } from "../workspace-skills.js";
 import { createDevelopmentBackend } from "./dev.js";
 import { createProductionBackendFactory } from "./prod.js";
 
@@ -17,12 +18,14 @@ export type AgentBackendResult = {
 export function createAgentBackend(
   env: AgentBackendEnv,
   canvasId?: string,
-  options?: { hasWorkspaceSkills?: boolean },
+  options?: { workspaceSkills?: WorkspaceSkillEntry[] },
 ): AgentBackendResult {
   if (env.agentBackendMode === "filesystem") {
     return createDevelopmentBackend(env, {
       ...(canvasId != null ? { canvasId } : {}),
-      ...(options?.hasWorkspaceSkills ? { hasWorkspaceSkills: true } : {}),
+      ...(options?.workspaceSkills
+        ? { workspaceSkills: options.workspaceSkills }
+        : {}),
     });
   }
 
@@ -35,6 +38,8 @@ export function createAgentBackend(
 
   return createProductionBackendFactory(canvasId, {
     ...(env.skillsRoot ? { skillsRoot: env.skillsRoot } : {}),
-    ...(options?.hasWorkspaceSkills ? { hasWorkspaceSkills: true } : {}),
+    ...(options?.workspaceSkills
+      ? { workspaceSkills: options.workspaceSkills }
+      : {}),
   });
 }

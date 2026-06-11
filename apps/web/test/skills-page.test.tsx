@@ -11,6 +11,7 @@ const fetchInstalledSkillsMock = vi.fn();
 const fetchSkillCatalogMock = vi.fn();
 const fetchSkillDetailMock = vi.fn();
 const createSkillMock = vi.fn();
+const importSkillMock = vi.fn();
 const uninstallSkillMock = vi.fn();
 
 vi.mock("../src/lib/server-api", () => ({
@@ -19,7 +20,7 @@ vi.mock("../src/lib/server-api", () => ({
   fetchSkillCatalog: (...args: unknown[]) => fetchSkillCatalogMock(...args),
   fetchSkillDetail: (...args: unknown[]) => fetchSkillDetailMock(...args),
   createSkill: (...args: unknown[]) => createSkillMock(...args),
-  importSkill: vi.fn(),
+  importSkill: (...args: unknown[]) => importSkillMock(...args),
   installSkill: vi.fn(),
   toggleSkill: vi.fn(),
   uninstallSkill: (...args: unknown[]) => uninstallSkillMock(...args),
@@ -127,6 +128,32 @@ describe("Skills page", () => {
         files: [],
       },
     });
+    importSkillMock.mockResolvedValue({
+      skill: {
+        id: "skill-imported",
+        name: "pua",
+        slug: "pua",
+        description: "Imported local skill.",
+        author: "Local User",
+        version: "1.0.0",
+        category: "custom",
+        iconName: null,
+        source: "user",
+        isFeatured: false,
+        metadata: {},
+        installed: true,
+        enabled: true,
+        installedAt: "2026-06-03T00:00:00Z",
+        createdAt: "2026-06-03T00:00:00Z",
+        updatedAt: "2026-06-03T00:00:00Z",
+        license: "Local",
+        skillContent: "# PUA",
+        createdBy: "Local User",
+        sourceUrl: null,
+        packageName: null,
+        files: [],
+      },
+    });
     uninstallSkillMock.mockResolvedValue(undefined);
   });
 
@@ -172,7 +199,7 @@ describe("Skills page", () => {
   });
 
   it("offers both file import and directory import for local skill packages", async () => {
-    render(
+    const { container } = render(
       <ToastProvider>
         <SkillsPage />
       </ToastProvider>,
@@ -187,6 +214,109 @@ describe("Skills page", () => {
     expect(
       screen.getByRole("button", { name: "选择目录" }),
     ).toBeInTheDocument();
+
+    const fileInput = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const skillContent = `name: pua
+description: "Use when the user explicitly requests PUA mode or signals frustration."
+license: MIT
+
+# PUA 我们不养闲 Agent
+`;
+    const skillFile = new File([skillContent], "SKILL.md", {
+      type: "text/markdown",
+    });
+    Object.defineProperty(skillFile, "text", {
+      value: async () => skillContent,
+    });
+    Object.defineProperty(skillFile, "webkitRelativePath", {
+      value: "pua/SKILL.md",
+    });
+
+    fireEvent.change(fileInput, { target: { files: [skillFile] } });
+
+    expect(await screen.findByDisplayValue("pua")).toBeInTheDocument();
+    expect(
+      await screen.findByDisplayValue(
+        "Use when the user explicitly requests PUA mode or signals frustration.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("skips binary assets when importing a skill directory", async () => {
+    const { container } = render(
+      <ToastProvider>
+        <SkillsPage />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "导入" }));
+
+    const fileInputs = container.querySelectorAll('input[type="file"]');
+    const directoryInput = fileInputs.item(1) as HTMLInputElement;
+    const skillContent = `name: pua
+description: "Use text files only."
+
+# PUA
+`;
+    const skillFile = new File([skillContent], "SKILL.md", {
+      type: "text/markdown",
+    });
+    Object.defineProperty(skillFile, "text", {
+      value: async () => skillContent,
+    });
+    Object.defineProperty(skillFile, "webkitRelativePath", {
+      value: "agnes-ai-skill/SKILL.md",
+    });
+    const readmeFile = new File(["# README"], "README.md", {
+      type: "text/markdown",
+    });
+    Object.defineProperty(readmeFile, "text", {
+      value: async () => "# README",
+    });
+    Object.defineProperty(readmeFile, "webkitRelativePath", {
+      value: "agnes-ai-skill/README.md",
+    });
+    const imageFile = new File([new Uint8Array([1, 2, 3])], "preview.jpg", {
+      type: "image/jpeg",
+    });
+    const imageText = vi.fn(async () => {
+      throw new Error("binary file should not be read");
+    });
+    Object.defineProperty(imageFile, "text", {
+      value: imageText,
+    });
+    Object.defineProperty(imageFile, "webkitRelativePath", {
+      value: "agnes-ai-skill/assets/apps/preview.jpg",
+    });
+
+    fireEvent.change(directoryInput, {
+      target: { files: [skillFile, readmeFile, imageFile] },
+    });
+
+    expect(await screen.findByText("已选择 2 个本地文件")).toBeInTheDocument();
+    expect(
+      screen.getByText("已跳过 1 个非文本或过大的文件。"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "导入到本地" }));
+
+    await screen.findByText('技能 "pua" 导入成功');
+    expect(imageText).not.toHaveBeenCalled();
+    expect(importSkillMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        files: [
+          expect.objectContaining({
+            filePath: "agnes-ai-skill/SKILL.md",
+          }),
+          expect.objectContaining({
+            filePath: "agnes-ai-skill/README.md",
+          }),
+        ],
+      }),
+    );
+    expect(importSkillMock.mock.calls[0]?.[0].files).toHaveLength(2);
   });
 
   it("creates a skill with local state updates instead of refetching the installed list", async () => {
@@ -222,6 +352,125 @@ describe("Skills page", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(fetchInstalledSkillsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the custom skill dialog within the viewport with a scrollable body", async () => {
+    render(
+      <ToastProvider>
+        <SkillsPage />
+      </ToastProvider>,
+    );
+
+    await screen.findByText("Canvas Director");
+    fireEvent.click(screen.getByRole("button", { name: "添加技能" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveClass("max-h-[calc(100vh-6rem)]", "overflow-hidden");
+    const scrollBody = screen.getByTestId("create-skill-dialog-scroll");
+    expect(scrollBody).toHaveClass("min-h-0", "overflow-y-auto");
+    expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "添加技能" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps imported skill detail badges away from the close button", async () => {
+    const longSkillName = "PUA 我们不养闲 Agent，一个提高agent积极性的 skill。";
+    const importedSkill = {
+      id: "skill-imported",
+      name: longSkillName,
+      slug: "pua",
+      description: "Imported local skill.",
+      author: "Local User",
+      version: "1.0.0",
+      category: "custom",
+      iconName: null,
+      source: "user",
+      isFeatured: false,
+      metadata: {},
+      installed: true,
+      enabled: true,
+      installedAt: "2026-06-10T00:00:00Z",
+      createdAt: "2026-06-10T00:00:00Z",
+      updatedAt: "2026-06-10T00:00:00Z",
+      license: "Local",
+      skillContent: "# PUA",
+      createdBy: "Local User",
+      sourceUrl: null,
+      packageName: null,
+      files: [],
+    };
+    fetchInstalledSkillsMock.mockResolvedValue({ skills: [importedSkill] });
+    fetchSkillCatalogMock.mockResolvedValue({ skills: [] });
+    fetchSkillDetailMock.mockResolvedValue({ skill: importedSkill });
+
+    render(
+      <ToastProvider>
+        <SkillsPage />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "详情" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const titleText = Array.from(dialog.querySelectorAll("span")).find(
+      (element) => element.textContent === longSkillName,
+    ) as HTMLElement;
+
+    expect(titleText).toHaveClass("min-w-0", "flex-1", "break-words");
+    expect(titleText.parentElement).toHaveClass(
+      "items-start",
+      "gap-3",
+      "pr-12",
+    );
+    expect(screen.getByTestId("skill-detail-source-badge")).toHaveClass(
+      "shrink-0",
+    );
+  });
+
+  it("removes delete controls from imported skill details", async () => {
+    const importedSkill = {
+      id: "skill-imported",
+      name: "qq",
+      slug: "qq",
+      description: "qqq",
+      author: "Local User",
+      version: "1.0.0",
+      category: "custom",
+      iconName: null,
+      source: "user",
+      isFeatured: false,
+      metadata: {},
+      installed: true,
+      enabled: true,
+      installedAt: "2026-06-10T00:00:00Z",
+      createdAt: "2026-06-10T00:00:00Z",
+      updatedAt: "2026-06-10T00:00:00Z",
+      license: "Local",
+      skillContent: "# Skill Name",
+      createdBy: "Local User",
+      sourceUrl: null,
+      packageName: null,
+      files: [],
+    };
+    fetchInstalledSkillsMock.mockResolvedValue({ skills: [importedSkill] });
+    fetchSkillCatalogMock.mockResolvedValue({ skills: [] });
+    fetchSkillDetailMock.mockResolvedValue({ skill: importedSkill });
+
+    render(
+      <ToastProvider>
+        <SkillsPage />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "详情" }));
+    await screen.findByRole("dialog");
+
+    expect(
+      screen.queryByRole("button", { name: "删除" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("确认删除?")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "卸载" })).toBeInTheDocument();
   });
 
   it("uninstalls a skill with local state updates instead of refetching the installed list", async () => {

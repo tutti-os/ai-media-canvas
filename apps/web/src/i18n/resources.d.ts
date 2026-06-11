@@ -20,13 +20,15 @@ export default interface Resources {
     "closeFiles": "关闭生成文件面板",
     "closeLayers": "关闭图层面板",
     "contextMenu": {
+      "copyImageFailed": "图片复制失败",
+      "copyImageSuccess": "图片已复制",
       "downloadImage": "下载图片",
       "native": {
         "canvasAndShapeProperties": "画布和形状属性",
         "copyImage": "复制图片",
         "copyLinkToObject": "复制对象链接",
         "cropImage": "裁剪图片",
-        "duplicate": "复制",
+        "duplicate": "复制节点",
         "paste": "粘贴",
         "selectAll": "全选",
         "snapToObjects": "吸附到对象",
@@ -639,6 +641,9 @@ export default interface Resources {
       "selectedFiles": "已选择 {{count}} 个本地文件",
       "selectedFiles_one": "已选择 {{count}} 个本地文件",
       "selectedFiles_other": "已选择 {{count}} 个本地文件",
+      "skippedFiles": "已跳过 {{count}} 个非文本或过大的文件。",
+      "skippedFiles_one": "已跳过 {{count}} 个非文本或过大的文件。",
+      "skippedFiles_other": "已跳过 {{count}} 个非文本或过大的文件。",
       "suggestion": "建议至少包含一个 SKILL.md 文件，并尽量保留原目录结构。",
       "title": "从本地导入技能",
       "viewInstalled": "查看已安装"
@@ -671,6 +676,7 @@ export default interface Resources {
       "installFailed": "技能安装失败",
       "installed": "技能 \"{{name}}\" 已安装到本地",
       "loadFailed": "本地技能加载失败",
+      "noImportableFiles": "没有可导入的文本文件，请选择包含 SKILL.md 的技能目录。",
       "toggleFailed": "技能启停更新失败",
       "uninstallFailed": "技能卸载失败",
       "uninstalled": "技能已卸载"

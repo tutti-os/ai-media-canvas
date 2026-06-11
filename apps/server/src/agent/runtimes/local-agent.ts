@@ -9,7 +9,10 @@ import type {
 } from "@nextop-os/agent-acp-kit";
 
 import { createAimcToolsMcpServerConfig } from "../local-agent-host/mcp-config.js";
-import { mapWorkspaceSkillsToLocalAgentManifest } from "../local-agent-host/skills.js";
+import {
+  mapWorkspaceSkillsToLocalAgentManifest,
+  materializeWorkspaceSkillsForLocalAgent,
+} from "../local-agent-host/skills.js";
 import { resolveLocalAgentDefaultModel } from "../local-agent-models.js";
 import { buildAimcSystemPrompt } from "../prompts/aimc-main.js";
 import { loadNormalizedSessionHistory } from "./history.js";
@@ -50,6 +53,10 @@ function mapResumeContext(
 function stripLocalAgentProviderPrefix(model: string, provider: string) {
   const prefix = `${provider}:`;
   return model.startsWith(prefix) ? model.slice(prefix.length) : model;
+}
+
+function normalizeWorkspaceSkillPathsForLocalAgent(prompt: string) {
+  return prompt.replaceAll("/workspace-skills/", "workspace-skills/");
 }
 
 export function createLocalAgentRuntimeProvider(
@@ -136,6 +143,8 @@ export function createLocalAgentRuntimeProvider(
         run.videoGenerationPreference,
         canvasSummary,
       );
+      const normalizedPrompt =
+        normalizeWorkspaceSkillPathsForLocalAgent(enrichedPrompt);
       const handoffSection =
         run.resumeContext?.mode === "handoff" && run.resumeContext.previousRunId
           ? [
@@ -156,7 +165,7 @@ export function createLocalAgentRuntimeProvider(
         "Use inspect_canvas before precise canvas edits, and use manipulate_canvas for deterministic canvas updates.",
         "Do not claim an image or canvas update happened unless the tool actually succeeded.",
         handoffSection,
-        enrichedPrompt,
+        normalizedPrompt,
       ].join("\n\n");
       const systemPrompt = buildAimcSystemPrompt({
         brandKitId: readyContext.brandKitId,
@@ -165,6 +174,10 @@ export function createLocalAgentRuntimeProvider(
       const runDir = await mkdtemp(
         join(tmpdir(), `aimc-local-agent-${runtimeProvider}-run-`),
       );
+      await materializeWorkspaceSkillsForLocalAgent({
+        runDir,
+        workspaceSkills,
+      });
       const gatewaySession = deps.toolGateway.createSession({
         ...(run.accessToken ? { accessToken: run.accessToken } : {}),
         ...(Object.keys(attachmentDataMap).length > 0

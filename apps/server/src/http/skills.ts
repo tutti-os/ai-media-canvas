@@ -19,6 +19,8 @@ import {
   createSkillOperations,
 } from "./skill-operations.js";
 
+const SKILL_IMPORT_BODY_LIMIT_BYTES = 10 * 1024 * 1024;
+
 export async function registerSkillRoutes(
   app: FastifyInstance,
   options: {
@@ -78,21 +80,25 @@ export async function registerSkillRoutes(
     }
   });
 
-  app.post("/api/skills/import", async (request, reply) => {
-    try {
-      const payload = skillImportRequestSchema.parse(request.body);
-      const skill = await options.skillService.importSkill(
-        options.localUser,
-        payload,
-      );
-      return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));
-    } catch (error) {
-      if (isZodError(error)) {
-        return sendValidationError(reply);
+  app.post(
+    "/api/skills/import",
+    { bodyLimit: SKILL_IMPORT_BODY_LIMIT_BYTES },
+    async (request, reply) => {
+      try {
+        const payload = skillImportRequestSchema.parse(request.body);
+        const skill = await options.skillService.importSkill(
+          options.localUser,
+          payload,
+        );
+        return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));
+      } catch (error) {
+        if (isZodError(error)) {
+          return sendValidationError(reply);
+        }
+        return sendSkillError(error, reply, "skill_import_failed");
       }
-      return sendSkillError(error, reply, "skill_import_failed");
-    }
-  });
+    },
+  );
 
   app.post("/api/skills/catalog/:skillId/install", async (request, reply) => {
     try {

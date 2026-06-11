@@ -2,14 +2,16 @@ import { mkdirSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   type AnyBackendProtocol,
-  type StateAndStore,
   CompositeBackend,
   FilesystemBackend,
   LocalShellBackend,
+  type StateAndStore,
   StoreBackend,
 } from "deepagents";
 
+import type { WorkspaceSkillEntry } from "../workspace-skills.js";
 import type { AgentBackendResult } from "./index.js";
+import { createWorkspaceSkillsFilesystemBackend } from "./workspace-skills.js";
 
 const DEFAULT_SANDBOX_ROOT = "/tmp/ai-media-canvas-sandbox";
 const DEFAULT_SKILLS_ROOT = "/opt/ai-media-canvas/skills";
@@ -27,7 +29,7 @@ const DEFAULT_SKILLS_ROOT = "/opt/ai-media-canvas/skills";
  *   /workspace/        → StoreBackend (per-project)
  *   /memories/         → StoreBackend (per-project)
  *   /skills/           → FilesystemBackend (shared, read-only system skills)
- *   /workspace-skills/ → StoreBackend (user-installed workspace skills, optional)
+ *   /workspace-skills/ → FilesystemBackend (per-run user workspace skills, read-only)
  *   default            → LocalShellBackend (per-run sandbox, provides execute tool)
  */
 export function createProductionBackendFactory(
@@ -35,7 +37,7 @@ export function createProductionBackendFactory(
   options?: {
     sandboxRoot?: string;
     skillsRoot?: string;
-    hasWorkspaceSkills?: boolean;
+    workspaceSkills?: WorkspaceSkillEntry[];
   },
 ): AgentBackendResult & { sandboxDir: string } {
   const sandboxRoot = resolve(options?.sandboxRoot ?? DEFAULT_SANDBOX_ROOT);
@@ -65,7 +67,14 @@ export function createProductionBackendFactory(
     },
   });
 
-  const skillsBackend = new FilesystemBackend({ rootDir: skillsRoot, virtualMode: true });
+  const skillsBackend = new FilesystemBackend({
+    rootDir: skillsRoot,
+    virtualMode: true,
+  });
+  const workspaceSkillsBackend = createWorkspaceSkillsFilesystemBackend({
+    rootDir: join(sandboxDir, "workspace-skills"),
+    workspaceSkills: options?.workspaceSkills ?? [],
+  });
 
   const factory: AgentBackendResult["factory"] = (stateAndStore) => {
     const storeContext = stateAndStore as StateAndStore;
@@ -79,10 +88,8 @@ export function createProductionBackendFactory(
       "/skills/": skillsBackend,
     };
 
-    if (options?.hasWorkspaceSkills) {
-      routes["/workspace-skills/"] = new StoreBackend(storeContext, {
-        namespace: ["projects", canvasId, "workspace-skills"],
-      });
+    if (workspaceSkillsBackend) {
+      routes["/workspace-skills/"] = workspaceSkillsBackend;
     }
 
     return new CompositeBackend(sandbox, routes);
