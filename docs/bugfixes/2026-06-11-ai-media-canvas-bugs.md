@@ -295,7 +295,7 @@
 - 修复方案: 服务端 local-agent provider 注册和 `/models` 输出统一限制为 AIMC 支持的 `codex`、`claude`；共享模型契约补充可选 `description`，前端模型选择器展示描述并隐藏 unsupported local provider 的默认标签；设置页本地 CLI 列表复用同一支持列表。
 - 验证方式和结果: `pnpm --filter @aimc/server exec vitest run src/agent/local-agent-providers.test.ts src/http/models.test.ts` 通过（12 个测试）；`pnpm --filter @aimc/web exec vitest run test/agent-model-selector.test.tsx test/settings-page.test.tsx` 通过（30 个测试）；`pnpm --filter @aimc/web typecheck`、`pnpm check:i18n` 通过。
 - 是否已修复完: 是
-- commit hash: `待提交后回填`
+- commit hash: `d91cab0`
 
 ### 29. 底部工具栏未自适应
 
@@ -305,7 +305,7 @@
 - 修复方案: 辅助工具栏根节点同时设置 `left`、`right: 16` 和 `maxWidth`，使其受当前视口宽度约束；内部工具行改为 `flex-wrap` 和 `max-w-full`，在紧凑宽度下换行而不是强制水平溢出；装饰 SVG 标记为 `aria-hidden`，保持静态检查通过。
 - 验证方式和结果: 扩展 `apps/web/test/canvas-bottom-bar.test.tsx`，覆盖左侧面板打开时的宽度约束和紧凑工具换行；`pnpm --filter @aimc/web exec vitest run test/canvas-bottom-bar.test.tsx test/canvas-page.test.tsx test/settings-page.test.tsx` 通过（23 个测试）；`pnpm exec biome check apps/web/src/components/canvas-bottom-bar.tsx apps/web/test/canvas-bottom-bar.test.tsx` 通过。
 - 是否已修复完: 是
-- commit hash: `待提交后回填`
+- commit hash: `d91cab0`
 
 ### 30. 设置弹窗保存后未关闭
 
@@ -315,7 +315,7 @@
 - 修复方案: 为 `SettingsPanel`/`AgentSettingsSection` 增加可选 `onSaved` 回调；dialog 场景在保存成功后调用 `onOpenChange(false)`，页面设置场景保持原有成功反馈和停留行为。
 - 验证方式和结果: 新增 `apps/web/test/settings-page.test.tsx` 回归用例，打开 `SettingsDialog`、修改 OpenAI API Key、点击 Save 后断言 `onOpenChange(false)` 被调用；`pnpm --filter @aimc/web exec vitest run test/settings-page.test.tsx` 通过，包含本批组合命令共 23 个目标测试通过；`pnpm --filter @aimc/web typecheck` 通过。
 - 是否已修复完: 是
-- commit hash: `待提交后回填`
+- commit hash: `d91cab0`
 
 ### 31. 项目会话运行中切出/缩小后重进会话中断
 
@@ -325,7 +325,7 @@
 - 修复方案: Canvas 页面在登记 fallback generation watch 时捕获当前 canvasId；任务成功回调前再次比对当前 canvasId，不一致则忽略，不再向当前画布插入旧项目结果。该保护与此前按 canvasId remount、取消旧 polling 的修复形成双保险。
 - 验证方式和结果: 新增 `apps/web/test/canvas-page.test.tsx` 回归用例，模拟旧 canvas 启动 fallback image job，切到新 canvas 后旧 job 成功，断言不会调用 `insertImageOnCanvas`；`pnpm --filter @aimc/web exec vitest run test/canvas-page.test.tsx` 通过，并随本批组合命令验证 23 个前端目标测试通过。
 - 是否已修复完: 是
-- commit hash: `待提交后回填`
+- commit hash: `d91cab0`
 
 ### 32. 上一个项目生成结果仍显示到新项目画布
 
@@ -335,4 +335,4 @@
 - 修复方案: 与第 31 条共用修复：fallback watch 启动时记录 source canvasId，成功回调时若页面已切到其他 canvas，则直接返回，不执行图片/视频插入。
 - 验证方式和结果: `apps/web/test/canvas-page.test.tsx` 新增受控旧任务晚到测试，修复前会调用 `insertImageOnCanvas`，修复后不调用；`pnpm --filter @aimc/web exec vitest run test/canvas-page.test.tsx` 通过；`pnpm --filter @aimc/web typecheck`、`pnpm check:i18n` 通过。
 - 是否已修复完: 是
-- commit hash: `待提交后回填`
+- commit hash: `d91cab0`
