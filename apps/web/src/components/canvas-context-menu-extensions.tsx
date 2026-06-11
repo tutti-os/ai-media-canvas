@@ -299,6 +299,7 @@ function closeNativeContextMenu(triggerElement?: HTMLElement | null) {
     (document.activeElement instanceof HTMLElement
       ? document.activeElement
       : document.body);
+  target.blur();
   target.dispatchEvent(
     new KeyboardEvent("keydown", {
       key: "Escape",
@@ -306,6 +307,7 @@ function closeNativeContextMenu(triggerElement?: HTMLElement | null) {
       bubbles: true,
     }),
   );
+  getNativeContextMenu()?.remove();
 }
 
 function replaceImageCopyContextMenuItem(

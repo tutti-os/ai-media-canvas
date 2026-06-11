@@ -274,3 +274,13 @@
 - 验证方式和结果: 扩展 `apps/server/src/agent/runtime.test.ts` 的 enabled local workspace skills 用例，断言 local-agent provider 收到的 prompt 包含相对路径约束，包含 `workspace-skills/canvas-director/SKILL.md`，且不包含 `/workspace-skills/canvas-director/SKILL.md`；`pnpm --filter @aimc/server test -- src/agent/runtime.test.ts -t "workspace skills|persisted sandbox files"` 通过（实际运行 27 个 server 测试文件、137 个测试，全部通过）；`pnpm --filter @aimc/server typecheck` 通过。真实打开本地 Canvas 页面并确认 web/server 均在线，Canvas 和聊天面板正常渲染；该链路的外部模型执行依赖本机 local-agent provider，未消耗真实模型调用，核心路径由 runtime 测试覆盖。
 - 是否已修复完: 是
 - commit hash: 待提交后回填
+
+### 27. Download image 后仍聚焦导出选项
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/QT8yr7Jf3eEhETcQkircCvrQnch
+- 真实 record id: `recvm7I9WbBRFI`
+- Bug 原因: 附件录屏显示点击右键菜单 `Download image` 后，系统保存弹窗打开，但 Excalidraw 原生右键菜单仍停留在背后并保留焦点。现有 `closeNativeContextMenu` 只向触发按钮派发 Escape；在浏览器触发下载/保存弹窗抢焦点的时序下，Excalidraw 菜单节点可能尚未被卸载，导致导出选项残留。
+- 修复方案: 在关闭原生菜单时先 blur 当前触发元素，再派发 Escape，并同步移除当前 `.excalidraw .context-menu` 节点，确保下载流程触发前菜单已经从 DOM 中退出。
+- 验证方式和结果: 真实打开本地 Canvas 页面，脚本在 `.excalidraw` 下构造原生 context menu 节点，等待 `CanvasContextMenuExtensions` 注入 `data-testid="downloadImage"`，聚焦并点击该按钮；结果 `menuStillExists: false`，`activeElementTag: "BODY"`，证明点击下载后菜单立即关闭且不再聚焦导出选项。`pnpm --filter @aimc/web typecheck` 通过；`pnpm check:i18n` 通过；页面复验期间仅有既有 Next.js smooth-scroll warning 与浏览器 unload permissions 报告，和本修复无关。
+- 是否已修复完: 是
+- commit hash: 待提交后回填
