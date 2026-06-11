@@ -34,10 +34,10 @@ vi.mock("../src/lib/server-api", () => ({
   generateVideoDirect: generateVideoDirectMock,
 }));
 
-function createExcalidrawApiStub() {
+function createExcalidrawApiStub(sceneElements: any[] = []) {
   return {
     addFiles: vi.fn(),
-    getSceneElements: vi.fn(() => []),
+    getSceneElements: vi.fn(() => sceneElements),
     updateScene: vi.fn(),
   };
 }
@@ -318,6 +318,66 @@ describe("canvas generation panels", () => {
     unmount();
 
     expect(capturedSignal?.aborted).toBe(false);
+  });
+
+  it("skips inserting a generated image when the generator element was deleted", async () => {
+    let resolveGeneration:
+      | ((result: { url: string; mimeType: string }) => void)
+      | undefined;
+    generateImageDirectMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveGeneration = resolve;
+        }),
+    );
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      blob: async () => new Blob(["fake"], { type: "image/png" }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const excalidrawApi = createExcalidrawApiStub([
+      { id: "el-image", isDeleted: true },
+    ]);
+
+    render(
+      <ToastProvider>
+        <ImageGeneratorPanel
+          elementId="el-image"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 320 }}
+          data={{
+            type: "image-generator",
+            status: "idle",
+            prompt: "生成一张跳舞图片",
+            model: "agnes-image/agnes-image-2.1-flash",
+            aspectRatio: "1:1",
+            quality: "hd",
+          }}
+          excalidrawApi={excalidrawApi}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "生成图片" }),
+    );
+    expect(generateImageDirectMock).toHaveBeenCalledTimes(1);
+    excalidrawApi.addFiles.mockClear();
+    excalidrawApi.getSceneElements.mockClear();
+    excalidrawApi.updateScene.mockClear();
+
+    resolveGeneration?.({
+      url: "https://example.com/generated.png",
+      mimeType: "image/png",
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(excalidrawApi.getSceneElements).toHaveBeenCalledTimes(1),
+    );
+    expect(excalidrawApi.addFiles).not.toHaveBeenCalled();
+    expect(excalidrawApi.updateScene).not.toHaveBeenCalled();
   });
 
   it("omits the hard-coded storage copy in the video generator", async () => {
@@ -625,5 +685,67 @@ describe("canvas generation panels", () => {
     unmount();
 
     expect(capturedSignal?.aborted).toBe(false);
+  });
+
+  it("skips inserting a generated video when the generator element was deleted", async () => {
+    let resolveGeneration:
+      | ((
+          result: {
+            url: string;
+            mimeType: string;
+            durationSeconds: number;
+          },
+        ) => void)
+      | undefined;
+    generateVideoDirectMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveGeneration = resolve;
+        }),
+    );
+    const excalidrawApi = createExcalidrawApiStub([
+      { id: "el-video", isDeleted: true },
+    ]);
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "生成一段跳舞视频",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={excalidrawApi}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "生成视频" }),
+    );
+    expect(generateVideoDirectMock).toHaveBeenCalledTimes(1);
+    excalidrawApi.getSceneElements.mockClear();
+    excalidrawApi.updateScene.mockClear();
+
+    resolveGeneration?.({
+      url: "https://example.com/generated.mp4",
+      mimeType: "video/mp4",
+      durationSeconds: 5,
+    });
+
+    await waitFor(() =>
+      expect(excalidrawApi.getSceneElements).toHaveBeenCalledTimes(1),
+    );
+    expect(excalidrawApi.updateScene).not.toHaveBeenCalled();
   });
 });

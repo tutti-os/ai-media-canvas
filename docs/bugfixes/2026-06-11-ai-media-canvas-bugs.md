@@ -180,4 +180,14 @@
 - 修复方案: 图片生成面板和视频生成面板监听到面板外 `mousedown` 时，同步关闭自身；用户点击或拖回画布时，浮窗会先退出，后续画布交互不再被固定浮层拦截。
 - 验证方式和结果: 扩展 `apps/web/test/canvas-generation-panels.test.tsx`，分别覆盖图片生成面板和视频生成面板在点击画布区域时会调用 `onClose`；`pnpm --filter @aimc/web exec vitest run test/canvas-generation-panels.test.tsx` 通过（15 个测试）。`pnpm exec biome check --write apps/web/src/components/canvas/image-generator-panel.tsx apps/web/src/components/canvas/video-generator-panel.tsx apps/web/test/canvas-generation-panels.test.tsx` 已执行并完成格式化，但该命令仍报告两个生成面板文件中既有的 `any`/旧 SVG accessibility 等 lint 问题，和本次修复无关。
 - 是否已修复完: 是
+- commit hash: `5d8ea4f`
+
+### 19. 删除生成窗口后结果仍插入画布
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/Brzxra80te0JXhcKkHJc52P9nBe
+- 真实 record id: `recvmdpoN3qjOG`
+- Bug 原因: 附件录屏显示用户在图片生成过程中删除生成窗口后，异步生成结果完成时仍会被插入画布。代码中图片/视频生成面板只检查请求是否被 abort；如果用户删除的是画布上的生成占位元素，React 面板和请求可能仍存活，结果返回后会直接 `addFiles`/`updateScene`，把已删除占位重新替换成真实结果。
+- 修复方案: 图片生成完成并下载 dataURL 后、写入文件前，先读取当前 scene 并确认原生成元素仍存在且未 `isDeleted`；视频生成完成后、导入 Excalidraw 转换器前执行同样检查。若占位已被删除，直接退出，不再写入文件、不再替换 scene。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-generation-panels.test.tsx`，用受控 Promise 分别模拟图片/视频生成请求挂起，随后让当前 scene 中的生成元素为 `isDeleted: true`，再 resolve 请求，断言不会再调用图片 `addFiles` 或结果 `updateScene`；`pnpm --filter @aimc/web exec vitest run test/canvas-generation-panels.test.tsx` 通过（17 个测试）。`pnpm --filter @aimc/web typecheck` 初次执行时暴露上一条图片复制路径的 TypeScript 收窄问题，已转入裁剪复制链路一起修复并复验。
+- 是否已修复完: 是
 - commit hash: `待提交后回填`

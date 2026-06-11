@@ -216,6 +216,12 @@ export function ImageGeneratorPanel({
       const dataURL = await fetchAsDataURL(result.url);
       if (controller.signal.aborted) return;
 
+      const currentElements = excalidrawApi.getSceneElements();
+      const generatorElement = currentElements.find(
+        (el: any) => el.id === elementId,
+      );
+      if (!generatorElement || generatorElement.isDeleted) return;
+
       const fileId = generateId();
       excalidrawApi.addFiles([
         {
@@ -236,7 +242,7 @@ export function ImageGeneratorPanel({
       });
 
       // Replace: delete placeholder, add image
-      const elements = excalidrawApi.getSceneElements().map((el: any) => {
+      const elements = currentElements.map((el: any) => {
         if (el.id === elementId) return { ...el, isDeleted: true };
         return el;
       });

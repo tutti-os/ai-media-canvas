@@ -304,6 +304,12 @@ export function VideoGeneratorPanel({
 
       if (controller.signal.aborted) return;
 
+      const currentElements = excalidrawApi.getSceneElements();
+      const generatorElement = currentElements.find(
+        (el: any) => el.id === elementId,
+      );
+      if (!generatorElement || generatorElement.isDeleted) return;
+
       const { convertToExcalidrawElements } = await import(
         "@excalidraw/excalidraw"
       );
@@ -327,11 +333,9 @@ export function VideoGeneratorPanel({
         } as any,
       ]);
 
-      const elements = excalidrawApi
-        .getSceneElements()
-        .map((el: any) =>
-          el.id === elementId ? { ...el, isDeleted: true } : el,
-        );
+      const elements = currentElements.map((el: any) =>
+        el.id === elementId ? { ...el, isDeleted: true } : el,
+      );
       excalidrawApi.updateScene({
         elements: withNormalizedCanvasElementIndices([
           ...elements,
