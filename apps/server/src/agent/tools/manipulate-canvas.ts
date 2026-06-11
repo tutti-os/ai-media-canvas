@@ -51,7 +51,11 @@ const operationSchema = z.object({
     .describe("The operation to perform"),
 
   // Common: target element ID (move, resize, update_style, reorder)
-  element_id: z.string().optional().describe("ID of element to operate on"),
+  element_id: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("ID of element to operate on"),
 
   // Position / size
   x: z.number().optional().describe("X coordinate"),

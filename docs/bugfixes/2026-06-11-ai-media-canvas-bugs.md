@@ -200,4 +200,14 @@
 - 修复方案: 对单张带 `crop` 的图片，读取原始 file `dataURL`，创建与 crop 宽高相同的透明 canvas，先 `clearRect` 再只把 crop 区域绘制到 `(0,0)`，最后把该透明 PNG 写入剪贴板；同时补上 `selectedElements[0]` 的类型收窄，保证严格 TypeScript 检查通过。
 - 验证方式和结果: `apps/web/test/canvas-context-menu-extensions.test.tsx` 已覆盖裁剪复制路径，断言 canvas 尺寸等于 crop 宽高、先清透明背景、`drawImage` 只绘制 crop 矩形，并且不再调用 Excalidraw `exportToBlob`；`pnpm --filter @aimc/web exec vitest run test/canvas-context-menu-extensions.test.tsx` 通过（8 个测试）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/canvas-context-menu-extensions.tsx apps/web/test/canvas-context-menu-extensions.test.tsx` 通过。
 - 是否已修复完: 是
+- commit hash: `ea8ca5a`
+
+### 21. 新建会话分镜故事版工具调用失败
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/XKJbrJLe6eve2ecEpCjcIM1bnYf
+- 真实 record id: `recvmdrieXsrCP`
+- Bug 原因: 附件截图显示“搜索项目”工具卡失败；日志包 `/tmp/nextop-lark/recvmdrieXsrCP/nextop-logs-20260611-145507.zip` 在 AI Media Canvas runtime 中显示新会话工具流实际被 schema 异常打断：`manipulate_canvas` 收到 `add_text` 操作时携带 `element_id: null`，被 `z.string().optional()` 拒绝；随后 `generate_image` 在缺少 `prompt/title` 时也被必填 schema 拒绝。这类模型生成的 null/缺省字段会变成工具调用异常，UI 上表现为工具卡失败。
+- 修复方案: `manipulate_canvas.element_id` 允许 `null`，由具体 action 逻辑继续决定是否需要目标元素；`generate_image` 的 `title/prompt` 允许缺省或 `null`，运行时先从 `prompt/title` 互相兜底归一化，若仍没有 prompt，则返回可读的结构化 `missing_prompt` 错误，而不是抛 zod schema 异常打断整轮 agent。
+- 验证方式和结果: 扩展 `apps/server/src/agent/tools/manipulate-canvas.test.ts`，覆盖经过 `inspect_canvas` 后 `add_text` 携带 `element_id: null` 仍可正常应用；扩展 `apps/server/src/agent/local-agent-host/tool-gateway.test.ts`，覆盖 `generate_image` 缺 prompt 时返回 `isError: true` 和可读 `missing_prompt` 摘要而不是抛异常；`pnpm --filter @aimc/server exec vitest run src/agent/tools/manipulate-canvas.test.ts src/agent/local-agent-host/tool-gateway.test.ts` 通过（9 个测试）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm exec biome check apps/server/src/agent/tools/image-generate.ts apps/server/src/agent/tools/manipulate-canvas.test.ts apps/server/src/agent/local-agent-host/tool-gateway.test.ts` 通过。对 `manipulate-canvas.ts` 全文件执行 Biome 时仍会命中该文件既有非空断言/模板字符串 lint 债，未纳入本次范围。
+- 是否已修复完: 是
 - commit hash: `待提交后回填`

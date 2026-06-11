@@ -40,10 +40,17 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
     title: z
       .string()
       .min(1)
+      .nullable()
+      .optional()
       .describe(
         "Short descriptive title for the generated image, used as metadata so the image content is understood without re-analysis",
       ),
-    prompt: z.string().min(1).describe("Detailed image generation prompt"),
+    prompt: z
+      .string()
+      .min(1)
+      .nullable()
+      .optional()
+      .describe("Detailed image generation prompt"),
     model: modelField,
     aspectRatio: z
       .string()
@@ -111,8 +118,8 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
 }
 
 type ImageGenerateInput = {
-  title: string;
-  prompt: string;
+  title?: string | null;
+  prompt?: string | null;
   model: string;
   aspectRatio?: string;
   quality?: "standard" | "hd" | "ultra";
@@ -124,6 +131,14 @@ type ImageGenerateInput = {
   placementY?: number;
   placementWidth?: number;
   placementHeight?: number;
+};
+
+type NormalizedImageGenerateInput = Omit<
+  ImageGenerateInput,
+  "prompt" | "title"
+> & {
+  prompt: string;
+  title: string;
 };
 
 type ImageGenerateResult = {
@@ -189,7 +204,30 @@ export async function runImageGenerate(
   submitImageJob?: SubmitImageJobFn,
   attachmentMap?: Record<string, string>,
 ): Promise<ImageGenerateResult> {
-  let effectiveInput = input;
+  const promptText =
+    typeof input.prompt === "string" && input.prompt.trim().length > 0
+      ? input.prompt.trim()
+      : typeof input.title === "string" && input.title.trim().length > 0
+        ? input.title.trim()
+        : "";
+  if (!promptText) {
+    const message =
+      "missing_prompt: prompt is required. Retry with a detailed prompt describing the desired image.";
+    return {
+      summary: `Image generation skipped: ${message}`,
+      error: message,
+    };
+  }
+
+  const titleText =
+    typeof input.title === "string" && input.title.trim().length > 0
+      ? input.title.trim()
+      : promptText.slice(0, 60);
+  let effectiveInput: NormalizedImageGenerateInput = {
+    ...input,
+    prompt: promptText,
+    title: titleText,
+  };
   const t0 = Date.now();
   const lap = (label: string, extra?: Record<string, unknown>) => {
     console.log(
