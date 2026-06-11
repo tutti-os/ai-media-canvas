@@ -150,4 +150,14 @@
 - 修复方案: 将生成文件下载流程接入 `useToast`：下载链接挂载到 `document.body` 后触发点击并移除，成功后显示本地化成功提示；无 dataURL 或点击异常时显示本地化失败提示并写入 console warning。新增中英文 i18n key，并重新生成 i18n 类型定义。
 - 验证方式和结果: 新增 `apps/web/test/canvas-files-panel.test.tsx`，模拟生成图片文件下载，断言 anchor click 被触发且出现 `Downloaded Generated image` 成功 toast；`pnpm --filter @aimc/web exec vitest run test/canvas-files-panel.test.tsx` 通过；`pnpm check:i18n` 通过；`pnpm --filter @aimc/web typecheck` 通过。本地整页复验时当前 canvas 数据加载失败，无法完成真实左侧文件列表交互；此前页面已有 WebSocket/API 401 重连问题，和本组件修复无关。
 - 是否已修复完: 是
+- commit hash: `3b46c98`
+
+### 16. 底部工具栏未自适应
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/ZkkkrcznWeH1nIc1pvEcezT8n8f
+- 真实 record id: `recvm8aY2eSkK0`
+- Bug 原因: 附件截图显示底部工具条在桌面窗口和右侧面板占位下贴边/缺少自适应。代码中辅助底栏在左侧面板打开时使用固定 `left: 296`，没有根据当前 canvas 可用宽度收敛；主工具条也缺少最大宽度、横向溢出和按钮 `shrink-0` 保护，窄画布下容易被压缩或溢出。
+- 修复方案: 辅助底栏改用 `max(16px, min(296px, calc(100% - 227px)))` 约束 left，并设置 `maxWidth: calc(100% - 32px)` 与横向滚动保护；主工具条增加 `max-w-[calc(100%_-_32px)]`、`overflow-x-auto`，按钮和分隔线固定不收缩，保证可用宽度不足时仍能完整访问工具。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-bottom-bar.test.tsx`，断言辅助底栏在左侧面板打开时使用可用宽度约束和最大宽度；`pnpm --filter @aimc/web exec vitest run test/canvas-bottom-bar.test.tsx` 通过（3 个测试）；`pnpm --filter @aimc/web typecheck` 通过。本地整页复验时当前 canvas 数据加载失败，点击“重试”后仍无法挂载画布，无法完成真实视口截图；该加载失败和本条布局修复无关。
+- 是否已修复完: 是
 - commit hash: 待提交后回填

@@ -65,4 +65,22 @@ describe("CanvasBottomBar", () => {
 
     expect(container.firstElementChild).toHaveClass("bottom-5");
   });
+
+  it("keeps the auxiliary toolbar inside the available canvas width", () => {
+    const { container } = render(
+      <CanvasBottomBar
+        excalidrawApi={null}
+        layersOpen={true}
+        onToggleLayers={vi.fn()}
+        filesOpen={false}
+        onToggleFiles={vi.fn()}
+        leftPanelOpen={true}
+      />,
+    );
+
+    expect(container.firstElementChild).toHaveStyle({
+      left: "max(16px, min(296px, calc(100% - 227px)))",
+      maxWidth: "calc(100% - 32px)",
+    });
+  });
 });
