@@ -190,4 +190,14 @@
 - 修复方案: 图片生成完成并下载 dataURL 后、写入文件前，先读取当前 scene 并确认原生成元素仍存在且未 `isDeleted`；视频生成完成后、导入 Excalidraw 转换器前执行同样检查。若占位已被删除，直接退出，不再写入文件、不再替换 scene。
 - 验证方式和结果: 扩展 `apps/web/test/canvas-generation-panels.test.tsx`，用受控 Promise 分别模拟图片/视频生成请求挂起，随后让当前 scene 中的生成元素为 `isDeleted: true`，再 resolve 请求，断言不会再调用图片 `addFiles` 或结果 `updateScene`；`pnpm --filter @aimc/web exec vitest run test/canvas-generation-panels.test.tsx` 通过（17 个测试）。`pnpm --filter @aimc/web typecheck` 初次执行时暴露上一条图片复制路径的 TypeScript 收窄问题，已转入裁剪复制链路一起修复并复验。
 - 是否已修复完: 是
+- commit hash: `9d6ee32`
+
+### 20. 裁剪图片复制后出现白色边框
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/FEqMrC60yeqQqAceW2ecWZZrnXg
+- 真实 record id: `recvmdpUaAovou`
+- Bug 原因: 附件截图显示裁剪后的图片复制再粘贴时带出白色边框。根因和图片复制缩小同源：原复制路径会通过 Excalidraw 画布导出选区，裁剪图会带上元素显示尺寸和画布背景，而不是只复制原始图片的裁剪矩形像素。
+- 修复方案: 对单张带 `crop` 的图片，读取原始 file `dataURL`，创建与 crop 宽高相同的透明 canvas，先 `clearRect` 再只把 crop 区域绘制到 `(0,0)`，最后把该透明 PNG 写入剪贴板；同时补上 `selectedElements[0]` 的类型收窄，保证严格 TypeScript 检查通过。
+- 验证方式和结果: `apps/web/test/canvas-context-menu-extensions.test.tsx` 已覆盖裁剪复制路径，断言 canvas 尺寸等于 crop 宽高、先清透明背景、`drawImage` 只绘制 crop 矩形，并且不再调用 Excalidraw `exportToBlob`；`pnpm --filter @aimc/web exec vitest run test/canvas-context-menu-extensions.test.tsx` 通过（8 个测试）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/canvas-context-menu-extensions.tsx apps/web/test/canvas-context-menu-extensions.test.tsx` 通过。
+- 是否已修复完: 是
 - commit hash: `待提交后回填`

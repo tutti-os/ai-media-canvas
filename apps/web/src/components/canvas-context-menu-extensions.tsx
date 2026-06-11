@@ -256,7 +256,10 @@ async function exportSelectedImageToPngBlob(
   selectedElements: readonly Record<string, unknown>[],
 ) {
   if (selectedElements.length === 1) {
-    const [element] = selectedElements;
+    const element = selectedElements[0];
+    if (!element) {
+      return exportSelectionToPngBlob(excalidrawApi, selectedElements);
+    }
     const fileId = typeof element.fileId === "string" ? element.fileId : null;
     const file = fileId ? asRecord(excalidrawApi.getFiles()[fileId]) : null;
     const dataUrl = typeof file?.dataURL === "string" ? file.dataURL : null;
