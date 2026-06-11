@@ -61,8 +61,8 @@ importers:
         specifier: ^1.4.7
         version: 1.4.7(@langchain/core@1.1.48(openai@6.41.0(ws@8.20.0)(zod@4.3.6))(ws@8.20.0))(ws@8.20.0)
       '@nextop-os/agent-acp-kit':
-        specifier: 0.1.5
-        version: 0.1.5
+        specifier: 0.1.6
+        version: 0.1.6
       agnes-ai-cli:
         specifier: ^0.1.2
         version: 0.1.2
@@ -1582,8 +1582,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@nextop-os/agent-acp-kit@0.1.5':
-    resolution: {integrity: sha512-JfR19u+q+zM96IebEsJ8la1A56QR1GUffKL2+GLIAy7kYmI1A5VP0ZIFZsAkza5/xJlXtVACjMhkNbmg6EWckA==}
+  '@nextop-os/agent-acp-kit@0.1.6':
+    resolution: {integrity: sha512-j9fv+ELb/SDGoXt32YIYKk3M4Eq8lCQNwWHyN8955fQ8tvboTHIssvJko+dZLLEad+uzW3/9wd2VfWpc71HnkA==}
 
   '@noble/ciphers@1.3.0':
     resolution: {integrity: sha512-2I0gnIVPtfnMw9ee9h1dJG7tp81+8Ob3OJb3Mv37rx5L40/b0i7djjCVvGOVqc9AEIQyvyu1i6ypKdFw8R8gQw==}
@@ -8358,7 +8358,7 @@ snapshots:
   '@next/swc-win32-x64-msvc@15.5.14':
     optional: true
 
-  '@nextop-os/agent-acp-kit@0.1.5': {}
+  '@nextop-os/agent-acp-kit@0.1.6': {}
 
   '@noble/ciphers@1.3.0': {}
 
