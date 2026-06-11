@@ -31,6 +31,8 @@
   "empty": "Type an idea to start creating",
   "files": {
     "download": "Download {{name}}",
+    "downloadFailed": "Download failed",
+    "downloadSuccess": "Downloaded {{name}}",
     "empty": "No generated files",
     "end": "End of list",
     "noPreview": "No preview",

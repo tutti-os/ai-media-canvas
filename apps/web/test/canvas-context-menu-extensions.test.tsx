@@ -185,6 +185,48 @@ describe("CanvasContextMenuExtensions", () => {
     );
   });
 
+  it("hides native copy image when there is no image-only selection", async () => {
+    document.body.innerHTML = `
+      <div class="excalidraw">
+        <ul class="context-menu">
+          <li data-testid="copy">
+            <button type="button" class="context-menu-item">
+              <div class="context-menu-item__label">Copy image</div>
+            </button>
+          </li>
+        </ul>
+      </div>
+    `;
+    const excalidrawApi = {
+      getAppState: () => ({
+        selectedElementIds: {},
+        viewBackgroundColor: "#ffffff",
+      }),
+      getFiles: () => ({}),
+      getSceneElements: () => [
+        {
+          id: "image-1",
+          type: "image",
+          isDeleted: false,
+          x: 0,
+          y: 0,
+          width: 320,
+          height: 320,
+        },
+      ],
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasContextMenuExtensions excalidrawApi={excalidrawApi} />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("复制图片").closest("li")).not.toBeVisible();
+    });
+  });
+
   it("copies selected images as PNG without triggering the native PNG copy action", async () => {
     const user = userEvent.setup();
     const nativeCopyClick = vi.fn();
@@ -193,9 +235,9 @@ describe("CanvasContextMenuExtensions", () => {
     const clipboardWrite = vi.fn().mockResolvedValue(undefined);
     const pngBlob = new Blob(["png"], { type: "image/png" });
     class TestClipboardItem {
-      items: Record<string, Promise<Blob>>;
+      items: Record<string, Blob>;
 
-      constructor(items: Record<string, Promise<Blob>>) {
+      constructor(items: Record<string, Blob>) {
         this.items = items;
       }
     }
@@ -276,7 +318,7 @@ describe("CanvasContextMenuExtensions", () => {
     });
     const clipboardItems = clipboardWrite.mock
       .calls[0][0] as TestClipboardItem[];
-    await expect(clipboardItems[0].items["image/png"]).resolves.toBe(pngBlob);
+    expect(clipboardItems[0].items["image/png"]).toBe(pngBlob);
     expect(screen.getByText("图片已复制")).toBeInTheDocument();
   });
 });

@@ -42,6 +42,11 @@ type AdaptDeepAgentStreamOptions = {
 const SUB_AGENT_PARENT_TOOLS = new Set(["generate_video"]);
 /** Inner tools that may be suppressed when running inside a sub-agent. */
 const INNER_SUB_AGENT_TOOLS = new Set(["generate_video"]);
+const CANVAS_LAYOUT_FAILURE_LIMIT = 3;
+const CANVAS_LAYOUT_FAILURE_ERRORS = new Set([
+  "layout_inspection_required",
+  "layout_overlap_detected",
+]);
 
 function normalizeToolName(name: string) {
   if (name === "image_generate") return "generate_image";
@@ -56,6 +61,7 @@ export async function* adaptDeepAgentStream(
   const seenCompletedToolCalls = new Set<string>();
   const seenStreamedMessageIds = new Set<string>();
   const seenStartedToolCalls = new Set<string>();
+  let consecutiveCanvasLayoutFailures = 0;
   /** Tracks active sub-agent parent runs so we can detect nested inner tools. */
   const activeSubAgentRuns = new Set<string>();
 
@@ -240,8 +246,13 @@ export async function* adaptDeepAgentStream(
         // suppress its artifacts because the parent will re-emit them.
         const isNestedInSubAgent =
           INNER_SUB_AGENT_TOOLS.has(toolName) && activeSubAgentRuns.size > 0;
-        const extractedArtifacts = isNestedInSubAgent ? undefined : extractArtifacts(output);
-        const extractedOutput = extractOutput(output, (extractedArtifacts?.length ?? 0) > 0);
+        const extractedArtifacts = isNestedInSubAgent
+          ? undefined
+          : extractArtifacts(output);
+        const extractedOutput = extractOutput(
+          output,
+          (extractedArtifacts?.length ?? 0) > 0,
+        );
         yield {
           output: extractedOutput,
           outputSummary: summarizeOutput(output),
@@ -259,11 +270,32 @@ export async function* adaptDeepAgentStream(
         }
 
         if (toolName === "manipulate_canvas") {
-          yield {
-            type: "canvas.sync" as const,
-            runId: options.runId,
-            timestamp: now(),
-          } satisfies StreamEvent;
+          const layoutFailure = getCanvasLayoutFailure(extractedOutput);
+          if (layoutFailure) {
+            consecutiveCanvasLayoutFailures += 1;
+            if (
+              consecutiveCanvasLayoutFailures >= CANVAS_LAYOUT_FAILURE_LIMIT
+            ) {
+              yield {
+                error: {
+                  code: "repeated_canvas_layout_failures",
+                  message:
+                    "Stopped after repeated canvas layout failures. Do not keep retrying placement; ask the user or choose a clearly empty region.",
+                },
+                runId: options.runId,
+                timestamp: now(),
+                type: "run.failed",
+              };
+              return;
+            }
+          } else {
+            consecutiveCanvasLayoutFailures = 0;
+            yield {
+              type: "canvas.sync" as const,
+              runId: options.runId,
+              timestamp: now(),
+            } satisfies StreamEvent;
+          }
         }
         continue;
       }
@@ -305,6 +337,18 @@ function canceledEvent(runId: string, now: () => string): StreamEvent {
     timestamp: now(),
     type: "run.canceled",
   };
+}
+
+function getCanvasLayoutFailure(output: Record<string, unknown> | undefined) {
+  if (!output || output.success !== false) return undefined;
+  const error = output.error;
+  if (
+    typeof error === "string" &&
+    CANVAS_LAYOUT_FAILURE_ERRORS.has(error)
+  ) {
+    return error;
+  }
+  return undefined;
 }
 
 /**

@@ -1,6 +1,7 @@
 {
   "name": "ai-media-canvas",
   "version": "0.0.1",
+  "license": "Apache-2.0",
   "private": true,
   "packageManager": "pnpm@10.26.2",
   "scripts": {

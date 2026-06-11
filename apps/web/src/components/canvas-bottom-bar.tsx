@@ -354,15 +354,18 @@ export function CanvasBottomBar({
     closeAllPopovers();
     onToggleFiles();
   }, [closeAllPopovers, onToggleFiles]);
+  const barLeft = leftPanelOpen
+    ? "max(16px, min(296px, calc(100% - 227px)))"
+    : 16;
 
   return (
     <div
-      className="absolute bottom-4 z-20 transition-[left] duration-200"
-      style={{ left: leftPanelOpen ? 296 : 16 }}
+      className="absolute bottom-5 z-20 transition-[left] duration-200"
+      style={{ left: barLeft, maxWidth: "calc(100% - 32px)" }}
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center gap-0.5 rounded-full bg-card/90 backdrop-blur-lg border border-border px-1 py-1 shadow-card">
+      <div className="flex items-center gap-0.5 overflow-x-auto rounded-full bg-card/90 backdrop-blur-lg border border-border px-1 py-1 shadow-card">
         {/* ── Background color button ── */}
         <button
           ref={bgBtnRef}
@@ -416,7 +419,7 @@ export function CanvasBottomBar({
         <button
           ref={zoomBtnRef}
           type="button"
-          className="min-w-[40px] text-center text-xs text-muted-foreground select-none cursor-pointer hover:text-foreground transition-colors"
+          className="min-w-[40px] shrink-0 text-center text-xs text-muted-foreground select-none cursor-pointer hover:text-foreground transition-colors"
           onClick={toggleZoomMenu}
         >
           {Math.round(zoom * 100)}%

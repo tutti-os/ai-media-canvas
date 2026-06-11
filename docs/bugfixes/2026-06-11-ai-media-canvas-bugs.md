@@ -119,3 +119,45 @@
 - 验证方式和结果: 新增 `apps/web/test/skills-page.test.tsx` 回归，模拟导入 skill 打开详情，断言不存在“删除”按钮和“确认删除?”文案，同时“卸载”按钮仍存在；`pnpm --filter @aimc/web exec vitest run test/skills-page.test.tsx -t "delete controls"` 通过；`pnpm --filter @aimc/web typecheck`、`pnpm check:i18n`、`pnpm exec biome check apps/web/src/app/(workspace)/skills/page.tsx apps/web/src/components/skills/skill-detail-dialog.tsx apps/web/test/skills-page.test.tsx` 均通过；浏览器打开 `http://localhost:3000/skills` 无 console error。
 - 是否已修复完: 是
 - commit hash: `dd03d89`
+
+## 追加批次（2026-06-11）
+
+### 13. 对齐底部工具栏
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/INFTrrNwpeMScLcPuIZcvSwUnDf
+- 真实 record id: `recvm7TJA3lTB8`
+- Bug 原因: 附件截图显示画布左下角辅助工具条和中间主工具条底部基线不一致；代码中 `CanvasBottomBar` 使用 `bottom-4`，而主工具条使用 `bottom-5`，导致两个底部工具条相差 4px。
+- 修复方案: 将辅助工具条根节点改为 `bottom-5`，与主工具条共用同一底部偏移；增加回归测试断言该组件使用 `bottom-5`。
+- 验证方式和结果: `pnpm --filter @aimc/web test -- canvas-bottom-bar.test.tsx` 通过（Vitest 实际运行 45 个 web 测试文件、177 个测试，全部通过）；浏览器刷新 `http://127.0.0.1:3000/canvas` 后 DOM 几何显示主工具条和辅助工具条 bottom 均为 `20px`。控制台仍有既有 WebSocket 401/重连错误，和本次 UI 对齐无关。
+- 是否已修复完: 是
+- commit hash: `a228b95`
+
+### 14. Copy Image 空白/非图片选区导出过大
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/QeQorOardelvMjcFb0icFcDanbf
+- 真实 record id: `recvm7VrLhF6K3`
+- Bug 原因: 附件截图显示在画布右键菜单中点击 `Copy image` 会触发大范围 PNG 导出，导致复制整个画布变慢甚至短暂卡住。代码里只隐藏了 Excalidraw 的 `copyAsPng` 项，但仍保留了原生 `copy` 项在无图片选区/非纯图片选区下的 `Copy image` 行；自定义图片复制路径还把未 await 的导出 Promise 直接传给 `ClipboardItem`，错误和耗时反馈都滞后。
+- 修复方案: 在同步原生菜单时识别 `data-testid="copy"` 且原始标签为 `Copy image` 的菜单项；只有当前选区存在且全部是图片元素时才保留并替换为自定义复制，否则直接隐藏，避免空白处或混合选区触发全画布导出。自定义复制先 await `exportToBlob` 得到 PNG Blob，再写入剪贴板。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-context-menu-extensions.test.tsx`，覆盖无图片选区隐藏原生 `Copy image`，以及图片选区自定义复制不触发原生复制；`pnpm --filter @aimc/web exec vitest run test/canvas-context-menu-extensions.test.tsx` 通过（6 个测试）；`pnpm --filter @aimc/web typecheck` 通过。本地整页复验时当前 canvas 数据加载失败，无法完成真实右键交互；此前页面已有 WebSocket/API 401 重连问题，和本组件修复无关。
+- 是否已修复完: 是
+- commit hash: `4f0d48d`
+
+### 15. 已生成文件下载缺少成功提示
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/BLuqrwS3ze8tvmcshxecKE14nbe
+- 真实 record id: `recvm7WeLMXd82`
+- Bug 原因: 附件视频显示用户在左侧“已生成文件列表”点击下载图标后没有任何成功反馈；代码中 `CanvasFilesPanel` 的下载处理只创建 `<a>` 并调用 `click()`，没有成功 toast，也没有缺失 dataURL 或浏览器点击失败时的错误提示。
+- 修复方案: 将生成文件下载流程接入 `useToast`：下载链接挂载到 `document.body` 后触发点击并移除，成功后显示本地化成功提示；无 dataURL 或点击异常时显示本地化失败提示并写入 console warning。新增中英文 i18n key，并重新生成 i18n 类型定义。
+- 验证方式和结果: 新增 `apps/web/test/canvas-files-panel.test.tsx`，模拟生成图片文件下载，断言 anchor click 被触发且出现 `Downloaded Generated image` 成功 toast；`pnpm --filter @aimc/web exec vitest run test/canvas-files-panel.test.tsx` 通过；`pnpm check:i18n` 通过；`pnpm --filter @aimc/web typecheck` 通过。本地整页复验时当前 canvas 数据加载失败，无法完成真实左侧文件列表交互；此前页面已有 WebSocket/API 401 重连问题，和本组件修复无关。
+- 是否已修复完: 是
+- commit hash: `3b46c98`
+
+### 16. 底部工具栏未自适应
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/ZkkkrcznWeH1nIc1pvEcezT8n8f
+- 真实 record id: `recvm8aY2eSkK0`
+- Bug 原因: 附件截图显示底部工具条在桌面窗口和右侧面板占位下贴边/缺少自适应。代码中辅助底栏在左侧面板打开时使用固定 `left: 296`，没有根据当前 canvas 可用宽度收敛；主工具条也缺少最大宽度、横向溢出和按钮 `shrink-0` 保护，窄画布下容易被压缩或溢出。
+- 修复方案: 辅助底栏改用 `max(16px, min(296px, calc(100% - 227px)))` 约束 left，并设置 `maxWidth: calc(100% - 32px)` 与横向滚动保护；主工具条增加 `max-w-[calc(100%_-_32px)]`、`overflow-x-auto`，按钮和分隔线固定不收缩，保证可用宽度不足时仍能完整访问工具。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-bottom-bar.test.tsx`，断言辅助底栏在左侧面板打开时使用可用宽度约束和最大宽度；`pnpm --filter @aimc/web exec vitest run test/canvas-bottom-bar.test.tsx` 通过（3 个测试）；`pnpm --filter @aimc/web typecheck` 通过。本地整页复验时当前 canvas 数据加载失败，点击“重试”后仍无法挂载画布，无法完成真实视口截图；该加载失败和本条布局修复无关。
+- 是否已修复完: 是
+- commit hash: `d4c6d1d`

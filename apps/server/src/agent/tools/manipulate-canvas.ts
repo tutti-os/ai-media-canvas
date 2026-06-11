@@ -120,6 +120,160 @@ function requiresLayoutInspection(operations: Operation[]) {
   return operations.some((op) => LAYOUT_CHANGING_ACTIONS.has(op.action));
 }
 
+type ElementBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type LayoutOverlapConflict = {
+  movingElementId: string;
+  overlappingElementId: string;
+  overlapArea: number;
+  movingBounds: ElementBounds;
+  overlappingBounds: ElementBounds;
+};
+
+const COLLISION_EPSILON = 0.01;
+const NON_BLOCKING_LAYOUT_TYPES = new Set(["arrow", "line"]);
+
+function getBounds(el: CanvasElement): ElementBounds {
+  return {
+    x: Number(el.x) || 0,
+    y: Number(el.y) || 0,
+    width: Number(el.width) || 0,
+    height: Number(el.height) || 0,
+  };
+}
+
+function overlapArea(a: ElementBounds, b: ElementBounds): number {
+  const width =
+    Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const height =
+    Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  if (width <= 0 || height <= 0) return 0;
+  return width * height;
+}
+
+function isCollisionCandidate(el: CanvasElement): boolean {
+  if (el.isDeleted) return false;
+  if (NON_BLOCKING_LAYOUT_TYPES.has(String(el.type))) return false;
+  const bounds = getBounds(el);
+  return bounds.width > 0 && bounds.height > 0;
+}
+
+function areIntentionallyOverlapping(a: CanvasElement, b: CanvasElement) {
+  const aId = a.id as string | undefined;
+  const bId = b.id as string | undefined;
+  if (!aId || !bId) return false;
+  if (a.containerId === bId || b.containerId === aId) return true;
+  const aBound = Array.isArray(a.boundElements)
+    ? (a.boundElements as Array<{ id?: string }>).some((bound) => bound.id === bId)
+    : false;
+  const bBound = Array.isArray(b.boundElements)
+    ? (b.boundElements as Array<{ id?: string }>).some((bound) => bound.id === aId)
+    : false;
+  return aBound || bBound;
+}
+
+function pairKey(aId: string, bId: string) {
+  return aId < bId ? `${aId}:${bId}` : `${bId}:${aId}`;
+}
+
+function buildOverlapMap(elements: CanvasElement[]) {
+  const overlaps = new Map<string, number>();
+  const candidates = elements.filter(isCollisionCandidate);
+  for (let i = 0; i < candidates.length; i++) {
+    const a = candidates[i];
+    if (!a) continue;
+    const aId = a.id as string | undefined;
+    if (!aId) continue;
+    for (let j = i + 1; j < candidates.length; j++) {
+      const b = candidates[j];
+      if (!b) continue;
+      const bId = b.id as string | undefined;
+      if (!bId || areIntentionallyOverlapping(a, b)) continue;
+      const area = overlapArea(getBounds(a), getBounds(b));
+      if (area > COLLISION_EPSILON) {
+        overlaps.set(pairKey(aId, bId), area);
+      }
+    }
+  }
+  return overlaps;
+}
+
+function getAffectedElementIds(op: Operation, result: HandlerResult) {
+  const ids: string[] = [];
+  if (
+    (op.action === "move" || op.action === "resize") &&
+    op.element_id
+  ) {
+    ids.push(op.element_id);
+  }
+  if (
+    (op.action === "add_text" ||
+      op.action === "add_shape" ||
+      op.action === "add_line") &&
+    result.createdId
+  ) {
+    ids.push(result.createdId);
+  }
+  if (
+    (op.action === "align" || op.action === "distribute") &&
+    Array.isArray(op.element_ids)
+  ) {
+    ids.push(...op.element_ids);
+  }
+  return ids;
+}
+
+function findNewOverlapConflicts(
+  beforeElements: CanvasElement[],
+  afterElements: CanvasElement[],
+  affectedElementIds: Set<string>,
+) {
+  if (affectedElementIds.size === 0) return [];
+
+  const beforeOverlaps = buildOverlapMap(beforeElements);
+  const candidates = afterElements.filter(isCollisionCandidate);
+  const conflicts: LayoutOverlapConflict[] = [];
+
+  for (let i = 0; i < candidates.length; i++) {
+    const a = candidates[i];
+    if (!a) continue;
+    const aId = a.id as string | undefined;
+    if (!aId) continue;
+    for (let j = i + 1; j < candidates.length; j++) {
+      const b = candidates[j];
+      if (!b) continue;
+      const bId = b.id as string | undefined;
+      if (!bId || areIntentionallyOverlapping(a, b)) continue;
+      if (!affectedElementIds.has(aId) && !affectedElementIds.has(bId)) {
+        continue;
+      }
+
+      const afterArea = overlapArea(getBounds(a), getBounds(b));
+      if (afterArea <= COLLISION_EPSILON) continue;
+
+      const beforeArea = beforeOverlaps.get(pairKey(aId, bId)) ?? 0;
+      if (afterArea <= beforeArea + COLLISION_EPSILON) continue;
+
+      const moving = affectedElementIds.has(aId) ? a : b;
+      const overlapping = moving === a ? b : a;
+      conflicts.push({
+        movingElementId: moving.id as string,
+        overlappingElementId: overlapping.id as string,
+        overlapArea: Math.round(afterArea),
+        movingBounds: getBounds(moving),
+        overlappingBounds: getBounds(overlapping),
+      });
+    }
+  }
+
+  return conflicts;
+}
+
 // ---------------------------------------------------------------------------
 // Operation handlers
 // ---------------------------------------------------------------------------
@@ -743,12 +897,15 @@ export function createManipulateCanvasTool(deps: {
         elements?: CanvasElement[];
         appState?: Record<string, unknown>;
       };
-      const elements: CanvasElement[] = content.elements ?? [];
+      const originalElements: CanvasElement[] = content.elements ?? [];
+      const beforeElements = structuredClone(originalElements) as CanvasElement[];
+      const elements = structuredClone(originalElements) as CanvasElement[];
 
       // --- Apply operations ----------------------------------------------------
       const descriptions: string[] = [];
       const errors: string[] = [];
       const createdIds: Record<string, string> = {};
+      const affectedElementIds = new Set<string>();
 
       for (let i = 0; i < input.operations.length; i++) {
         const op = input.operations[i]!;
@@ -762,6 +919,9 @@ export function createManipulateCanvasTool(deps: {
             if (result.createdId) {
               createdIds[`op_${i}`] = result.createdId;
             }
+            for (const id of getAffectedElementIds(op, result)) {
+              affectedElementIds.add(id);
+            }
           }
         } catch (e) {
           errors.push(`[error] ${op.action}: ${(e as Error).message}`);
@@ -771,6 +931,21 @@ export function createManipulateCanvasTool(deps: {
       // --- Post-processing: clean up orphan bindings ---------------------------
       // Must run after all operations so cascaded deletes are visible.
       validateBindings(elements);
+
+      const overlapConflicts = findNewOverlapConflicts(
+        beforeElements,
+        elements,
+        affectedElementIds,
+      );
+      if (overlapConflicts.length > 0) {
+        return JSON.stringify({
+          success: false,
+          error: "layout_overlap_detected",
+          message:
+            "The requested layout would overlap existing canvas elements. Choose a larger empty region or increase spacing before retrying.",
+          conflicts: overlapConflicts,
+        });
+      }
 
       // --- Write back ----------------------------------------------------------
       const updatedContent = { ...content, elements };
@@ -807,7 +982,7 @@ export function createManipulateCanvasTool(deps: {
     {
       name: "manipulate_canvas",
       description:
-        "Manipulate elements on the canvas. Supports: move, resize, update_style, update_text (modify text content of any element or its label), add_text, add_shape (with optional label for centered text), add_line (with optional element binding for auto-connected arrows), align, distribute, reorder. It cannot remove elements; destructive removal requires a separate explicit user-confirmed flow. Do not add text, shapes, lines, buttons, or decorative labels around generated media unless the user explicitly asks for editable layered layout; read real element bounds with inspect_canvas before placing anything near existing media. Returns created element IDs for subsequent binding.",
+        "Manipulate elements on the canvas. Supports: move, resize, update_style, update_text (modify text content of any element or its label), add_text, add_shape (with optional label for centered text), add_line (with optional element binding for auto-connected arrows), align, distribute, reorder. It cannot remove elements; destructive removal requires a separate explicit user-confirmed flow. Do not add text, shapes, lines, buttons, or decorative labels around generated media unless the user explicitly asks for editable layered layout; read real element bounds with inspect_canvas before placing anything near existing media. Layout operations that introduce or worsen overlaps are rejected; choose a larger empty region or increase spacing and retry. Returns created element IDs for subsequent binding.",
       schema: manipulateCanvasSchema,
     },
   );

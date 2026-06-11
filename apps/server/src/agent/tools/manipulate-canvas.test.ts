@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { createInspectCanvasTool } from "./inspect-canvas.js";
 import { createManipulateCanvasTool } from "./manipulate-canvas.js";
 
-function createUserClientWithElements(elements: Array<Record<string, unknown>>) {
+function createUserClientWithElements(
+  elements: Array<Record<string, unknown>>,
+) {
   const state = {
     content: {
       elements: structuredClone(elements),
@@ -12,6 +14,9 @@ function createUserClientWithElements(elements: Array<Record<string, unknown>>) 
   };
 
   return {
+    getContent() {
+      return state.content;
+    },
     from(table: string) {
       expect(table).toBe("canvases");
       return {
@@ -44,8 +49,12 @@ describe("manipulate_canvas", () => {
     });
 
     expect(tool.description).not.toContain("delete");
-    expect(tool.description).toContain("Do not add text, shapes, lines, buttons, or decorative labels around generated media");
-    expect(tool.description).toContain("read real element bounds with inspect_canvas");
+    expect(tool.description).toContain(
+      "Do not add text, shapes, lines, buttons, or decorative labels around generated media",
+    );
+    expect(tool.description).toContain(
+      "read real element bounds with inspect_canvas",
+    );
 
     await expect(
       (tool.invoke as (input: unknown, config?: unknown) => Promise<string>)(
@@ -75,7 +84,9 @@ describe("manipulate_canvas", () => {
       layoutInspectionState,
     });
 
-    const result = await (tool.invoke as (input: unknown, config?: unknown) => Promise<string>)(
+    const result = await (
+      tool.invoke as (input: unknown, config?: unknown) => Promise<string>
+    )(
       {
         operations: [
           {
@@ -118,11 +129,18 @@ describe("manipulate_canvas", () => {
       },
     };
 
-    await (inspectTool.invoke as (input: unknown, config?: unknown) => Promise<string>)(
-      { detail_level: "summary" },
-      config,
-    );
-    const result = await (manipulateTool.invoke as (input: unknown, config?: unknown) => Promise<string>)(
+    await (
+      inspectTool.invoke as (
+        input: unknown,
+        config?: unknown,
+      ) => Promise<string>
+    )({ detail_level: "summary" }, config);
+    const result = await (
+      manipulateTool.invoke as (
+        input: unknown,
+        config?: unknown,
+      ) => Promise<string>
+    )(
       {
         operations: [
           {
@@ -141,7 +159,12 @@ describe("manipulate_canvas", () => {
       applied: 1,
     });
 
-    const nextResult = await (manipulateTool.invoke as (input: unknown, config?: unknown) => Promise<string>)(
+    const nextResult = await (
+      manipulateTool.invoke as (
+        input: unknown,
+        config?: unknown,
+      ) => Promise<string>
+    )(
       {
         operations: [
           {
@@ -158,6 +181,87 @@ describe("manipulate_canvas", () => {
     expect(JSON.parse(nextResult)).toMatchObject({
       success: false,
       error: "layout_inspection_required",
+    });
+  });
+
+  it("rejects layout operations that introduce element overlaps", async () => {
+    const layoutInspectionState = {};
+    const client = createUserClientWithElements([
+      {
+        id: "image-1",
+        type: "image",
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 120,
+        isDeleted: false,
+      },
+      {
+        id: "image-2",
+        type: "image",
+        x: 260,
+        y: 0,
+        width: 200,
+        height: 120,
+        isDeleted: false,
+      },
+    ]);
+    const createUserClient = () => client;
+    const inspectTool = createInspectCanvasTool({
+      createUserClient,
+      layoutInspectionState,
+    });
+    const manipulateTool = createManipulateCanvasTool({
+      createUserClient,
+      layoutInspectionState,
+    });
+    const config = {
+      configurable: {
+        canvas_id: "canvas-1",
+        access_token: "token-1",
+      },
+    };
+
+    await (
+      inspectTool.invoke as (
+        input: unknown,
+        config?: unknown,
+      ) => Promise<string>
+    )({ detail_level: "summary" }, config);
+    const result = await (
+      manipulateTool.invoke as (
+        input: unknown,
+        config?: unknown,
+      ) => Promise<string>
+    )(
+      {
+        operations: [
+          {
+            action: "move",
+            element_id: "image-2",
+            x: 100,
+            y: 40,
+          },
+        ],
+      },
+      config,
+    );
+
+    expect(JSON.parse(result)).toMatchObject({
+      success: false,
+      error: "layout_overlap_detected",
+      conflicts: [
+        {
+          movingElementId: "image-2",
+          overlappingElementId: "image-1",
+        },
+      ],
+    });
+    expect(
+      client.getContent().elements.find((el) => el.id === "image-2"),
+    ).toMatchObject({
+      x: 260,
+      y: 0,
     });
   });
 });

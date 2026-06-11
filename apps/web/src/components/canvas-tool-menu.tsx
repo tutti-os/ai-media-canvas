@@ -152,7 +152,7 @@ function ToolbarButton({
       aria-label={label}
       onClick={onClick}
       onMouseDown={onMouseDown}
-      className={`group relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
+      className={`group relative flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
         active
           ? "bg-foreground/[0.08] text-foreground"
           : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
@@ -1003,7 +1003,7 @@ export function CanvasToolMenu({
   return (
     <>
       <div
-        className="absolute bottom-5 z-30 flex items-center gap-0.5 rounded-xl p-1 bg-card/75 backdrop-blur-lg border border-border shadow-card transition-[left,transform] duration-200"
+        className="absolute bottom-5 z-30 flex max-w-[calc(100%_-_32px)] items-center gap-0.5 overflow-x-auto rounded-xl p-1 bg-card/75 backdrop-blur-lg border border-border shadow-card transition-[left,transform] duration-200"
         style={{
           left: leftPanelOpen ? "calc(140px + 50%)" : "50%",
           transform: "translateX(-50%)",
@@ -1013,7 +1013,10 @@ export function CanvasToolMenu({
         {TOOL_GROUPS.map((tool, i) => {
           if (tool === null) {
             return (
-              <div key={`sep-${i}`} className="mx-0.5 h-6 w-px bg-border" />
+              <div
+                key={`sep-${i}`}
+                className="mx-0.5 h-6 w-px shrink-0 bg-border"
+              />
             );
           }
 
@@ -1036,7 +1039,7 @@ export function CanvasToolMenu({
         })}
 
         {/* Separator before AI tools */}
-        <div className="mx-0.5 h-6 w-px bg-border" />
+        <div className="mx-0.5 h-6 w-px shrink-0 bg-border" />
 
         {/* AI Image -- creates a placeholder on canvas */}
         <ToolbarButton
