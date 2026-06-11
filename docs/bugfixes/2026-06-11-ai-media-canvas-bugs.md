@@ -84,11 +84,11 @@
 
 - Bug 链接: https://ccn53rwonxso.feishu.cn/record/RxxFrbUaYeoNsWcuSrKcRtXvnWd
 - 真实 record id: `recvm8dGIaWCQA`
-- Bug 原因: 附件截图显示 BYOK/Agnes local-agent 在读取选中 skill 时出现 `Store is required but not available in runtime`，后续 shell 执行 `cat /workspace-skills/.../SKILL.md` 又报文件不存在。根因是 workspace skill 只通过 server deepagent 的虚拟 `/workspace-skills/` store route 暴露，但 generic ACP/BYOK local-agent provider 不会自动物化 `skillManifest`，且提示中的绝对路径会让 shell 去系统根目录查找。
-- 修复方案: 在 AI Media Canvas 的 local-agent wrapper 层启动 provider 前，将已启用 workspace skill 的 `SKILL.md` 和附属文件写入当前 run 目录下的 `workspace-skills/<slug>/`，并对写入路径做目录逃逸保护；local-agent prompt 中把 `/workspace-skills/...` 规范为相对 `workspace-skills/...`，让 BYOK/Agnes 的读文件与 shell 命令都基于运行目录访问同一份 skill 文件。
-- 验证方式和结果: 扩展 `apps/server/src/agent/runtime.test.ts`，在 local-agent provider mock 入口断言 `cwd/workspace-skills/canvas-director/SKILL.md` 已存在且包含 skill 内容，并断言 prompt 使用相对 `workspace-skills/canvas-director/SKILL.md` 而不是绝对 `/workspace-skills/...`；`pnpm --filter @aimc/server test -- src/agent/runtime.test.ts -t "passes enabled local workspace skills"` 通过（实际运行 25 个 server 测试文件均通过）；`pnpm --filter @aimc/server typecheck` 通过。
+- Bug 原因: 复核后确认先前 `d1f6e84` 只覆盖了 generic local-agent provider 运行目录物化，未直接覆盖 BYOK Agnes 的 server deep-agent/API-provider 链路。BYOK Agnes 使用 skill 时，`/workspace-skills/...` 文件读取走 deepagents backend route；旧实现仍把该 route 指向 `StoreBackend`，而运行时未提供 LangGraph store 时会触发 `Store is required but not available in runtime`。
+- 修复方案: 将运行时已加载的 workspace skill 内容传入 agent backend 创建流程；production/dev backend 为每次 run 在 sandbox 下物化 `workspace-skills/<slug>/`，并用只读 `FilesystemBackend` 暴露 `/workspace-skills/` route，替代需要 store 的 workspace skill `StoreBackend`。保留先前 local-agent 相对路径物化，覆盖 local-agent shell 和 BYOK Agnes server `read_file` 两条路径。
+- 验证方式和结果: 新增 `apps/server/src/agent/backends/workspace-skills.test.ts`，断言无 store 的 backend 能读取 `/workspace-skills/canvas-director/SKILL.md` 和附属文件，且 workspace skill route 为只读；扩展 `apps/server/src/agent/runtime.test.ts`，用 `model: "agnes:agnes-2.0-flash"` 和 `runtimeKind: "server-deepagent"` 断言 Agnes server runtime 会把 enabled workspace skills 传入 backend 和 agent factory；`pnpm --filter @aimc/server exec vitest run src/agent/backends/workspace-skills.test.ts src/agent/runtime.test.ts -t "workspace skills|Agnes server backend|passes enabled local workspace skills"` 通过；`pnpm --filter @aimc/server test` 通过（26 个文件、133 个测试）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm exec biome check apps/server/src/agent/backends/index.ts apps/server/src/agent/backends/prod.ts apps/server/src/agent/backends/dev.ts apps/server/src/agent/backends/workspace-skills.ts apps/server/src/agent/backends/workspace-skills.test.ts` 通过。
 - 是否已修复完: 是
-- commit hash: `d1f6e84`
+- commit hash: `d1f6e84` + 追加修正 `c96ee4a`
 
 ## 10. Download image 导出后菜单仍聚焦
 
