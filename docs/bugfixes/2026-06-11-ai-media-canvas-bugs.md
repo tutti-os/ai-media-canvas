@@ -210,4 +210,14 @@
 - 修复方案: `manipulate_canvas.element_id` 允许 `null`，由具体 action 逻辑继续决定是否需要目标元素；`generate_image` 的 `title/prompt` 允许缺省或 `null`，运行时先从 `prompt/title` 互相兜底归一化，若仍没有 prompt，则返回可读的结构化 `missing_prompt` 错误，而不是抛 zod schema 异常打断整轮 agent。
 - 验证方式和结果: 扩展 `apps/server/src/agent/tools/manipulate-canvas.test.ts`，覆盖经过 `inspect_canvas` 后 `add_text` 携带 `element_id: null` 仍可正常应用；扩展 `apps/server/src/agent/local-agent-host/tool-gateway.test.ts`，覆盖 `generate_image` 缺 prompt 时返回 `isError: true` 和可读 `missing_prompt` 摘要而不是抛异常；`pnpm --filter @aimc/server exec vitest run src/agent/tools/manipulate-canvas.test.ts src/agent/local-agent-host/tool-gateway.test.ts` 通过（9 个测试）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm exec biome check apps/server/src/agent/tools/image-generate.ts apps/server/src/agent/tools/manipulate-canvas.test.ts apps/server/src/agent/local-agent-host/tool-gateway.test.ts` 通过。对 `manipulate-canvas.ts` 全文件执行 Biome 时仍会命中该文件既有非空断言/模板字符串 lint 债，未纳入本次范围。
 - 是否已修复完: 是
+- commit hash: `ed78da9`
+
+### 22. 自定义 Skill 附属文件路径输入失焦
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/NxA6rEBNqevbj9cg4LDc3vBXnUU
+- 真实 record id: `recvmdvBgjAPOL`
+- Bug 原因: 无附件，Base 描述为“添加自定义技能，添加附属文件，输入符合的单字符就无法输入了”。根因是 `CreateSkillDialog` 渲染附属文件行时使用 `key={`${index}-${file.filePath}`}`；用户每输入一个路径字符，`filePath` 改变导致 React 认为是新节点，整行输入框被卸载重建，焦点丢失，后续字符无法继续输入。
+- 修复方案: 给每个附属文件行创建稳定的 UI-only `id` 并作为 React key；更新/删除仍按 index 操作，提交前把 `id` 剥离，只提交 `{ filePath, content }`，避免影响 API payload。
+- 验证方式和结果: 扩展 `apps/web/test/skills-page.test.tsx`，打开添加技能弹窗、添加附属文件后连续输入 `scripts/tool.ts`，断言输入框值完整且仍保持 focus；`pnpm --filter @aimc/web exec vitest run test/skills-page.test.tsx -t "attachment file path|custom skill dialog"` 通过（2 个目标测试）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/skills/create-skill-dialog.tsx apps/web/test/skills-page.test.tsx` 通过。
+- 是否已修复完: 是
 - commit hash: `待提交后回填`

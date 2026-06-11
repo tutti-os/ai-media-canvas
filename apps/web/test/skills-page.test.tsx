@@ -2,6 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "../src/components/toast";
@@ -372,6 +373,25 @@ description: "Use text files only."
     expect(
       screen.getByRole("button", { name: "添加技能" }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps attachment file path input focused while typing", async () => {
+    const user = userEvent.setup();
+    render(
+      <ToastProvider>
+        <SkillsPage />
+      </ToastProvider>,
+    );
+
+    await screen.findByText("Canvas Director");
+    await user.click(screen.getByRole("button", { name: "添加技能" }));
+    await user.click(screen.getByRole("button", { name: "添加文件" }));
+
+    const filePathInput = screen.getByPlaceholderText("scripts/tool.ts");
+    await user.type(filePathInput, "scripts/tool.ts");
+
+    expect(filePathInput).toHaveValue("scripts/tool.ts");
+    expect(filePathInput).toHaveFocus();
   });
 
   it("keeps imported skill detail badges away from the close button", async () => {

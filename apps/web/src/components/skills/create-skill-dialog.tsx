@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { FileText, Plus, X } from "lucide-react";
 import type { SkillCategory } from "@aimc/shared";
+import { FileText, Plus, X } from "lucide-react";
+import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -47,8 +47,25 @@ const CATEGORY_OPTIONS: Array<{ value: SkillCategory; label: string }> = [
 
 const VALID_PATH_PREFIXES = ["scripts/", "references/", "assets/"];
 
+type AttachedSkillFile = {
+  content: string;
+  filePath: string;
+  id: string;
+};
+
 function isValidFilePath(path: string) {
   return VALID_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+function createAttachedSkillFile(): AttachedSkillFile {
+  return {
+    content: "",
+    filePath: "",
+    id:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `file-${Date.now()}-${Math.random()}`,
+  };
 }
 
 export function CreateSkillDialog({
@@ -71,13 +88,11 @@ export function CreateSkillDialog({
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<SkillCategory>("custom");
   const [skillContent, setSkillContent] = useState("");
-  const [files, setFiles] = useState<
-    Array<{ filePath: string; content: string }>
-  >([]);
+  const [files, setFiles] = useState<AttachedSkillFile[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const addFile = useCallback(() => {
-    setFiles((prev) => [...prev, { filePath: "", content: "" }]);
+    setFiles((prev) => [...prev, createAttachedSkillFile()]);
   }, []);
 
   const removeFile = useCallback((index: number) => {
@@ -115,12 +130,17 @@ export function CreateSkillDialog({
     async (event: React.FormEvent) => {
       event.preventDefault();
       if (!name.trim() || !description.trim() || !skillContent.trim()) return;
-      const validFiles = files.filter(
-        (file) =>
-          file.filePath.trim() &&
-          file.content.trim() &&
-          isValidFilePath(file.filePath.trim()),
-      );
+      const validFiles = files
+        .filter(
+          (file) =>
+            file.filePath.trim() &&
+            file.content.trim() &&
+            isValidFilePath(file.filePath.trim()),
+        )
+        .map((file) => ({
+          content: file.content,
+          filePath: file.filePath.trim(),
+        }));
 
       setSubmitting(true);
       try {
@@ -248,7 +268,7 @@ export function CreateSkillDialog({
                   isValidFilePath(file.filePath.trim());
                 return (
                   <div
-                    key={`${index}-${file.filePath}`}
+                    key={file.id}
                     className="space-y-2 rounded-lg border border-border p-3"
                   >
                     <div className="flex items-center gap-2">
