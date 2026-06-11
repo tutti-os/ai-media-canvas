@@ -958,11 +958,25 @@ export function CanvasToolMenu({
     }
   }, [activeImageGenerationPreference, excalidrawApi]);
 
+  const clearSelectionForElement = useCallback(
+    (elementId: string | null) => {
+      if (!elementId || !excalidrawApi) return;
+      const selectedElementIds = excalidrawApi.getAppState()?.selectedElementIds;
+      if (!selectedElementIds?.[elementId]) return;
+      excalidrawApi.updateScene({
+        appState: { selectedElementIds: {} },
+        captureUpdate: "IMMEDIATELY",
+      });
+    },
+    [excalidrawApi],
+  );
+
   const handleCloseGenerator = useCallback(() => {
+    clearSelectionForElement(activeGeneratorIdRef.current);
     setActiveGeneratorId(null);
     setGeneratorData(null);
     setGeneratorBounds(null);
-  }, []);
+  }, [clearSelectionForElement]);
 
   const handleCreateVideoGenerator = useCallback(() => {
     if (!excalidrawApi) return;
@@ -989,16 +1003,48 @@ export function CanvasToolMenu({
   }, [activeVideoGenerationPreference, excalidrawApi]);
 
   const handleCloseVideoGenerator = useCallback(() => {
+    clearSelectionForElement(activeVideoGenIdRef.current);
     setActiveVideoGenId(null);
     setVideoGenData(null);
     setVideoGenBounds(null);
-  }, []);
+  }, [clearSelectionForElement]);
 
   const handleCloseVideoPlayer = useCallback(() => {
+    clearSelectionForElement(activeVideoPlayerIdRef.current);
     setActiveVideoPlayerId(null);
     setVideoPlayerData(null);
     setVideoPlayerBounds(null);
-  }, []);
+  }, [clearSelectionForElement]);
+
+  useEffect(() => {
+    if (!activeGeneratorId && !activeVideoGenId && !activeVideoPlayerId) return;
+
+    const handlePointerDownOutside = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const panel = document.querySelector("[data-aimc-generator-panel]");
+      if (panel?.contains(target)) return;
+
+      if (activeGeneratorIdRef.current) handleCloseGenerator();
+      if (activeVideoGenIdRef.current) handleCloseVideoGenerator();
+      if (activeVideoPlayerIdRef.current) handleCloseVideoPlayer();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDownOutside, true);
+    return () =>
+      document.removeEventListener(
+        "pointerdown",
+        handlePointerDownOutside,
+        true,
+      );
+  }, [
+    activeGeneratorId,
+    activeVideoGenId,
+    activeVideoPlayerId,
+    handleCloseGenerator,
+    handleCloseVideoGenerator,
+    handleCloseVideoPlayer,
+  ]);
 
   return (
     <>

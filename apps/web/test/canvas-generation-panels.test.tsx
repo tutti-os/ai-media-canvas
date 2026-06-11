@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -28,10 +34,10 @@ vi.mock("../src/lib/server-api", () => ({
   generateVideoDirect: generateVideoDirectMock,
 }));
 
-function createExcalidrawApiStub() {
+function createExcalidrawApiStub(sceneElements: any[] = []) {
   return {
     addFiles: vi.fn(),
-    getSceneElements: vi.fn(() => []),
+    getSceneElements: vi.fn(() => sceneElements),
     updateScene: vi.fn(),
   };
 }
@@ -100,12 +106,8 @@ describe("canvas generation panels", () => {
       </ToastProvider>,
     );
 
-    await waitFor(() =>
-      expect(fetchImageModelsMock).toHaveBeenCalledTimes(1),
-    );
-    expect(
-      screen.queryByText("远端生图，本地落库"),
-    ).not.toBeInTheDocument();
+    await waitFor(() => expect(fetchImageModelsMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("远端生图，本地落库")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /agnes image 2.1 flash/i }),
     ).toBeInTheDocument();
@@ -136,6 +138,34 @@ describe("canvas generation panels", () => {
       screen.getByPlaceholderText("今天我们要创作什么"),
     );
     expect(panel.style.left).toBe("195px");
+  });
+
+  it("closes the image generator panel when the user clicks back on the canvas", async () => {
+    const onClose = vi.fn();
+    render(
+      <ToastProvider>
+        <ImageGeneratorPanel
+          elementId="el-image"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 320 }}
+          data={{
+            type: "image-generator",
+            status: "idle",
+            prompt: "",
+            model: "agnes-image/agnes-image-2.1-flash",
+            aspectRatio: "1:1",
+            quality: "hd",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={onClose}
+        />
+      </ToastProvider>,
+    );
+
+    await screen.findByPlaceholderText("今天我们要创作什么");
+    fireEvent.mouseDown(document.body);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("resets image prompt and loading state when switching generator elements", async () => {
@@ -221,7 +251,9 @@ describe("canvas generation panels", () => {
   });
 
   it("surfaces a backend-unavailable hint when image models cannot load", async () => {
-    fetchImageModelsMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    fetchImageModelsMock.mockRejectedValueOnce(
+      new TypeError("Failed to fetch"),
+    );
 
     render(
       <ToastProvider>
@@ -278,12 +310,74 @@ describe("canvas generation panels", () => {
       </ToastProvider>,
     );
 
-    await userEvent.click(await screen.findByRole("button", { name: "生成图片" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "生成图片" }),
+    );
     expect(generateImageDirectMock).toHaveBeenCalledTimes(1);
 
     unmount();
 
     expect(capturedSignal?.aborted).toBe(false);
+  });
+
+  it("skips inserting a generated image when the generator element was deleted", async () => {
+    let resolveGeneration:
+      | ((result: { url: string; mimeType: string }) => void)
+      | undefined;
+    generateImageDirectMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveGeneration = resolve;
+        }),
+    );
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      blob: async () => new Blob(["fake"], { type: "image/png" }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const excalidrawApi = createExcalidrawApiStub([
+      { id: "el-image", isDeleted: true },
+    ]);
+
+    render(
+      <ToastProvider>
+        <ImageGeneratorPanel
+          elementId="el-image"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 320 }}
+          data={{
+            type: "image-generator",
+            status: "idle",
+            prompt: "生成一张跳舞图片",
+            model: "agnes-image/agnes-image-2.1-flash",
+            aspectRatio: "1:1",
+            quality: "hd",
+          }}
+          excalidrawApi={excalidrawApi}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "生成图片" }),
+    );
+    expect(generateImageDirectMock).toHaveBeenCalledTimes(1);
+    excalidrawApi.addFiles.mockClear();
+    excalidrawApi.getSceneElements.mockClear();
+    excalidrawApi.updateScene.mockClear();
+
+    resolveGeneration?.({
+      url: "https://example.com/generated.png",
+      mimeType: "image/png",
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(excalidrawApi.getSceneElements).toHaveBeenCalledTimes(1),
+    );
+    expect(excalidrawApi.addFiles).not.toHaveBeenCalled();
+    expect(excalidrawApi.updateScene).not.toHaveBeenCalled();
   });
 
   it("omits the hard-coded storage copy in the video generator", async () => {
@@ -310,12 +404,8 @@ describe("canvas generation panels", () => {
       </ToastProvider>,
     );
 
-    await waitFor(() =>
-      expect(fetchVideoModelsMock).toHaveBeenCalledTimes(1),
-    );
-    expect(
-      screen.queryByText("远端生成，本地落库"),
-    ).not.toBeInTheDocument();
+    await waitFor(() => expect(fetchVideoModelsMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("远端生成，本地落库")).not.toBeInTheDocument();
   });
 
   it("shows the video model provider only once in the model picker", async () => {
@@ -381,6 +471,39 @@ describe("canvas generation panels", () => {
     expect(panel.style.left).toBe("160px");
   });
 
+  it("closes the video generator panel when the user clicks back on the canvas", async () => {
+    const onClose = vi.fn();
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={onClose}
+        />
+      </ToastProvider>,
+    );
+
+    await screen.findByPlaceholderText(
+      "描述你想要的视频镜头、动作、节奏与画面氛围",
+    );
+    fireEvent.mouseDown(document.body);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to the first available video model when the current model is unavailable", async () => {
     const excalidrawApi = createExcalidrawApiStub();
 
@@ -407,9 +530,7 @@ describe("canvas generation panels", () => {
       </ToastProvider>,
     );
 
-    await waitFor(() =>
-      expect(fetchVideoModelsMock).toHaveBeenCalledTimes(1),
-    );
+    await waitFor(() => expect(fetchVideoModelsMock).toHaveBeenCalledTimes(1));
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: /agnes video v2\.0/i }),
@@ -556,11 +677,75 @@ describe("canvas generation panels", () => {
       </ToastProvider>,
     );
 
-    await userEvent.click(await screen.findByRole("button", { name: "生成视频" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "生成视频" }),
+    );
     expect(generateVideoDirectMock).toHaveBeenCalledTimes(1);
 
     unmount();
 
     expect(capturedSignal?.aborted).toBe(false);
+  });
+
+  it("skips inserting a generated video when the generator element was deleted", async () => {
+    let resolveGeneration:
+      | ((
+          result: {
+            url: string;
+            mimeType: string;
+            durationSeconds: number;
+          },
+        ) => void)
+      | undefined;
+    generateVideoDirectMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveGeneration = resolve;
+        }),
+    );
+    const excalidrawApi = createExcalidrawApiStub([
+      { id: "el-video", isDeleted: true },
+    ]);
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "生成一段跳舞视频",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={excalidrawApi}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "生成视频" }),
+    );
+    expect(generateVideoDirectMock).toHaveBeenCalledTimes(1);
+    excalidrawApi.getSceneElements.mockClear();
+    excalidrawApi.updateScene.mockClear();
+
+    resolveGeneration?.({
+      url: "https://example.com/generated.mp4",
+      mimeType: "video/mp4",
+      durationSeconds: 5,
+    });
+
+    await waitFor(() =>
+      expect(excalidrawApi.getSceneElements).toHaveBeenCalledTimes(1),
+    );
+    expect(excalidrawApi.updateScene).not.toHaveBeenCalled();
   });
 });

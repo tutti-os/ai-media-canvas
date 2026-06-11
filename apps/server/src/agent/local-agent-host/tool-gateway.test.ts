@@ -291,4 +291,36 @@ describe("createLocalToolGatewayService", () => {
       }),
     );
   });
+
+  it("returns a structured generate_image error when prompt is missing", async () => {
+    const gateway = createLocalToolGatewayService({
+      createUserClient: () => createUserClientWithElements([]),
+    });
+    const session = gateway.createSession({
+      accessToken: "access-token",
+      canvasId: "canvas-1",
+      runId: "run-1",
+      runtimeEnv: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+    });
+
+    await expect(
+      gateway.callTool(session.token, "generate_image", {
+        aspectRatio: "16:9",
+        model: "test/image",
+        placementHeight: 338,
+      }),
+    ).resolves.toMatchObject({
+      isError: true,
+      output: {
+        error: expect.stringContaining("missing_prompt"),
+      },
+      outputSummary: expect.stringContaining("prompt is required"),
+    });
+  });
 });

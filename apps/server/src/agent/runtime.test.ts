@@ -834,6 +834,9 @@ describe("createAgentRunService", () => {
     expect(capturedPrompt).toContain(
       "workspace-skills/canvas-director/SKILL.md",
     );
+    expect(capturedPrompt).toContain(
+      "use relative paths such as `workspace-skills/<slug>/SKILL.md`",
+    );
     expect(capturedPrompt).not.toContain(
       "/workspace-skills/canvas-director/SKILL.md",
     );
@@ -1090,6 +1093,86 @@ describe("createAgentRunService", () => {
             expect.objectContaining({
               type: "image",
               url: "https://example.com/screenshot.png",
+            }),
+          ],
+        }),
+      ]),
+    );
+  });
+
+  it("maps local-agent persisted sandbox files into image artifacts", async () => {
+    const localRun = vi.fn(async function* () {
+      yield {
+        type: "tool_result" as const,
+        id: "tool-persist-file",
+        name: "persist_sandbox_file",
+        output: {
+          summary: "File uploaded successfully: poster.png",
+          url: "https://example.com/storage/poster.png",
+          path: "workspace/generated/poster.png",
+          mimeType: "image/png",
+          size: 12345,
+        },
+        summary: "File uploaded successfully: poster.png",
+        isError: false,
+      };
+      yield {
+        type: "done" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+
+    const runs = createAgentRunService({
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        run: localRun,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "保存文件",
+        sessionId: "session-1",
+      },
+      {
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+    );
+
+    const events = [];
+    for await (const event of runs.streamRun(run.runId)) {
+      events.push(event);
+    }
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool.completed",
+          toolCallId: "tool-persist-file",
+          toolName: "persist_sandbox_file",
+          outputSummary: "File uploaded successfully: poster.png",
+          artifacts: [
+            expect.objectContaining({
+              type: "image",
+              url: "https://example.com/storage/poster.png",
+              mimeType: "image/png",
             }),
           ],
         }),

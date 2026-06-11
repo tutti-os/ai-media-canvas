@@ -4,17 +4,17 @@ import { ImageIcon, Loader2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import type { VideoModelInfo } from "../../lib/server-api";
-import { fetchVideoModels, generateVideoDirect } from "../../lib/server-api";
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
-import {
-  updateVideoGeneratorElement,
-  resizeVideoGeneratorElement,
-  type VideoGeneratorData,
-} from "../../lib/canvas-video-generator";
 import { calculateCenteredGeneratorPanelPosition } from "../../lib/canvas-generator-panel-position";
 import { withNormalizedCanvasElementIndices } from "../../lib/canvas-normalize";
+import {
+  type VideoGeneratorData,
+  resizeVideoGeneratorElement,
+  updateVideoGeneratorElement,
+} from "../../lib/canvas-video-generator";
 import { formatProviderLabel } from "../../lib/provider-labels";
+import type { VideoModelInfo } from "../../lib/server-api";
+import { fetchVideoModels, generateVideoDirect } from "../../lib/server-api";
 
 type VideoGeneratorPanelProps = {
   elementId: string;
@@ -174,11 +174,12 @@ export function VideoGeneratorPanel({
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         setShowModelDropdown(false);
         setShowParamsPopover(false);
+        onClose();
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [onClose]);
 
   useEffect(() => {
     return () => {
@@ -226,7 +227,9 @@ export function VideoGeneratorPanel({
     (nextModel: string) => {
       setModel(nextModel);
       setShowModelDropdown(false);
-      updateVideoGeneratorElement(excalidrawApi, elementId, { model: nextModel });
+      updateVideoGeneratorElement(excalidrawApi, elementId, {
+        model: nextModel,
+      });
     },
     [excalidrawApi, elementId],
   );
@@ -301,7 +304,15 @@ export function VideoGeneratorPanel({
 
       if (controller.signal.aborted) return;
 
-      const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+      const currentElements = excalidrawApi.getSceneElements();
+      const generatorElement = currentElements.find(
+        (el: any) => el.id === elementId,
+      );
+      if (!generatorElement || generatorElement.isDeleted) return;
+
+      const { convertToExcalidrawElements } = await import(
+        "@excalidraw/excalidraw"
+      );
       if (controller.signal.aborted) return;
 
       const newElements = convertToExcalidrawElements([
@@ -322,11 +333,9 @@ export function VideoGeneratorPanel({
         } as any,
       ]);
 
-      const elements = excalidrawApi
-        .getSceneElements()
-        .map((el: any) =>
-          el.id === elementId ? { ...el, isDeleted: true } : el,
-        );
+      const elements = currentElements.map((el: any) =>
+        el.id === elementId ? { ...el, isDeleted: true } : el,
+      );
       excalidrawApi.updateScene({
         elements: withNormalizedCanvasElementIndices([
           ...elements,
@@ -373,6 +382,7 @@ export function VideoGeneratorPanel({
   return createPortal(
     <div
       ref={panelRef}
+      data-aimc-generator-panel="video"
       style={{ left: panelPosition.left, top: panelPosition.top }}
       className="fixed z-[100] w-[520px] rounded-[24px] border border-border bg-card/95 shadow-card backdrop-blur-lg"
       onKeyDown={(e) => e.stopPropagation()}
@@ -542,9 +552,13 @@ export function VideoGeneratorPanel({
                             type="button"
                             onClick={() => {
                               setResolution(value);
-                              updateVideoGeneratorElement(excalidrawApi, elementId, {
-                                resolution: value,
-                              });
+                              updateVideoGeneratorElement(
+                                excalidrawApi,
+                                elementId,
+                                {
+                                  resolution: value,
+                                },
+                              );
                             }}
                             className={`cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
                               resolution === value

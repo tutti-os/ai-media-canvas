@@ -3,21 +3,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import type { ImageModelInfo } from "../../lib/server-api";
-import { fetchImageModels, generateImageDirect } from "../../lib/server-api";
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
-import {
-  updateImageGeneratorElement,
-  resizeImageGeneratorElement,
-  type ImageGeneratorData,
-} from "../../lib/canvas-image-generator";
 import {
   createExcalidrawImageElement,
   fetchAsDataURL,
 } from "../../lib/canvas-elements";
 import { calculateCenteredGeneratorPanelPosition } from "../../lib/canvas-generator-panel-position";
+import {
+  type ImageGeneratorData,
+  resizeImageGeneratorElement,
+  updateImageGeneratorElement,
+} from "../../lib/canvas-image-generator";
 import { withNormalizedCanvasElementIndices } from "../../lib/canvas-normalize";
 import { formatProviderLabel } from "../../lib/provider-labels";
+import type { ImageModelInfo } from "../../lib/server-api";
+import { fetchImageModels, generateImageDirect } from "../../lib/server-api";
 
 type ImageGeneratorPanelProps = {
   elementId: string;
@@ -50,7 +50,9 @@ export function ImageGeneratorPanel({
   const [aspectRatio, setAspectRatio] = useState(data.aspectRatio);
   const [loading, setLoading] = useState(data.status === "generating");
   const [error, setError] = useState<string | null>(data.errorMessage ?? null);
-  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(
+    null,
+  );
   const [models, setModels] = useState<ImageModelInfo[]>([]);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showRatioDropdown, setShowRatioDropdown] = useState(false);
@@ -111,9 +113,7 @@ export function ImageGeneratorPanel({
       .catch((err) => {
         console.warn("[image-gen] Failed to fetch models:", err);
         if (!cancelled) {
-          setAvailabilityError(
-            "生图服务不可用，请确认本地 3001 服务已启动。",
-          );
+          setAvailabilityError("生图服务不可用，请确认本地 3001 服务已启动。");
         }
       });
     return () => {
@@ -127,11 +127,12 @@ export function ImageGeneratorPanel({
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         setShowModelDropdown(false);
         setShowRatioDropdown(false);
+        onClose();
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [onClose]);
 
   useEffect(() => {
     return () => {
@@ -215,6 +216,12 @@ export function ImageGeneratorPanel({
       const dataURL = await fetchAsDataURL(result.url);
       if (controller.signal.aborted) return;
 
+      const currentElements = excalidrawApi.getSceneElements();
+      const generatorElement = currentElements.find(
+        (el: any) => el.id === elementId,
+      );
+      if (!generatorElement || generatorElement.isDeleted) return;
+
       const fileId = generateId();
       excalidrawApi.addFiles([
         {
@@ -235,14 +242,15 @@ export function ImageGeneratorPanel({
       });
 
       // Replace: delete placeholder, add image
-      const elements = excalidrawApi
-        .getSceneElements()
-        .map((el: any) => {
-          if (el.id === elementId) return { ...el, isDeleted: true };
-          return el;
-        });
+      const elements = currentElements.map((el: any) => {
+        if (el.id === elementId) return { ...el, isDeleted: true };
+        return el;
+      });
       excalidrawApi.updateScene({
-        elements: withNormalizedCanvasElementIndices([...elements, imageElement]),
+        elements: withNormalizedCanvasElementIndices([
+          ...elements,
+          imageElement,
+        ]),
         captureUpdate: "IMMEDIATELY",
       });
 
@@ -280,6 +288,7 @@ export function ImageGeneratorPanel({
   return createPortal(
     <div
       ref={panelRef}
+      data-aimc-generator-panel="image"
       style={{ left: panelPosition.left, top: panelPosition.top }}
       className="fixed z-[100] w-[450px] rounded-xl border-[0.5px] border-border bg-card/95 p-2 shadow-card backdrop-blur-lg"
       onKeyDown={(e) => e.stopPropagation()}

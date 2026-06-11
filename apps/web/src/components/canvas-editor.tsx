@@ -150,8 +150,11 @@ export function CanvasEditor({
 }: CanvasEditorProps) {
   const { resolvedTheme } = useTheme();
   const { i18n } = useAppTranslation();
-  const excalidrawLangCode =
-    (i18n.resolvedLanguage ?? i18n.language).startsWith("en") ? "en" : "zh-CN";
+  const excalidrawLangCode = (
+    i18n.resolvedLanguage ?? i18n.language
+  ).startsWith("en")
+    ? "en"
+    : "zh-CN";
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbnailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canvasIdRef = useRef(canvasId);
@@ -336,6 +339,17 @@ export function CanvasEditor({
           appState: pickPersistedAppState(appState),
           files,
         };
+        if (
+          content.elements.length === 0 &&
+          initialElementCountRef.current > 0
+        ) {
+          console.warn(
+            "[canvas-editor] skipping debounced save: 0 elements but loaded with",
+            initialElementCountRef.current,
+          );
+          pendingSaveRef.current = null;
+          return;
+        }
         pendingSaveRef.current = content;
 
         saveCanvas(canvasId, content)

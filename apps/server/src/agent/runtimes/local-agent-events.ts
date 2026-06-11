@@ -23,13 +23,19 @@ function buildArtifacts(
   const imageUrl =
     typeof output.imageUrl === "string" && output.imageUrl.length > 0
       ? output.imageUrl
-      : toolName === "screenshot_canvas" &&
-          typeof output.screenshotUrl === "string" &&
-          output.screenshotUrl.length > 0
-        ? output.screenshotUrl
-        : undefined;
+      : toolName === "persist_sandbox_file" &&
+          typeof output.url === "string" &&
+          output.url.length > 0
+        ? output.url
+        : toolName === "screenshot_canvas" &&
+            typeof output.screenshotUrl === "string" &&
+            output.screenshotUrl.length > 0
+          ? output.screenshotUrl
+          : undefined;
   if (
-    (toolName === "generate_image" || toolName === "screenshot_canvas") &&
+    (toolName === "generate_image" ||
+      toolName === "screenshot_canvas" ||
+      toolName === "persist_sandbox_file") &&
     imageUrl
   ) {
     const parsed = imageArtifactSchema.safeParse({
@@ -71,13 +77,21 @@ function buildArtifacts(
   }
 
   const rawArtifacts = output.artifacts;
-  return Array.isArray(rawArtifacts) ? (rawArtifacts as ToolArtifact[]) : undefined;
+  return Array.isArray(rawArtifacts)
+    ? (rawArtifacts as ToolArtifact[])
+    : undefined;
 }
 
-function coerceToolOutput(output: unknown): Record<string, unknown> | undefined {
+function coerceToolOutput(
+  output: unknown,
+): Record<string, unknown> | undefined {
   const record = toRecord(output);
   if (!record) return undefined;
-  if (record.output && typeof record.output === "object" && !Array.isArray(record.output)) {
+  if (
+    record.output &&
+    typeof record.output === "object" &&
+    !Array.isArray(record.output)
+  ) {
     return record.output as Record<string, unknown>;
   }
   return record;

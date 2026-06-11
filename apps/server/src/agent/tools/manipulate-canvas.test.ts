@@ -145,6 +145,7 @@ describe("manipulate_canvas", () => {
         operations: [
           {
             action: "add_text",
+            element_id: null,
             text: "产品说明",
             x: 100,
             y: 100,

@@ -161,3 +161,126 @@
 - 验证方式和结果: 扩展 `apps/web/test/canvas-bottom-bar.test.tsx`，断言辅助底栏在左侧面板打开时使用可用宽度约束和最大宽度；`pnpm --filter @aimc/web exec vitest run test/canvas-bottom-bar.test.tsx` 通过（3 个测试）；`pnpm --filter @aimc/web typecheck` 通过。本地整页复验时当前 canvas 数据加载失败，点击“重试”后仍无法挂载画布，无法完成真实视口截图；该加载失败和本条布局修复无关。
 - 是否已修复完: 是
 - commit hash: `d4c6d1d`
+
+### 17. 拷贝再复制出来的图片缩小
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/EoSprWT0IeyXqxcS931cpq6HnFd
+- 真实 record id: `recvmdoFSAJfLR`
+- Bug 原因: 附件截图显示复制后的图片尺寸明显小于原图。根因是自定义 `Copy image` 路径使用 Excalidraw `exportToBlob` 按画布显示尺寸重新渲染选区，复制的是缩放后的画布元素，而不是图片文件本身的原始像素数据。
+- 修复方案: 对单张未裁剪图片，复制路径直接读取 Excalidraw file 的 `dataURL` 并写入剪贴板，避免经过画布显示尺寸重采样；无文件数据或多选时保留原有导出兜底。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-context-menu-extensions.test.tsx`，断言单张图片复制会从原始 file `dataURL` 生成 PNG Blob，且不调用 `exportToBlob`；`pnpm --filter @aimc/web test -- canvas-context-menu-extensions.test.tsx` 通过（实际运行 46 个 web 测试文件、182 个测试，全部通过）；`pnpm exec biome check --write apps/web/src/components/canvas-context-menu-extensions.tsx apps/web/test/canvas-context-menu-extensions.test.tsx` 通过。
+- 是否已修复完: 是
+- commit hash: `1182077`
+
+### 18. 生成窗口遮挡视频/画布交互
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/HIYUrIyx4eahWLcZP4bc6osznib
+- 真实 record id: `recvmdoNhmBEF5`
+- Bug 原因: 附件截图显示右侧生成图片/视频浮窗停留在画布上方时，用户回到画布拖动视频窗口会被浮窗遮挡。代码中图片和视频生成面板只在外部点击时关闭下拉菜单/参数弹层，浮窗本身仍保持固定 `z-[100]` 覆盖画布区域，导致后续拖拽无法直接作用到被覆盖的画布元素。
+- 修复方案: 图片生成面板和视频生成面板监听到面板外 `mousedown` 时，同步关闭自身；用户点击或拖回画布时，浮窗会先退出，后续画布交互不再被固定浮层拦截。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-generation-panels.test.tsx`，分别覆盖图片生成面板和视频生成面板在点击画布区域时会调用 `onClose`；`pnpm --filter @aimc/web exec vitest run test/canvas-generation-panels.test.tsx` 通过（15 个测试）。页面复验补充时发现真实 Excalidraw 画布仍会因选中态保留而把面板重新唤回，已追加在 `CanvasToolMenu` capture 阶段监听 `pointerdown` 并清空对应 selection，且给 image/video 面板增加 `data-aimc-generator-panel` 标记。新增 `apps/web/test/canvas-tool-menu-panel-close.test.tsx` 覆盖从工具栏创建图片生成面板后点击画布区域会关闭面板并清空 selection；`pnpm --filter @aimc/web exec vitest run test/canvas-tool-menu-panel-close.test.tsx test/canvas-generation-panels.test.tsx` 通过（18 个测试）；`pnpm --filter @aimc/web typecheck` 通过。真实页面 `http://127.0.0.1:3000/canvas?id=e5ba507b-e343-4b73-b9a9-e30347a97e47` 复验：点击“AI 生成图片”出现提示框，再点击画布区域后提示框从 DOM/a11y 树中消失，链路通过。`pnpm exec biome check` 在两个既有生成面板文件上仍报告旧 `any`/SVG accessibility/hook deps lint 债，新增测试文件已单独 `biome check --write` 通过。
+- 是否已修复完: 是
+- commit hash: `5d8ea4f`
+- 页面复验补修 commit hash: `9c65938`
+
+### 19. 删除生成窗口后结果仍插入画布
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/Brzxra80te0JXhcKkHJc52P9nBe
+- 真实 record id: `recvmdpoN3qjOG`
+- Bug 原因: 附件录屏显示用户在图片生成过程中删除生成窗口后，异步生成结果完成时仍会被插入画布。代码中图片/视频生成面板只检查请求是否被 abort；如果用户删除的是画布上的生成占位元素，React 面板和请求可能仍存活，结果返回后会直接 `addFiles`/`updateScene`，把已删除占位重新替换成真实结果。
+- 修复方案: 图片生成完成并下载 dataURL 后、写入文件前，先读取当前 scene 并确认原生成元素仍存在且未 `isDeleted`；视频生成完成后、导入 Excalidraw 转换器前执行同样检查。若占位已被删除，直接退出，不再写入文件、不再替换 scene。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-generation-panels.test.tsx`，用受控 Promise 分别模拟图片/视频生成请求挂起，随后让当前 scene 中的生成元素为 `isDeleted: true`，再 resolve 请求，断言不会再调用图片 `addFiles` 或结果 `updateScene`；`pnpm --filter @aimc/web exec vitest run test/canvas-generation-panels.test.tsx` 通过（17 个测试）。`pnpm --filter @aimc/web typecheck` 初次执行时暴露上一条图片复制路径的 TypeScript 收窄问题，已转入裁剪复制链路一起修复并复验。
+- 是否已修复完: 是
+- commit hash: `9d6ee32`
+
+### 20. 裁剪图片复制后出现白色边框
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/FEqMrC60yeqQqAceW2ecWZZrnXg
+- 真实 record id: `recvmdpUaAovou`
+- Bug 原因: 附件截图显示裁剪后的图片复制再粘贴时带出白色边框。根因和图片复制缩小同源：原复制路径会通过 Excalidraw 画布导出选区，裁剪图会带上元素显示尺寸和画布背景，而不是只复制原始图片的裁剪矩形像素。
+- 修复方案: 对单张带 `crop` 的图片，读取原始 file `dataURL`，创建与 crop 宽高相同的透明 canvas，先 `clearRect` 再只把 crop 区域绘制到 `(0,0)`，最后把该透明 PNG 写入剪贴板；同时补上 `selectedElements[0]` 的类型收窄，保证严格 TypeScript 检查通过。
+- 验证方式和结果: `apps/web/test/canvas-context-menu-extensions.test.tsx` 已覆盖裁剪复制路径，断言 canvas 尺寸等于 crop 宽高、先清透明背景、`drawImage` 只绘制 crop 矩形，并且不再调用 Excalidraw `exportToBlob`；`pnpm --filter @aimc/web exec vitest run test/canvas-context-menu-extensions.test.tsx` 通过（8 个测试）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/canvas-context-menu-extensions.tsx apps/web/test/canvas-context-menu-extensions.test.tsx` 通过。
+- 是否已修复完: 是
+- commit hash: `ea8ca5a`
+
+### 21. 新建会话分镜故事版工具调用失败
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/XKJbrJLe6eve2ecEpCjcIM1bnYf
+- 真实 record id: `recvmdrieXsrCP`
+- Bug 原因: 附件截图显示“搜索项目”工具卡失败；日志包 `/tmp/nextop-lark/recvmdrieXsrCP/nextop-logs-20260611-145507.zip` 在 AI Media Canvas runtime 中显示新会话工具流实际被 schema 异常打断：`manipulate_canvas` 收到 `add_text` 操作时携带 `element_id: null`，被 `z.string().optional()` 拒绝；随后 `generate_image` 在缺少 `prompt/title` 时也被必填 schema 拒绝。这类模型生成的 null/缺省字段会变成工具调用异常，UI 上表现为工具卡失败。
+- 修复方案: `manipulate_canvas.element_id` 允许 `null`，由具体 action 逻辑继续决定是否需要目标元素；`generate_image` 的 `title/prompt` 允许缺省或 `null`，运行时先从 `prompt/title` 互相兜底归一化，若仍没有 prompt，则返回可读的结构化 `missing_prompt` 错误，而不是抛 zod schema 异常打断整轮 agent。
+- 验证方式和结果: 扩展 `apps/server/src/agent/tools/manipulate-canvas.test.ts`，覆盖经过 `inspect_canvas` 后 `add_text` 携带 `element_id: null` 仍可正常应用；扩展 `apps/server/src/agent/local-agent-host/tool-gateway.test.ts`，覆盖 `generate_image` 缺 prompt 时返回 `isError: true` 和可读 `missing_prompt` 摘要而不是抛异常；`pnpm --filter @aimc/server exec vitest run src/agent/tools/manipulate-canvas.test.ts src/agent/local-agent-host/tool-gateway.test.ts` 通过（9 个测试）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm exec biome check apps/server/src/agent/tools/image-generate.ts apps/server/src/agent/tools/manipulate-canvas.test.ts apps/server/src/agent/local-agent-host/tool-gateway.test.ts` 通过。对 `manipulate-canvas.ts` 全文件执行 Biome 时仍会命中该文件既有非空断言/模板字符串 lint 债，未纳入本次范围。
+- 是否已修复完: 是
+- commit hash: `ed78da9`
+
+### 22. 自定义 Skill 附属文件路径输入失焦
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/NxA6rEBNqevbj9cg4LDc3vBXnUU
+- 真实 record id: `recvmdvBgjAPOL`
+- Bug 原因: 无附件，Base 描述为“添加自定义技能，添加附属文件，输入符合的单字符就无法输入了”。根因是 `CreateSkillDialog` 渲染附属文件行时使用 `key={`${index}-${file.filePath}`}`；用户每输入一个路径字符，`filePath` 改变导致 React 认为是新节点，整行输入框被卸载重建，焦点丢失，后续字符无法继续输入。
+- 修复方案: 给每个附属文件行创建稳定的 UI-only `id` 并作为 React key；更新/删除仍按 index 操作，提交前把 `id` 剥离，只提交 `{ filePath, content }`，避免影响 API payload。
+- 验证方式和结果: 扩展 `apps/web/test/skills-page.test.tsx`，打开添加技能弹窗、添加附属文件后连续输入 `scripts/tool.ts`，断言输入框值完整且仍保持 focus；`pnpm --filter @aimc/web exec vitest run test/skills-page.test.tsx -t "attachment file path|custom skill dialog"` 通过（2 个目标测试）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check apps/web/src/components/skills/create-skill-dialog.tsx apps/web/test/skills-page.test.tsx` 通过。
+- 是否已修复完: 是
+- commit hash: `0f3a0fb`
+
+### 23. 重进旧项目后画布内容为空
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/CEs9rj4F6eaarxcDFQycJR9Snkc
+- 真实 record id: `recvmdn4ln6Pnm`
+- Bug 原因: 附件录屏/截图显示退出项目、新建项目后再回到上一个项目，聊天记录仍在但画布为空。结合第 8 条日志可见同类场景下服务端先保存数 MB 画布内容，随后在重进/切换后出现 `bodyBytes: 176` 的 `canvas.save OK`，说明前端在 Excalidraw 新场景尚未完成水合时把空 scene 通过 debounced autosave 覆盖到了服务端。现有空保存保护只覆盖 beforeunload/unmount flush，没有覆盖正常 debounce 保存；CanvasEditor 也没有按 canvasId remount，切换项目时可能复用旧 API/hydration 状态。
+- 修复方案: 在 Canvas 页面给 `CanvasEditor` 增加 `key={canvasData.id}`，确保切换 canvas 时 editor 和 Excalidraw 实例完整重建，并显式取消旧 canvas fallback polling；在 `CanvasEditor` 的 debounced autosave 路径增加与 flush 一致的保护：如果初始加载有 live elements，而当前待保存 live elements 为 0，则跳过本次保存并清理 pending save，防止空 scene 覆盖已有内容。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-editor-i18n.test.tsx`，模拟初始画布已有元素、水合完成后 Excalidraw 触发空元素 `onChange`，断言不会调用 `saveCanvas`；`pnpm --filter @aimc/web exec vitest run test/canvas-editor-i18n.test.tsx` 通过（3 个测试）；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check --write apps/web/src/app/canvas/page.tsx apps/web/src/components/canvas-editor.tsx apps/web/test/canvas-editor-i18n.test.tsx` 通过。
+- 是否已修复完: 是
+- commit hash: `f9a0090`
+
+### 24. 项目会话运行中切出/缩小后重进会话中断且画布为空
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/PYtzr9AjbezqrdcSD4ScR5Ctnpd
+- 真实 record id: `recvmdxv7Zs08T`
+- Bug 原因: 附件截图显示缩小/切出后重进，右侧会话仍有记录但画布为空；日志包 `/tmp/nextop-lark/recvmdxv7Zs08T/nextop-logs-20260611-151834.zip` 显示多个画布在运行/重进后先有数 MB `canvas.save OK`，随后出现同一 canvas `bodyBytes: 176` 的保存，说明空 scene 被前端 autosave 覆盖。日志中还出现 `Store is required but not available in runtime` 和本地 Codex skill frontmatter 警告，前者已由此前 BYOK/workspace skill route 修复覆盖，后者来自用户本机无效 skill 文件；本条直接导致画布为空和会话读取中断感的根因是空 scene 覆盖保存。
+- 修复方案: 复用第 23 条代码修复：`CanvasEditor` 按 canvasId remount，切换 canvas 时取消旧 fallback polling；debounced autosave 增加“初始有元素但当前 live elements 为 0 则跳过保存”的保护，防止窗口缩小/切出/重进期间 Excalidraw 短暂空 scene 覆盖服务端画布内容。
+- 验证方式和结果: 复用第 23 条回归测试和验证命令：`pnpm --filter @aimc/web exec vitest run test/canvas-editor-i18n.test.tsx` 通过（3 个测试），其中新增用例模拟水合后空 `onChange` 并断言不调用 `saveCanvas`；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check --write apps/web/src/app/canvas/page.tsx apps/web/src/components/canvas-editor.tsx apps/web/test/canvas-editor-i18n.test.tsx` 通过。
+- 是否已修复完: 是
+- commit hash: `4626543`
+
+## 页面复验补充（2026-06-11）
+
+- 覆盖记录: `CEs9rj4F6eaarxcDFQycJR9Snkc`、`HIYUrIyx4eahWLcZP4bc6osznib`、`NxA6rEBNqevbj9cg4LDc3vBXnUU`、`PYtzr9AjbezqrdcSD4ScR5Ctnpd`。
+- dev 服务: 已重启 `pnpm dev`，确认 web `3000` 与 server `3001` 均重新监听，server 日志显示 `@aimc/server listening on http://127.0.0.1:3001`。
+- 画布恢复链路: 通过 API 创建两个受控项目/画布 `e5ba507b-e343-4b73-b9a9-e30347a97e47` 与 `bc942fda-487e-4b43-8b58-a9a64684dce6`，各自写入 1 个矩形元素；真实打开第一个画布，切到第二个，再切回第一个，等待 autosave 防抖后回读两个 canvas，结果均保持 `liveCount: 1`，未出现空画布覆盖。
+- 技能附件输入链路: 真实打开 `/skills`，进入“添加自定义技能”，点击“添加文件”，填入 `assets/demo.txt` 与 `hello attachment plus`，快照显示路径和内容完整保留，继续输入不失焦、不清空。
+- 生成面板遮挡链路: 真实打开画布，点击“AI 生成图片”出现面板；初次复验发现点击画布后面板仍保留，已追加代码修复；重启 dev 后再次打开同一页面，点击“AI 生成图片”再点击画布，面板从页面快照中消失，链路通过。
+- 控制台: 真实页面复验期间无应用崩溃/加载失败类错误；仅剩 Next.js `scroll-behavior: smooth` warning 与浏览器 `Permissions policy violation: unload is not allowed` 报告，均与本批修复链路无关。
+- 受限说明: 图片复制/裁剪复制涉及浏览器原生右键菜单和系统剪贴板，当前 Browser 自动化无法稳定读取系统剪贴板，页面复验以真实 canvas 页面打开为前提，核心复制像素逻辑由 `apps/web/test/canvas-context-menu-extensions.test.tsx` 覆盖；生成完成后删除占位仍依赖外部生图/视频模型凭证，真实页面未消耗模型额度，核心异步竞态由 `apps/web/test/canvas-generation-panels.test.tsx` 受控 Promise 覆盖。
+
+## 追加批次（2026-06-11 晚间）
+
+### 25. Agent 回复提供的下载链接未显示
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/UoHsrQ1LKexsntcFtokciotfncf
+- 真实 record id: `recvme1Plq3qZG`
+- Bug 原因: 附件截图显示 `persist_sandbox_file` 已成功上传生成文件，但聊天区“下载链接”位置只出现空白预览。根因是 local-agent 事件适配和 MCP tool gateway 只把 `generate_image` / `screenshot_canvas` 结果映射为 image artifact，`persist_sandbox_file` 返回的 `url` 没有进入 artifact；前端主聊天卡片也只对 `generate_image` 显示图片预览，导致持久化文件工具即使带有 artifact 也会落到普通工具卡片。
+- 修复方案: 在 `local-agent-events` 与 `tool-gateway` 中把 `persist_sandbox_file` 的 `url` 归一为 image artifact；前端 `ToolBlockView` 对 `persist_sandbox_file` / `screenshot_canvas` 的图片 artifact 使用与生图一致的预览卡片展示，保留详情面板可查看原始输出。
+- 验证方式和结果: 扩展 `apps/server/src/agent/runtime.test.ts`，覆盖 local-agent `persist_sandbox_file` tool result 会产出 image artifact；`pnpm --filter @aimc/server test -- src/agent/runtime.test.ts -t "workspace skills|persisted sandbox files"` 通过（实际运行 27 个 server 测试文件、137 个测试，全部通过）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm check:i18n` 通过。真实打开 `http://127.0.0.1:3000/canvas?id=e5ba507b-e343-4b73-b9a9-e30347a97e47&session=e9e2e4ab-60b2-4983-a881-1ff86236eb81`，通过本地 session API 写入一条带 `persist_sandbox_file` image artifact 的 assistant 消息，刷新页面后 DOM 显示 `AIMC persist artifact verification` 图片，`naturalWidth: 1`、`complete: true`，截图保存到 `/tmp/nextop-lark/aimc-persist-artifact-browser-verify-fixed.png`。
+- 是否已修复完: 是
+- commit hash: `25412a0`
+
+### 26. 调用 Skill 会失败
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/PXVbr0z2ReNj6ucjDTEcDIgEnrg
+- 真实 record id: `recvme1PLJbIXz`
+- Bug 原因: 附件截图显示 local-agent 调用 `Ls` 读取 `/workspace-skills/canvas-design/SKILL.md` 时返回 `No files found`。日志中同一窗口还出现用户本机 skill frontmatter 警告和 agent 请求超时，但截图直接失败点是 workspace skill 路径被当作系统根目录下的绝对路径查找。当前应用会把 enabled workspace skills materialize 到本次 run 的工作目录 `workspace-skills/<slug>/...`，绝对 `/workspace-skills/...` 只能在 server deepagent store route 中成立，local-agent 原生 shell/file 工具不会自动映射。
+- 修复方案: 在 local-agent runtime handoff prompt 中补充硬约束：workspace skill 文件已写入当前工作目录，shell/file 工具必须使用相对路径 `workspace-skills/<slug>/SKILL.md`，不得使用 `/workspace-skills/<slug>/SKILL.md`。保留既有 materialization 和 prompt 归一化逻辑，避免创建全局 `/workspace-skills` 链接污染宿主机器。
+- 验证方式和结果: 扩展 `apps/server/src/agent/runtime.test.ts` 的 enabled local workspace skills 用例，断言 local-agent provider 收到的 prompt 包含相对路径约束，包含 `workspace-skills/canvas-director/SKILL.md`，且不包含 `/workspace-skills/canvas-director/SKILL.md`；`pnpm --filter @aimc/server test -- src/agent/runtime.test.ts -t "workspace skills|persisted sandbox files"` 通过（实际运行 27 个 server 测试文件、137 个测试，全部通过）；`pnpm --filter @aimc/server typecheck` 通过。真实打开本地 Canvas 页面并确认 web/server 均在线，Canvas 和聊天面板正常渲染；该链路的外部模型执行依赖本机 local-agent provider，未消耗真实模型调用，核心路径由 runtime 测试覆盖。
+- 是否已修复完: 是
+- commit hash: `814f8b4`
+
+### 27. Download image 后仍聚焦导出选项
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/QT8yr7Jf3eEhETcQkircCvrQnch
+- 真实 record id: `recvm7I9WbBRFI`
+- Bug 原因: 附件录屏显示点击右键菜单 `Download image` 后，系统保存弹窗打开，但 Excalidraw 原生右键菜单仍停留在背后并保留焦点。现有 `closeNativeContextMenu` 只向触发按钮派发 Escape；在浏览器触发下载/保存弹窗抢焦点的时序下，Excalidraw 菜单节点可能尚未被卸载，导致导出选项残留。
+- 修复方案: 在关闭原生菜单时先 blur 当前触发元素，再派发 Escape，并同步移除当前 `.excalidraw .context-menu` 节点，确保下载流程触发前菜单已经从 DOM 中退出。
+- 验证方式和结果: 真实打开本地 Canvas 页面，脚本在 `.excalidraw` 下构造原生 context menu 节点，等待 `CanvasContextMenuExtensions` 注入 `data-testid="downloadImage"`，聚焦并点击该按钮；结果 `menuStillExists: false`，`activeElementTag: "BODY"`，证明点击下载后菜单立即关闭且不再聚焦导出选项。`pnpm --filter @aimc/web typecheck` 通过；`pnpm check:i18n` 通过；页面复验期间仅有既有 Next.js smooth-scroll warning 与浏览器 unload permissions 报告，和本修复无关。
+- 是否已修复完: 是
+- commit hash: `3f01f5b`
