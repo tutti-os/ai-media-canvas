@@ -181,7 +181,7 @@
 - 验证方式和结果: 扩展 `apps/web/test/canvas-generation-panels.test.tsx`，分别覆盖图片生成面板和视频生成面板在点击画布区域时会调用 `onClose`；`pnpm --filter @aimc/web exec vitest run test/canvas-generation-panels.test.tsx` 通过（15 个测试）。页面复验补充时发现真实 Excalidraw 画布仍会因选中态保留而把面板重新唤回，已追加在 `CanvasToolMenu` capture 阶段监听 `pointerdown` 并清空对应 selection，且给 image/video 面板增加 `data-aimc-generator-panel` 标记。新增 `apps/web/test/canvas-tool-menu-panel-close.test.tsx` 覆盖从工具栏创建图片生成面板后点击画布区域会关闭面板并清空 selection；`pnpm --filter @aimc/web exec vitest run test/canvas-tool-menu-panel-close.test.tsx test/canvas-generation-panels.test.tsx` 通过（18 个测试）；`pnpm --filter @aimc/web typecheck` 通过。真实页面 `http://127.0.0.1:3000/canvas?id=e5ba507b-e343-4b73-b9a9-e30347a97e47` 复验：点击“AI 生成图片”出现提示框，再点击画布区域后提示框从 DOM/a11y 树中消失，链路通过。`pnpm exec biome check` 在两个既有生成面板文件上仍报告旧 `any`/SVG accessibility/hook deps lint 债，新增测试文件已单独 `biome check --write` 通过。
 - 是否已修复完: 是
 - commit hash: `5d8ea4f`
-- 页面复验补修 commit hash: `待提交后回填`
+- 页面复验补修 commit hash: `9c65938`
 
 ### 19. 删除生成窗口后结果仍插入画布
 
