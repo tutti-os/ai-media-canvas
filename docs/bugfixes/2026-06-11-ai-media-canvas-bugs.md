@@ -161,3 +161,13 @@
 - 验证方式和结果: 扩展 `apps/web/test/canvas-bottom-bar.test.tsx`，断言辅助底栏在左侧面板打开时使用可用宽度约束和最大宽度；`pnpm --filter @aimc/web exec vitest run test/canvas-bottom-bar.test.tsx` 通过（3 个测试）；`pnpm --filter @aimc/web typecheck` 通过。本地整页复验时当前 canvas 数据加载失败，点击“重试”后仍无法挂载画布，无法完成真实视口截图；该加载失败和本条布局修复无关。
 - 是否已修复完: 是
 - commit hash: `d4c6d1d`
+
+### 17. 拷贝再复制出来的图片缩小
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/EoSprWT0IeyXqxcS931cpq6HnFd
+- 真实 record id: `recvmdoFSAJfLR`
+- Bug 原因: 附件截图显示复制后的图片尺寸明显小于原图。根因是自定义 `Copy image` 路径使用 Excalidraw `exportToBlob` 按画布显示尺寸重新渲染选区，复制的是缩放后的画布元素，而不是图片文件本身的原始像素数据。
+- 修复方案: 对单张未裁剪图片，复制路径直接读取 Excalidraw file 的 `dataURL` 并写入剪贴板，避免经过画布显示尺寸重采样；无文件数据或多选时保留原有导出兜底。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-context-menu-extensions.test.tsx`，断言单张图片复制会从原始 file `dataURL` 生成 PNG Blob，且不调用 `exportToBlob`；`pnpm --filter @aimc/web test -- canvas-context-menu-extensions.test.tsx` 通过（实际运行 46 个 web 测试文件、182 个测试，全部通过）；`pnpm exec biome check --write apps/web/src/components/canvas-context-menu-extensions.tsx apps/web/test/canvas-context-menu-extensions.test.tsx` 通过。
+- 是否已修复完: 是
+- commit hash: `待提交后回填`

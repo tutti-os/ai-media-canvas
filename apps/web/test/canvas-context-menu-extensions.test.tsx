@@ -321,4 +321,194 @@ describe("CanvasContextMenuExtensions", () => {
     expect(clipboardItems[0].items["image/png"]).toBe(pngBlob);
     expect(screen.getByText("图片已复制")).toBeInTheDocument();
   });
+
+  it("copies a single uncropped image from the original file data without resampling the canvas selection", async () => {
+    const user = userEvent.setup();
+    const clipboardWrite = vi.fn().mockResolvedValue(undefined);
+    const originalBlob = new Blob(["original"], { type: "image/png" });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => originalBlob,
+    });
+    class TestClipboardItem {
+      items: Record<string, Blob>;
+
+      constructor(items: Record<string, Blob>) {
+        this.items = items;
+      }
+    }
+
+    document.body.innerHTML = `
+      <div class="excalidraw">
+        <ul class="context-menu">
+          <li data-testid="copy">
+            <button type="button" class="context-menu-item">
+              <div class="context-menu-item__label">Copy image</div>
+            </button>
+          </li>
+        </ul>
+      </div>
+    `;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { write: clipboardWrite },
+    });
+    Object.defineProperty(globalThis, "ClipboardItem", {
+      configurable: true,
+      value: TestClipboardItem,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const excalidrawApi = {
+      getAppState: () => ({
+        selectedElementIds: { "image-1": true },
+      }),
+      getFiles: () => ({
+        "file-1": { dataURL: "data:image/png;base64,b3JpZ2luYWw=" },
+      }),
+      getSceneElements: () => [
+        {
+          id: "image-1",
+          type: "image",
+          fileId: "file-1",
+          isDeleted: false,
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 120,
+        },
+      ],
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasContextMenuExtensions excalidrawApi={excalidrawApi} />
+      </ToastProvider>,
+    );
+
+    await user.click(await screen.findByText("复制图片"));
+
+    await waitFor(() => {
+      expect(clipboardWrite).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "data:image/png;base64,b3JpZ2luYWw=",
+    );
+    expect(exportToBlobMock).not.toHaveBeenCalled();
+    const clipboardItems = clipboardWrite.mock
+      .calls[0][0] as TestClipboardItem[];
+    expect(clipboardItems[0].items["image/png"]).toBe(originalBlob);
+  });
+
+  it("copies a cropped image by rendering only the crop rectangle on a transparent canvas", async () => {
+    const user = userEvent.setup();
+    const clipboardWrite = vi.fn().mockResolvedValue(undefined);
+    const croppedBlob = new Blob(["cropped"], { type: "image/png" });
+    const drawImage = vi.fn();
+    const clearRect = vi.fn();
+    const toBlob = vi.fn((callback: BlobCallback) => callback(croppedBlob));
+    const originalCreateElement = document.createElement.bind(document);
+    class TestClipboardItem {
+      items: Record<string, Blob>;
+
+      constructor(items: Record<string, Blob>) {
+        this.items = items;
+      }
+    }
+    class TestImage {
+      naturalWidth = 800;
+      naturalHeight = 600;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      set src(_value: string) {
+        this.onload?.();
+      }
+    }
+
+    document.body.innerHTML = `
+      <div class="excalidraw">
+        <ul class="context-menu">
+          <li data-testid="copy">
+            <button type="button" class="context-menu-item">
+              <div class="context-menu-item__label">Copy image</div>
+            </button>
+          </li>
+        </ul>
+      </div>
+    `;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { write: clipboardWrite },
+    });
+    Object.defineProperty(globalThis, "ClipboardItem", {
+      configurable: true,
+      value: TestClipboardItem,
+    });
+    Object.defineProperty(globalThis, "Image", {
+      configurable: true,
+      value: TestImage,
+    });
+    vi.spyOn(document, "createElement").mockImplementation((tagName) => {
+      if (tagName === "canvas") {
+        return {
+          width: 0,
+          height: 0,
+          getContext: () => ({ clearRect, drawImage }),
+          toBlob,
+        } as unknown as HTMLCanvasElement;
+      }
+      return originalCreateElement(tagName);
+    });
+
+    const excalidrawApi = {
+      getAppState: () => ({
+        selectedElementIds: { "image-1": true },
+      }),
+      getFiles: () => ({
+        "file-1": { dataURL: "data:image/png;base64,Y3JvcA==" },
+      }),
+      getSceneElements: () => [
+        {
+          id: "image-1",
+          type: "image",
+          fileId: "file-1",
+          isDeleted: false,
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 120,
+          crop: { x: 20, y: 30, width: 200, height: 150 },
+        },
+      ],
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasContextMenuExtensions excalidrawApi={excalidrawApi} />
+      </ToastProvider>,
+    );
+
+    await user.click(await screen.findByText("复制图片"));
+
+    await waitFor(() => {
+      expect(clipboardWrite).toHaveBeenCalledTimes(1);
+    });
+    expect(clearRect).toHaveBeenCalledWith(0, 0, 200, 150);
+    expect(drawImage).toHaveBeenCalledWith(
+      expect.any(TestImage),
+      20,
+      30,
+      200,
+      150,
+      0,
+      0,
+      200,
+      150,
+    );
+    expect(exportToBlobMock).not.toHaveBeenCalled();
+    const clipboardItems = clipboardWrite.mock
+      .calls[0][0] as TestClipboardItem[];
+    expect(clipboardItems[0].items["image/png"]).toBe(croppedBlob);
+  });
 });
