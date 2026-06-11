@@ -164,6 +164,7 @@ export function createLocalAgentRuntimeProvider(
         "If the user wants a finished visual asset, call generate_image or generate_video.",
         "Use inspect_canvas before precise canvas edits, and use manipulate_canvas for deterministic canvas updates.",
         "Do not claim an image or canvas update happened unless the tool actually succeeded.",
+        "Workspace skill files are materialized under the current working directory; when reading them with shell or file tools, use relative paths such as `workspace-skills/<slug>/SKILL.md` and never `/workspace-skills/<slug>/SKILL.md`.",
         handoffSection,
         normalizedPrompt,
       ].join("\n\n");

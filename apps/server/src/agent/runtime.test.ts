@@ -834,6 +834,9 @@ describe("createAgentRunService", () => {
     expect(capturedPrompt).toContain(
       "workspace-skills/canvas-director/SKILL.md",
     );
+    expect(capturedPrompt).toContain(
+      "use relative paths such as `workspace-skills/<slug>/SKILL.md`",
+    );
     expect(capturedPrompt).not.toContain(
       "/workspace-skills/canvas-director/SKILL.md",
     );

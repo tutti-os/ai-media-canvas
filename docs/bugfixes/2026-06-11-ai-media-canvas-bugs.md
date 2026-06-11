@@ -264,3 +264,13 @@
 - 验证方式和结果: 扩展 `apps/server/src/agent/runtime.test.ts`，覆盖 local-agent `persist_sandbox_file` tool result 会产出 image artifact；`pnpm --filter @aimc/server test -- src/agent/runtime.test.ts -t "workspace skills|persisted sandbox files"` 通过（实际运行 27 个 server 测试文件、137 个测试，全部通过）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm check:i18n` 通过。真实打开 `http://127.0.0.1:3000/canvas?id=e5ba507b-e343-4b73-b9a9-e30347a97e47&session=e9e2e4ab-60b2-4983-a881-1ff86236eb81`，通过本地 session API 写入一条带 `persist_sandbox_file` image artifact 的 assistant 消息，刷新页面后 DOM 显示 `AIMC persist artifact verification` 图片，`naturalWidth: 1`、`complete: true`，截图保存到 `/tmp/nextop-lark/aimc-persist-artifact-browser-verify-fixed.png`。
 - 是否已修复完: 是
 - commit hash: 待提交后回填
+
+### 26. 调用 Skill 会失败
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/PXVbr0z2ReNj6ucjDTEcDIgEnrg
+- 真实 record id: `recvme1PLJbIXz`
+- Bug 原因: 附件截图显示 local-agent 调用 `Ls` 读取 `/workspace-skills/canvas-design/SKILL.md` 时返回 `No files found`。日志中同一窗口还出现用户本机 skill frontmatter 警告和 agent 请求超时，但截图直接失败点是 workspace skill 路径被当作系统根目录下的绝对路径查找。当前应用会把 enabled workspace skills materialize 到本次 run 的工作目录 `workspace-skills/<slug>/...`，绝对 `/workspace-skills/...` 只能在 server deepagent store route 中成立，local-agent 原生 shell/file 工具不会自动映射。
+- 修复方案: 在 local-agent runtime handoff prompt 中补充硬约束：workspace skill 文件已写入当前工作目录，shell/file 工具必须使用相对路径 `workspace-skills/<slug>/SKILL.md`，不得使用 `/workspace-skills/<slug>/SKILL.md`。保留既有 materialization 和 prompt 归一化逻辑，避免创建全局 `/workspace-skills` 链接污染宿主机器。
+- 验证方式和结果: 扩展 `apps/server/src/agent/runtime.test.ts` 的 enabled local workspace skills 用例，断言 local-agent provider 收到的 prompt 包含相对路径约束，包含 `workspace-skills/canvas-director/SKILL.md`，且不包含 `/workspace-skills/canvas-director/SKILL.md`；`pnpm --filter @aimc/server test -- src/agent/runtime.test.ts -t "workspace skills|persisted sandbox files"` 通过（实际运行 27 个 server 测试文件、137 个测试，全部通过）；`pnpm --filter @aimc/server typecheck` 通过。真实打开本地 Canvas 页面并确认 web/server 均在线，Canvas 和聊天面板正常渲染；该链路的外部模型执行依赖本机 local-agent provider，未消耗真实模型调用，核心路径由 runtime 测试覆盖。
+- 是否已修复完: 是
+- commit hash: 待提交后回填
