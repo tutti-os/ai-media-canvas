@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { HexColorPicker } from "react-colorful";
+import { createPortal } from "react-dom";
 
 import { useAppTranslation } from "@/i18n";
 import { fitAllCanvasElements } from "@/lib/canvas-view";
@@ -49,7 +49,7 @@ const Ico = ({
   vb = "0 0 16 16",
   fill = "none",
 }: IcoProps) => (
-  <svg viewBox={vb} fill={fill} className={className}>
+  <svg viewBox={vb} fill={fill} className={className} aria-hidden="true">
     {children}
   </svg>
 );
@@ -102,7 +102,7 @@ const CloseIcon = ({ className }: { className?: string }) => (
 
 /* checkerboard pattern for "transparent" swatch */
 const CheckerIcon = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 16 16" className={className}>
+  <svg viewBox="0 0 16 16" className={className} aria-hidden="true">
     <rect width="8" height="8" fill="#ccc" />
     <rect x="8" y="8" width="8" height="8" fill="#ccc" />
     <rect x="8" width="8" height="8" fill="#fff" />
@@ -361,11 +361,11 @@ export function CanvasBottomBar({
   return (
     <div
       className="absolute bottom-5 z-20 transition-[left] duration-200"
-      style={{ left: barLeft, maxWidth: "calc(100% - 32px)" }}
+      style={{ left: barLeft, right: 16, maxWidth: "calc(100% - 32px)" }}
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center gap-0.5 overflow-x-auto rounded-full bg-card/90 backdrop-blur-lg border border-border px-1 py-1 shadow-card">
+      <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-full bg-card/90 backdrop-blur-lg border border-border px-1 py-1 shadow-card">
         {/* ── Background color button ── */}
         <button
           ref={bgBtnRef}

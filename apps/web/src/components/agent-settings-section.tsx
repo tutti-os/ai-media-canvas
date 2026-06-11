@@ -13,6 +13,7 @@ import type {
 import { useAppTranslation } from "@/i18n";
 import {
   type AgentModelSourceTab,
+  SUPPORTED_LOCAL_CLI_PROVIDERS,
   formatLocalCliProviderLabel,
   getAgentModelSourceTab,
   getModelSourceTab,
@@ -20,17 +21,17 @@ import {
   isLocalCliProvider,
 } from "@/lib/agent-model-groups";
 import {
+  hasNextopManagedCredentialBridge,
+  openNextopManagedModelSettings,
+  requestNextopManagedGrant,
+} from "@/lib/nextop-managed-credentials";
+import {
   connectNextopManagedModels,
   disconnectNextopManagedModels,
   fetchModels,
   fetchNextopManagedConnection,
   installAgentProvider,
 } from "@/lib/server-api";
-import {
-  hasNextopManagedCredentialBridge,
-  openNextopManagedModelSettings,
-  requestNextopManagedGrant,
-} from "@/lib/nextop-managed-credentials";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { LocalCliProviderIcon } from "./local-cli-provider-icon";
 import { Button } from "./ui/button";
@@ -49,6 +50,7 @@ import { Label } from "./ui/label";
 
 interface AgentSettingsSectionProps {
   initialSourceTab?: AgentModelSourceTab | undefined;
+  onSaved?: (() => void) | undefined;
   settings: WorkspaceSettings;
   onSave: (settings: WorkspaceSettings) => Promise<void>;
   surface?: "page" | "dialog";
@@ -73,11 +75,7 @@ type ApiProviderPreset = {
   models: string[];
 };
 
-const LOCAL_CLI_PROVIDER_ORDER = [
-  "codex",
-  "claude",
-];
-const PINNED_LOCAL_CLI_PROVIDERS = ["codex", "claude"];
+const LOCAL_CLI_PROVIDER_ORDER = [...SUPPORTED_LOCAL_CLI_PROVIDERS];
 
 const AGENT_PROTOCOLS: Array<{
   id: AgentProtocolId;
@@ -253,10 +251,6 @@ function isInstallableLocalProvider(
   provider: string,
 ): provider is InstallableAgentProviderId {
   return provider === "codex" || provider === "claude";
-}
-
-function isSupportedLocalCliProvider(provider: string) {
-  return PINNED_LOCAL_CLI_PROVIDERS.includes(provider);
 }
 
 function groupLocalCliModels(models: ModelInfo[]): LocalCliProviderGroup[] {
@@ -621,7 +615,7 @@ function LocalCliProviderModelPicker({
   const displayGroups = useMemo<LocalCliProviderDisplayGroup[]>(() => {
     const groups = new Map<string, LocalCliProviderDisplayGroup>();
 
-    for (const provider of PINNED_LOCAL_CLI_PROVIDERS) {
+    for (const provider of SUPPORTED_LOCAL_CLI_PROVIDERS) {
       groups.set(provider, {
         provider,
         label: formatLocalCliProviderLabel(provider),
@@ -762,6 +756,7 @@ function LocalCliProviderModelPicker({
 
 export function AgentSettingsSection({
   initialSourceTab,
+  onSaved,
   settings: initialSettings,
   onSave,
   surface = "page",
@@ -863,9 +858,7 @@ export function AgentSettingsSection({
   const localCliModels = useMemo(
     () =>
       availableModels.filter(
-        (model) =>
-          getModelSourceTab(model) === "local-agent" &&
-          isSupportedLocalCliProvider(model.provider),
+        (model) => getModelSourceTab(model) === "local-agent",
       ),
     [availableModels],
   );
@@ -921,8 +914,8 @@ export function AgentSettingsSection({
   );
   const selectedModelName = useMemo(
     () =>
-      isApiProvider(settings.defaultModel.split(":")[0] ?? "")
-        && inferDefaultModelSource(settings) === "api-provider"
+      isApiProvider(settings.defaultModel.split(":")[0] ?? "") &&
+      inferDefaultModelSource(settings) === "api-provider"
         ? (availableModels.find((model) => model.id === settings.defaultModel)
             ?.name ?? settings.defaultModel)
         : "",
@@ -931,8 +924,9 @@ export function AgentSettingsSection({
   const selectedNextopManagedModelName = useMemo(
     () =>
       inferDefaultModelSource(settings) === "nextop-managed"
-        ? (nextopManagedModels.find((model) => model.id === settings.defaultModel)
-            ?.name ?? "")
+        ? (nextopManagedModels.find(
+            (model) => model.id === settings.defaultModel,
+          )?.name ?? "")
         : "",
     [nextopManagedModels, settings],
   );
@@ -1066,6 +1060,7 @@ export function AgentSettingsSection({
         type: "success",
         message: t("agentSettings.feedback.updated"),
       });
+      onSaved?.();
     } catch {
       setFeedback({
         type: "error",
@@ -1190,10 +1185,7 @@ export function AgentSettingsSection({
                   ) : null}
                   <Button
                     type="button"
-                    disabled={
-                      connectingNextopManaged ||
-                      !nextopBridgeAvailable
-                    }
+                    disabled={connectingNextopManaged || !nextopBridgeAvailable}
                     onClick={handleConnectNextopManaged}
                   >
                     {connectingNextopManaged ? (
@@ -1324,7 +1316,10 @@ export function AgentSettingsSection({
                           <DropdownMenuRadioGroup
                             value={settings.defaultModel}
                             onValueChange={(value) =>
-                              selectDefaultModel(value as string, "api-provider")
+                              selectDefaultModel(
+                                value as string,
+                                "api-provider",
+                              )
                             }
                           >
                             {modelPickerGroups.map((protocol, groupIndex) => (

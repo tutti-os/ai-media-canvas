@@ -284,3 +284,55 @@
 - 验证方式和结果: 真实打开本地 Canvas 页面，脚本在 `.excalidraw` 下构造原生 context menu 节点，等待 `CanvasContextMenuExtensions` 注入 `data-testid="downloadImage"`，聚焦并点击该按钮；结果 `menuStillExists: false`，`activeElementTag: "BODY"`，证明点击下载后菜单立即关闭且不再聚焦导出选项。`pnpm --filter @aimc/web typecheck` 通过；`pnpm check:i18n` 通过；页面复验期间仅有既有 Next.js smooth-scroll warning 与浏览器 unload permissions 报告，和本修复无关。
 - 是否已修复完: 是
 - commit hash: `3f01f5b`
+
+## 追加批次（2026-06-12）
+
+### 28. Codex 本地 Agent 模型报错
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/PT1arjbLMe4La6cWIdUcgPyvnwf
+- 真实 record id: `recvmeNOtjEFOm`
+- Bug 原因: 附件日志中出现本地 agent provider/model 相关异常；现有模型发现链路会把 AIMC 不支持的 local-agent provider 也暴露到 `/models` 和前端选择器中，用户可能选到非 Codex/Claude 的本地 provider，进而触发 Codex 会话报错或异常模型 ID。另有模型描述信息未透传，导致前端列表缺少上下文。
+- 修复方案: 服务端 local-agent provider 注册和 `/models` 输出统一限制为 AIMC 支持的 `codex`、`claude`；共享模型契约补充可选 `description`，前端模型选择器展示描述并隐藏 unsupported local provider 的默认标签；设置页本地 CLI 列表复用同一支持列表。
+- 验证方式和结果: `pnpm --filter @aimc/server exec vitest run src/agent/local-agent-providers.test.ts src/http/models.test.ts` 通过（12 个测试）；`pnpm --filter @aimc/web exec vitest run test/agent-model-selector.test.tsx test/settings-page.test.tsx` 通过（30 个测试）；`pnpm --filter @aimc/web typecheck`、`pnpm check:i18n` 通过。
+- 是否已修复完: 是
+- commit hash: `待提交后回填`
+
+### 29. 底部工具栏未自适应
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/ZkkkrcznWeH1nIc1pvEcezT8n8f
+- 真实 record id: `recvm8aY2eSkK0`
+- Bug 原因: 底部辅助工具栏只设置了左偏移和最大宽度，缺少右侧约束；内部按钮行使用单行 flex 和横向 overflow，在窗口变窄或侧栏占用画布宽度时会贴边/溢出，截图中红框位置即为该自适应缺口。
+- 修复方案: 辅助工具栏根节点同时设置 `left`、`right: 16` 和 `maxWidth`，使其受当前视口宽度约束；内部工具行改为 `flex-wrap` 和 `max-w-full`，在紧凑宽度下换行而不是强制水平溢出；装饰 SVG 标记为 `aria-hidden`，保持静态检查通过。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-bottom-bar.test.tsx`，覆盖左侧面板打开时的宽度约束和紧凑工具换行；`pnpm --filter @aimc/web exec vitest run test/canvas-bottom-bar.test.tsx test/canvas-page.test.tsx test/settings-page.test.tsx` 通过（23 个测试）；`pnpm exec biome check apps/web/src/components/canvas-bottom-bar.tsx apps/web/test/canvas-bottom-bar.test.tsx` 通过。
+- 是否已修复完: 是
+- commit hash: `待提交后回填`
+
+### 30. 设置弹窗保存后未关闭
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/MDe6ruSc5eVcI4cq0zLcWTgXnSh
+- 真实 record id: `recvm8JaDq1Uh6`
+- Bug 原因: `SettingsDialog` 内部复用 `SettingsPanel` 和 `AgentSettingsSection`；保存成功后只设置成功反馈，不通知 dialog 容器关闭，因此用户点击 Save 后仍停留在弹窗内，截图中可见成功状态但弹窗未退出。
+- 修复方案: 为 `SettingsPanel`/`AgentSettingsSection` 增加可选 `onSaved` 回调；dialog 场景在保存成功后调用 `onOpenChange(false)`，页面设置场景保持原有成功反馈和停留行为。
+- 验证方式和结果: 新增 `apps/web/test/settings-page.test.tsx` 回归用例，打开 `SettingsDialog`、修改 OpenAI API Key、点击 Save 后断言 `onOpenChange(false)` 被调用；`pnpm --filter @aimc/web exec vitest run test/settings-page.test.tsx` 通过，包含本批组合命令共 23 个目标测试通过；`pnpm --filter @aimc/web typecheck` 通过。
+- 是否已修复完: 是
+- commit hash: `待提交后回填`
+
+### 31. 项目会话运行中切出/缩小后重进会话中断
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/PYtzr9AjbezqrdcSD4ScR5Ctnpd
+- 真实 record id: `recvmdxv7Zs08T`
+- Bug 原因: 本记录已在第 24 条修复过空 scene 覆盖保存；本次复核日志和截图仍指向“切换/重进期间旧异步结果或旧订阅影响当前 canvas”的同类竞态风险。Canvas 页面层面的 fallback generation watch 原先没有绑定启动时 canvasId，旧项目任务晚到时仍可能在当前页面回调，造成用户感知为会话/画布状态错乱。
+- 修复方案: Canvas 页面在登记 fallback generation watch 时捕获当前 canvasId；任务成功回调前再次比对当前 canvasId，不一致则忽略，不再向当前画布插入旧项目结果。该保护与此前按 canvasId remount、取消旧 polling 的修复形成双保险。
+- 验证方式和结果: 新增 `apps/web/test/canvas-page.test.tsx` 回归用例，模拟旧 canvas 启动 fallback image job，切到新 canvas 后旧 job 成功，断言不会调用 `insertImageOnCanvas`；`pnpm --filter @aimc/web exec vitest run test/canvas-page.test.tsx` 通过，并随本批组合命令验证 23 个前端目标测试通过。
+- 是否已修复完: 是
+- commit hash: `待提交后回填`
+
+### 32. 上一个项目生成结果仍显示到新项目画布
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/JTVXrcoxleJlMucBzmccovJLn72
+- 真实 record id: `recvm886lykM5s`
+- Bug 原因: 第 5 条曾处理 ChatSidebar run 事件跨 canvas 插入，但仍漏掉 Canvas 页面自己登记的 generation job fallback watch；当用户在项目 A 生图过程中切到项目 B，项目 A 的 fallback watch 成功回调仍持有当前 Excalidraw API，可能把旧图插入项目 B 画布。
+- 修复方案: 与第 31 条共用修复：fallback watch 启动时记录 source canvasId，成功回调时若页面已切到其他 canvas，则直接返回，不执行图片/视频插入。
+- 验证方式和结果: `apps/web/test/canvas-page.test.tsx` 新增受控旧任务晚到测试，修复前会调用 `insertImageOnCanvas`，修复后不调用；`pnpm --filter @aimc/web exec vitest run test/canvas-page.test.tsx` 通过；`pnpm --filter @aimc/web typecheck`、`pnpm check:i18n` 通过。
+- 是否已修复完: 是
+- commit hash: `待提交后回填`

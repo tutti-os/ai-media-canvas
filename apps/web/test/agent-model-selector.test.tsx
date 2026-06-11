@@ -185,7 +185,12 @@ describe("AgentModelSelector", () => {
   it("switches the picker between local CLI and API provider models", async () => {
     fetchModelsMock.mockResolvedValue({
       models: [
-        { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
+        {
+          id: "codex:gpt-5.4",
+          name: "Codex",
+          description: "Strong model for everyday coding.",
+          provider: "codex",
+        },
         { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
       ],
     });
@@ -202,6 +207,9 @@ describe("AgentModelSelector", () => {
       screen.getByRole("button", { name: "API provider" }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(screen.getAllByText("Codex").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("Strong model for everyday coding."),
+    ).toBeInTheDocument();
     expect(screen.queryByText("gpt-5.4")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "API provider" }));

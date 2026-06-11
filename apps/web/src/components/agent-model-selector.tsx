@@ -7,6 +7,7 @@ import {
   getAgentModelSourceTab,
   getModelSourceTab,
   isLocalCliProvider,
+  isSupportedLocalCliProvider,
 } from "@/lib/agent-model-groups";
 import { fetchModels, fetchWorkspaceSettings } from "@/lib/server-api";
 import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "@/lib/workspace-settings-events";
@@ -24,6 +25,7 @@ import { LocalCliProviderIcon } from "./local-cli-provider-icon";
 import { SettingsDialog } from "./settings-dialog";
 
 type ModelOption = {
+  description?: string | undefined;
   id: string;
   name: string;
   provider: string;
@@ -277,12 +279,26 @@ export function AgentModelSelector({
   const selectedModel = models.find((m) => m.id === model);
   const selectedProvider = selectedModel?.provider || getModelProvider(model);
   const workspaceDefaultProvider = getModelProvider(workspaceDefaultModel);
+  const selectedProviderIsSupportedLocal =
+    selectedProvider &&
+    isLocalCliProvider(selectedProvider) &&
+    isSupportedLocalCliProvider(selectedProvider);
+  const selectedProviderIsUnsupportedLocal =
+    selectedProvider &&
+    isLocalCliProvider(selectedProvider) &&
+    !isSupportedLocalCliProvider(selectedProvider);
+  const workspaceDefaultProviderIsSupportedLocal =
+    workspaceDefaultProvider &&
+    isLocalCliProvider(workspaceDefaultProvider) &&
+    isSupportedLocalCliProvider(workspaceDefaultProvider);
+  const workspaceDefaultProviderIsUnsupportedLocal =
+    workspaceDefaultProvider &&
+    isLocalCliProvider(workspaceDefaultProvider) &&
+    !isSupportedLocalCliProvider(workspaceDefaultProvider);
   const triggerLocalProvider =
-    selectedProvider && isLocalCliProvider(selectedProvider)
+    selectedProviderIsSupportedLocal
       ? selectedProvider
-      : !model &&
-          workspaceDefaultProvider &&
-          isLocalCliProvider(workspaceDefaultProvider)
+      : !model && workspaceDefaultProviderIsSupportedLocal
         ? workspaceDefaultProvider
         : "";
   const triggerLocalProviderLabel = triggerLocalProvider
@@ -294,12 +310,13 @@ export function AgentModelSelector({
     triggerLocalProviderLabel ??
     (selectedModel
       ? selectedModel.name
-      : formatDefaultModelLabel(model, models)) ??
+      : selectedProviderIsUnsupportedLocal
+        ? null
+        : formatDefaultModelLabel(model, models)) ??
     "Agent";
-  const defaultModelLabel = formatDefaultModelLabel(
-    workspaceDefaultModel,
-    models,
-  );
+  const defaultModelLabel = workspaceDefaultProviderIsUnsupportedLocal
+    ? null
+    : formatDefaultModelLabel(workspaceDefaultModel, models);
   const trimmedCustomModelDraft = customModelDraft.trim();
 
   // Auto-positioning popover (above or below based on available space)
@@ -540,7 +557,14 @@ export function AgentModelSelector({
                           : "hover:bg-muted"
                       }`}
                     >
-                      <span className="flex-1 text-left">{m.name}</span>
+                      <span className="min-w-0 flex-1 text-left">
+                        <span className="block truncate">{m.name}</span>
+                        {m.description && (
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {m.description}
+                          </span>
+                        )}
+                      </span>
                       {model === m.id && (
                         <svg
                           aria-hidden="true"

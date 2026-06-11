@@ -83,4 +83,24 @@ describe("CanvasBottomBar", () => {
       maxWidth: "calc(100% - 32px)",
     });
   });
+
+  it("wraps compact controls instead of forcing horizontal toolbar overflow", () => {
+    const { container } = render(
+      <CanvasBottomBar
+        excalidrawApi={null}
+        layersOpen={false}
+        onToggleLayers={vi.fn()}
+        filesOpen={false}
+        onToggleFiles={vi.fn()}
+        leftPanelOpen={false}
+      />,
+    );
+
+    expect(container.firstElementChild?.firstElementChild).toHaveClass(
+      "flex-wrap",
+    );
+    expect(container.firstElementChild?.firstElementChild).not.toHaveClass(
+      "overflow-x-auto",
+    );
+  });
 });

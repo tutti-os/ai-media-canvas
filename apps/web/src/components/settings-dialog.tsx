@@ -1,9 +1,9 @@
 "use client";
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { useAppTranslation } from "@/i18n";
 import type { AgentModelSourceTab } from "@/lib/agent-model-groups";
 import { SettingsPanel, type SettingsTab } from "./settings-panel";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -34,6 +34,7 @@ export function SettingsDialog({
         <SettingsPanel
           initialTab={initialTab}
           initialAgentSourceTab={initialAgentSourceTab}
+          onSaved={() => onOpenChange(false)}
           surface="dialog"
         />
       </DialogContent>

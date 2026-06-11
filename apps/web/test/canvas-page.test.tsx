@@ -11,27 +11,32 @@ const {
   generationJobWatchMock,
   replaceMock,
   refreshMock,
+  insertImageOnCanvasMock,
   insertVideoOnCanvasMock,
   latestChatSidebarPropsRef,
-} =
-  vi.hoisted(() => ({
-    fetchCanvasMock: vi.fn(),
-    fetchProjectMock: vi.fn(),
-    generationJobWatchMock: vi.fn(),
-    replaceMock: vi.fn(),
-    refreshMock: vi.fn(),
-    insertVideoOnCanvasMock: vi.fn(),
-    latestChatSidebarPropsRef: {
-      current: null as Record<string, unknown> | null,
-    },
-  }));
+  searchParamsRef,
+} = vi.hoisted(() => ({
+  fetchCanvasMock: vi.fn(),
+  fetchProjectMock: vi.fn(),
+  generationJobWatchMock: vi.fn(),
+  replaceMock: vi.fn(),
+  refreshMock: vi.fn(),
+  insertImageOnCanvasMock: vi.fn(),
+  insertVideoOnCanvasMock: vi.fn(),
+  latestChatSidebarPropsRef: {
+    current: null as Record<string, unknown> | null,
+  },
+  searchParamsRef: {
+    current: new URLSearchParams({ id: "canvas-1" }),
+  },
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     refresh: refreshMock,
     replace: replaceMock,
   }),
-  useSearchParams: () => new URLSearchParams({ id: "canvas-1" }),
+  useSearchParams: () => searchParamsRef.current,
 }));
 
 vi.mock("../src/hooks/use-websocket", () => ({
@@ -103,7 +108,9 @@ vi.mock("../src/lib/server-api", () => ({
 }));
 
 vi.mock("../src/lib/generation-job-service", async () => {
-  const actual = (await vi.importActual("../src/lib/generation-job-service")) as {
+  const actual = (await vi.importActual(
+    "../src/lib/generation-job-service",
+  )) as {
     generationJobService: Record<string, unknown>;
   };
   return {
@@ -116,16 +123,27 @@ vi.mock("../src/lib/generation-job-service", async () => {
 });
 
 vi.mock("../src/lib/canvas-elements", () => ({
-  insertImageOnCanvas: vi.fn(),
+  insertImageOnCanvas: insertImageOnCanvasMock,
   insertVideoOnCanvas: insertVideoOnCanvasMock,
 }));
 
 import CanvasPage from "../src/app/canvas/page";
 
+type FallbackWatchOptions = {
+  onSucceeded?: (result: {
+    signed_url: string;
+    mime_type: string;
+    width: number;
+    height: number;
+    duration_seconds: number;
+  }) => void;
+};
+
 describe("Canvas page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     latestChatSidebarPropsRef.current = null;
+    searchParamsRef.current = new URLSearchParams({ id: "canvas-1" });
     fetchCanvasMock.mockResolvedValue({
       canvas: {
         id: "canvas-1",
@@ -145,22 +163,25 @@ describe("Canvas page", () => {
         brandKitId: "kit-1",
       },
     });
-    generationJobWatchMock.mockImplementation((_jobId: string, options: any) => {
-      const promise = Promise.resolve({
-        signed_url: "http://localhost:3001/local-assets/video-1",
-        mime_type: "video/mp4",
-        width: 1280,
-        height: 720,
-        duration_seconds: 5,
-      }).then((result) => {
-        options?.onSucceeded?.(result);
-        return result;
-      });
-      return {
-        promise,
-        unsubscribe: vi.fn(),
-      };
-    });
+    insertImageOnCanvasMock.mockResolvedValue(undefined);
+    generationJobWatchMock.mockImplementation(
+      (_jobId: string, options: FallbackWatchOptions) => {
+        const promise = Promise.resolve({
+          signed_url: "http://localhost:3001/local-assets/video-1",
+          mime_type: "video/mp4",
+          width: 1280,
+          height: 720,
+          duration_seconds: 5,
+        }).then((result) => {
+          options?.onSucceeded?.(result);
+          return result;
+        });
+        return {
+          promise,
+          unsubscribe: vi.fn(),
+        };
+      },
+    );
   });
 
   afterEach(() => {
@@ -221,5 +242,79 @@ describe("Canvas page", () => {
         }),
       ),
     );
+  });
+
+  it("ignores late fallback image results from a previous canvas", async () => {
+    let firstWatchOptions: Record<string, unknown> | null = null;
+    generationJobWatchMock.mockImplementationOnce(
+      (_jobId: string, options: Record<string, unknown>) => {
+        firstWatchOptions = options;
+        return {
+          promise: Promise.resolve({}),
+          unsubscribe: vi.fn(),
+        };
+      },
+    );
+
+    const { rerender } = render(<CanvasPage />);
+
+    await screen.findByText("Canvas Editor");
+
+    const onStreamEvent = latestChatSidebarPropsRef.current?.onStreamEvent as
+      | ((event: Record<string, unknown>) => void)
+      | undefined;
+    expect(onStreamEvent).toBeTypeOf("function");
+
+    onStreamEvent?.({
+      type: "tool.completed",
+      runId: "run-1",
+      toolCallId: "tool-1",
+      toolName: "generate_image",
+      output: {
+        jobId: "job-image-1",
+        jobType: "image_generation",
+      },
+      timestamp: "2026-06-08T00:00:00.000Z",
+    });
+
+    await waitFor(() => expect(generationJobWatchMock).toHaveBeenCalled());
+
+    searchParamsRef.current = new URLSearchParams({ id: "canvas-2" });
+    fetchCanvasMock.mockResolvedValueOnce({
+      canvas: {
+        id: "canvas-2",
+        name: "Second Canvas",
+        projectId: "project-2",
+        content: {
+          elements: [],
+          appState: {},
+          files: {},
+        },
+      },
+    });
+    fetchProjectMock.mockResolvedValueOnce({
+      project: {
+        id: "project-2",
+        name: "Second Project",
+        brandKitId: null,
+      },
+    });
+    rerender(<CanvasPage />);
+
+    await waitFor(() =>
+      expect(fetchCanvasMock).toHaveBeenLastCalledWith("canvas-2"),
+    );
+
+    const onSucceeded = firstWatchOptions?.onSucceeded as
+      | ((result: Record<string, unknown>) => void)
+      | undefined;
+    onSucceeded?.({
+      signed_url: "http://localhost:3001/local-assets/old-image",
+      mime_type: "image/png",
+      width: 512,
+      height: 512,
+    });
+
+    expect(insertImageOnCanvasMock).not.toHaveBeenCalled();
   });
 });
