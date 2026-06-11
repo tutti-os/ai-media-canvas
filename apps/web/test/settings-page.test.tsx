@@ -786,6 +786,12 @@ describe("SettingsPage", () => {
         { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
         { id: "codex:gpt-5.5", name: "Codex", provider: "codex" },
         { id: "claude:sonnet", name: "Sonnet", provider: "claude" },
+        {
+          id: "gemini:gemini-2.5-pro",
+          name: "Gemini CLI",
+          provider: "gemini",
+        },
+        { id: "opencode:default", name: "OpenCode", provider: "opencode" },
         { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
       ],
     });
@@ -797,16 +803,16 @@ describe("SettingsPage", () => {
     ).toHaveAttribute("aria-pressed", "true");
     expect((await screen.findAllByText("Codex")).length).toBeGreaterThan(0);
     expect(screen.getByText("2 models")).toBeInTheDocument();
-    expect(screen.getByLabelText("Model")).toHaveValue("codex:gpt-5.4");
-    await userEvent.selectOptions(
-      screen.getByLabelText("Model"),
-      "codex:gpt-5.5",
+    expect(
+      screen.getByRole("button", { name: /Claude Code/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Gemini CLI")).not.toBeInTheDocument();
+    expect(screen.queryByText("OpenCode")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Custom model id")).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /Claude Code/i }),
     );
-    expect(screen.getByLabelText("Model")).toHaveValue("codex:gpt-5.5");
-    await userEvent.selectOptions(screen.getByLabelText("Model"), "__custom__");
-    expect(await screen.findByLabelText("Custom model id")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /Claude Code/i }));
-    expect(await screen.findByLabelText("Model")).toHaveValue("claude:sonnet");
     expect(screen.queryByLabelText("OpenAI API Key")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "API provider" }));
@@ -932,7 +938,7 @@ describe("SettingsPage", () => {
       await screen.findByRole("button", { name: /Codex/i }),
     );
 
-    expect(await screen.findByLabelText("Model")).toHaveValue("codex:gpt-5.5");
+    expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -1023,8 +1029,7 @@ describe("SettingsPage", () => {
     expect(
       screen.getByText(/Install Codex or Claude Code/i),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Model")).toBeDisabled();
-    expect(screen.getByLabelText("Model")).toHaveValue("");
+    expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
 
     await userEvent.click(codexButton);
 
@@ -1087,7 +1092,7 @@ describe("SettingsPage", () => {
       codexButton.compareDocumentPosition(claudeButton) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(screen.getByLabelText("Model")).toHaveValue("");
+    expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
   });
 });
 
