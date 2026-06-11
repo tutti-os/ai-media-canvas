@@ -382,6 +382,7 @@ export function VideoGeneratorPanel({
   return createPortal(
     <div
       ref={panelRef}
+      data-aimc-generator-panel="video"
       style={{ left: panelPosition.left, top: panelPosition.top }}
       className="fixed z-[100] w-[520px] rounded-[24px] border border-border bg-card/95 shadow-card backdrop-blur-lg"
       onKeyDown={(e) => e.stopPropagation()}

@@ -288,6 +288,7 @@ export function ImageGeneratorPanel({
   return createPortal(
     <div
       ref={panelRef}
+      data-aimc-generator-panel="image"
       style={{ left: panelPosition.left, top: panelPosition.top }}
       className="fixed z-[100] w-[450px] rounded-xl border-[0.5px] border-border bg-card/95 p-2 shadow-card backdrop-blur-lg"
       onKeyDown={(e) => e.stopPropagation()}

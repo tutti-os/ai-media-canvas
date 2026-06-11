@@ -178,9 +178,10 @@
 - 真实 record id: `recvmdoNhmBEF5`
 - Bug 原因: 附件截图显示右侧生成图片/视频浮窗停留在画布上方时，用户回到画布拖动视频窗口会被浮窗遮挡。代码中图片和视频生成面板只在外部点击时关闭下拉菜单/参数弹层，浮窗本身仍保持固定 `z-[100]` 覆盖画布区域，导致后续拖拽无法直接作用到被覆盖的画布元素。
 - 修复方案: 图片生成面板和视频生成面板监听到面板外 `mousedown` 时，同步关闭自身；用户点击或拖回画布时，浮窗会先退出，后续画布交互不再被固定浮层拦截。
-- 验证方式和结果: 扩展 `apps/web/test/canvas-generation-panels.test.tsx`，分别覆盖图片生成面板和视频生成面板在点击画布区域时会调用 `onClose`；`pnpm --filter @aimc/web exec vitest run test/canvas-generation-panels.test.tsx` 通过（15 个测试）。`pnpm exec biome check --write apps/web/src/components/canvas/image-generator-panel.tsx apps/web/src/components/canvas/video-generator-panel.tsx apps/web/test/canvas-generation-panels.test.tsx` 已执行并完成格式化，但该命令仍报告两个生成面板文件中既有的 `any`/旧 SVG accessibility 等 lint 问题，和本次修复无关。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-generation-panels.test.tsx`，分别覆盖图片生成面板和视频生成面板在点击画布区域时会调用 `onClose`；`pnpm --filter @aimc/web exec vitest run test/canvas-generation-panels.test.tsx` 通过（15 个测试）。页面复验补充时发现真实 Excalidraw 画布仍会因选中态保留而把面板重新唤回，已追加在 `CanvasToolMenu` capture 阶段监听 `pointerdown` 并清空对应 selection，且给 image/video 面板增加 `data-aimc-generator-panel` 标记。新增 `apps/web/test/canvas-tool-menu-panel-close.test.tsx` 覆盖从工具栏创建图片生成面板后点击画布区域会关闭面板并清空 selection；`pnpm --filter @aimc/web exec vitest run test/canvas-tool-menu-panel-close.test.tsx test/canvas-generation-panels.test.tsx` 通过（18 个测试）；`pnpm --filter @aimc/web typecheck` 通过。真实页面 `http://127.0.0.1:3000/canvas?id=e5ba507b-e343-4b73-b9a9-e30347a97e47` 复验：点击“AI 生成图片”出现提示框，再点击画布区域后提示框从 DOM/a11y 树中消失，链路通过。`pnpm exec biome check` 在两个既有生成面板文件上仍报告旧 `any`/SVG accessibility/hook deps lint 债，新增测试文件已单独 `biome check --write` 通过。
 - 是否已修复完: 是
 - commit hash: `5d8ea4f`
+- 页面复验补修 commit hash: `待提交后回填`
 
 ### 19. 删除生成窗口后结果仍插入画布
 
@@ -241,3 +242,13 @@
 - 验证方式和结果: 复用第 23 条回归测试和验证命令：`pnpm --filter @aimc/web exec vitest run test/canvas-editor-i18n.test.tsx` 通过（3 个测试），其中新增用例模拟水合后空 `onChange` 并断言不调用 `saveCanvas`；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check --write apps/web/src/app/canvas/page.tsx apps/web/src/components/canvas-editor.tsx apps/web/test/canvas-editor-i18n.test.tsx` 通过。
 - 是否已修复完: 是
 - commit hash: `4626543`
+
+## 页面复验补充（2026-06-11）
+
+- 覆盖记录: `CEs9rj4F6eaarxcDFQycJR9Snkc`、`HIYUrIyx4eahWLcZP4bc6osznib`、`NxA6rEBNqevbj9cg4LDc3vBXnUU`、`PYtzr9AjbezqrdcSD4ScR5Ctnpd`。
+- dev 服务: 已重启 `pnpm dev`，确认 web `3000` 与 server `3001` 均重新监听，server 日志显示 `@aimc/server listening on http://127.0.0.1:3001`。
+- 画布恢复链路: 通过 API 创建两个受控项目/画布 `e5ba507b-e343-4b73-b9a9-e30347a97e47` 与 `bc942fda-487e-4b43-8b58-a9a64684dce6`，各自写入 1 个矩形元素；真实打开第一个画布，切到第二个，再切回第一个，等待 autosave 防抖后回读两个 canvas，结果均保持 `liveCount: 1`，未出现空画布覆盖。
+- 技能附件输入链路: 真实打开 `/skills`，进入“添加自定义技能”，点击“添加文件”，填入 `assets/demo.txt` 与 `hello attachment plus`，快照显示路径和内容完整保留，继续输入不失焦、不清空。
+- 生成面板遮挡链路: 真实打开画布，点击“AI 生成图片”出现面板；初次复验发现点击画布后面板仍保留，已追加代码修复；重启 dev 后再次打开同一页面，点击“AI 生成图片”再点击画布，面板从页面快照中消失，链路通过。
+- 控制台: 真实页面复验期间无应用崩溃/加载失败类错误；仅剩 Next.js `scroll-behavior: smooth` warning 与浏览器 `Permissions policy violation: unload is not allowed` 报告，均与本批修复链路无关。
+- 受限说明: 图片复制/裁剪复制涉及浏览器原生右键菜单和系统剪贴板，当前 Browser 自动化无法稳定读取系统剪贴板，页面复验以真实 canvas 页面打开为前提，核心复制像素逻辑由 `apps/web/test/canvas-context-menu-extensions.test.tsx` 覆盖；生成完成后删除占位仍依赖外部生图/视频模型凭证，真实页面未消耗模型额度，核心异步竞态由 `apps/web/test/canvas-generation-panels.test.tsx` 受控 Promise 覆盖。
