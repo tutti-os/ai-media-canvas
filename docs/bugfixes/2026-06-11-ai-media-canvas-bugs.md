@@ -140,4 +140,14 @@
 - 修复方案: 在同步原生菜单时识别 `data-testid="copy"` 且原始标签为 `Copy image` 的菜单项；只有当前选区存在且全部是图片元素时才保留并替换为自定义复制，否则直接隐藏，避免空白处或混合选区触发全画布导出。自定义复制先 await `exportToBlob` 得到 PNG Blob，再写入剪贴板。
 - 验证方式和结果: 扩展 `apps/web/test/canvas-context-menu-extensions.test.tsx`，覆盖无图片选区隐藏原生 `Copy image`，以及图片选区自定义复制不触发原生复制；`pnpm --filter @aimc/web exec vitest run test/canvas-context-menu-extensions.test.tsx` 通过（6 个测试）；`pnpm --filter @aimc/web typecheck` 通过。本地整页复验时当前 canvas 数据加载失败，无法完成真实右键交互；此前页面已有 WebSocket/API 401 重连问题，和本组件修复无关。
 - 是否已修复完: 是
+- commit hash: `4f0d48d`
+
+### 15. 已生成文件下载缺少成功提示
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/BLuqrwS3ze8tvmcshxecKE14nbe
+- 真实 record id: `recvm7WeLMXd82`
+- Bug 原因: 附件视频显示用户在左侧“已生成文件列表”点击下载图标后没有任何成功反馈；代码中 `CanvasFilesPanel` 的下载处理只创建 `<a>` 并调用 `click()`，没有成功 toast，也没有缺失 dataURL 或浏览器点击失败时的错误提示。
+- 修复方案: 将生成文件下载流程接入 `useToast`：下载链接挂载到 `document.body` 后触发点击并移除，成功后显示本地化成功提示；无 dataURL 或点击异常时显示本地化失败提示并写入 console warning。新增中英文 i18n key，并重新生成 i18n 类型定义。
+- 验证方式和结果: 新增 `apps/web/test/canvas-files-panel.test.tsx`，模拟生成图片文件下载，断言 anchor click 被触发且出现 `Downloaded Generated image` 成功 toast；`pnpm --filter @aimc/web exec vitest run test/canvas-files-panel.test.tsx` 通过；`pnpm check:i18n` 通过；`pnpm --filter @aimc/web typecheck` 通过。本地整页复验时当前 canvas 数据加载失败，无法完成真实左侧文件列表交互；此前页面已有 WebSocket/API 401 重连问题，和本组件修复无关。
+- 是否已修复完: 是
 - commit hash: 待提交后回填

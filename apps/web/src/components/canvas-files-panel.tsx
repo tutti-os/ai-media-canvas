@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, memo } from "react";
 
 import { useAppTranslation } from "@/i18n";
+import { useToast } from "./toast";
 
 // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API/element has no public type
 type ExcalidrawEl = any;
@@ -122,6 +123,7 @@ export function CanvasFilesPanel({
   onClose,
 }: CanvasFilesPanelProps) {
   const { t } = useAppTranslation("canvas");
+  const { success: toastSuccess, error: toastError } = useToast();
   const [imageFiles, setImageFiles] = useState<ImageFile[]>([]);
 
   const refreshFiles = useCallback(() => {
@@ -168,13 +170,28 @@ export function CanvasFilesPanel({
     return () => document.removeEventListener("keydown", onKey, true);
   }, [open, onClose]);
 
-  const handleDownload = useCallback((file: ImageFile) => {
-    if (!file.dataURL) return;
-    const a = document.createElement("a");
-    a.href = file.dataURL;
-    a.download = `${file.name}.png`;
-    a.click();
-  }, []);
+  const handleDownload = useCallback(
+    (file: ImageFile) => {
+      if (!file.dataURL) {
+        toastError(t("files.downloadFailed"));
+        return;
+      }
+
+      try {
+        const a = document.createElement("a");
+        a.href = file.dataURL;
+        a.download = `${file.name}.png`;
+        document.body.append(a);
+        a.click();
+        a.remove();
+        toastSuccess(t("files.downloadSuccess", { name: file.name }));
+      } catch (error) {
+        console.warn("[canvas-files-panel] download failed:", error);
+        toastError(t("files.downloadFailed"));
+      }
+    },
+    [t, toastError, toastSuccess],
+  );
 
   if (!open) return null;
 

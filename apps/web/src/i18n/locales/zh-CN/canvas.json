@@ -31,6 +31,8 @@
   "empty": "输入你的想法开始创作",
   "files": {
     "download": "下载 {{name}}",
+    "downloadFailed": "下载失败",
+    "downloadSuccess": "已下载 {{name}}",
     "empty": "暂无生成文件",
     "end": "到底了",
     "noPreview": "无预览",
