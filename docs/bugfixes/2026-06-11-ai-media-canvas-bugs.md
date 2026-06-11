@@ -130,4 +130,14 @@
 - 修复方案: 将辅助工具条根节点改为 `bottom-5`，与主工具条共用同一底部偏移；增加回归测试断言该组件使用 `bottom-5`。
 - 验证方式和结果: `pnpm --filter @aimc/web test -- canvas-bottom-bar.test.tsx` 通过（Vitest 实际运行 45 个 web 测试文件、177 个测试，全部通过）；浏览器刷新 `http://127.0.0.1:3000/canvas` 后 DOM 几何显示主工具条和辅助工具条 bottom 均为 `20px`。控制台仍有既有 WebSocket 401/重连错误，和本次 UI 对齐无关。
 - 是否已修复完: 是
+- commit hash: `a228b95`
+
+### 14. Copy Image 空白/非图片选区导出过大
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/QeQorOardelvMjcFb0icFcDanbf
+- 真实 record id: `recvm7VrLhF6K3`
+- Bug 原因: 附件截图显示在画布右键菜单中点击 `Copy image` 会触发大范围 PNG 导出，导致复制整个画布变慢甚至短暂卡住。代码里只隐藏了 Excalidraw 的 `copyAsPng` 项，但仍保留了原生 `copy` 项在无图片选区/非纯图片选区下的 `Copy image` 行；自定义图片复制路径还把未 await 的导出 Promise 直接传给 `ClipboardItem`，错误和耗时反馈都滞后。
+- 修复方案: 在同步原生菜单时识别 `data-testid="copy"` 且原始标签为 `Copy image` 的菜单项；只有当前选区存在且全部是图片元素时才保留并替换为自定义复制，否则直接隐藏，避免空白处或混合选区触发全画布导出。自定义复制先 await `exportToBlob` 得到 PNG Blob，再写入剪贴板。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-context-menu-extensions.test.tsx`，覆盖无图片选区隐藏原生 `Copy image`，以及图片选区自定义复制不触发原生复制；`pnpm --filter @aimc/web exec vitest run test/canvas-context-menu-extensions.test.tsx` 通过（6 个测试）；`pnpm --filter @aimc/web typecheck` 通过。本地整页复验时当前 canvas 数据加载失败，无法完成真实右键交互；此前页面已有 WebSocket/API 401 重连问题，和本组件修复无关。
+- 是否已修复完: 是
 - commit hash: 待提交后回填

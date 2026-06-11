@@ -65,6 +65,34 @@ function hideNativeContextMenuItems(menuElement: HTMLUListElement) {
   }
 }
 
+function getContextMenuItemOriginalLabel(item: HTMLLIElement) {
+  return (
+    item.querySelector<HTMLElement>(".context-menu-item__label")?.dataset
+      .aimcOriginalLabel ??
+    item
+      .querySelector<HTMLElement>(".context-menu-item__label")
+      ?.textContent?.trim() ??
+    ""
+  );
+}
+
+function hideUnsupportedNativeImageCopyItem(
+  menuElement: HTMLUListElement,
+  excalidrawApi: CanvasContextMenuApi | null,
+) {
+  for (const item of menuElement.querySelectorAll<HTMLLIElement>(
+    'li[data-testid="copy"]',
+  )) {
+    const originalLabel = getContextMenuItemOriginalLabel(item);
+    const isImageCopyItem =
+      NATIVE_CONTEXT_MENU_LABEL_KEYS[originalLabel] ===
+      "canvas:contextMenu.native.copyImage";
+    item.hidden =
+      isImageCopyItem &&
+      (!excalidrawApi || !canCopySelectionAsImage(excalidrawApi));
+  }
+}
+
 function markContextMenuSections(menuElement: HTMLUListElement) {
   for (const item of menuElement.querySelectorAll<HTMLLIElement>(
     "li.aimc-context-menu-section-start",
@@ -159,13 +187,15 @@ async function copySelectedImagesToClipboard(
   }
 
   const selectedElements = getSelectedElements(excalidrawApi);
-  const pngBlob = exportSelectionToPngBlob(excalidrawApi, selectedElements);
+  const pngBlob = await exportSelectionToPngBlob(
+    excalidrawApi,
+    selectedElements,
+  );
   await navigator.clipboard.write([
     new ClipboardItem({
       "image/png": pngBlob,
     }),
   ]);
-  await pngBlob;
 }
 
 function closeNativeContextMenu(triggerElement?: HTMLElement | null) {
@@ -223,13 +253,20 @@ export function CanvasContextMenuExtensions({
     const syncMenuElement = () => {
       const nativeMenuElement = getNativeContextMenu();
       if (nativeMenuElement) {
+        const canvasContextMenuApi = isCanvasContextMenuApi(excalidrawApi)
+          ? excalidrawApi
+          : null;
         hideNativeContextMenuItems(nativeMenuElement);
+        hideUnsupportedNativeImageCopyItem(
+          nativeMenuElement,
+          canvasContextMenuApi,
+        );
         markContextMenuSections(nativeMenuElement);
         localizeNativeContextMenuLabels(nativeMenuElement, t);
-        if (isCanvasContextMenuApi(excalidrawApi)) {
+        if (canvasContextMenuApi) {
           replaceImageCopyContextMenuItem(
             nativeMenuElement,
-            excalidrawApi,
+            canvasContextMenuApi,
             () => {
               toastSuccess(t("contextMenu.copyImageSuccess"));
             },
