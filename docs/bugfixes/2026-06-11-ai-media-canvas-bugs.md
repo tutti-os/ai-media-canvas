@@ -252,3 +252,15 @@
 - 生成面板遮挡链路: 真实打开画布，点击“AI 生成图片”出现面板；初次复验发现点击画布后面板仍保留，已追加代码修复；重启 dev 后再次打开同一页面，点击“AI 生成图片”再点击画布，面板从页面快照中消失，链路通过。
 - 控制台: 真实页面复验期间无应用崩溃/加载失败类错误；仅剩 Next.js `scroll-behavior: smooth` warning 与浏览器 `Permissions policy violation: unload is not allowed` 报告，均与本批修复链路无关。
 - 受限说明: 图片复制/裁剪复制涉及浏览器原生右键菜单和系统剪贴板，当前 Browser 自动化无法稳定读取系统剪贴板，页面复验以真实 canvas 页面打开为前提，核心复制像素逻辑由 `apps/web/test/canvas-context-menu-extensions.test.tsx` 覆盖；生成完成后删除占位仍依赖外部生图/视频模型凭证，真实页面未消耗模型额度，核心异步竞态由 `apps/web/test/canvas-generation-panels.test.tsx` 受控 Promise 覆盖。
+
+## 追加批次（2026-06-11 晚间）
+
+### 25. Agent 回复提供的下载链接未显示
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/UoHsrQ1LKexsntcFtokciotfncf
+- 真实 record id: `recvme1Plq3qZG`
+- Bug 原因: 附件截图显示 `persist_sandbox_file` 已成功上传生成文件，但聊天区“下载链接”位置只出现空白预览。根因是 local-agent 事件适配和 MCP tool gateway 只把 `generate_image` / `screenshot_canvas` 结果映射为 image artifact，`persist_sandbox_file` 返回的 `url` 没有进入 artifact；前端主聊天卡片也只对 `generate_image` 显示图片预览，导致持久化文件工具即使带有 artifact 也会落到普通工具卡片。
+- 修复方案: 在 `local-agent-events` 与 `tool-gateway` 中把 `persist_sandbox_file` 的 `url` 归一为 image artifact；前端 `ToolBlockView` 对 `persist_sandbox_file` / `screenshot_canvas` 的图片 artifact 使用与生图一致的预览卡片展示，保留详情面板可查看原始输出。
+- 验证方式和结果: 扩展 `apps/server/src/agent/runtime.test.ts`，覆盖 local-agent `persist_sandbox_file` tool result 会产出 image artifact；`pnpm --filter @aimc/server test -- src/agent/runtime.test.ts -t "workspace skills|persisted sandbox files"` 通过（实际运行 27 个 server 测试文件、137 个测试，全部通过）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm check:i18n` 通过。真实打开 `http://127.0.0.1:3000/canvas?id=e5ba507b-e343-4b73-b9a9-e30347a97e47&session=e9e2e4ab-60b2-4983-a881-1ff86236eb81`，通过本地 session API 写入一条带 `persist_sandbox_file` image artifact 的 assistant 消息，刷新页面后 DOM 显示 `AIMC persist artifact verification` 图片，`naturalWidth: 1`、`complete: true`，截图保存到 `/tmp/nextop-lark/aimc-persist-artifact-browser-verify-fixed.png`。
+- 是否已修复完: 是
+- commit hash: 待提交后回填
