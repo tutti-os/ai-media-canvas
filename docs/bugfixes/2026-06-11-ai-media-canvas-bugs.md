@@ -240,4 +240,4 @@
 - 修复方案: 复用第 23 条代码修复：`CanvasEditor` 按 canvasId remount，切换 canvas 时取消旧 fallback polling；debounced autosave 增加“初始有元素但当前 live elements 为 0 则跳过保存”的保护，防止窗口缩小/切出/重进期间 Excalidraw 短暂空 scene 覆盖服务端画布内容。
 - 验证方式和结果: 复用第 23 条回归测试和验证命令：`pnpm --filter @aimc/web exec vitest run test/canvas-editor-i18n.test.tsx` 通过（3 个测试），其中新增用例模拟水合后空 `onChange` 并断言不调用 `saveCanvas`；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check --write apps/web/src/app/canvas/page.tsx apps/web/src/components/canvas-editor.tsx apps/web/test/canvas-editor-i18n.test.tsx` 通过。
 - 是否已修复完: 是
-- commit hash: `待提交后回填`
+- commit hash: `4626543`
