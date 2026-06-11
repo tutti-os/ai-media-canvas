@@ -1353,7 +1353,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       // Create backend — production uses StateBackend (no local shell).
       const backendResult = createAgentBackend(runtimeEnv, run.canvasId, {
-        hasWorkspaceSkills: workspaceSkills.length > 0,
+        workspaceSkills,
       });
 
       let activeRuntimeTarget: RuntimeTarget | null = null;

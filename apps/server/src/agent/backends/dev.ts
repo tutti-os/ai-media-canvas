@@ -2,15 +2,15 @@ import { mkdirSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   type AnyBackendProtocol,
-  type StateAndStore,
   CompositeBackend,
   FilesystemBackend,
   LocalShellBackend,
-  StoreBackend,
 } from "deepagents";
 
 import type { ServerEnv } from "../../config/env.js";
+import type { WorkspaceSkillEntry } from "../workspace-skills.js";
 import type { AgentBackendResult } from "./index.js";
+import { createWorkspaceSkillsFilesystemBackend } from "./workspace-skills.js";
 
 type AgentBackendEnv = Pick<ServerEnv, "agentFilesRoot" | "skillsRoot">;
 
@@ -25,10 +25,10 @@ const DEFAULT_DEV_SANDBOX_ROOT = "/tmp/ai-media-canvas-sandbox-dev";
 export function createDevelopmentBackend(
   env: AgentBackendEnv,
   options?: {
-    /** Canvas ID — used for workspace-skills Store namespace when available. */
+    /** Canvas ID — used to scope the run when workspace skills are available. */
     canvasId?: string;
-    /** When true, add a /workspace-skills/ route backed by the Store. */
-    hasWorkspaceSkills?: boolean;
+    /** Workspace skills loaded for this run. */
+    workspaceSkills?: WorkspaceSkillEntry[];
   },
 ): AgentBackendResult {
   if (!env.agentFilesRoot) {
@@ -42,7 +42,9 @@ export function createDevelopmentBackend(
   mkdirSync(sandboxDir, { recursive: true });
   const realSandboxDir = realpathSync(sandboxDir);
 
-  const skillsRoot = resolve(env.skillsRoot ?? join(env.agentFilesRoot, "skills"));
+  const skillsRoot = resolve(
+    env.skillsRoot ?? join(env.agentFilesRoot, "skills"),
+  );
 
   const sandbox = new LocalShellBackend({
     rootDir: sandboxDir,
@@ -55,25 +57,28 @@ export function createDevelopmentBackend(
       PYTHONDONTWRITEBYTECODE: "1",
     },
   });
-  const skillsBackend = new FilesystemBackend({ rootDir: skillsRoot, virtualMode: true });
+  const skillsBackend = new FilesystemBackend({
+    rootDir: skillsRoot,
+    virtualMode: true,
+  });
 
   const workspaceBackend = new FilesystemBackend({
     rootDir: env.agentFilesRoot,
     virtualMode: true,
   });
+  const workspaceSkillsBackend = createWorkspaceSkillsFilesystemBackend({
+    rootDir: join(sandboxDir, "workspace-skills"),
+    workspaceSkills: options?.workspaceSkills ?? [],
+  });
 
-  const factory: AgentBackendResult["factory"] = (stateAndStore) => {
-    const storeContext = stateAndStore as StateAndStore;
+  const factory: AgentBackendResult["factory"] = () => {
     const routes: Record<string, AnyBackendProtocol> = {
       "/workspace/": workspaceBackend,
       "/skills/": skillsBackend,
     };
 
-    // In dev mode, workspace skills are served from the Store when available.
-    if (options?.hasWorkspaceSkills && options.canvasId && storeContext.store) {
-      routes["/workspace-skills/"] = new StoreBackend(storeContext, {
-        namespace: ["projects", options.canvasId, "workspace-skills"],
-      });
+    if (workspaceSkillsBackend) {
+      routes["/workspace-skills/"] = workspaceSkillsBackend;
     }
 
     return new CompositeBackend(sandbox, routes);
