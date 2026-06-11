@@ -357,7 +357,7 @@ export function CanvasBottomBar({
 
   return (
     <div
-      className="absolute bottom-4 z-20 transition-[left] duration-200"
+      className="absolute bottom-5 z-20 transition-[left] duration-200"
       style={{ left: leftPanelOpen ? 296 : 16 }}
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}

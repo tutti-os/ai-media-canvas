@@ -50,4 +50,19 @@ describe("CanvasBottomBar", () => {
       viewportZoomFactor: 0.92,
     });
   });
+
+  it("uses the same bottom offset as the primary canvas toolbar", () => {
+    const { container } = render(
+      <CanvasBottomBar
+        excalidrawApi={null}
+        layersOpen={false}
+        onToggleLayers={vi.fn()}
+        filesOpen={false}
+        onToggleFiles={vi.fn()}
+        leftPanelOpen={false}
+      />,
+    );
+
+    expect(container.firstElementChild).toHaveClass("bottom-5");
+  });
 });
