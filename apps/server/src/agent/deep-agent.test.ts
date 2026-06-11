@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   chatAnthropicMock,
@@ -115,8 +115,16 @@ describe("createAimcDeepAgent", () => {
 
     const config = createDeepAgentMock.mock.calls.at(-1)?.[0];
     expect(config?.systemPrompt).toContain("常规画布工具不提供删除能力");
-    expect(config?.systemPrompt).toContain("不要在生成图片后自动添加标题、说明、按钮、装饰形状或分隔线");
-    expect(config?.systemPrompt).toContain("必须先 inspect_canvas 读取真实元素坐标和尺寸");
+    expect(config?.systemPrompt).toContain(
+      "不要在生成图片后自动添加标题、说明、按钮、装饰形状或分隔线",
+    );
+    expect(config?.systemPrompt).toContain(
+      "必须先 inspect_canvas 读取真实元素坐标和尺寸",
+    );
+    expect(config?.systemPrompt).toContain(
+      "不得与未参与本次移动的可见元素相交",
+    );
+    expect(config?.systemPrompt).toContain("生图任务的停止条件");
     expect(config?.systemPrompt).toContain("优先单次调用 generate_image");
   });
 });
