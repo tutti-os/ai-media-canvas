@@ -5,6 +5,7 @@ export const errorCodeValues = [
   "run_not_found",
   "run_conflict",
   "run_failed",
+  "repeated_canvas_layout_failures",
   "tool_failed",
 ] as const;
 
