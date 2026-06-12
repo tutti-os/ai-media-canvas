@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useAppTranslation } from "../i18n";
+import { downloadPngFile } from "../lib/image-download";
 import { useToast } from "./toast";
 
 type CanvasContextMenuExtensionsProps = {
@@ -165,6 +166,12 @@ function canCopySelectionAsImage(excalidrawApi: CanvasContextMenuApi) {
   );
 }
 
+function getLiveElements(excalidrawApi: CanvasContextMenuApi) {
+  return excalidrawApi
+    .getSceneElements()
+    .filter((element: Record<string, unknown>) => !element.isDeleted);
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
@@ -272,6 +279,20 @@ async function exportSelectedImageToPngBlob(
   }
 
   return exportSelectionToPngBlob(excalidrawApi, selectedElements);
+}
+
+function getSingleUncroppedImageDataUrl(
+  excalidrawApi: CanvasContextMenuApi,
+  selectedElements: readonly Record<string, unknown>[],
+) {
+  if (selectedElements.length !== 1) return null;
+
+  const element = selectedElements[0];
+  if (!element || element.type !== "image" || element.crop) return null;
+
+  const fileId = typeof element.fileId === "string" ? element.fileId : null;
+  const file = fileId ? asRecord(excalidrawApi.getFiles()[fileId]) : null;
+  return typeof file?.dataURL === "string" ? file.dataURL : null;
 }
 
 async function copySelectedImagesToClipboard(
@@ -385,45 +406,37 @@ export function CanvasContextMenuExtensions({
   const handleDownloadImage = useCallback(
     async (triggerElement: HTMLElement) => {
       closeNativeContextMenu(triggerElement);
-      if (!excalidrawApi) return;
+      if (!isCanvasContextMenuApi(excalidrawApi)) return;
 
-      const appState = excalidrawApi.getAppState();
-      const selectedIds = Object.entries(
-        appState.selectedElementIds ?? {},
-      ).flatMap(([id, selected]) => (selected ? [id] : []));
-      const allElements = excalidrawApi
-        .getSceneElements()
-        .filter((element: Record<string, unknown>) => !element.isDeleted);
+      const selectedElements = getSelectedElements(excalidrawApi);
       const elements =
-        selectedIds.length > 0
-          ? allElements.filter((element: Record<string, unknown>) =>
-              selectedIds.includes(element.id as string),
-            )
-          : allElements;
-
+        selectedElements.length > 0
+          ? selectedElements
+          : getLiveElements(excalidrawApi);
       if (elements.length === 0) return;
 
-      const { exportToBlob } = await import("@excalidraw/excalidraw");
-      const blob = await exportToBlob({
-        elements,
-        appState: { ...appState, exportBackground: true },
-        files: excalidrawApi.getFiles(),
-        mimeType: "image/png",
-      });
-
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download =
+      const filename =
         elements.length === 1
           ? "ai-media-canvas-image.png"
           : "ai-media-canvas-selection.png";
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+
+      try {
+        const dataUrl = getSingleUncroppedImageDataUrl(excalidrawApi, elements);
+        const result = await downloadPngFile({
+          filename,
+          source:
+            dataUrl ??
+            (await exportSelectedImageToPngBlob(excalidrawApi, elements)),
+        });
+        if (result === "saved") {
+          toastSuccess(t("files.downloadSuccess", { name: filename }));
+        }
+      } catch (error) {
+        console.warn("[canvas-context-menu] download image failed:", error);
+        toastError(t("files.downloadFailed"));
+      }
     },
-    [excalidrawApi],
+    [excalidrawApi, t, toastError, toastSuccess],
   );
 
   if (!menuElement) return null;
