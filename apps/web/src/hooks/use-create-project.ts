@@ -56,8 +56,8 @@ export function useCreateProject() {
       if (creatingRef.current) return;
       creatingRef.current = true;
 
-      // Persist attachments in sessionStorage BEFORE window.open so the
-      // new tab's cloned sessionStorage already contains them.
+      // Persist attachments in sessionStorage before opening the canvas tab so
+      // the new tab's cloned sessionStorage already contains them.
       // (sessionStorage is per-tab; new tabs get a snapshot at open time.)
       if (opts?.attachments && opts.attachments.length > 0) {
         try {
@@ -117,8 +117,6 @@ export function useCreateProject() {
         sessionStorage.removeItem(INITIAL_AGENT_MODEL_SOURCE_KEY);
       }
 
-      const newTab = window.open("/loading-preview", "_blank");
-
       setCreating(true);
       try {
         const result = await createProject({ name: "Untitled" });
@@ -128,21 +126,15 @@ export function useCreateProject() {
           ? `/canvas?id=${canvasId}&prompt=${encodeURIComponent(opts.prompt)}`
           : `/canvas?id=${canvasId}`;
 
+        const newTab = window.open(url, "_blank");
         if (newTab) {
-          try {
-            newTab.location.href = url;
-          } catch {
-            newTab.close();
-            routerRef.current.push(url);
-          }
+          return;
         } else {
-          // Popup was blocked despite sync open — fallback to in-page navigation
+          // Popup was blocked — fallback to in-page navigation.
           routerRef.current.push(url);
         }
       } catch {
         clearInitialCreateProjectState();
-        // Close the blank tab on failure
-        newTab?.close();
         toastError(t("project.createFailed"));
       } finally {
         creatingRef.current = false;
