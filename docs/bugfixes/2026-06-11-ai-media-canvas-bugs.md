@@ -336,3 +336,23 @@
 - 验证方式和结果: `apps/web/test/canvas-page.test.tsx` 新增受控旧任务晚到测试，修复前会调用 `insertImageOnCanvas`，修复后不调用；`pnpm --filter @aimc/web exec vitest run test/canvas-page.test.tsx` 通过；`pnpm --filter @aimc/web typecheck`、`pnpm check:i18n` 通过。
 - 是否已修复完: 是
 - commit hash: `d91cab0`
+
+### 33. 设置-媒体里的文字未跟随系统变化
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/ScourCgvheXmD2cecRLcgnJYn0g
+- 真实 record id: 待回填（当前只拿到 Feishu 短记录链接，未能从本地配置解析 Base record id）
+- Bug 原因: 设置页 Media tab 新增的 provider 卡片、保存反馈和 Agnes quickstart 提示仍是组件内英文硬编码；系统语言切到中文时，截图中的 `Media Providers`、`Configure image...`、`Image + Video`、`Not configured`、`Get Agnes API Key` 等文案不会经过 `i18next`。
+- 修复方案: 将 Media 设置区和 Agnes quickstart 提示接入 `useAppTranslation("settings")`；provider 能力、说明、状态、保存反馈、按钮文案统一迁移到 `apps/web/src/i18n/locales/{zh-CN,en}/settings.json`，保持产品名和技术字段名为固定标识。
+- 验证方式和结果: 新增 `apps/web/test/settings-page.test.tsx` 回归用例，切换到 `zh-CN` 后打开 Media tab，断言显示中文标题/说明/未配置状态且不再出现英文 `Media Providers` / `Not configured`；`pnpm --filter @aimc/web exec vitest run test/settings-page.test.tsx -t "Media settings|Media tab"` 通过；本批组合验证 `pnpm check:i18n`、`pnpm --filter @aimc/web typecheck` 通过。
+- 是否已修复完: 是
+- commit hash: `cda8bbd`
+
+### 34. 无法删除添加的图片/视频生成器卡片
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/OuGbrNiB5etYHEcTHCbc5cu1nQe
+- 真实 record id: 待回填（当前只拿到 Feishu 短记录链接，未能从本地配置解析 Base record id）
+- Bug 原因: 图片生成器和视频生成器面板只有关闭/参数/生成入口，没有删除当前画布生成器卡片的入口；用户添加生成器卡片后无法从面板内直接删除占位元素，只能依赖其他画布操作。
+- 修复方案: 在图片生成器和视频生成器面板底部工具区增加删除按钮；点击后先 abort 当前请求，再调用对应 `deleteImageGeneratorElement` / `deleteVideoGeneratorElement` 标记元素删除，并关闭面板。删除按钮文案接入 `canvas` 命名空间中英文翻译。
+- 验证方式和结果: 扩展 `apps/web/test/canvas-generation-panels.test.tsx`，覆盖图片/视频生成器面板点击删除后会向 Excalidraw scene 写入 `isDeleted: true` 并调用 `onClose`；`pnpm --filter @aimc/web exec vitest run test/canvas-generation-panels.test.tsx -t "deletes|skips inserting"` 通过；本批组合验证 `pnpm check:i18n`、`pnpm --filter @aimc/web typecheck` 通过。
+- 是否已修复完: 是
+- commit hash: `cda8bbd`
