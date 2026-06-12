@@ -755,8 +755,10 @@ function isCliPathSegment(value) {
   return typeof value === "string" && /^[a-z0-9-]+$/.test(value);
 }
 
-async function readRootPackage() {
-  return JSON.parse(await readFile(path.join(rootDir, "package.json"), "utf8"));
+async function readSourceManifest() {
+  return JSON.parse(
+    await readFile(path.join(rootDir, "nextop.app.json"), "utf8"),
+  );
 }
 
 async function run(command, args, options = {}) {
@@ -858,13 +860,13 @@ export async function normalizePackageTimestamps(root, mtime) {
   await visit(root);
 }
 
-async function writePackageFiles(version) {
+async function writePackageFiles(manifest) {
   await rm(packageRoot, { force: true, recursive: true });
   await mkdir(path.join(packageRoot, "server"), { recursive: true });
 
   await writeFile(
     path.join(packageRoot, "nextop.app.json"),
-    `${JSON.stringify(createManifest({ version }), null, 2)}\n`,
+    `${JSON.stringify(manifest, null, 2)}\n`,
   );
   await writeFile(
     path.join(packageRoot, "nextop.cli.json"),
@@ -879,7 +881,7 @@ async function writePackageFiles(version) {
   await writeFile(path.join(packageRoot, "AGENTS.md"), renderAgentsGuide());
   await writeFile(
     path.join(packageRoot, "bootstrap.sh"),
-    renderBootstrap({ version }),
+    renderBootstrap({ version: manifest.version }),
   );
   await chmod(path.join(packageRoot, "bootstrap.sh"), 0o755);
 
@@ -961,8 +963,8 @@ async function createZip(version) {
 }
 
 export async function packageNextopApp() {
-  const rootPackage = await readRootPackage();
-  const version = rootPackage.version ?? "0.0.0";
+  const sourceManifest = await readSourceManifest();
+  const version = sourceManifest.version ?? "0.0.0";
 
   await run("pnpm", ["--filter", "@aimc/shared", "build"]);
   await cleanWebBuildOutputs();
@@ -971,7 +973,7 @@ export async function packageNextopApp() {
   });
 
   await mkdir(buildRoot, { recursive: true });
-  await writePackageFiles(version);
+  await writePackageFiles(sourceManifest);
   await bundleServer();
   await bundleWorker();
   await bundleToolsMcpServer();

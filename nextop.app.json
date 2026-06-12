@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "nextop.app.manifest.v1",
+  "appId": "ai-media-canvas",
+  "version": "0.0.1",
+  "name": "AI Media Canvas",
+  "description": "Local-first AI canvas for image and video generation.",
+  "icon": {
+    "type": "asset",
+    "src": "icon.png"
+  },
+  "runtime": {
+    "bootstrap": "bootstrap.sh",
+    "healthcheckPath": "/api/health"
+  },
+  "cli": {
+    "manifest": "nextop.cli.json"
+  },
+  "localizationInfo": {
+    "defaultLocale": "en",
+    "additionalLocales": [
+      {
+        "locale": "zh-CN",
+        "file": "locales/zh-CN/manifest.json"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "workspace-open"
+  },
+  "author": {
+    "name": "Nextop"
+  },
+  "tags": ["generated", "local-first", "media-canvas"]
+}

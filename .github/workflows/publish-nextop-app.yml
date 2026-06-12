@@ -4,15 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: Optional release version override. Defaults to manifest.version + short git sha.
+        description: Optional release version override. Defaults to the automatic manifest patch bump.
         required: false
         type: string
+      publish_catalog:
+        description: Whether to publish the production App Center catalog after this release.
+        required: false
+        type: boolean
+        default: false
   push:
     branches:
       - main
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -31,3 +36,5 @@ jobs:
       s3_bucket: ${{ vars.NEXTOP_APP_RELEASES_PRODUCTION_S3_BUCKET || vars.NEXTOP_APP_RELEASES_S3_BUCKET }}
       s3_prefix: ${{ vars.NEXTOP_APP_RELEASES_PRODUCTION_S3_PREFIX || vars.NEXTOP_APP_RELEASES_S3_PREFIX }}
       release_assets_base_url: ${{ vars.NEXTOP_APP_RELEASES_PRODUCTION_BASE_URL || vars.NEXTOP_APP_RELEASES_BASE_URL }}
+      publish_catalog: ${{ (github.event_name == 'workflow_dispatch' && inputs.publish_catalog) || (github.event_name != 'workflow_dispatch' && vars.NEXTOP_APP_RELEASES_PRODUCTION_PUBLISH_CATALOG == 'true') }}
+      catalog_cloudfront_distribution_id: ${{ vars.NEXTOP_APP_RELEASES_PRODUCTION_CLOUDFRONT_DISTRIBUTION_ID || vars.NEXTOP_APP_RELEASES_CLOUDFRONT_DISTRIBUTION_ID || '' }}
