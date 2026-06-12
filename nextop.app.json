@@ -1,7 +1,7 @@
 {
   "schemaVersion": "nextop.app.manifest.v1",
   "appId": "ai-media-canvas",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "name": "AI Media Canvas",
   "description": "Local-first AI canvas for image and video generation.",
   "icon": {
