@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,12 +16,12 @@ import { inflateSync } from "node:zlib";
 import {
   assertNoSymlinks,
   createCliManifest,
-  createWebBuildEnv,
   createManifest,
+  createWebBuildEnv,
   normalizePackageTimestamps,
-  renderCommandsGuide,
   renderAgentsGuide,
   renderBootstrap,
+  renderCommandsGuide,
   validatePackageRoot,
 } from "../scripts/package-nextop-app.mjs";
 
@@ -47,7 +55,11 @@ function readPngAlphaBounds(png) {
     }
   }
 
-  assert.equal(colorType, 6, "icon PNG must be RGBA so alpha bounds can be checked");
+  assert.equal(
+    colorType,
+    6,
+    "icon PNG must be RGBA so alpha bounds can be checked",
+  );
 
   const bytesPerPixel = 4;
   const stride = width * bytesPerPixel;
@@ -61,9 +73,13 @@ function readPngAlphaBounds(png) {
 
     for (let x = 0; x < stride; x += 1) {
       const raw = inflated[sourceOffset + x];
-      const left = x >= bytesPerPixel ? pixels[y * stride + x - bytesPerPixel] : 0;
+      const left =
+        x >= bytesPerPixel ? pixels[y * stride + x - bytesPerPixel] : 0;
       const up = y > 0 ? pixels[(y - 1) * stride + x] : 0;
-      const upLeft = y > 0 && x >= bytesPerPixel ? pixels[(y - 1) * stride + x - bytesPerPixel] : 0;
+      const upLeft =
+        y > 0 && x >= bytesPerPixel
+          ? pixels[(y - 1) * stride + x - bytesPerPixel]
+          : 0;
 
       if (filter === 0) {
         pixels[y * stride + x] = raw;
@@ -152,6 +168,12 @@ test("createManifest returns the Nextop package manifest contract", () => {
   });
 });
 
+test("root Nextop app manifest matches the generated package manifest", async () => {
+  const manifest = JSON.parse(await readFile("nextop.app.json", "utf8"));
+
+  assert.deepEqual(manifest, createManifest({ version: manifest.version }));
+});
+
 test("createCliManifest returns the Nextop CLI manifest contract", () => {
   const manifest = createCliManifest();
 
@@ -160,7 +182,9 @@ test("createCliManifest returns the Nextop CLI manifest contract", () => {
   assert.equal(manifest.documentation.file, "COMMANDS.md");
   assert.ok(manifest.commands.length >= 20);
   assert.deepEqual(
-    manifest.commands.find((command) => command.path.join(" ") === "projects create"),
+    manifest.commands.find(
+      (command) => command.path.join(" ") === "projects create",
+    ),
     {
       path: ["projects", "create"],
       summary: "Create a project",
@@ -170,7 +194,10 @@ test("createCliManifest returns the Nextop CLI manifest contract", () => {
         type: "object",
         properties: {
           name: { type: "string", description: "Project name." },
-          description: { type: "string", description: "Optional project description." },
+          description: {
+            type: "string",
+            description: "Optional project description.",
+          },
         },
         required: ["name"],
       },
@@ -224,7 +251,10 @@ test("renderBootstrap maps Nextop runtime env into AI Media Canvas env", () => {
     /package_dir="\$\{NEXTOP_APP_PACKAGE_DIR:-\$script_dir\}"/,
   );
   assert.match(bootstrap, /export HOST="\$\{NEXTOP_APP_HOST:-127\.0\.0\.1\}"/);
-  assert.match(bootstrap, /export AIMC_SERVER_PORT="\$\{NEXTOP_APP_PORT:-3001\}"/);
+  assert.match(
+    bootstrap,
+    /export AIMC_SERVER_PORT="\$\{NEXTOP_APP_PORT:-3001\}"/,
+  );
   assert.match(bootstrap, /export AIMC_APP_VERSION="1\.2\.3"/);
   assert.match(bootstrap, /export AIMC_WEB_DIST="\$package_dir\/dist"/);
   assert.match(
@@ -245,10 +275,19 @@ test("renderBootstrap maps Nextop runtime env into AI Media Canvas env", () => {
     /base_url="\$\{NEXTOP_APP_BASE_URL:-http:\/\/\$HOST:\$AIMC_SERVER_PORT\}"/,
   );
   assert.match(bootstrap, /node_bin="\$\{NEXTOP_APP_NODE:-node\}"/);
-  assert.match(bootstrap, /runtime_dir="\$\{NEXTOP_APP_RUNTIME_DIR:-\$AIMC_DATA_ROOT\/\.runtime\}"/);
-  assert.match(bootstrap, /run_child "\$package_dir\/server\/worker.js" "\$worker_status_file" &/);
+  assert.match(
+    bootstrap,
+    /runtime_dir="\$\{NEXTOP_APP_RUNTIME_DIR:-\$AIMC_DATA_ROOT\/\.runtime\}"/,
+  );
+  assert.match(
+    bootstrap,
+    /run_child "\$package_dir\/server\/worker.js" "\$worker_status_file" &/,
+  );
   assert.match(bootstrap, /worker_pid=\$!/);
-  assert.match(bootstrap, /run_child "\$package_dir\/server\/server.js" "\$server_status_file" &/);
+  assert.match(
+    bootstrap,
+    /run_child "\$package_dir\/server\/server.js" "\$server_status_file" &/,
+  );
   assert.match(bootstrap, /server_pid=\$!/);
   assert.match(bootstrap, /monitor_children\(\)/);
   assert.match(bootstrap, /kill -0 "\$worker_pid"/);
@@ -266,7 +305,9 @@ test("renderAgentsGuide is non-empty and documents package layout", () => {
 });
 
 test("Nextop icon asset is a generated PNG with a contrast-safe tile", async () => {
-  const iconPath = path.resolve("apps/web/public/brand/aimc-nextop-app-icon.png");
+  const iconPath = path.resolve(
+    "apps/web/public/brand/aimc-nextop-app-icon.png",
+  );
   const icon = await readFile(iconPath);
   const iconStat = await stat(iconPath);
   const bounds = readPngAlphaBounds(icon);
