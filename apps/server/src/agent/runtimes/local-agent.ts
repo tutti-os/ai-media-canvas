@@ -13,7 +13,6 @@ import {
   mapWorkspaceSkillsToLocalAgentManifest,
   materializeWorkspaceSkillsForLocalAgent,
 } from "../local-agent-host/skills.js";
-import { resolveLocalAgentDefaultModel } from "../local-agent-models.js";
 import { buildAimcSystemPrompt } from "../prompts/aimc-main.js";
 import { loadNormalizedSessionHistory } from "./history.js";
 import {
@@ -208,10 +207,6 @@ export function createLocalAgentRuntimeProvider(
       const skillManifest =
         mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills);
       const resume = mapResumeContext(run.resumeContext);
-      const executableModel = await resolveLocalAgentDefaultModel(
-        resolvedModel,
-        deps.localAgentRuntime,
-      );
       const mcpServers = [
         createAimcToolsMcpServerConfig({
           gatewayBaseUrl: deps.toolGatewayBaseUrl,
@@ -241,7 +236,7 @@ export function createLocalAgentRuntimeProvider(
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
           model: stripLocalAgentProviderPrefix(
-            executableModel,
+            resolvedModel,
             runtimeProvider,
           ),
           runtimeKind: "local-agent",

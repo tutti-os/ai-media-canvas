@@ -286,7 +286,7 @@ describe("createAgentRunService", () => {
     );
   });
 
-  it("resolves local CLI default overrides before invoking the host adapter", async () => {
+  it("preserves the local CLI default model for the host adapter", async () => {
     localAgentRuntimeRunMock.mockClear();
     const localAgentRuntimeDetectMock = vi.fn(async () => [
       {
@@ -340,10 +340,10 @@ describe("createAgentRunService", () => {
       // Exhaust the stream so runtime reaches the provider invocation.
     }
 
-    expect(localAgentRuntimeDetectMock).toHaveBeenCalled();
+    expect(localAgentRuntimeDetectMock).not.toHaveBeenCalled();
     expect(localAgentRuntimeRunMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "gpt-5.5",
+        model: "default",
         provider: "codex",
       }),
     );
