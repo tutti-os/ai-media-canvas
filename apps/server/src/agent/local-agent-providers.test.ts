@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  augmentClaudeDetectionModels,
-  createAimcLocalAgentProviderPlugins,
-} from "./local-agent-providers.js";
+import { createAimcLocalAgentProviderPlugins } from "./local-agent-providers.js";
 
 async function collect<T>(stream: AsyncIterable<T>) {
   const items: T[] = [];
@@ -14,25 +11,10 @@ async function collect<T>(stream: AsyncIterable<T>) {
 }
 
 describe("createAimcLocalAgentProviderPlugins", () => {
-  it("adds Claude Code configured models after the CLI default option", () => {
-    const detection = augmentClaudeDetectionModels(
-      {
-        authState: "unknown",
-        executablePath: "claude",
-        models: [
-          { id: "default", label: "Default (CLI config)" },
-          { id: "sonnet", label: "Sonnet (alias)" },
-        ],
-        supported: true,
-        version: "2.1.162",
-      },
-      ["minimax-m2.5", "sonnet", "minimax-m2.5"],
-    );
-
-    expect(detection?.models).toEqual([
-      { id: "default", label: "Default (CLI config)" },
-      { id: "minimax-m2.5", label: "minimax-m2.5" },
-      { id: "sonnet", label: "Sonnet (alias)" },
+  it("registers only the local agent providers supported by AIMC", () => {
+    expect(createAimcLocalAgentProviderPlugins().map((provider) => provider.id)).toEqual([
+      "codex",
+      "claude",
     ]);
   });
 

@@ -221,6 +221,7 @@ export const agentModelSourceSchema = z.enum([
 export const modelInfoSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
+  description: z.string().min(1).optional(),
   provider: z.string().min(1),
   source: agentModelSourceSchema.optional(),
 });

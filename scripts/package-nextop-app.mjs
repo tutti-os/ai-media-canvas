@@ -9,6 +9,7 @@ import {
   readdir,
   rm,
   stat,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -18,6 +19,7 @@ const scriptPath = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(scriptPath), "..");
 const buildRoot = path.join(rootDir, "build", "nextop-app");
 const packageRoot = path.join(buildRoot, "package");
+const DEFAULT_PACKAGE_MTIME_EPOCH_SECONDS = 1_577_836_800;
 
 const REQUIRED_PACKAGE_FILES = [
   "nextop.app.json",
@@ -778,6 +780,84 @@ async function run(command, args, options = {}) {
   });
 }
 
+async function runCapture(command, args, options = {}) {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: rootDir,
+      shell: false,
+      ...options,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resolve(stdout);
+        return;
+      }
+      reject(
+        new Error(
+          `${command} ${args.join(" ")} exited with code ${code}: ${stderr}`,
+        ),
+      );
+    });
+  });
+}
+
+function parseEpochSeconds(value) {
+  if (!value) {
+    return null;
+  }
+  const epochSeconds = Number(value);
+  if (!Number.isInteger(epochSeconds) || epochSeconds < 0) {
+    return null;
+  }
+  return epochSeconds;
+}
+
+export async function resolvePackageMtime(baseEnv = process.env) {
+  const sourceDateEpoch = parseEpochSeconds(baseEnv.SOURCE_DATE_EPOCH);
+  if (sourceDateEpoch !== null) {
+    return new Date(sourceDateEpoch * 1000);
+  }
+
+  try {
+    const gitTimestamp = parseEpochSeconds(
+      (await runCapture("git", ["log", "-1", "--format=%ct"])).trim(),
+    );
+    if (gitTimestamp !== null) {
+      return new Date(gitTimestamp * 1000);
+    }
+  } catch {
+    // Fall back below when the package is built from a source archive.
+  }
+
+  return new Date(DEFAULT_PACKAGE_MTIME_EPOCH_SECONDS * 1000);
+}
+
+export async function normalizePackageTimestamps(root, mtime) {
+  async function visit(entryPath) {
+    const entryStat = await lstat(entryPath);
+    if (entryStat.isDirectory()) {
+      const entries = await readdir(entryPath);
+      for (const entry of entries) {
+        await visit(path.join(entryPath, entry));
+      }
+    }
+    await utimes(entryPath, mtime, mtime);
+  }
+
+  await visit(root);
+}
+
 async function writePackageFiles(version) {
   await rm(packageRoot, { force: true, recursive: true });
   await mkdir(path.join(packageRoot, "server"), { recursive: true });
@@ -824,6 +904,12 @@ async function writePackageFiles(version) {
   await cp(path.join(rootDir, "skills"), path.join(packageRoot, "skills"), {
     recursive: true,
   });
+}
+
+async function cleanWebBuildOutputs() {
+  const webRoot = path.join(rootDir, "apps", "web");
+  await rm(path.join(webRoot, ".next"), { force: true, recursive: true });
+  await rm(path.join(webRoot, "out"), { force: true, recursive: true });
 }
 
 async function bundleServer() {
@@ -879,6 +965,7 @@ export async function packageNextopApp() {
   const version = rootPackage.version ?? "0.0.0";
 
   await run("pnpm", ["--filter", "@aimc/shared", "build"]);
+  await cleanWebBuildOutputs();
   await run("pnpm", ["--filter", "@aimc/web", "build"], {
     env: createWebBuildEnv(),
   });
@@ -889,6 +976,7 @@ export async function packageNextopApp() {
   await bundleWorker();
   await bundleToolsMcpServer();
   await validatePackageRoot(packageRoot);
+  await normalizePackageTimestamps(packageRoot, await resolvePackageMtime());
   const zipPath = await createZip(version);
   console.log(`Created ${zipPath}`);
   return zipPath;

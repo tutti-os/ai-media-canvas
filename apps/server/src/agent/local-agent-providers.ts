@@ -1,11 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import path from "node:path";
-
 import type { AgentRuntimeProvider } from "@aimc/shared";
 import {
-  type AgentDetection,
-  type AgentModelOption,
   type LocalAgentProviderPlugin,
   type RawAgentEvent,
   type RawAgentStream,
@@ -17,73 +11,17 @@ type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   AgentRuntimeProvider
 >;
 
-const CLAUDE_MODEL_ENV_KEYS = [
-  "ANTHROPIC_MODEL",
-  "ANTHROPIC_DEFAULT_SONNET_MODEL",
-  "ANTHROPIC_DEFAULT_OPUS_MODEL",
-  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-] as const;
+const AIMC_LOCAL_AGENT_PROVIDER_IDS = new Set(["codex", "claude"]);
+
+export function isAimcLocalAgentProvider(provider: string) {
+  return AIMC_LOCAL_AGENT_PROVIDER_IDS.has(provider);
+}
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
   return value as Record<string, unknown>;
-}
-
-function normalizeConfiguredModel(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-async function readClaudeConfiguredModels(configDir?: string) {
-  try {
-    const settingsPath = path.join(
-      configDir || path.join(homedir(), ".claude"),
-      "settings.json",
-    );
-    const payload = JSON.parse(await readFile(settingsPath, "utf8")) as unknown;
-    const env = toRecord(toRecord(payload)?.env);
-    if (!env) return [];
-
-    return CLAUDE_MODEL_ENV_KEYS.map((key) =>
-      normalizeConfiguredModel(env[key]),
-    ).filter((model): model is string => Boolean(model));
-  } catch {
-    return [];
-  }
-}
-
-export function augmentClaudeDetectionModels(
-  detection: AgentDetection | null,
-  configuredModels: string[],
-): AgentDetection | null {
-  if (!detection) return detection;
-
-  const existingModels = detection.models ?? [];
-  const seen = new Set(existingModels.map((model) => model.id));
-  const appendedModels: AgentModelOption[] = [];
-
-  for (const modelId of configuredModels) {
-    if (seen.has(modelId)) continue;
-    seen.add(modelId);
-    appendedModels.push({ id: modelId, label: modelId });
-  }
-
-  if (appendedModels.length === 0) return detection;
-
-  const defaultIndex = existingModels.findIndex(
-    (model) => model.id === "default",
-  );
-  const models =
-    defaultIndex >= 0
-      ? [
-          ...existingModels.slice(0, defaultIndex + 1),
-          ...appendedModels,
-          ...existingModels.slice(defaultIndex + 1),
-        ]
-      : [...appendedModels, ...existingModels];
-
-  return { ...detection, models };
 }
 
 function extractClaudeAssistantText(item: RawAgentEvent) {
@@ -178,13 +116,7 @@ function withAimcClaudeStreamCompatibility(
 
   return {
     ...provider,
-    async detect() {
-      const detection = await baseDetect();
-      return augmentClaudeDetectionModels(
-        detection,
-        await readClaudeConfiguredModels(detection?.configDir),
-      );
-    },
+    detect: baseDetect,
     ...(baseCreateAdapter
       ? {
           createAdapter() {
@@ -204,9 +136,11 @@ function withAimcClaudeStreamCompatibility(
 }
 
 export function createAimcLocalAgentProviderPlugins(): AimcLocalAgentProviderPlugin[] {
-  return createDefaultLocalAgentProviderPlugins().map((provider) =>
-    provider.id === "claude"
-      ? withAimcClaudeStreamCompatibility(provider)
-      : provider,
-  ) as AimcLocalAgentProviderPlugin[];
+  return createDefaultLocalAgentProviderPlugins()
+    .filter((provider) => isAimcLocalAgentProvider(provider.id))
+    .map((provider) =>
+      provider.id === "claude"
+        ? withAimcClaudeStreamCompatibility(provider)
+        : provider,
+    ) as AimcLocalAgentProviderPlugin[];
 }

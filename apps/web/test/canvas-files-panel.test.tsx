@@ -16,10 +16,76 @@ describe("CanvasFilesPanel", () => {
 
   afterEach(() => {
     cleanup();
+    Reflect.deleteProperty(window, "showSaveFilePicker");
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
-  it("shows a success toast after downloading a generated file", async () => {
+  it("uses the save picker and shows success after the file is written", async () => {
+    const user = userEvent.setup();
+    const write = vi.fn().mockResolvedValue(undefined);
+    const close = vi.fn().mockResolvedValue(undefined);
+    const createWritable = vi.fn().mockResolvedValue({ write, close });
+    const showSaveFilePicker = vi.fn().mockResolvedValue({ createWritable });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => new Blob(["png"], { type: "image/png" }),
+    });
+    Object.defineProperty(window, "showSaveFilePicker", {
+      configurable: true,
+      value: showSaveFilePicker,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const excalidrawApi = {
+      getSceneElements: () => [
+        {
+          id: "image-1",
+          type: "image",
+          isDeleted: false,
+          fileId: "file-1",
+          customData: {
+            source: "generated",
+            title: "Generated image",
+          },
+        },
+      ],
+      getFiles: () => ({
+        "file-1": {
+          dataURL: "data:image/png;base64,cG5n",
+        },
+      }),
+      onChange: () => vi.fn(),
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasFilesPanel
+          excalidrawApi={excalidrawApi}
+          open={true}
+          onClose={vi.fn()}
+        />
+      </ToastProvider>,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Download Generated image" }),
+    );
+
+    expect(showSaveFilePicker).toHaveBeenCalledWith({
+      suggestedName: "Generated image.png",
+      types: [
+        {
+          accept: { "image/png": [".png"] },
+        },
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledWith("data:image/png;base64,cG5n");
+    expect(write).toHaveBeenCalledWith(expect.any(Blob));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Downloaded Generated image")).toBeInTheDocument();
+  });
+
+  it("falls back to browser download without claiming completion when the save picker is unavailable", async () => {
     const user = userEvent.setup();
     const clickSpy = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
@@ -60,6 +126,8 @@ describe("CanvasFilesPanel", () => {
     );
 
     expect(clickSpy).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Downloaded Generated image")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Downloaded Generated image"),
+    ).not.toBeInTheDocument();
   });
 });

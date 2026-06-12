@@ -10,6 +10,7 @@ import {
   createCliManifest,
   createWebBuildEnv,
   createManifest,
+  normalizePackageTimestamps,
   renderCommandsGuide,
   renderAgentsGuide,
   renderBootstrap,
@@ -330,6 +331,23 @@ test("validatePackageRoot requires the files Nextop imports", async () => {
   );
 
   await validatePackageRoot(packageRoot);
+});
+
+test("normalizePackageTimestamps makes package mtimes deterministic", async () => {
+  const packageRoot = await makeTempPackageRoot();
+  const nestedDir = path.join(packageRoot, "server");
+  const nestedFile = path.join(nestedDir, "server.js");
+  const mtime = new Date("2024-01-02T03:04:05.000Z");
+
+  await mkdir(nestedDir);
+  await writeFile(path.join(packageRoot, "nextop.app.json"), "{}\n");
+  await writeFile(nestedFile, "ok\n");
+
+  await normalizePackageTimestamps(packageRoot, mtime);
+
+  assert.equal((await stat(packageRoot)).mtimeMs, mtime.getTime());
+  assert.equal((await stat(nestedDir)).mtimeMs, mtime.getTime());
+  assert.equal((await stat(nestedFile)).mtimeMs, mtime.getTime());
 });
 
 test("assertNoSymlinks rejects symlink entries", async () => {

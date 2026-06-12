@@ -1,5 +1,3 @@
-"use client";
-
 export type AgentModelSourceTab =
   | "local-agent"
   | "nextop-managed"
@@ -12,6 +10,8 @@ const API_PROVIDER_IDS = new Set([
   "google",
   "vertex",
 ]);
+
+export const SUPPORTED_LOCAL_CLI_PROVIDERS = ["codex", "claude"];
 
 export const LOCAL_CLI_PROVIDER_LABELS: Record<string, string> = {
   codex: "Codex",
@@ -43,6 +43,10 @@ export function isApiProvider(provider: string) {
 
 export function isLocalCliProvider(provider: string) {
   return !isApiProvider(provider);
+}
+
+export function isSupportedLocalCliProvider(provider: string) {
+  return SUPPORTED_LOCAL_CLI_PROVIDERS.includes(provider);
 }
 
 export function getAgentModelSourceTab(modelId: string | null | undefined) {

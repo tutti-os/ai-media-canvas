@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import SettingsPage from "../src/app/(workspace)/settings/page";
+import { SettingsDialog } from "../src/components/settings-dialog";
 import {
   AIMC_LOCALE_COOKIE_NAME,
   AIMC_LOCALE_STORAGE_KEY,
@@ -786,12 +787,6 @@ describe("SettingsPage", () => {
         { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
         { id: "codex:gpt-5.5", name: "Codex", provider: "codex" },
         { id: "claude:sonnet", name: "Sonnet", provider: "claude" },
-        {
-          id: "gemini:gemini-2.5-pro",
-          name: "Gemini CLI",
-          provider: "gemini",
-        },
-        { id: "opencode:default", name: "OpenCode", provider: "opencode" },
         { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
       ],
     });
@@ -806,13 +801,9 @@ describe("SettingsPage", () => {
     expect(
       screen.getByRole("button", { name: /Claude Code/i }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Gemini CLI")).not.toBeInTheDocument();
-    expect(screen.queryByText("OpenCode")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Custom model id")).not.toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole("button", { name: /Claude Code/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /Claude Code/i }));
     expect(screen.queryByLabelText("OpenAI API Key")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "API provider" }));
@@ -983,6 +974,69 @@ describe("SettingsPage", () => {
     expect(saveFooter).toContainElement(
       screen.getByRole("button", { name: "Save" }),
     );
+  });
+
+  it("closes the settings dialog after a successful save", async () => {
+    const onOpenChange = vi.fn();
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "openai:gpt-4.1",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          openai: ["openai:gpt-4.1"],
+        },
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [{ id: "openai:gpt-4.1", name: "GPT-4.1", provider: "openai" }],
+    });
+    updateWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "openai:gpt-4.1",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          openai: ["openai:gpt-4.1"],
+        },
+        openAIApiKey: "sk-updated",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsDialog open onOpenChange={onOpenChange} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+    await userEvent.type(screen.getByLabelText("OpenAI API Key"), "sk-updated");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
   it("installs missing pinned Local agent providers with a loading state", async () => {

@@ -26,7 +26,9 @@ describe("CanvasContextMenuExtensions", () => {
   afterEach(() => {
     cleanup();
     document.body.innerHTML = "";
+    Reflect.deleteProperty(window, "showSaveFilePicker");
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("adds a localized download image item to the native Excalidraw context menu", async () => {
@@ -122,6 +124,138 @@ describe("CanvasContextMenuExtensions", () => {
       files: {},
       mimeType: "image/png",
     });
+  });
+
+  it("downloads a single uncropped image directly from the original file data", async () => {
+    const user = userEvent.setup();
+    const anchorClick = vi.fn();
+    const originalCreateElement = document.createElement.bind(document);
+    let downloadAnchor: HTMLAnchorElement | null = null;
+
+    vi.spyOn(document, "createElement").mockImplementation((tagName) => {
+      const element = originalCreateElement(tagName);
+      if (tagName === "a") {
+        downloadAnchor = element as HTMLAnchorElement;
+        Object.defineProperty(element, "click", {
+          configurable: true,
+          value: anchorClick,
+        });
+      }
+      return element;
+    });
+
+    document.body.innerHTML = `
+      <div class="excalidraw">
+        <ul class="context-menu"></ul>
+      </div>
+    `;
+    exportToBlobMock.mockReturnValue(new Promise<Blob>(() => {}));
+
+    const excalidrawApi = {
+      getAppState: () => ({
+        selectedElementIds: { "image-1": true },
+      }),
+      getFiles: () => ({
+        "file-1": { dataURL: "data:image/png;base64,b3JpZ2luYWw=" },
+      }),
+      getSceneElements: () => [
+        {
+          id: "image-1",
+          type: "image",
+          fileId: "file-1",
+          isDeleted: false,
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 120,
+        },
+      ],
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasContextMenuExtensions excalidrawApi={excalidrawApi} />
+      </ToastProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "下载图片" }));
+
+    expect(anchorClick).toHaveBeenCalledTimes(1);
+    expect(downloadAnchor?.href).toBe("data:image/png;base64,b3JpZ2luYWw=");
+    expect(downloadAnchor?.download).toBe("ai-media-canvas-image.png");
+    expect(exportToBlobMock).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText("已下载 ai-media-canvas-image.png"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses the save picker and shows success after writing a downloaded image", async () => {
+    const user = userEvent.setup();
+    const write = vi.fn().mockResolvedValue(undefined);
+    const close = vi.fn().mockResolvedValue(undefined);
+    const createWritable = vi.fn().mockResolvedValue({ write, close });
+    const showSaveFilePicker = vi.fn().mockResolvedValue({ createWritable });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => new Blob(["original"], { type: "image/png" }),
+    });
+    Object.defineProperty(window, "showSaveFilePicker", {
+      configurable: true,
+      value: showSaveFilePicker,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    document.body.innerHTML = `
+      <div class="excalidraw">
+        <ul class="context-menu"></ul>
+      </div>
+    `;
+    const excalidrawApi = {
+      getAppState: () => ({
+        selectedElementIds: { "image-1": true },
+      }),
+      getFiles: () => ({
+        "file-1": { dataURL: "data:image/png;base64,b3JpZ2luYWw=" },
+      }),
+      getSceneElements: () => [
+        {
+          id: "image-1",
+          type: "image",
+          fileId: "file-1",
+          isDeleted: false,
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 120,
+        },
+      ],
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasContextMenuExtensions excalidrawApi={excalidrawApi} />
+      </ToastProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "下载图片" }));
+
+    expect(showSaveFilePicker).toHaveBeenCalledWith({
+      suggestedName: "ai-media-canvas-image.png",
+      types: [
+        {
+          accept: { "image/png": [".png"] },
+        },
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "data:image/png;base64,b3JpZ2luYWw=",
+    );
+    expect(write).toHaveBeenCalledWith(expect.any(Blob));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText("已下载 ai-media-canvas-image.png"),
+    ).toBeInTheDocument();
+    expect(exportToBlobMock).not.toHaveBeenCalled();
   });
 
   it("localizes retained native menu labels and marks group dividers", async () => {

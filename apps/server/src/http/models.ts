@@ -20,7 +20,10 @@ import {
   type AgentProviderInstallResult,
   installAgentProvider,
 } from "../agent/local-agent-provider-installer.js";
-import { createAimcLocalAgentProviderPlugins } from "../agent/local-agent-providers.js";
+import {
+  createAimcLocalAgentProviderPlugins,
+  isAimcLocalAgentProvider,
+} from "../agent/local-agent-providers.js";
 import type { ServerEnv } from "../config/env.js";
 import type { NextopManagedCredentialService } from "../features/nextop-managed/credential-service.js";
 import {
@@ -243,6 +246,8 @@ function buildLocalAgentModels(
   const seen = new Set<string>();
 
   for (const detection of detections) {
+    if (!isAimcLocalAgentProvider(String(detection.provider))) continue;
+
     const result = detection.result as AgentDetection | null;
     if (!result || result.supported === false) continue;
 
@@ -253,6 +258,7 @@ function buildLocalAgentModels(
       models.push({
         id,
         name: model.label || model.id,
+        ...(model.description ? { description: model.description } : {}),
         provider: String(detection.provider),
         source: "local-agent",
       });

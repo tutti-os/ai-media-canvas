@@ -114,6 +114,7 @@ function CanvasPageContent() {
   const { error: toastError } = useToast();
 
   const excalidrawApiRef = useRef<ExcalidrawApiLike | null>(null);
+  const currentCanvasIdRef = useRef(canvasId);
   const fallbackSubscriptionsRef = useRef<GenerationJobSubscription[]>([]);
   const tRef = useRef(t);
   const toastErrorRef = useRef(toastError);
@@ -123,6 +124,7 @@ function CanvasPageContent() {
 
   tRef.current = t;
   toastErrorRef.current = toastError;
+  currentCanvasIdRef.current = canvasId;
 
   const routerRef = useRef(router);
   routerRef.current = router;
@@ -188,9 +190,11 @@ function CanvasPageContent() {
         return;
       }
       const isVideo = jobType === "video_generation";
+      const sourceCanvasId = currentCanvasIdRef.current;
       const subscription = generationJobService.watch(jobId, {
         jobType,
         onSucceeded: (result) => {
+          if (currentCanvasIdRef.current !== sourceCanvasId) return;
           const url = result.signed_url;
           const mimeType = result.mime_type;
           const width = result.width;

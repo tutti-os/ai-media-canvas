@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, memo } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { useAppTranslation } from "@/i18n";
+import { downloadPngFile } from "@/lib/image-download";
 import { useToast } from "./toast";
 
 // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API/element has no public type
@@ -16,7 +17,7 @@ export type CanvasFilesPanelProps = {
 };
 
 /* -- Throttle utility -- */
-function throttle<T extends (...args: any[]) => void>(
+function throttle<T extends (...args: unknown[]) => void>(
   fn: T,
   ms: number,
 ): T & { cancel: () => void } {
@@ -42,7 +43,7 @@ function throttle<T extends (...args: any[]) => void>(
 }
 
 const CloseIcon = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 16 16" fill="none" className={className}>
+  <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
     <path
       d="M4.5 4.5l7 7M11.5 4.5l-7 7"
       stroke="currentColor"
@@ -58,12 +59,14 @@ const DownloadIcon = ({ className }: { className?: string }) => (
     fill="currentColor"
     fillOpacity={0.9}
     className={className}
+    aria-hidden="true"
   >
     <path d="M3 17.25v-2.5a.75.75 0 0 1 1.5 0v2.5a2.25 2.25 0 0 0 2.25 2.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-2.5a.75.75 0 0 1 1.5 0v2.5A3.75 3.75 0 0 1 17.25 21H6.75A3.75 3.75 0 0 1 3 17.25m8.25-13.5a.75.75 0 0 1 1.5 0v9.44l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 1 1 1.06-1.06l2.22 2.22z" />
   </svg>
 );
 
 type ImageFile = { id: string; name: string; dataURL: string };
+type CanvasFileRecord = { dataURL?: unknown };
 
 /** Memoized file row to prevent re-renders when other files change */
 const FileRow = memo(function FileRow({
@@ -71,7 +74,7 @@ const FileRow = memo(function FileRow({
   onDownload,
 }: {
   file: ImageFile;
-  onDownload: (file: ImageFile) => void;
+  onDownload: (file: ImageFile) => void | Promise<void>;
 }) {
   const { t } = useAppTranslation("canvas");
   const handleDownload = useCallback(
@@ -129,7 +132,8 @@ export function CanvasFilesPanel({
   const refreshFiles = useCallback(() => {
     if (!excalidrawApi) return;
     const allElements = excalidrawApi.getSceneElements() as ExcalidrawEl[];
-    const files: Record<string, any> = excalidrawApi.getFiles() ?? {};
+    const files: Record<string, CanvasFileRecord> =
+      excalidrawApi.getFiles() ?? {};
     const images: ImageFile[] = [];
     let idx = 0;
     for (const el of allElements) {
@@ -141,7 +145,11 @@ export function CanvasFilesPanel({
       const file = files[el.fileId];
       const title =
         el.customData?.title || el.customData?.label || `Image ${idx}`;
-      images.push({ id: el.id, name: title, dataURL: file?.dataURL ?? "" });
+      images.push({
+        id: el.id,
+        name: title,
+        dataURL: typeof file?.dataURL === "string" ? file.dataURL : "",
+      });
     }
     setImageFiles(images.reverse());
   }, [excalidrawApi]);
@@ -171,20 +179,21 @@ export function CanvasFilesPanel({
   }, [open, onClose]);
 
   const handleDownload = useCallback(
-    (file: ImageFile) => {
+    async (file: ImageFile) => {
       if (!file.dataURL) {
         toastError(t("files.downloadFailed"));
         return;
       }
 
       try {
-        const a = document.createElement("a");
-        a.href = file.dataURL;
-        a.download = `${file.name}.png`;
-        document.body.append(a);
-        a.click();
-        a.remove();
-        toastSuccess(t("files.downloadSuccess", { name: file.name }));
+        const filename = `${file.name}.png`;
+        const result = await downloadPngFile({
+          filename,
+          source: file.dataURL,
+        });
+        if (result === "saved") {
+          toastSuccess(t("files.downloadSuccess", { name: file.name }));
+        }
       } catch (error) {
         console.warn("[canvas-files-panel] download failed:", error);
         toastError(t("files.downloadFailed"));

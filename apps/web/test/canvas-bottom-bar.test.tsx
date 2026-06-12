@@ -82,5 +82,26 @@ describe("CanvasBottomBar", () => {
       left: "max(16px, min(296px, calc(100% - 227px)))",
       maxWidth: "calc(100% - 32px)",
     });
+    expect((container.firstElementChild as HTMLElement).style.right).toBe("");
+  });
+
+  it("wraps compact controls instead of forcing horizontal toolbar overflow", () => {
+    const { container } = render(
+      <CanvasBottomBar
+        excalidrawApi={null}
+        layersOpen={false}
+        onToggleLayers={vi.fn()}
+        filesOpen={false}
+        onToggleFiles={vi.fn()}
+        leftPanelOpen={false}
+      />,
+    );
+
+    expect(container.firstElementChild?.firstElementChild).toHaveClass(
+      "flex-wrap",
+    );
+    expect(container.firstElementChild?.firstElementChild).not.toHaveClass(
+      "overflow-x-auto",
+    );
   });
 });

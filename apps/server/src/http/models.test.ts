@@ -181,7 +181,8 @@ describe("registerModelRoutes", () => {
         }),
       }),
     );
-    expect(response.json().models).toEqual(
+    const models = response.json().models;
+    expect(models).toEqual(
       expect.arrayContaining([
         {
           id: "openai:deepseek-chat",
@@ -277,7 +278,11 @@ describe("registerModelRoutes", () => {
             authState: "unknown" as const,
             executablePath: "claude",
             models: [
-              { id: "sonnet", label: "Sonnet (alias)" },
+              {
+                id: "sonnet",
+                label: "Sonnet (alias)",
+                description: "Custom Sonnet model",
+              },
               { id: "claude:opus", label: "Scoped Opus" },
             ],
             supported: true,
@@ -317,7 +322,8 @@ describe("registerModelRoutes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().models).toEqual(
+    const models = response.json().models;
+    expect(models).toEqual(
       expect.arrayContaining([
         {
           id: "codex:default",
@@ -334,6 +340,7 @@ describe("registerModelRoutes", () => {
         {
           id: "claude:sonnet",
           name: "Sonnet (alias)",
+          description: "Custom Sonnet model",
           provider: "claude",
           source: "local-agent",
         },
@@ -343,13 +350,10 @@ describe("registerModelRoutes", () => {
           provider: "claude",
           source: "local-agent",
         },
-        {
-          id: "hermes:openai-codex:gpt-5.4",
-          name: "Hermes GPT",
-          provider: "hermes",
-          source: "local-agent",
-        },
       ]),
+    );
+    expect(models).not.toContainEqual(
+      expect.objectContaining({ provider: "hermes" }),
     );
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(1);
   });
