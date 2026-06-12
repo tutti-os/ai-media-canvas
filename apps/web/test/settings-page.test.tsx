@@ -914,7 +914,7 @@ describe("SettingsPage", () => {
     expect(await screen.findByText("Default LLM Model")).toBeInTheDocument();
   });
 
-  it("uses the first concrete Local agent model instead of the CLI default option", async () => {
+  it("uses the local CLI default option when a Local agent provider is selected", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "",
@@ -948,7 +948,7 @@ describe("SettingsPage", () => {
     });
     updateWorkspaceSettingsMock.mockResolvedValue({
       settings: {
-        defaultModel: "codex:gpt-5.5",
+        defaultModel: "codex:default",
         providerModels: EMPTY_PROVIDER_MODELS,
         openAIApiKey: "",
         openAIApiBase: "",
@@ -979,7 +979,7 @@ describe("SettingsPage", () => {
     await waitFor(() =>
       expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          defaultModel: "codex:gpt-5.5",
+          defaultModel: "codex:default",
         }),
       ),
     );

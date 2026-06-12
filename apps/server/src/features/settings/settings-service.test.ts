@@ -218,7 +218,7 @@ describe("createSettingsService", () => {
     expect(effectiveEnv.agnesDefaultModel).toBe("agnes:agnes-2.0-flash");
   });
 
-  it("resolves local CLI default models to the first concrete detected model", async () => {
+  it("preserves local CLI default models for the provider config", async () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-settings-"));
     tempDirs.push(dataRoot);
 
@@ -277,7 +277,7 @@ describe("createSettingsService", () => {
     await expect(
       service.getEffectiveServerEnv("local-workspace"),
     ).resolves.toMatchObject({
-      agentModel: "codex:gpt-5.5",
+      agentModel: "codex:default",
     });
   });
 });

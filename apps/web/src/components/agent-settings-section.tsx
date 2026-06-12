@@ -284,8 +284,8 @@ function groupLocalCliModels(models: ModelInfo[]): LocalCliProviderGroup[] {
 
 function getLocalCliProviderDefaultModel(group: LocalCliProviderGroup) {
   return (
-    group.models.find((model) => model.id !== `${group.provider}:default`) ??
     group.models.find((model) => model.id === `${group.provider}:default`) ??
+    group.models.find((model) => model.id !== `${group.provider}:default`) ??
     group.models[0] ??
     null
   );

@@ -98,10 +98,7 @@ function formatDefaultModelLabel(
     isLocalCliProvider(provider) &&
     modelId === `${provider}:default`
   ) {
-    const concreteModel = models.find(
-      (model) => model.provider === provider && model.id !== modelId,
-    );
-    if (concreteModel) return concreteModel.name;
+    return models.find((model) => model.id === modelId)?.name ?? "default";
   }
   const matchingModel = models.find((model) => model.id === modelId);
   if (matchingModel) return matchingModel.name;
@@ -109,18 +106,7 @@ function formatDefaultModelLabel(
   return scopedId;
 }
 
-function resolveExecutableModelId(modelId: string, models: ModelOption[]) {
-  const provider = getModelProvider(modelId);
-  if (
-    provider &&
-    isLocalCliProvider(provider) &&
-    modelId === `${provider}:default`
-  ) {
-    return (
-      models.find((item) => item.provider === provider && item.id !== modelId)
-        ?.id ?? modelId
-    );
-  }
+function resolveExecutableModelId(modelId: string) {
   return modelId;
 }
 
@@ -546,7 +532,7 @@ export function AgentModelSelector({
                       type="button"
                       onClick={() => {
                         setModel(
-                          resolveExecutableModelId(m.id, models),
+                          resolveExecutableModelId(m.id),
                           getModelSourceTab(m),
                         );
                         setOpen(false);
