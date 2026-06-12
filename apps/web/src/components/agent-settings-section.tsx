@@ -73,21 +73,9 @@ type ApiProviderPreset = {
   models: string[];
 };
 
-const CUSTOM_LOCAL_MODEL_VALUE = "__custom__";
 const LOCAL_CLI_PROVIDER_ORDER = [
   "codex",
   "claude",
-  "gemini",
-  "opencode",
-  "qwen",
-  "kimi",
-  "cursor",
-  "devin",
-  "hermes",
-  "kiro",
-  "kilo",
-  "qoder",
-  "vibe",
 ];
 const PINNED_LOCAL_CLI_PROVIDERS = ["codex", "claude"];
 
@@ -261,21 +249,14 @@ function getModelProvider(modelId: string) {
   return modelId.includes(":") ? (modelId.split(":", 1)[0] ?? "") : "";
 }
 
-function getLocalCliModelDisplayName(model: ModelInfo) {
-  const providerLabel = formatLocalCliProviderLabel(model.provider);
-  if (model.name && model.name !== providerLabel) return model.name;
-  const prefix = `${model.provider}:`;
-  return model.id.startsWith(prefix) ? model.id.slice(prefix.length) : model.id;
-}
-
-function buildLocalCliModelId(provider: string, value: string) {
-  return value.includes(":") ? value : `${provider}:${value}`;
-}
-
 function isInstallableLocalProvider(
   provider: string,
 ): provider is InstallableAgentProviderId {
   return provider === "codex" || provider === "claude";
+}
+
+function isSupportedLocalCliProvider(provider: string) {
+  return PINNED_LOCAL_CLI_PROVIDERS.includes(provider);
 }
 
 function groupLocalCliModels(models: ModelInfo[]): LocalCliProviderGroup[] {
@@ -620,7 +601,6 @@ function ProviderModelListEditor({
 function LocalCliProviderModelPicker({
   providerGroups,
   activeProvider,
-  selectedModel,
   onProviderChange,
   onSelect,
   onRescan,
@@ -629,7 +609,6 @@ function LocalCliProviderModelPicker({
 }: {
   providerGroups: LocalCliProviderGroup[];
   activeProvider: string;
-  selectedModel: string;
   onProviderChange: (provider: string) => void;
   onSelect: (modelId: string) => void;
   onRescan: () => void;
@@ -637,12 +616,8 @@ function LocalCliProviderModelPicker({
   installingProvider: InstallableAgentProviderId | null;
 }) {
   const { t } = useAppTranslation("settings");
-  const effectiveActiveProvider =
-    activeProvider || getModelProvider(selectedModel);
   const activeGroup =
-    providerGroups.find(
-      (group) => group.provider === effectiveActiveProvider,
-    ) ?? null;
+    providerGroups.find((group) => group.provider === activeProvider) ?? null;
   const displayGroups = useMemo<LocalCliProviderDisplayGroup[]>(() => {
     const groups = new Map<string, LocalCliProviderDisplayGroup>();
 
@@ -671,44 +646,6 @@ function LocalCliProviderModelPicker({
       return first.label.localeCompare(second.label);
     });
   }, [providerGroups]);
-  const activeModelPrefix = activeGroup ? `${activeGroup.provider}:` : "";
-  const selectedModelBelongsToActiveProvider = activeModelPrefix
-    ? selectedModel.startsWith(activeModelPrefix)
-    : false;
-  const selectedDetectedModel = activeGroup?.models.some(
-    (model) => model.id === selectedModel,
-  );
-  const customSelectedModel =
-    activeGroup &&
-    selectedModelBelongsToActiveProvider &&
-    !selectedDetectedModel
-      ? selectedModel.slice(activeModelPrefix.length)
-      : "";
-  const [customModelDraft, setCustomModelDraft] = useState(customSelectedModel);
-  const [customProviderDrafting, setCustomProviderDrafting] = useState<
-    string | null
-  >(null);
-
-  useEffect(() => {
-    setCustomModelDraft(customSelectedModel);
-  }, [customSelectedModel]);
-
-  const modelSelectValue =
-    customProviderDrafting === activeGroup?.provider
-      ? CUSTOM_LOCAL_MODEL_VALUE
-      : selectedDetectedModel
-        ? selectedModel
-        : customSelectedModel
-          ? CUSTOM_LOCAL_MODEL_VALUE
-          : "";
-
-  function updateCustomModel(value: string) {
-    setCustomModelDraft(value);
-    const trimmed = value.trim();
-    if (activeGroup && trimmed) {
-      onSelect(buildLocalCliModelId(activeGroup.provider, trimmed));
-    }
-  }
 
   return (
     <section className="space-y-4">
@@ -756,8 +693,6 @@ function LocalCliProviderModelPicker({
                         return;
                       }
                       onProviderChange(group.provider);
-                      setCustomProviderDrafting(null);
-                      setCustomModelDraft("");
                       const defaultModel =
                         getLocalCliProviderDefaultModel(group);
                       if (defaultModel) {
@@ -814,79 +749,6 @@ function LocalCliProviderModelPicker({
                 {t("agentSettings.local.installHint")}
               </p>
             ) : null}
-          </div>
-
-          <div className="rounded-xl border bg-card p-4 shadow-sm">
-            <div className="mb-3 flex items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <Label
-                  htmlFor="localCliModel"
-                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-                >
-                  {t("agentSettings.local.modelLabel")}
-                </Label>
-                <p className="mt-1 truncate text-sm font-semibold text-foreground">
-                  {activeGroup?.label ?? t("agentSettings.local.noCliSelected")}
-                </p>
-              </div>
-            </div>
-
-            <select
-              id="localCliModel"
-              aria-label={t("agentSettings.local.modelLabel")}
-              value={modelSelectValue}
-              disabled={!activeGroup}
-              onChange={(event) => {
-                if (!activeGroup) return;
-                if (event.target.value === CUSTOM_LOCAL_MODEL_VALUE) {
-                  setCustomProviderDrafting(activeGroup.provider);
-                  setCustomModelDraft("");
-                  return;
-                }
-                setCustomProviderDrafting(null);
-                onSelect(event.target.value);
-              }}
-              className="h-12 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus:border-accent focus:ring-3 focus:ring-accent/20"
-            >
-              {modelSelectValue ? null : (
-                <option value="">
-                  {activeGroup
-                    ? t("agentSettings.local.selectModel")
-                    : t("agentSettings.local.selectCliFirst")}
-                </option>
-              )}
-              {activeGroup?.models.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {getLocalCliModelDisplayName(model)}
-                </option>
-              ))}
-              {activeGroup ? (
-                <option value={CUSTOM_LOCAL_MODEL_VALUE}>
-                  {t("agentSettings.local.customOption")}
-                </option>
-              ) : null}
-            </select>
-
-            {modelSelectValue === CUSTOM_LOCAL_MODEL_VALUE ? (
-              <div className="mt-4 space-y-2">
-                <Label
-                  htmlFor="localCliCustomModel"
-                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-                >
-                  {t("agentSettings.local.customModelId")}
-                </Label>
-                <Input
-                  id="localCliCustomModel"
-                  value={customModelDraft}
-                  onChange={(event) => updateCustomModel(event.target.value)}
-                  placeholder={t("agentSettings.local.customModelPlaceholder")}
-                />
-              </div>
-            ) : null}
-
-            <p className="mt-3 text-sm text-muted-foreground">
-              {t("agentSettings.local.fetchedDescription")}
-            </p>
           </div>
         </div>
       ) : (
@@ -1001,7 +863,9 @@ export function AgentSettingsSection({
   const localCliModels = useMemo(
     () =>
       availableModels.filter(
-        (model) => getModelSourceTab(model) === "local-agent",
+        (model) =>
+          getModelSourceTab(model) === "local-agent" &&
+          isSupportedLocalCliProvider(model.provider),
       ),
     [availableModels],
   );
@@ -1287,7 +1151,6 @@ export function AgentSettingsSection({
             <LocalCliProviderModelPicker
               providerGroups={localCliProviderGroups}
               activeProvider={activeLocalProvider}
-              selectedModel={settings.defaultModel}
               onProviderChange={setActiveLocalProvider}
               onSelect={(modelId) => selectDefaultModel(modelId, "local-agent")}
               onRescan={refreshAvailableModels}
