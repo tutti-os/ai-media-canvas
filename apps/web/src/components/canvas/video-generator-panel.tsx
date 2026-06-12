@@ -1,14 +1,16 @@
 "use client";
 
-import { ImageIcon, Loader2, X, Zap } from "lucide-react";
+import { ImageIcon, Loader2, Trash2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
+import { useAppTranslation } from "../../i18n";
 import { calculateCenteredGeneratorPanelPosition } from "../../lib/canvas-generator-panel-position";
 import { withNormalizedCanvasElementIndices } from "../../lib/canvas-normalize";
 import {
   type VideoGeneratorData,
+  deleteVideoGeneratorElement,
   resizeVideoGeneratorElement,
   updateVideoGeneratorElement,
 } from "../../lib/canvas-video-generator";
@@ -116,6 +118,7 @@ export function VideoGeneratorPanel({
   canvasScrollZoom,
   onClose,
 }: VideoGeneratorPanelProps) {
+  const { t } = useAppTranslation("canvas");
   const [prompt, setPrompt] = useState(data.prompt);
   const [model, setModel] = useState(data.model);
   const [aspectRatio, setAspectRatio] = useState(data.aspectRatio);
@@ -258,6 +261,12 @@ export function VideoGeneratorPanel({
     },
     [],
   );
+
+  const handleDelete = useCallback(() => {
+    abortRef.current?.abort();
+    deleteVideoGeneratorElement(excalidrawApi, elementId);
+    onClose();
+  }, [excalidrawApi, elementId, onClose]);
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || loading) return;
@@ -436,6 +445,16 @@ export function VideoGeneratorPanel({
 
         <div className="mt-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label={t("tools.videoPanel.deleteCard")}
+              title={t("tools.videoPanel.deleteCard")}
+              onClick={handleDelete}
+              className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+
             <div className="relative">
               <button
                 type="button"
