@@ -184,9 +184,7 @@ describe("CanvasContextMenuExtensions", () => {
     expect(downloadAnchor?.href).toBe("data:image/png;base64,b3JpZ2luYWw=");
     expect(downloadAnchor?.download).toBe("ai-media-canvas-image.png");
     expect(exportToBlobMock).not.toHaveBeenCalled();
-    expect(
-      screen.queryByText("已下载 ai-media-canvas-image.png"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("下载成功")).not.toBeInTheDocument();
   });
 
   it("uses the save picker and shows success after writing a downloaded image", async () => {
@@ -252,9 +250,7 @@ describe("CanvasContextMenuExtensions", () => {
     );
     expect(write).toHaveBeenCalledWith(expect.any(Blob));
     expect(close).toHaveBeenCalledTimes(1);
-    expect(
-      await screen.findByText("已下载 ai-media-canvas-image.png"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("下载成功")).toBeInTheDocument();
     expect(exportToBlobMock).not.toHaveBeenCalled();
   });
 
@@ -361,7 +357,7 @@ describe("CanvasContextMenuExtensions", () => {
     });
   });
 
-  it("copies selected images as PNG without triggering the native PNG copy action", async () => {
+  it("keeps native Copy while adding a separate image copy action", async () => {
     const user = userEvent.setup();
     const nativeCopyClick = vi.fn();
     const copyAsPngClick = vi.fn();
@@ -434,12 +430,19 @@ describe("CanvasContextMenuExtensions", () => {
       </ToastProvider>,
     );
 
-    await user.click(screen.getByText("拷贝"));
+    await user.click(screen.getByRole("button", { name: "拷贝" }));
+
+    expect(nativeCopyClick).toHaveBeenCalledTimes(1);
+    expect(clipboardWrite).not.toHaveBeenCalled();
+    expect(copyAsPngClick).not.toHaveBeenCalled();
+    expect(keydownEvents).toEqual([]);
+
+    await user.click(await screen.findByRole("button", { name: "复制图片" }));
 
     await waitFor(() => {
       expect(clipboardWrite).toHaveBeenCalledTimes(1);
     });
-    expect(nativeCopyClick).not.toHaveBeenCalled();
+    expect(nativeCopyClick).toHaveBeenCalledTimes(1);
     expect(copyAsPngClick).not.toHaveBeenCalled();
     expect(keydownEvents).toEqual([
       expect.objectContaining({ key: "Escape", code: "Escape" }),
@@ -644,5 +647,425 @@ describe("CanvasContextMenuExtensions", () => {
     const clipboardItems = clipboardWrite.mock
       .calls[0][0] as TestClipboardItem[];
     expect(clipboardItems[0].items["image/png"]).toBe(croppedBlob);
+  });
+
+  it("pastes the copied image blob from the system clipboard when using the context menu Paste item", async () => {
+    const user = userEvent.setup();
+    const copiedBlob = new Blob(["copied"], { type: "image/png" });
+    const pastedBlob = new Blob(["pasted"], { type: "image/png" });
+    const clipboardWrite = vi.fn().mockResolvedValue(undefined);
+    const clipboardRead = vi.fn().mockResolvedValue([
+      {
+        types: ["image/png"],
+        getType: vi.fn().mockResolvedValue(pastedBlob),
+      },
+    ]);
+    const nativePasteClick = vi.fn();
+    const addFiles = vi.fn();
+    const updateScene = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => copiedBlob,
+    });
+    class TestClipboardItem {
+      items: Record<string, Blob>;
+
+      constructor(items: Record<string, Blob>) {
+        this.items = items;
+      }
+    }
+    class TestFileReader {
+      result: string | ArrayBuffer | null = null;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      readAsDataURL(_blob: Blob) {
+        this.result = "data:image/png;base64,cGFzdGVk";
+        this.onload?.();
+      }
+    }
+    class TestImage {
+      naturalWidth = 200;
+      naturalHeight = 100;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      set src(_value: string) {
+        this.onload?.();
+      }
+    }
+
+    document.body.innerHTML = `
+      <div class="excalidraw">
+        <ul class="context-menu">
+          <li data-testid="copy">
+            <button type="button" class="context-menu-item">
+              <div class="context-menu-item__label">Copy image</div>
+            </button>
+          </li>
+        </ul>
+      </div>
+    `;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { read: clipboardRead, write: clipboardWrite },
+    });
+    Object.defineProperty(globalThis, "ClipboardItem", {
+      configurable: true,
+      value: TestClipboardItem,
+    });
+    Object.defineProperty(globalThis, "FileReader", {
+      configurable: true,
+      value: TestFileReader,
+    });
+    Object.defineProperty(globalThis, "Image", {
+      configurable: true,
+      value: TestImage,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const excalidrawApi = {
+      addFiles,
+      getAppState: () => ({
+        selectedElementIds: { "image-1": true },
+        scrollX: 0,
+        scrollY: 0,
+        width: 800,
+        height: 600,
+        zoom: { value: 1 },
+      }),
+      getFiles: () => ({
+        "file-1": { dataURL: "data:image/png;base64,Y29waWVk" },
+      }),
+      getSceneElements: () => [
+        {
+          id: "image-1",
+          type: "image",
+          fileId: "file-1",
+          isDeleted: false,
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 80,
+        },
+      ],
+      updateScene,
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasContextMenuExtensions excalidrawApi={excalidrawApi} />
+      </ToastProvider>,
+    );
+
+    await user.click(await screen.findByText("复制图片"));
+    await waitFor(() => {
+      expect(clipboardWrite).toHaveBeenCalledTimes(1);
+    });
+
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `
+        <div class="excalidraw">
+          <ul class="context-menu">
+            <li data-testid="paste">
+              <button type="button" class="context-menu-item">
+                <div class="context-menu-item__label">Paste</div>
+              </button>
+            </li>
+          </ul>
+        </div>
+      `,
+    );
+    document
+      .querySelector('[data-testid="paste"] button')
+      ?.addEventListener("click", nativePasteClick);
+
+    await user.click(await screen.findByText("粘贴"));
+
+    await waitFor(() => {
+      expect(addFiles).toHaveBeenCalledTimes(1);
+    });
+    expect(nativePasteClick).not.toHaveBeenCalled();
+    expect(clipboardRead).toHaveBeenCalledTimes(1);
+    expect(addFiles).toHaveBeenCalledWith([
+      expect.objectContaining({
+        dataURL: "data:image/png;base64,cGFzdGVk",
+        mimeType: "image/png",
+      }),
+    ]);
+    expect(updateScene).toHaveBeenCalledWith({
+      elements: [
+        expect.objectContaining({ id: "image-1" }),
+        expect.objectContaining({
+          type: "image",
+          x: 300,
+          y: 250,
+          width: 200,
+          height: 100,
+        }),
+      ],
+      captureUpdate: "IMMEDIATELY",
+    });
+  });
+
+  it("lets the native Paste run after a keyboard Copy replaces the custom image copy", async () => {
+    const user = userEvent.setup();
+    const copiedBlob = new Blob(["copied"], { type: "image/png" });
+    const pastedBlob = new Blob(["pasted"], { type: "image/png" });
+    const clipboardWrite = vi.fn().mockResolvedValue(undefined);
+    const clipboardRead = vi.fn().mockResolvedValue([
+      {
+        types: ["image/png"],
+        getType: vi.fn().mockResolvedValue(pastedBlob),
+      },
+    ]);
+    const nativePasteClick = vi.fn();
+    const addFiles = vi.fn();
+    const updateScene = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => copiedBlob,
+    });
+    class TestClipboardItem {
+      items: Record<string, Blob>;
+
+      constructor(items: Record<string, Blob>) {
+        this.items = items;
+      }
+    }
+
+    document.body.innerHTML = `
+      <div class="excalidraw">
+        <ul class="context-menu">
+          <li data-testid="copy">
+            <button type="button" class="context-menu-item">
+              <div class="context-menu-item__label">Copy image</div>
+            </button>
+          </li>
+        </ul>
+      </div>
+    `;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { read: clipboardRead, write: clipboardWrite },
+    });
+    Object.defineProperty(globalThis, "ClipboardItem", {
+      configurable: true,
+      value: TestClipboardItem,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const excalidrawApi = {
+      addFiles,
+      getAppState: () => ({
+        selectedElementIds: { "image-1": true },
+        scrollX: 0,
+        scrollY: 0,
+        width: 800,
+        height: 600,
+        zoom: { value: 1 },
+      }),
+      getFiles: () => ({
+        "file-1": { dataURL: "data:image/png;base64,Y29waWVk" },
+      }),
+      getSceneElements: () => [
+        {
+          id: "image-1",
+          type: "image",
+          fileId: "file-1",
+          isDeleted: false,
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 80,
+        },
+      ],
+      updateScene,
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasContextMenuExtensions excalidrawApi={excalidrawApi} />
+      </ToastProvider>,
+    );
+
+    await user.click(await screen.findByText("复制图片"));
+    await waitFor(() => {
+      expect(clipboardWrite).toHaveBeenCalledTimes(1);
+    });
+
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "c",
+        code: "KeyC",
+        metaKey: true,
+        bubbles: true,
+      }),
+    );
+
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `
+        <div class="excalidraw">
+          <ul class="context-menu">
+            <li data-testid="paste">
+              <button type="button" class="context-menu-item">
+                <div class="context-menu-item__label">Paste</div>
+              </button>
+            </li>
+          </ul>
+        </div>
+      `,
+    );
+    document
+      .querySelector('[data-testid="paste"] button')
+      ?.addEventListener("click", nativePasteClick);
+
+    await user.click(await screen.findByText("粘贴"));
+
+    expect(nativePasteClick).toHaveBeenCalledTimes(1);
+    expect(clipboardRead).not.toHaveBeenCalled();
+    expect(addFiles).not.toHaveBeenCalled();
+    expect(updateScene).not.toHaveBeenCalled();
+  });
+
+  it("lets the native Paste run after a native context menu Cut replaces the custom image copy", async () => {
+    const user = userEvent.setup();
+    const copiedBlob = new Blob(["copied"], { type: "image/png" });
+    const pastedBlob = new Blob(["pasted"], { type: "image/png" });
+    const clipboardWrite = vi.fn().mockResolvedValue(undefined);
+    const clipboardRead = vi.fn().mockResolvedValue([
+      {
+        types: ["image/png"],
+        getType: vi.fn().mockResolvedValue(pastedBlob),
+      },
+    ]);
+    const nativeCutClick = vi.fn();
+    const nativePasteClick = vi.fn();
+    const addFiles = vi.fn();
+    const updateScene = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => copiedBlob,
+    });
+    class TestClipboardItem {
+      items: Record<string, Blob>;
+
+      constructor(items: Record<string, Blob>) {
+        this.items = items;
+      }
+    }
+
+    document.body.innerHTML = `
+      <div class="excalidraw">
+        <ul class="context-menu">
+          <li data-testid="copy">
+            <button type="button" class="context-menu-item">
+              <div class="context-menu-item__label">Copy image</div>
+            </button>
+          </li>
+        </ul>
+      </div>
+    `;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { read: clipboardRead, write: clipboardWrite },
+    });
+    Object.defineProperty(globalThis, "ClipboardItem", {
+      configurable: true,
+      value: TestClipboardItem,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const excalidrawApi = {
+      addFiles,
+      getAppState: () => ({
+        selectedElementIds: { "image-1": true },
+        scrollX: 0,
+        scrollY: 0,
+        width: 800,
+        height: 600,
+        zoom: { value: 1 },
+      }),
+      getFiles: () => ({
+        "file-1": { dataURL: "data:image/png;base64,Y29waWVk" },
+      }),
+      getSceneElements: () => [
+        {
+          id: "image-1",
+          type: "image",
+          fileId: "file-1",
+          isDeleted: false,
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 80,
+        },
+      ],
+      updateScene,
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasContextMenuExtensions excalidrawApi={excalidrawApi} />
+      </ToastProvider>,
+    );
+
+    await user.click(await screen.findByText("复制图片"));
+    await waitFor(() => {
+      expect(clipboardWrite).toHaveBeenCalledTimes(1);
+    });
+
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `
+        <div class="excalidraw">
+          <ul class="context-menu">
+            <li data-testid="cut">
+              <button type="button" class="context-menu-item">
+                <div class="context-menu-item__label">Cut</div>
+              </button>
+            </li>
+          </ul>
+        </div>
+      `,
+    );
+    document
+      .querySelector('[data-testid="cut"] button')
+      ?.addEventListener("click", nativeCutClick);
+
+    await user.click(await screen.findByText("Cut"));
+
+    expect(nativeCutClick).toHaveBeenCalledTimes(1);
+    document
+      .querySelector('[data-testid="cut"]')
+      ?.closest(".excalidraw")
+      ?.remove();
+
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `
+        <div class="excalidraw">
+          <ul class="context-menu">
+            <li data-testid="paste">
+              <button type="button" class="context-menu-item">
+                <div class="context-menu-item__label">Paste</div>
+              </button>
+            </li>
+          </ul>
+        </div>
+      `,
+    );
+    document
+      .querySelector('[data-testid="paste"] button')
+      ?.addEventListener("click", nativePasteClick);
+
+    await user.click(await screen.findByText("粘贴"));
+
+    expect(nativePasteClick).toHaveBeenCalledTimes(1);
+    expect(clipboardRead).not.toHaveBeenCalled();
+    expect(addFiles).not.toHaveBeenCalled();
+    expect(updateScene).not.toHaveBeenCalled();
   });
 });

@@ -14,6 +14,7 @@ import {
   resizeVideoGeneratorElement,
   updateVideoGeneratorElement,
 } from "../../lib/canvas-video-generator";
+import { isExcalidrawContextMenuTarget } from "../../lib/excalidraw-context-menu";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { VideoModelInfo } from "../../lib/server-api";
 import { fetchVideoModels, generateVideoDirect } from "../../lib/server-api";
@@ -174,6 +175,7 @@ export function VideoGeneratorPanel({
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
+      if (isExcalidrawContextMenuTarget(e.target)) return;
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         setShowModelDropdown(false);
         setShowParamsPopover(false);

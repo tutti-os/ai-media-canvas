@@ -28,6 +28,7 @@ import { createPortal } from "react-dom";
 
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
+import { useAppTranslation } from "../i18n";
 import {
   createExcalidrawImageElement,
   fetchAsDataURL,
@@ -39,18 +40,18 @@ import {
   getImageGeneratorData,
   isImageGeneratorElement,
 } from "../lib/canvas-image-generator";
+import { withNormalizedCanvasElementIndices } from "../lib/canvas-normalize";
 import {
   type VideoGeneratorData,
   createVideoGeneratorElement,
   getVideoGeneratorData,
   isVideoGeneratorElement,
 } from "../lib/canvas-video-generator";
+import { isExcalidrawContextMenuTarget } from "../lib/excalidraw-context-menu";
 import {
   type GenerationJobSubscription,
   generationJobService,
 } from "../lib/generation-job-service";
-import { withNormalizedCanvasElementIndices } from "../lib/canvas-normalize";
-import { useAppTranslation } from "../i18n";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
 import { VideoPlayerPanel } from "./canvas/video-player-panel";
@@ -1022,6 +1023,7 @@ export function CanvasToolMenu({
     const handlePointerDownOutside = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Node)) return;
+      if (isExcalidrawContextMenuTarget(target)) return;
       const panel = document.querySelector("[data-aimc-generator-panel]");
       if (panel?.contains(target)) return;
 

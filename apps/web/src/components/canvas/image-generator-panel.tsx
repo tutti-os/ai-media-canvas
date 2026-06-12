@@ -18,6 +18,7 @@ import {
   updateImageGeneratorElement,
 } from "../../lib/canvas-image-generator";
 import { withNormalizedCanvasElementIndices } from "../../lib/canvas-normalize";
+import { isExcalidrawContextMenuTarget } from "../../lib/excalidraw-context-menu";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { ImageModelInfo } from "../../lib/server-api";
 import { fetchImageModels, generateImageDirect } from "../../lib/server-api";
@@ -128,6 +129,7 @@ export function ImageGeneratorPanel({
   // Close dropdowns when clicking outside the panel
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
+      if (isExcalidrawContextMenuTarget(e.target)) return;
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         setShowModelDropdown(false);
         setShowRatioDropdown(false);
