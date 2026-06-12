@@ -34,6 +34,8 @@ test("production Nextop app workflow publishes ai-media-canvas on main", async (
   assert.deepEqual(on.push.branches, ["main"]);
   assert.equal(on.workflow_dispatch.inputs.publish_catalog.type, "boolean");
   assert.equal(on.workflow_dispatch.inputs.publish_catalog.default, false);
+  assert.equal(on.workflow_dispatch.inputs.catalog_only.type, "boolean");
+  assert.equal(on.workflow_dispatch.inputs.catalog_only.default, false);
   assert.equal(
     publish.uses,
     "tutti-os/tutti/.github/workflows/publish-nextop-app-release.yml@main",
@@ -43,6 +45,7 @@ test("production Nextop app workflow publishes ai-media-canvas on main", async (
   assert.equal(publish.with.package_dir, "build/nextop-app/package");
   assert.equal(publish.with.icon_path, "build/nextop-app/package/icon.png");
   assert.match(source, /inputs\.publish_catalog/);
+  assert.match(source, /inputs\.catalog_only/);
   assert.match(source, /NEXTOP_APP_RELEASES_PRODUCTION_PUBLISH_CATALOG/);
   assert.match(source, /catalog_cloudfront_distribution_id/);
   assert.match(source, /NEXTOP_APP_RELEASES_PRODUCTION_AWS_REGION/);
@@ -61,6 +64,8 @@ test("staging Nextop app workflow publishes ai-media-canvas manually", async () 
   assert.equal(on.push, undefined);
   assert.equal(on.workflow_dispatch.inputs.publish_catalog.type, "boolean");
   assert.equal(on.workflow_dispatch.inputs.publish_catalog.default, false);
+  assert.equal(on.workflow_dispatch.inputs.catalog_only.type, "boolean");
+  assert.equal(on.workflow_dispatch.inputs.catalog_only.default, false);
   assert.equal(
     publish.uses,
     "tutti-os/tutti/.github/workflows/publish-nextop-app-release.yml@main",
@@ -70,6 +75,7 @@ test("staging Nextop app workflow publishes ai-media-canvas manually", async () 
   assert.equal(publish.with.package_dir, "build/nextop-app/package");
   assert.equal(publish.with.icon_path, "build/nextop-app/package/icon.png");
   assert.equal(publish.with.publish_catalog, "${{ inputs.publish_catalog }}");
+  assert.equal(publish.with.catalog_only, "${{ inputs.catalog_only }}");
   assert.match(source, /catalog_cloudfront_distribution_id/);
   assert.match(source, /NEXTOP_APP_RELEASES_STAGING_AWS_REGION/);
   assert.match(source, /nextop-app-releases-staging/);

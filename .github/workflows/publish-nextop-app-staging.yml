@@ -12,6 +12,11 @@ on:
         required: false
         type: boolean
         default: false
+      catalog_only:
+        description: Whether to skip app release upload and only publish the existing latest release to staging catalog.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -34,4 +39,5 @@ jobs:
       s3_prefix: ${{ vars.NEXTOP_APP_RELEASES_STAGING_S3_PREFIX || 'nextop-app-releases-staging' }}
       release_assets_base_url: ${{ vars.NEXTOP_APP_RELEASES_STAGING_BASE_URL || 'https://d1x7gb6wqsqmnm.cloudfront.net/nextop-app-releases-staging' }}
       publish_catalog: ${{ inputs.publish_catalog }}
+      catalog_only: ${{ inputs.catalog_only }}
       catalog_cloudfront_distribution_id: ${{ vars.NEXTOP_APP_RELEASES_STAGING_CLOUDFRONT_DISTRIBUTION_ID || vars.NEXTOP_APP_RELEASES_CLOUDFRONT_DISTRIBUTION_ID || '' }}
