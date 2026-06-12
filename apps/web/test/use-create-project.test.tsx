@@ -80,22 +80,16 @@ describe("useCreateProject", () => {
     vi.restoreAllMocks();
   });
 
-  it("navigates the opened tab without later changing the original page", async () => {
-    let popupHref = "";
+  it("opens the final canvas URL without creating a loading-preview popup", async () => {
     const popup = {
       closed: false,
-      location: Object.defineProperty({}, "href", {
-        get() {
-          return popupHref;
-        },
-        set(value: string) {
-          popupHref = value;
-        },
-      }),
+      location: { href: "about:blank" },
       close: vi.fn(),
     };
 
-    vi.spyOn(window, "open").mockImplementation(() => popup as unknown as Window);
+    const openSpy = vi
+      .spyOn(window, "open")
+      .mockImplementation(() => popup as unknown as Window);
 
     render(
       <ToastProvider>
@@ -108,7 +102,7 @@ describe("useCreateProject", () => {
     await Promise.resolve();
 
     expect(createProjectMock).toHaveBeenCalledWith({ name: "Untitled" });
-    expect(popupHref).toBe("/canvas?id=canvas-1");
+    expect(openSpy).toHaveBeenCalledWith("/canvas?id=canvas-1", "_blank");
 
     await vi.advanceTimersByTimeAsync(450);
 
@@ -160,12 +154,7 @@ describe("useCreateProject", () => {
 
   it("clears initial sessionStorage payloads when project creation fails", async () => {
     createProjectMock.mockRejectedValue(new Error("boom"));
-    const popup = {
-      closed: false,
-      location: { href: "about:blank" },
-      close: vi.fn(),
-    };
-    vi.spyOn(window, "open").mockImplementation(() => popup as unknown as Window);
+    const openSpy = vi.spyOn(window, "open");
 
     render(
       <ToastProvider>
@@ -193,7 +182,7 @@ describe("useCreateProject", () => {
       sessionStorage.getItem(INITIAL_IMAGE_GENERATION_PREFERENCE_KEY),
     ).toBeNull();
     expect(sessionStorage.getItem(INITIAL_AGENT_MODEL_KEY)).toBeNull();
-    expect(popup.close).toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
   });
 
   it("falls back to in-page navigation when the popup is blocked", async () => {
