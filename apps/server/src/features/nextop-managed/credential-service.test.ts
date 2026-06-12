@@ -124,6 +124,51 @@ describe("createNextopManagedCredentialService", () => {
     expect(nextopManagedEnv.agentModel).toBe("openai:gpt-5.1");
   });
 
+  it("resolves Nextop-prefixed models even when the stored source is stale", async () => {
+    const env = createEnv();
+    const requestedModels: string[] = [];
+    const service = createNextopManagedCredentialService({
+      env,
+      exchangeClient: async () => ({
+        expiresAt: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
+        grantRef: "grant-ref",
+        models: [
+          {
+            id: "agnes-2.0-flash",
+            name: "Agnes 2.0 Flash",
+            provider: "agnes",
+          },
+        ],
+        providers: ["agnes"],
+      }),
+      providerCredentialClient: async ({ model }) => {
+        requestedModels.push(model);
+        return {
+          credential: {
+            provider: "agnes",
+            apiKey: "nextop-managed-agnes-key",
+            baseUrl: "https://managed.agnes.example/v1",
+          },
+          expiresAt: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
+        };
+      },
+      store: createStore(),
+    });
+
+    await connectService(service, env);
+
+    const resolvedEnv = await service.resolveEnvForModel(
+      createEnv(),
+      "nextop:agnes:agnes-2.0-flash",
+      "api-provider",
+    );
+
+    expect(resolvedEnv.agentModel).toBe("agnes:agnes-2.0-flash");
+    expect(resolvedEnv.agnesApiKey).toBe("nextop-managed-agnes-key");
+    expect(resolvedEnv.agnesBaseUrl).toBe("https://managed.agnes.example/v1");
+    expect(requestedModels).toEqual(["agnes-2.0-flash"]);
+  });
+
   it("revokes the Nextop grant when clearing a connection", async () => {
     const env = createEnv();
     const revokedGrantRefs: string[] = [];

@@ -305,7 +305,7 @@ describe("AgentModelSelector", () => {
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Codex/i }));
     expect(
-      await screen.findByText("Uses default model: gpt-5.5"),
+      await screen.findByText("Uses default model: Default (CLI config)"),
     ).toBeInTheDocument();
   });
 
@@ -338,7 +338,7 @@ describe("AgentModelSelector", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("selects the first concrete local CLI model when Default CLI config is clicked", async () => {
+  it("preserves the local CLI default model when Default CLI config is clicked", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "codex:default",
@@ -364,7 +364,7 @@ describe("AgentModelSelector", () => {
       await screen.findByRole("button", { name: "Default (CLI config)" }),
     );
 
-    expect(setModelMock).toHaveBeenCalledWith("codex:gpt-5.5", "local-agent");
+    expect(setModelMock).toHaveBeenCalledWith("codex:default", "local-agent");
   });
 
   it("refreshes the trigger when workspace settings are saved elsewhere", async () => {

@@ -4,6 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useAppTranslation } from "../i18n";
+import {
+  createExcalidrawImageElement,
+  getViewportCenter,
+  scaleToFit,
+} from "../lib/canvas-elements";
+import { withNormalizedCanvasElementIndices } from "../lib/canvas-normalize";
 import { downloadPngFile } from "../lib/image-download";
 import { useToast } from "./toast";
 
@@ -13,11 +19,23 @@ type CanvasContextMenuExtensionsProps = {
 };
 
 type CanvasContextMenuApi = {
+  addFiles?: (
+    files: Array<{
+      id: string;
+      dataURL: string;
+      mimeType: string;
+      created: number;
+    }>,
+  ) => void;
   getAppState: () => {
     selectedElementIds?: Record<string, boolean>;
   } & Record<string, unknown>;
   getFiles: () => Record<string, unknown>;
   getSceneElements: () => readonly Record<string, unknown>[];
+  updateScene?: (scene: {
+    elements: Record<string, unknown>[];
+    captureUpdate?: string;
+  }) => void;
 };
 
 function getNativeContextMenu() {
@@ -26,6 +44,7 @@ function getNativeContextMenu() {
 
 const SECTION_START_LABELS = new Set(["Crop image", "Duplicate"]);
 const HIDDEN_NATIVE_CONTEXT_MENU_TEST_IDS = new Set(["copyAsPng"]);
+const IMAGE_CLIPBOARD_PASTE_WINDOW_MS = 2 * 60 * 1000;
 const NATIVE_CONTEXT_MENU_LABEL_KEYS: Record<string, string> = {
   "Canvas & Shape properties":
     "canvas:contextMenu.native.canvasAndShapeProperties",
@@ -45,6 +64,12 @@ const NATIVE_CONTEXT_MENU_LABEL_KEYS: Record<string, string> = {
   复制: "canvas:contextMenu.native.duplicate",
 };
 
+let lastAimcImageClipboardWriteAt = 0;
+
+function resetImageClipboardPasteMarker() {
+  lastAimcImageClipboardWriteAt = 0;
+}
+
 function isCanvasContextMenuApi(
   excalidrawApi: CanvasContextMenuExtensionsProps["excalidrawApi"],
 ): excalidrawApi is CanvasContextMenuApi {
@@ -52,6 +77,14 @@ function isCanvasContextMenuApi(
     typeof excalidrawApi?.getAppState === "function" &&
     typeof excalidrawApi?.getFiles === "function" &&
     typeof excalidrawApi?.getSceneElements === "function"
+  );
+}
+
+function isImageCopyContextMenuItem(item: HTMLLIElement) {
+  const originalLabel = getContextMenuItemOriginalLabel(item);
+  return (
+    NATIVE_CONTEXT_MENU_LABEL_KEYS[originalLabel] ===
+    "canvas:contextMenu.native.copyImage"
   );
 }
 
@@ -84,12 +117,8 @@ function hideUnsupportedNativeImageCopyItem(
   for (const item of menuElement.querySelectorAll<HTMLLIElement>(
     'li[data-testid="copy"]',
   )) {
-    const originalLabel = getContextMenuItemOriginalLabel(item);
-    const isImageCopyItem =
-      NATIVE_CONTEXT_MENU_LABEL_KEYS[originalLabel] ===
-      "canvas:contextMenu.native.copyImage";
     item.hidden =
-      isImageCopyItem &&
+      isImageCopyContextMenuItem(item) &&
       (!excalidrawApi || !canCopySelectionAsImage(excalidrawApi));
   }
 }
@@ -166,6 +195,14 @@ function canCopySelectionAsImage(excalidrawApi: CanvasContextMenuApi) {
   );
 }
 
+function canPasteCopiedImageFromClipboard(excalidrawApi: CanvasContextMenuApi) {
+  return (
+    typeof excalidrawApi.addFiles === "function" &&
+    typeof excalidrawApi.updateScene === "function" &&
+    Date.now() - lastAimcImageClipboardWriteAt < IMAGE_CLIPBOARD_PASTE_WINDOW_MS
+  );
+}
+
 function getLiveElements(excalidrawApi: CanvasContextMenuApi) {
   return excalidrawApi
     .getSceneElements()
@@ -188,6 +225,21 @@ async function blobFromDataUrl(dataUrl: string): Promise<Blob> {
     throw new Error("Unable to read image data.");
   }
   return await response.blob();
+}
+
+async function dataUrlFromBlob(blob: Blob): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Unable to read clipboard image."));
+      }
+    };
+    reader.onerror = () => reject(new Error("Unable to read clipboard image."));
+    reader.readAsDataURL(blob);
+  });
 }
 
 async function loadImage(dataUrl: string): Promise<HTMLImageElement> {
@@ -312,6 +364,84 @@ async function copySelectedImagesToClipboard(
       "image/png": pngBlob,
     }),
   ]);
+  lastAimcImageClipboardWriteAt = Date.now();
+}
+
+async function readImageBlobFromClipboard(): Promise<Blob | null> {
+  if (!navigator.clipboard?.read) {
+    throw new Error("Clipboard reads are not supported in this browser.");
+  }
+
+  const clipboardItems = await navigator.clipboard.read();
+  for (const item of clipboardItems) {
+    const imageType = item.types.find((type) => type.startsWith("image/"));
+    if (imageType) {
+      return await item.getType(imageType);
+    }
+  }
+  return null;
+}
+
+function generateFileId(): string {
+  return (
+    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+  ).slice(0, 20);
+}
+
+async function pasteClipboardImageToCanvas(
+  excalidrawApi: CanvasContextMenuApi,
+) {
+  if (
+    typeof excalidrawApi.addFiles !== "function" ||
+    typeof excalidrawApi.updateScene !== "function"
+  ) {
+    throw new Error("Canvas paste API is unavailable.");
+  }
+
+  const blob = await readImageBlobFromClipboard();
+  if (!blob) {
+    throw new Error("Clipboard does not contain an image.");
+  }
+
+  const dataURL = await dataUrlFromBlob(blob);
+  const image = await loadImage(dataURL);
+  const dimensions = scaleToFit(image.naturalWidth, image.naturalHeight, 600);
+  const center = getViewportCenter(
+    excalidrawApi.getAppState() as {
+      scrollX: number;
+      scrollY: number;
+      width: number;
+      height: number;
+      zoom: { value: number };
+    },
+  );
+  const fileId = generateFileId();
+
+  excalidrawApi.addFiles([
+    {
+      id: fileId,
+      dataURL,
+      mimeType: blob.type || "image/png",
+      created: Date.now(),
+    },
+  ]);
+
+  const element = createExcalidrawImageElement({
+    fileId,
+    x: center.x - dimensions.width / 2,
+    y: center.y - dimensions.height / 2,
+    width: dimensions.width,
+    height: dimensions.height,
+    source: "uploaded",
+  });
+
+  excalidrawApi.updateScene({
+    elements: withNormalizedCanvasElementIndices([
+      ...excalidrawApi.getSceneElements(),
+      element,
+    ]),
+    captureUpdate: "IMMEDIATELY",
+  });
 }
 
 function closeNativeContextMenu(triggerElement?: HTMLElement | null) {
@@ -331,13 +461,54 @@ function closeNativeContextMenu(triggerElement?: HTMLElement | null) {
   getNativeContextMenu()?.remove();
 }
 
-function replaceImageCopyContextMenuItem(
-  menuElement: HTMLUListElement,
+function attachImageCopyHandler(
+  imageCopyItem: HTMLLIElement,
   excalidrawApi: CanvasContextMenuApi,
   onImageCopied: () => void,
   onImageCopyFailed: () => void,
 ) {
-  if (!canCopySelectionAsImage(excalidrawApi)) return;
+  const copyButton = imageCopyItem.querySelector<HTMLButtonElement>("button");
+  if (!copyButton) return false;
+
+  copyButton.addEventListener("click", () => {
+    const copyPromise = copySelectedImagesToClipboard(excalidrawApi);
+    closeNativeContextMenu(copyButton);
+    void copyPromise.then(onImageCopied).catch((error) => {
+      console.warn("[canvas-context-menu] copy image failed:", error);
+      onImageCopyFailed();
+    });
+  });
+  return true;
+}
+
+function setImageCopyMenuItemLabel(
+  imageCopyItem: HTMLLIElement,
+  copyImageLabel: string,
+) {
+  const label = imageCopyItem.querySelector<HTMLElement>(
+    ".context-menu-item__label",
+  );
+  if (!label) return;
+
+  label.dataset.aimcOriginalLabel = "Copy image";
+  label.textContent = copyImageLabel;
+}
+
+function syncImageCopyContextMenuItem(
+  menuElement: HTMLUListElement,
+  excalidrawApi: CanvasContextMenuApi,
+  copyImageLabel: string,
+  onImageCopied: () => void,
+  onImageCopyFailed: () => void,
+) {
+  const existingCustomImageCopy = menuElement.querySelector<HTMLLIElement>(
+    'li[data-testid="aimcCopyImage"]',
+  );
+  if (!canCopySelectionAsImage(excalidrawApi)) {
+    existingCustomImageCopy?.remove();
+    return;
+  }
+  if (existingCustomImageCopy) return;
 
   const copyItem = menuElement.querySelector<HTMLLIElement>(
     'li[data-testid="copy"]',
@@ -347,17 +518,70 @@ function replaceImageCopyContextMenuItem(
   const imageCopyItem = copyItem.cloneNode(true) as HTMLLIElement;
   imageCopyItem.dataset.testid = "aimcCopyImage";
   imageCopyItem.dataset.aimcCopyImageItem = "true";
-  const copyButton = imageCopyItem.querySelector<HTMLButtonElement>("button");
-  if (!copyButton) return;
-  copyButton.addEventListener("click", () => {
-    const copyPromise = copySelectedImagesToClipboard(excalidrawApi);
-    closeNativeContextMenu(copyButton);
-    void copyPromise.then(onImageCopied).catch((error) => {
-      console.warn("[canvas-context-menu] copy image failed:", error);
-      onImageCopyFailed();
-    });
-  });
-  copyItem.replaceWith(imageCopyItem);
+  setImageCopyMenuItemLabel(imageCopyItem, copyImageLabel);
+  if (
+    !attachImageCopyHandler(
+      imageCopyItem,
+      excalidrawApi,
+      onImageCopied,
+      onImageCopyFailed,
+    )
+  ) {
+    return;
+  }
+
+  if (isImageCopyContextMenuItem(copyItem)) {
+    copyItem.replaceWith(imageCopyItem);
+  } else {
+    copyItem.after(imageCopyItem);
+  }
+}
+
+function resetImageClipboardMarkerOnNativeClipboardActions(
+  menuElement: HTMLUListElement,
+) {
+  const nativeClipboardButtons =
+    menuElement.querySelectorAll<HTMLButtonElement>(
+      'li[data-testid="copy"] button, li[data-testid="cut"] button',
+    );
+
+  for (const button of nativeClipboardButtons) {
+    if (button.dataset.aimcNativeClipboardHandler === "true") continue;
+
+    button.dataset.aimcNativeClipboardHandler = "true";
+    button.addEventListener("click", resetImageClipboardPasteMarker, true);
+  }
+}
+
+function interceptImagePasteContextMenuItem(
+  menuElement: HTMLUListElement,
+  excalidrawApi: CanvasContextMenuApi,
+  onImagePasteFailed: () => void,
+) {
+  const pasteButton = menuElement.querySelector<HTMLButtonElement>(
+    'li[data-testid="paste"] button',
+  );
+  if (!pasteButton || pasteButton.dataset.aimcPasteImageHandler === "true") {
+    return;
+  }
+
+  pasteButton.dataset.aimcPasteImageHandler = "true";
+  pasteButton.addEventListener(
+    "click",
+    (event) => {
+      if (!canPasteCopiedImageFromClipboard(excalidrawApi)) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const pastePromise = pasteClipboardImageToCanvas(excalidrawApi);
+      closeNativeContextMenu(pasteButton);
+      void pastePromise.catch((error) => {
+        console.warn("[canvas-context-menu] paste image failed:", error);
+        onImagePasteFailed();
+      });
+    },
+    true,
+  );
 }
 
 export function CanvasContextMenuExtensions({
@@ -366,6 +590,24 @@ export function CanvasContextMenuExtensions({
   const { t } = useAppTranslation("canvas");
   const { success: toastSuccess, error: toastError } = useToast();
   const [menuElement, setMenuElement] = useState<HTMLUListElement | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        ["c", "x"].includes(event.key.toLowerCase())
+      ) {
+        resetImageClipboardPasteMarker();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, []);
 
   useEffect(() => {
     const syncMenuElement = () => {
@@ -382,12 +624,21 @@ export function CanvasContextMenuExtensions({
         markContextMenuSections(nativeMenuElement);
         localizeNativeContextMenuLabels(nativeMenuElement, t);
         if (canvasContextMenuApi) {
-          replaceImageCopyContextMenuItem(
+          resetImageClipboardMarkerOnNativeClipboardActions(nativeMenuElement);
+          syncImageCopyContextMenuItem(
             nativeMenuElement,
             canvasContextMenuApi,
+            t("contextMenu.native.copyImage"),
             () => {
               toastSuccess(t("contextMenu.copyImageSuccess"));
             },
+            () => {
+              toastError(t("contextMenu.copyImageFailed"));
+            },
+          );
+          interceptImagePasteContextMenuItem(
+            nativeMenuElement,
+            canvasContextMenuApi,
             () => {
               toastError(t("contextMenu.copyImageFailed"));
             },
@@ -429,7 +680,7 @@ export function CanvasContextMenuExtensions({
             (await exportSelectedImageToPngBlob(excalidrawApi, elements)),
         });
         if (result === "saved") {
-          toastSuccess(t("files.downloadSuccess", { name: filename }));
+          toastSuccess(t("files.downloadSuccess"));
         }
       } catch (error) {
         console.warn("[canvas-context-menu] download image failed:", error);

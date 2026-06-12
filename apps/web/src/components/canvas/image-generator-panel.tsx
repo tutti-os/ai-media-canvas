@@ -1,9 +1,11 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
+import { useAppTranslation } from "../../i18n";
 import {
   createExcalidrawImageElement,
   fetchAsDataURL,
@@ -11,10 +13,12 @@ import {
 import { calculateCenteredGeneratorPanelPosition } from "../../lib/canvas-generator-panel-position";
 import {
   type ImageGeneratorData,
+  deleteImageGeneratorElement,
   resizeImageGeneratorElement,
   updateImageGeneratorElement,
 } from "../../lib/canvas-image-generator";
 import { withNormalizedCanvasElementIndices } from "../../lib/canvas-normalize";
+import { isExcalidrawContextMenuTarget } from "../../lib/excalidraw-context-menu";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { ImageModelInfo } from "../../lib/server-api";
 import { fetchImageModels, generateImageDirect } from "../../lib/server-api";
@@ -45,6 +49,7 @@ export function ImageGeneratorPanel({
   canvasScrollZoom,
   onClose,
 }: ImageGeneratorPanelProps) {
+  const { t } = useAppTranslation("canvas");
   const [prompt, setPrompt] = useState(data.prompt);
   const [model, setModel] = useState(data.model);
   const [aspectRatio, setAspectRatio] = useState(data.aspectRatio);
@@ -124,6 +129,7 @@ export function ImageGeneratorPanel({
   // Close dropdowns when clicking outside the panel
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
+      if (isExcalidrawContextMenuTarget(e.target)) return;
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         setShowModelDropdown(false);
         setShowRatioDropdown(false);
@@ -178,6 +184,12 @@ export function ImageGeneratorPanel({
     },
     [excalidrawApi, elementId],
   );
+
+  const handleDelete = useCallback(() => {
+    abortRef.current?.abort();
+    deleteImageGeneratorElement(excalidrawApi, elementId);
+    onClose();
+  }, [excalidrawApi, elementId, onClose]);
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || loading || availabilityError) return;
@@ -372,6 +384,16 @@ export function ImageGeneratorPanel({
         </div>
 
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            aria-label={t("tools.imagePanel.deleteCard")}
+            title={t("tools.imagePanel.deleteCard")}
+            onClick={handleDelete}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+
           <div className="relative">
             <button
               type="button"

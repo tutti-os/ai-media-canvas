@@ -136,4 +136,77 @@ describe("CanvasToolMenu panel dismissal", () => {
       }),
     );
   });
+
+  it("keeps the selected generator while pressing an Excalidraw context menu item", async () => {
+    let elements: TestElement[] = [];
+    let appState: TestAppState = {
+      scrollX: 0,
+      scrollY: 0,
+      zoom: { value: 1 },
+      activeTool: { type: "selection" },
+      selectedElementIds: {},
+      width: 1200,
+      height: 800,
+    };
+    const updateScene = vi.fn((scene: TestSceneUpdate) => {
+      if (scene.elements) elements = scene.elements;
+      if (scene.appState) appState = { ...appState, ...scene.appState };
+    });
+    const excalidrawApi = {
+      getSceneElements: () => elements,
+      getAppState: () => appState,
+      updateScene,
+      onChange: vi.fn(() => () => {}),
+      setActiveTool: vi.fn(),
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasToolMenu
+          canvasId="canvas-1"
+          projectId="project-1"
+          excalidrawApi={excalidrawApi}
+        />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "AI 生成图片" }));
+    await screen.findByPlaceholderText("今天我们要创作什么");
+
+    const generatorId = elements.find(
+      (element) => element.customData?.type === "image-generator",
+    )?.id;
+    expect(generatorId).toBeTruthy();
+    updateScene.mockClear();
+
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `
+        <div class="excalidraw">
+          <ul class="context-menu">
+            <li>
+              <button type="button" class="context-menu-item">Delete</button>
+            </li>
+          </ul>
+        </div>
+      `,
+    );
+    const contextMenuButton = document.querySelector(
+      ".context-menu-item",
+    ) as HTMLButtonElement;
+
+    fireEvent.pointerDown(contextMenuButton);
+    fireEvent.mouseDown(contextMenuButton);
+
+    expect(
+      screen.getByPlaceholderText("今天我们要创作什么"),
+    ).toBeInTheDocument();
+    expect(updateScene).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        appState: { selectedElementIds: {} },
+        captureUpdate: "IMMEDIATELY",
+      }),
+    );
+    expect(appState.selectedElementIds).toEqual({ [generatorId]: true });
+  });
 });

@@ -32,7 +32,7 @@
   "files": {
     "download": "下载 {{name}}",
     "downloadFailed": "下载失败",
-    "downloadSuccess": "已下载 {{name}}",
+    "downloadSuccess": "下载成功",
     "empty": "暂无生成文件",
     "end": "到底了",
     "noPreview": "无预览",
@@ -72,6 +72,7 @@
     "image": "上传图片",
     "imagePanel": {
       "close": "关闭图片生成面板",
+      "deleteCard": "删除图片生成器卡片",
       "generate": "生成",
       "placeholder": "描述你想创建的图片...",
       "title": "AI 图片"
@@ -79,6 +80,9 @@
     "line": "直线 (L)",
     "rectangle": "矩形 (R)",
     "selection": "选择 (V)",
-    "text": "文字 (T)"
+    "text": "文字 (T)",
+    "videoPanel": {
+      "deleteCard": "删除视频生成器卡片"
+    }
   }
 }

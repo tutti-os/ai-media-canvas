@@ -34,7 +34,9 @@ vi.mock("../src/lib/server-api", () => ({
   generateVideoDirect: generateVideoDirectMock,
 }));
 
-function createExcalidrawApiStub(sceneElements: any[] = []) {
+function createExcalidrawApiStub(
+  sceneElements: Array<Record<string, unknown>> = [],
+) {
   return {
     addFiles: vi.fn(),
     getSceneElements: vi.fn(() => sceneElements),
@@ -380,6 +382,54 @@ describe("canvas generation panels", () => {
     expect(excalidrawApi.updateScene).not.toHaveBeenCalled();
   });
 
+  it("deletes an image generator card from the panel", async () => {
+    const onClose = vi.fn();
+    const excalidrawApi = createExcalidrawApiStub([
+      {
+        id: "el-image",
+        isDeleted: false,
+        customData: { type: "image-generator" },
+      },
+    ]);
+
+    render(
+      <ToastProvider>
+        <ImageGeneratorPanel
+          elementId="el-image"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 320 }}
+          data={{
+            type: "image-generator",
+            status: "idle",
+            prompt: "",
+            model: "agnes-image/agnes-image-2.1-flash",
+            aspectRatio: "1:1",
+            quality: "hd",
+          }}
+          excalidrawApi={excalidrawApi}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={onClose}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "删除图片生成器卡片",
+      }),
+    );
+
+    expect(excalidrawApi.updateScene).toHaveBeenCalledWith({
+      elements: [
+        expect.objectContaining({
+          id: "el-image",
+          isDeleted: true,
+        }),
+      ],
+      captureUpdate: "IMMEDIATELY",
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("omits the hard-coded storage copy in the video generator", async () => {
     render(
       <ToastProvider>
@@ -587,8 +637,11 @@ describe("canvas generation panels", () => {
       expect(screen.getByText("首帧上传中")).toBeInTheDocument();
       expect(pendingReader).not.toBeNull();
 
-      pendingReader!.result = "data:image/png;base64,ZmFrZQ==";
-      pendingReader!.onload?.();
+      if (!pendingReader) {
+        throw new Error("FileReader did not start.");
+      }
+      pendingReader.result = "data:image/png;base64,ZmFrZQ==";
+      pendingReader.onload?.();
 
       expect(await screen.findByAltText("首帧预览")).toBeInTheDocument();
       expect(screen.queryByText("首帧上传中")).not.toBeInTheDocument();
@@ -689,13 +742,11 @@ describe("canvas generation panels", () => {
 
   it("skips inserting a generated video when the generator element was deleted", async () => {
     let resolveGeneration:
-      | ((
-          result: {
-            url: string;
-            mimeType: string;
-            durationSeconds: number;
-          },
-        ) => void)
+      | ((result: {
+          url: string;
+          mimeType: string;
+          durationSeconds: number;
+        }) => void)
       | undefined;
     generateVideoDirectMock.mockImplementation(
       () =>
@@ -747,5 +798,56 @@ describe("canvas generation panels", () => {
       expect(excalidrawApi.getSceneElements).toHaveBeenCalledTimes(1),
     );
     expect(excalidrawApi.updateScene).not.toHaveBeenCalled();
+  });
+
+  it("deletes a video generator card from the panel", async () => {
+    const onClose = vi.fn();
+    const excalidrawApi = createExcalidrawApiStub([
+      {
+        id: "el-video",
+        isDeleted: false,
+        customData: { type: "video-generator" },
+      },
+    ]);
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={excalidrawApi}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={onClose}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "删除视频生成器卡片",
+      }),
+    );
+
+    expect(excalidrawApi.updateScene).toHaveBeenCalledWith({
+      elements: [
+        expect.objectContaining({
+          id: "el-video",
+          isDeleted: true,
+        }),
+      ],
+      captureUpdate: "IMMEDIATELY",
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

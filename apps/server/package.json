@@ -13,7 +13,7 @@
     "@langchain/google-genai": "^2.1.31",
     "@langchain/google-vertexai": "^2.1.31",
     "@langchain/openai": "^1.4.7",
-    "@nextop-os/agent-acp-kit": "0.1.7",
+    "@nextop-os/agent-acp-kit": "0.1.8",
     "agnes-ai-cli": "^0.1.2",
     "deepagents": "^1.10.2",
     "fastify": "^5.2.1",

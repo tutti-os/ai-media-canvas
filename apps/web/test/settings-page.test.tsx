@@ -755,6 +755,50 @@ describe("SettingsPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("localizes Media settings copy in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN");
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "openai:gpt-4.1",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(await screen.findByText("媒体"));
+
+    expect(await screen.findByText("媒体提供商")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "按平台配置图片与视频提供商。如果同一模型家族后续存在多个平台版本，AIMC 会按提供商范围的模型 ID 分开保存，方便你显式选择路由。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("图片 + 视频").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("未配置").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("受影响模型").length).toBeGreaterThan(0);
+    expect(screen.getByText("免费")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "获取 Agnes API Key" }),
+    ).toHaveAttribute("href", "https://platform.agnes-ai.com/settings/apiKeys");
+    expect(screen.queryByText("Media Providers")).not.toBeInTheDocument();
+    expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
+  });
+
   it("switches the Agent settings between Local agent and API provider setup", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
@@ -870,7 +914,7 @@ describe("SettingsPage", () => {
     expect(await screen.findByText("Default LLM Model")).toBeInTheDocument();
   });
 
-  it("uses the first concrete Local agent model instead of the CLI default option", async () => {
+  it("uses the local CLI default option when a Local agent provider is selected", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "",
@@ -904,7 +948,7 @@ describe("SettingsPage", () => {
     });
     updateWorkspaceSettingsMock.mockResolvedValue({
       settings: {
-        defaultModel: "codex:gpt-5.5",
+        defaultModel: "codex:default",
         providerModels: EMPTY_PROVIDER_MODELS,
         openAIApiKey: "",
         openAIApiBase: "",
@@ -935,7 +979,7 @@ describe("SettingsPage", () => {
     await waitFor(() =>
       expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          defaultModel: "codex:gpt-5.5",
+          defaultModel: "codex:default",
         }),
       ),
     );

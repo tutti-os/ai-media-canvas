@@ -82,7 +82,10 @@ describe("CanvasFilesPanel", () => {
     expect(fetchMock).toHaveBeenCalledWith("data:image/png;base64,cG5n");
     expect(write).toHaveBeenCalledWith(expect.any(Blob));
     expect(close).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Downloaded Generated image")).toBeInTheDocument();
+    expect(screen.getByText("Download successful")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Downloaded Generated image"),
+    ).not.toBeInTheDocument();
   });
 
   it("falls back to browser download without claiming completion when the save picker is unavailable", async () => {
@@ -126,8 +129,6 @@ describe("CanvasFilesPanel", () => {
     );
 
     expect(clickSpy).toHaveBeenCalledTimes(1);
-    expect(
-      screen.queryByText("Downloaded Generated image"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Download successful")).not.toBeInTheDocument();
   });
 });

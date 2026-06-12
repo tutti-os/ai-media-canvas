@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { WorkspaceSettings } from "@aimc/shared";
 
+import { useAppTranslation } from "@/i18n";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -14,19 +15,22 @@ interface MediaSettingsSectionProps {
   onSave: (settings: WorkspaceSettings) => Promise<void>;
 }
 
-type StringSettingsKey = Exclude<{
-  [Key in keyof WorkspaceSettings]: undefined extends WorkspaceSettings[Key]
-    ? never
-    : WorkspaceSettings[Key] extends string
-      ? Key
-      : never;
-}[keyof WorkspaceSettings], undefined>;
+type StringSettingsKey = Exclude<
+  {
+    [Key in keyof WorkspaceSettings]: undefined extends WorkspaceSettings[Key]
+      ? never
+      : WorkspaceSettings[Key] extends string
+        ? Key
+        : never;
+  }[keyof WorkspaceSettings],
+  undefined
+>;
 
 type MediaProviderCard = {
   id: "agnes" | "openai" | "google" | "vertex" | "replicate" | "volces";
   label: string;
-  capabilities: string;
-  summary: string;
+  capabilitiesKey: string;
+  summaryKey: string;
   models: string[];
   fields: Array<{
     key: StringSettingsKey;
@@ -39,9 +43,8 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
   {
     id: "agnes",
     label: "Agnes",
-    capabilities: "Image + Video",
-    summary:
-      "Agnes multimodal route. Uses agnes-ai-cli for image/video generation, including compose and keyframe-capable video modes.",
+    capabilitiesKey: "media.capabilities.imageVideo",
+    summaryKey: "media.cards.agnes.summary",
     models: [
       "Agnes Image 2.1 Flash",
       "Agnes Image 2.0 Flash",
@@ -63,9 +66,8 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
   {
     id: "replicate",
     label: "Replicate",
-    capabilities: "Image + Video",
-    summary:
-      "Third-party hosted models. Use this when you want Seedream, Seedance, Kling, or Replicate-routed Veo/Sora families.",
+    capabilitiesKey: "media.capabilities.imageVideo",
+    summaryKey: "media.cards.replicate.summary",
     models: [
       "Seedream 5 Lite",
       "Seedream 4.5",
@@ -85,9 +87,8 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
   {
     id: "volces",
     label: "Volces",
-    capabilities: "Image",
-    summary:
-      "ByteDance / Volcengine's official channel. Use this for Doubao Seedream models served through Ark.",
+    capabilitiesKey: "media.capabilities.image",
+    summaryKey: "media.cards.volces.summary",
     models: ["Doubao Seedream 5.0"],
     fields: [
       {
@@ -105,9 +106,8 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
   {
     id: "google",
     label: "Google",
-    capabilities: "Image + Video",
-    summary:
-      "Google AI Studio / Developer API route. Best for Nano Banana and Google-official image/video families.",
+    capabilitiesKey: "media.capabilities.imageVideo",
+    summaryKey: "media.cards.google.summary",
     models: ["Nano Banana", "Nano Banana 2", "Nano Banana Pro", "Veo"],
     fields: [
       {
@@ -120,9 +120,8 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
   {
     id: "vertex",
     label: "Vertex AI",
-    capabilities: "Image + Video",
-    summary:
-      "Google Cloud hosted route. Uses Vertex project and locations, with service-account credentials still coming from env.",
+    capabilitiesKey: "media.capabilities.imageVideo",
+    summaryKey: "media.cards.vertex.summary",
     models: [
       "Nano Banana (Vertex)",
       "Nano Banana 2 (Vertex)",
@@ -150,9 +149,8 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
   {
     id: "openai",
     label: "OpenAI",
-    capabilities: "Image",
-    summary:
-      "OpenAI-compatible image route. Uses the same key/base URL pair as the OpenAI-compatible agent protocol.",
+    capabilitiesKey: "media.capabilities.image",
+    summaryKey: "media.cards.openai.summary",
     models: ["GPT Image 1.5", "GPT Image 1", "GPT Image 1 Mini"],
     fields: [
       {
@@ -173,6 +171,7 @@ export function MediaSettingsSection({
   settings: initialSettings,
   onSave,
 }: MediaSettingsSectionProps) {
+  const { t } = useAppTranslation("settings");
   const [settings, setSettings] = useState(initialSettings);
   const [savingCard, setSavingCard] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{
@@ -206,12 +205,12 @@ export function MediaSettingsSection({
       await onSave(settings);
       setFeedback({
         type: "success",
-        message: "Local media provider settings updated.",
+        message: t("media.feedback.updated"),
       });
     } catch {
       setFeedback({
         type: "error",
-        message: "Failed to update local media provider settings. Please try again.",
+        message: t("media.feedback.updateFailed"),
       });
     } finally {
       setSavingCard(null);
@@ -221,22 +220,22 @@ export function MediaSettingsSection({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">Media Providers</h2>
+        <h2 className="text-lg font-semibold">{t("media.title")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Configure image and video providers by platform. If the same model
-          family exists on multiple platforms later, AIMC keeps them separate
-          by provider-scoped model IDs so you can choose the route explicitly.
+          {t("media.description")}
         </p>
       </div>
 
       <div className="rounded-2xl border bg-card/50 p-4 text-sm text-muted-foreground">
         <p>
-          <span className="font-medium text-foreground">Replicate</span> is a
-          third-party hosting platform.
+          {t("media.providerNotes.replicate", {
+            provider: "Replicate",
+          })}
         </p>
         <p className="mt-2">
-          <span className="font-medium text-foreground">Volces</span> is the
-          ByteDance / Volcengine official channel.
+          {t("media.providerNotes.volces", {
+            provider: "Volces",
+          })}
         </p>
       </div>
 
@@ -256,7 +255,7 @@ export function MediaSettingsSection({
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-base font-semibold">{card.label}</h3>
                     <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
-                      {card.capabilities}
+                      {t(card.capabilitiesKey)}
                     </span>
                     <span
                       className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
@@ -265,11 +264,13 @@ export function MediaSettingsSection({
                           : "bg-muted text-muted-foreground"
                       }`}
                     >
-                      {isConfigured ? "Configured" : "Not configured"}
+                      {isConfigured
+                        ? t("media.status.configured")
+                        : t("media.status.notConfigured")}
                     </span>
                   </div>
                   <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                    {card.summary}
+                    {t(card.summaryKey)}
                   </p>
                   {card.id === "agnes" ? (
                     <div className="mt-3">
@@ -281,7 +282,7 @@ export function MediaSettingsSection({
 
               <div className="mt-4 rounded-xl border bg-muted/30 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Affected models
+                  {t("media.affectedModels")}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {card.models.map((model) => (
@@ -315,8 +316,7 @@ export function MediaSettingsSection({
 
               <div className="mt-4 flex items-center justify-between gap-3">
                 <p className="text-xs text-muted-foreground">
-                  These values are stored in the local sqlite settings database
-                  and reused by the matching media providers.
+                  {t("media.localStorageNote")}
                 </p>
                 <Button
                   type="button"
@@ -324,7 +324,9 @@ export function MediaSettingsSection({
                   disabled={!hasChanges || savingCard !== null}
                   onClick={() => void handleSave(card.id)}
                 >
-                  {savingCard === card.id ? "Saving..." : "Save"}
+                  {savingCard === card.id
+                    ? t("media.actions.saving")
+                    : t("media.actions.save")}
                 </Button>
               </div>
             </section>

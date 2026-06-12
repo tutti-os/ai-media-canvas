@@ -92,6 +92,58 @@
     },
     "title": "General"
   },
+  "media": {
+    "actions": {
+      "save": "Save",
+      "saving": "Saving..."
+    },
+    "affectedModels": "Affected models",
+    "agnesHint": {
+      "description": "Agnes offers a free starter route.",
+      "free": "Free",
+      "getKey": "Get Agnes API Key",
+      "quickStart": "Quick Start Docs"
+    },
+    "capabilities": {
+      "image": "Image",
+      "imageVideo": "Image + Video"
+    },
+    "cards": {
+      "agnes": {
+        "summary": "Agnes multimodal route. Uses agnes-ai-cli for image/video generation, including compose and keyframe-capable video modes."
+      },
+      "google": {
+        "summary": "Google AI Studio / Developer API route. Best for Nano Banana and Google-official image/video families."
+      },
+      "openai": {
+        "summary": "OpenAI-compatible image route. Uses the same key/base URL pair as the OpenAI-compatible agent protocol."
+      },
+      "replicate": {
+        "summary": "Third-party hosted models. Use this when you want Seedream, Seedance, Kling, or Replicate-routed Veo/Sora families."
+      },
+      "vertex": {
+        "summary": "Google Cloud hosted route. Uses Vertex project and locations, with service-account credentials still coming from env."
+      },
+      "volces": {
+        "summary": "ByteDance / Volcengine's official channel. Use this for Doubao Seedream models served through Ark."
+      }
+    },
+    "description": "Configure image and video providers by platform. If the same model family exists on multiple platforms later, AIMC keeps them separate by provider-scoped model IDs so you can choose the route explicitly.",
+    "feedback": {
+      "updated": "Local media provider settings updated.",
+      "updateFailed": "Failed to update local media provider settings. Please try again."
+    },
+    "localStorageNote": "These values are stored in the local sqlite settings database and reused by the matching media providers.",
+    "providerNotes": {
+      "replicate": "{{provider}} is a third-party hosting platform.",
+      "volces": "{{provider}} is the ByteDance / Volcengine official channel."
+    },
+    "status": {
+      "configured": "Configured",
+      "notConfigured": "Not configured"
+    },
+    "title": "Media Providers"
+  },
   "modelConfiguration": {
     "configureAgent": "Configure Agent",
     "configureMedia": "Configure media models",
@@ -120,7 +172,7 @@
       "label": "General"
     },
     "media": {
-      "description": "Image and video provider routing",
+      "description": "Image and video provider routes",
       "label": "Media"
     }
   },

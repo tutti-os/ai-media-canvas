@@ -207,8 +207,14 @@ export function createNextopManagedCredentialService(options: {
     source?: AgentModelSource,
   ) {
     if (!modelId) return false;
-    if (source === "api-provider" || source === "local-agent") return false;
     const connection = getConnection();
+    if (modelId.startsWith("nextop:")) {
+      return (
+        connection.connected &&
+        connection.models.some((model) => model.id === modelId)
+      );
+    }
+    if (source === "api-provider" || source === "local-agent") return false;
     return (
       connection.connected &&
       connection.models.some((model) => model.id === modelId)
