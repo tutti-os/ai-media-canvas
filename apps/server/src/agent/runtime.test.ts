@@ -226,6 +226,60 @@ describe("createAgentRunService", () => {
     expect(localAgentRuntimeRunMock).not.toHaveBeenCalled();
   });
 
+  it("provides a LangGraph store to server deepagent factories", async () => {
+    const agentFactory = vi.fn(() => ({
+      stream: vi.fn(),
+      streamEvents: vi.fn(() =>
+        (async function* () {
+          yield {
+            type: "run.completed" as const,
+            runId: "run-server-store",
+            timestamp: "2026-06-04T00:00:00.000Z",
+          };
+        })(),
+      ),
+    }));
+
+    const runs = createAgentRunService({
+      agentFactory,
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      loadSessionMessages: async () => [],
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "搜索项目资料",
+        sessionId: "session-1",
+      },
+      {
+        model: "agnes:agnes-2.0-flash",
+        runtimeKind: "server-deepagent",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the agent invocation.
+    }
+
+    expect(agentFactory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        store: expect.objectContaining({
+          get: expect.any(Function),
+          put: expect.any(Function),
+          search: expect.any(Function),
+        }),
+      }),
+    );
+  });
+
   it("persists explicit local runtime kind when Codex is requested", async () => {
     localAgentRuntimeRunMock.mockClear();
     const updateRun = vi.fn();

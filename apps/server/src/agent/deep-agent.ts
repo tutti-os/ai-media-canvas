@@ -2,8 +2,9 @@ import { ChatAnthropic } from "@langchain/anthropic";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatVertexAI } from "@langchain/google-vertexai";
+import type { BaseStore } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
-import { createDeepAgent, type SubAgent } from "deepagents";
+import { type SubAgent, createDeepAgent } from "deepagents";
 
 import {
   DEFAULT_AGENT_MODEL,
@@ -12,10 +13,16 @@ import {
   type ServerEnv,
 } from "../config/env.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
-import { createAgentBackend, type AgentBackendResult } from "./backends/index.js";
+import {
+  type AgentBackendResult,
+  createAgentBackend,
+} from "./backends/index.js";
 import { buildAimcSystemPrompt } from "./prompts/aimc-main.js";
+import type {
+  PersistImageFn,
+  SubmitImageJobFn,
+} from "./tools/image-generate.js";
 import { createMainAgentTools } from "./tools/index.js";
-import type { PersistImageFn, SubmitImageJobFn } from "./tools/image-generate.js";
 import { createVideoGenerateTool } from "./tools/video-generate.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
@@ -30,10 +37,11 @@ export type AimcAgentFactory = (options: {
   brandKitId?: string | null;
   canvasId?: string;
   connectionManager?: ConnectionManager;
-  createUserClient?: (accessToken: string) => any;
+  createUserClient?: (accessToken: string) => unknown;
   env: ServerEnv;
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
+  store?: BaseStore;
 
   submitImageJob?: SubmitImageJobFn;
   submitVideoJob?: SubmitVideoJobFn;
@@ -57,10 +65,11 @@ export function createAimcDeepAgent(options: {
   brandKitId?: string | null;
   canvasId?: string;
   connectionManager?: ConnectionManager;
-  createUserClient?: (accessToken: string) => any;
+  createUserClient?: (accessToken: string) => unknown;
   env: ServerEnv;
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
+  store?: BaseStore;
 
   submitImageJob?: SubmitImageJobFn;
   submitVideoJob?: SubmitVideoJobFn;
@@ -120,15 +129,24 @@ export function createAimcDeepAgent(options: {
     name: "ai-media-canvas",
     subagents: [createVideoSubAgent()],
     systemPrompt,
+    ...(options.store ? { store: options.store } : {}),
     tools: createMainAgentTools(backendResult.factory, {
       createUserClient,
       ...(options.brandKitId != null ? { brandKitId: options.brandKitId } : {}),
-      ...(options.connectionManager ? { connectionManager: options.connectionManager } : {}),
+      ...(options.connectionManager
+        ? { connectionManager: options.connectionManager }
+        : {}),
       ...(options.persistImage ? { persistImage: options.persistImage } : {}),
-      ...(backendResult.sandboxDir ? { sandboxDir: backendResult.sandboxDir } : {}),
+      ...(backendResult.sandboxDir
+        ? { sandboxDir: backendResult.sandboxDir }
+        : {}),
 
-      ...(options.submitImageJob ? { submitImageJob: options.submitImageJob } : {}),
-      ...(options.submitVideoJob ? { submitVideoJob: options.submitVideoJob } : {}),
+      ...(options.submitImageJob
+        ? { submitImageJob: options.submitImageJob }
+        : {}),
+      ...(options.submitVideoJob
+        ? { submitVideoJob: options.submitVideoJob }
+        : {}),
     }),
   });
 }
@@ -164,9 +182,7 @@ function createStreamingChatModel(
 
   const resolvedAgnesApiKey = env?.agnesApiKey ?? process.env.AGNES_API_KEY;
   const resolvedAgnesBaseUrl =
-    env?.agnesBaseUrl ??
-    process.env.AGNES_BASE_URL ??
-    DEFAULT_AGNES_BASE_URL;
+    env?.agnesBaseUrl ?? process.env.AGNES_BASE_URL ?? DEFAULT_AGNES_BASE_URL;
   const resolvedAnthropicApiKey =
     env?.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY;
   const resolvedAnthropicBaseUrl =
@@ -184,12 +200,16 @@ function createStreamingChatModel(
 
   // Provider availability fallback
   if (provider === "google" && !hasGoogle) {
-    console.warn(`[model] Google unavailable (no GOOGLE_API_KEY or Vertex AI config), falling back to OpenAI for: ${specifier}`);
+    console.warn(
+      `[model] Google unavailable (no GOOGLE_API_KEY or Vertex AI config), falling back to OpenAI for: ${specifier}`,
+    );
     provider = "openai";
     modelName = DEFAULT_AGENT_MODEL;
   }
   if (provider === "openai" && !resolvedOpenAIApiKey && hasGoogle) {
-    console.warn(`[model] OpenAI unavailable (no OPENAI_API_KEY), falling back to Google for: ${specifier}`);
+    console.warn(
+      `[model] OpenAI unavailable (no OPENAI_API_KEY), falling back to Google for: ${specifier}`,
+    );
     provider = "google";
     modelName = DEFAULT_GOOGLE_AGENT_MODEL;
   }
@@ -232,10 +252,17 @@ function createStreamingChatModel(
       // Prefer Vertex AI (service account) when configured; fall back to Developer API key
       if (hasVertexAI) {
         const vertexProject =
-          env?.googleVertexProject ?? process.env.GOOGLE_VERTEX_PROJECT!;
+          env?.googleVertexProject ?? process.env.GOOGLE_VERTEX_PROJECT;
         const vertexLocation =
-          env?.googleVertexLocation ?? process.env.GOOGLE_VERTEX_LOCATION!;
-        console.log(`[model] Using Vertex AI for: ${modelName} (project=${vertexProject}, location=${vertexLocation})`);
+          env?.googleVertexLocation ?? process.env.GOOGLE_VERTEX_LOCATION;
+        if (!vertexProject || !vertexLocation) {
+          throw new Error(
+            `Google Vertex model selected without Vertex AI config: ${specifier}`,
+          );
+        }
+        console.log(
+          `[model] Using Vertex AI for: ${modelName} (project=${vertexProject}, location=${vertexLocation})`,
+        );
         return new ChatVertexAI({
           model: modelName,
           location: vertexLocation,
@@ -243,16 +270,23 @@ function createStreamingChatModel(
           streaming: true,
         });
       }
-      return new ChatGoogleGenerativeAI({
-        model: modelName,
-        apiKey: env?.googleApiKey ?? process.env.GOOGLE_API_KEY!,
-        streaming: true,
-        thinkingConfig: {
-          includeThoughts: true,
-          thinkingBudget: -1, // dynamic — let the model decide
-        },
-      });
-    case "openai":
+      {
+        const googleApiKey = env?.googleApiKey ?? process.env.GOOGLE_API_KEY;
+        if (!googleApiKey) {
+          throw new Error(
+            `Google model selected without API key: ${specifier}`,
+          );
+        }
+        return new ChatGoogleGenerativeAI({
+          model: modelName,
+          apiKey: googleApiKey,
+          streaming: true,
+          thinkingConfig: {
+            includeThoughts: true,
+            thinkingBudget: -1, // dynamic — let the model decide
+          },
+        });
+      }
     default:
       return new ChatOpenAI({
         model: modelName,

@@ -18,6 +18,7 @@ import type {
 } from "@aimc/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { InMemoryStore } from "@langchain/langgraph";
 import {
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
@@ -431,16 +432,23 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
   const now = options.now ?? (() => new Date().toISOString());
   const runs = new Map<string, RuntimeRunRecord>();
   const runIdFactory = options.runIdFactory ?? (() => randomUUID());
+  const serverDeepAgentStore = new InMemoryStore();
+  const customAgentFactory = options.agentFactory;
 
-  const resolvedAgentFactory: AimcAgentFactory =
-    options.agentFactory ??
-    ((agentOptions) =>
-      createAimcDeepAgent({
-        ...agentOptions,
-        ...(options.createUserClient
-          ? { createUserClient: options.createUserClient }
-          : {}),
-      }));
+  const resolvedAgentFactory: AimcAgentFactory = customAgentFactory
+    ? (agentOptions) =>
+        customAgentFactory({
+          ...agentOptions,
+          store: serverDeepAgentStore,
+        })
+    : (agentOptions) =>
+        createAimcDeepAgent({
+          ...agentOptions,
+          store: serverDeepAgentStore,
+          ...(options.createUserClient
+            ? { createUserClient: options.createUserClient }
+            : {}),
+        });
 
   // ── Billing error helper: push WS event + abort run ──────────
   function pushBillingErrorAndAbort(

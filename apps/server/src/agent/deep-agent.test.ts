@@ -127,4 +127,27 @@ describe("createAimcDeepAgent", () => {
     expect(config?.systemPrompt).toContain("生图任务的停止条件");
     expect(config?.systemPrompt).toContain("优先单次调用 generate_image");
   });
+
+  it("passes the LangGraph store through to deepagents", () => {
+    const store = { kind: "test-store" };
+
+    createAimcDeepAgent({
+      canvasId: "canvas-1",
+      env: {
+        agentBackendMode: "state",
+        agentModel: "openai:gpt-4.1",
+        openAIApiKey: "openai-test-key",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      store: store as never,
+    });
+
+    expect(createDeepAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        store,
+      }),
+    );
+  });
 });
