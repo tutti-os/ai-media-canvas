@@ -30,6 +30,7 @@ import { createAgentRunService } from "./runtime.js";
 const tempDirs: string[] = [];
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -347,6 +348,107 @@ describe("createAgentRunService", () => {
         provider: "codex",
       }),
     );
+  });
+
+  it("returns local-agent image jobs before the MCP tool timeout", async () => {
+    let capturedGatewaySession:
+      | {
+          submitImageJob?: (input: {
+            aspectRatio: string;
+            model: string;
+            prompt: string;
+            title: string;
+          }) => Promise<{ error?: string; jobId: string }>;
+        }
+      | undefined;
+    const createSession = vi.fn((input) => {
+      capturedGatewaySession = input;
+      return { token: "tool-token" };
+    });
+    const getJobAdmin = vi.fn(async () => ({
+      attempt_count: 0,
+      max_attempts: 3,
+      status: "running",
+    }));
+
+    const runs = createAgentRunService({
+      createUserClient: () => ({
+        from(table: string) {
+          expect(table).toBe("workspaces");
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            limit() {
+              return this;
+            },
+            async single() {
+              return { data: { id: "workspace-1" }, error: null };
+            },
+          };
+        },
+      }),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {
+        createJob: vi.fn(async () => ({ id: "job-1" })),
+        getJobAdmin,
+      } as never,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession,
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        conversationId: "conversation-1",
+        prompt: "生成一张图",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the local tool gateway session is created.
+    }
+
+    const submitImageJob = capturedGatewaySession?.submitImageJob;
+    expect(submitImageJob).toBeTypeOf("function");
+    if (!submitImageJob) {
+      throw new Error("Expected local tool gateway to receive submitImageJob");
+    }
+    await expect(
+      submitImageJob({
+        aspectRatio: "1:1",
+        model: "agnes-image/agnes-image-2.1-flash",
+        prompt: "young playful logo",
+        title: "logo",
+      }),
+    ).resolves.toMatchObject({
+      error: "Job timed out after 110s",
+      jobId: "job-1",
+    });
+    expect(getJobAdmin).not.toHaveBeenCalled();
   });
 
   it("passes non-Codex local-agent providers through the host adapter", async () => {
