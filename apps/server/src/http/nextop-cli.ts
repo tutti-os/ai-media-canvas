@@ -122,7 +122,7 @@ export async function registerNextopCliRoutes(
     handler: (body: unknown) => Promise<unknown>,
     statusCode = 200,
   ) => {
-    app.post(path, async (request, reply) => {
+    const register = (routePath: string) => app.post(routePath, async (request, reply) => {
       try {
         const result = await handler(request.body);
         return sendCliJson(reply, result, statusCode);
@@ -130,9 +130,13 @@ export async function registerNextopCliRoutes(
         return sendCliRouteError(error, reply);
       }
     });
+    register(path);
+    if (path.startsWith("/tutti/cli/")) {
+      register(path.replace("/tutti/cli/", "/nextop/cli/"));
+    }
   };
 
-  route("/nextop/cli/status", async (body) => {
+  route("/tutti/cli/status", async (body) => {
     emptyBodySchema.parse(body);
     return {
       ok: true,
@@ -145,16 +149,16 @@ export async function registerNextopCliRoutes(
     };
   });
 
-  route("/nextop/cli/projects/list", async () =>
+  route("/tutti/cli/projects/list", async () =>
     options.projectOperations.listProjects(),
   );
-  route("/nextop/cli/projects/get", async (body) => {
+  route("/tutti/cli/projects/get", async (body) => {
     return options.projectOperations.getProject(
       parseRequiredString(body, "project-id"),
     );
   });
   route(
-    "/nextop/cli/projects/create",
+    "/tutti/cli/projects/create",
     async (body) => {
       const payload = projectCreateRequestSchema.parse(
         projectCreateCliBodySchema.parse(body),
@@ -164,12 +168,12 @@ export async function registerNextopCliRoutes(
     201,
   );
 
-  route("/nextop/cli/canvases/get", async (body) => {
+  route("/tutti/cli/canvases/get", async (body) => {
     return options.canvasOperations.getCanvas(
       parseRequiredString(body, "canvas-id"),
     );
   });
-  route("/nextop/cli/canvases/save", async (body) => {
+  route("/tutti/cli/canvases/save", async (body) => {
     const payload = canvasSaveCliBodySchema.parse(body);
     const content = canvasContentSchema.parse(
       JSON.parse(payload["content-json"]),
@@ -177,13 +181,13 @@ export async function registerNextopCliRoutes(
     return options.canvasOperations.saveCanvas(payload["canvas-id"], content);
   });
 
-  route("/nextop/cli/sessions/list", async (body) => {
+  route("/tutti/cli/sessions/list", async (body) => {
     return options.chatOperations.listSessions(
       parseRequiredString(body, "canvas-id"),
     );
   });
   route(
-    "/nextop/cli/sessions/create",
+    "/tutti/cli/sessions/create",
     async (body) => {
       const payload = sessionCreateCliBodySchema.parse(body);
       return options.chatOperations.createSession(
@@ -193,13 +197,13 @@ export async function registerNextopCliRoutes(
     },
     201,
   );
-  route("/nextop/cli/messages/list", async (body) => {
+  route("/tutti/cli/messages/list", async (body) => {
     return options.chatOperations.listMessages(
       parseRequiredString(body, "session-id"),
     );
   });
   route(
-    "/nextop/cli/messages/create",
+    "/tutti/cli/messages/create",
     async (body) => {
       const payload = messageCreateCliBodySchema.parse(body);
       return options.chatOperations.createMessage(
@@ -214,7 +218,7 @@ export async function registerNextopCliRoutes(
   );
 
   route(
-    "/nextop/cli/agent/run",
+    "/tutti/cli/agent/run",
     async (body) => {
       const payload = agentRunCliBodySchema.parse(body);
       return options.agentOperations.startRun(
@@ -235,7 +239,7 @@ export async function registerNextopCliRoutes(
     },
     202,
   );
-  route("/nextop/cli/agent/events", async (body) => {
+  route("/tutti/cli/agent/events", async (body) => {
     const payload = agentEventsCliBodySchema.parse(body);
     return options.agentOperations.listRunEvents(
       payload["run-id"],
@@ -243,7 +247,7 @@ export async function registerNextopCliRoutes(
     );
   });
   route(
-    "/nextop/cli/agent/cancel",
+    "/tutti/cli/agent/cancel",
     async (body) => {
       return options.agentOperations.cancelRun(
         parseRequiredString(body, "run-id"),
@@ -253,7 +257,7 @@ export async function registerNextopCliRoutes(
   );
 
   route(
-    "/nextop/cli/generation/image",
+    "/tutti/cli/generation/image",
     async (body) => {
       const payload = generationImageCliBodySchema.parse(body);
       return options.jobOperations.createImageJob(
@@ -282,7 +286,7 @@ export async function registerNextopCliRoutes(
     201,
   );
   route(
-    "/nextop/cli/generation/video",
+    "/tutti/cli/generation/video",
     async (body) => {
       const payload = generationVideoCliBodySchema.parse(body);
       return options.jobOperations.createVideoJob(
@@ -320,21 +324,21 @@ export async function registerNextopCliRoutes(
     201,
   );
 
-  route("/nextop/cli/jobs/list", async (body) => {
+  route("/tutti/cli/jobs/list", async (body) => {
     const payload = jobListCliBodySchema.parse(body ?? {});
     return options.jobOperations.listJobs({
       ...(payload.status ? { status: payload.status as never } : {}),
       ...(payload["job-type"] ? { jobType: payload["job-type"] as never } : {}),
     });
   });
-  route("/nextop/cli/jobs/get", async (body) => {
+  route("/tutti/cli/jobs/get", async (body) => {
     return options.jobOperations.getJob(parseRequiredString(body, "job-id"));
   });
-  route("/nextop/cli/jobs/cancel", async (body) => {
+  route("/tutti/cli/jobs/cancel", async (body) => {
     return options.jobOperations.cancelJob(parseRequiredString(body, "job-id"));
   });
 
-  route("/nextop/cli/models/list", async () => ({
+  route("/tutti/cli/models/list", async () => ({
     models: await listAgentModels({
       env: options.env,
       logger: app.log,
@@ -346,29 +350,29 @@ export async function registerNextopCliRoutes(
         : {}),
     }),
   }));
-  route("/nextop/cli/models/image", async () => ({
+  route("/tutti/cli/models/image", async () => ({
     models: await listImageModels(options.env, options.settingsService),
   }));
-  route("/nextop/cli/models/video", async () => ({
+  route("/tutti/cli/models/video", async () => ({
     models: await listVideoModels(options.env, options.settingsService),
   }));
 
-  route("/nextop/cli/skills/list", async () =>
+  route("/tutti/cli/skills/list", async () =>
     options.skillOperations.listInstalledSkills(),
   );
-  route("/nextop/cli/skills/get", async (body) => {
+  route("/tutti/cli/skills/get", async (body) => {
     return options.skillOperations.getSkill(
       parseRequiredString(body, "skill-id"),
     );
   });
-  route("/nextop/cli/skills/enable", async (body) => {
+  route("/tutti/cli/skills/enable", async (body) => {
     const payload = skillEnableCliBodySchema.parse(body);
     return options.skillOperations.toggleSkill(
       payload["skill-id"],
       payload.enabled,
     );
   });
-  route("/nextop/cli/skills/install", async (body) => {
+  route("/tutti/cli/skills/install", async (body) => {
     return options.skillOperations.installCatalogSkill(
       parseRequiredString(body, "skill-id"),
     );

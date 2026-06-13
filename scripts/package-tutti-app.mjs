@@ -17,13 +17,13 @@ import { fileURLToPath } from "node:url";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(scriptPath), "..");
-const buildRoot = path.join(rootDir, "build", "nextop-app");
+const buildRoot = path.join(rootDir, "build", "tutti-app");
 const packageRoot = path.join(buildRoot, "package");
 const DEFAULT_PACKAGE_MTIME_EPOCH_SECONDS = 1_577_836_800;
 
 const REQUIRED_PACKAGE_FILES = [
-  "nextop.app.json",
-  "nextop.cli.json",
+  "tutti.app.json",
+  "tutti.cli.json",
   "COMMANDS.md",
   "AGENTS.md",
   "bootstrap.sh",
@@ -368,7 +368,7 @@ const MANIFEST_LOCALIZATIONS = {
 
 export function createManifest({ version }) {
   return {
-    schemaVersion: "nextop.app.manifest.v1",
+    schemaVersion: "tutti.app.manifest.v1",
     appId: "ai-media-canvas",
     version,
     name: "AI Media Canvas",
@@ -382,7 +382,7 @@ export function createManifest({ version }) {
       healthcheckPath: "/api/health",
     },
     cli: {
-      manifest: "nextop.cli.json",
+      manifest: "tutti.cli.json",
     },
     localizationInfo: {
       defaultLocale: "en",
@@ -397,7 +397,7 @@ export function createManifest({ version }) {
       mode: "workspace-open",
     },
     author: {
-      name: "Nextop",
+      name: "Tutti",
     },
     tags: ["generated", "local-first", "media-canvas"],
   };
@@ -405,7 +405,7 @@ export function createManifest({ version }) {
 
 export function createCliManifest() {
   return {
-    schemaVersion: "nextop.app.cli.v1",
+    schemaVersion: "tutti.app.cli.v1",
     scope: CLI_SCOPE,
     description:
       "Control AI Media Canvas projects, canvases, generation jobs, agent runs, and skills.",
@@ -433,7 +433,7 @@ function createCliCommand(command) {
     handler: {
       kind: "http",
       method: "POST",
-      path: `/nextop/cli/${command.path.join("/")}`,
+      path: `/tutti/cli/${command.path.join("/")}`,
       timeoutMs: command.timeoutMs ?? 30000,
     },
   };
@@ -454,7 +454,7 @@ export function renderCommandsGuide() {
     })
     .join("\n");
 
-  return `# AI Media Canvas CLI Commands\n\nScope: \`${manifest.scope}\`\n\nThese commands expose AI Media Canvas to the Nextop app CLI. Command outputs are JSON \`CliCommandOutput\` envelopes.\n\n${rows}`;
+  return `# AI Media Canvas CLI Commands\n\nScope: \`${manifest.scope}\`\n\nThese commands expose AI Media Canvas to the Tutti app CLI. Command outputs are JSON \`CliCommandOutput\` envelopes.\n\n${rows}`;
 }
 
 export function renderBootstrap({ version = "0.0.0" } = {}) {
@@ -462,23 +462,23 @@ export function renderBootstrap({ version = "0.0.0" } = {}) {
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-package_dir="\${NEXTOP_APP_PACKAGE_DIR:-$script_dir}"
+package_dir="\${TUTTI_APP_PACKAGE_DIR:-\${NEXTOP_APP_PACKAGE_DIR:-$script_dir}}"
 
-export HOST="\${NEXTOP_APP_HOST:-127.0.0.1}"
-export AIMC_SERVER_PORT="\${NEXTOP_APP_PORT:-3001}"
+export HOST="\${TUTTI_APP_HOST:-\${NEXTOP_APP_HOST:-127.0.0.1}}"
+export AIMC_SERVER_PORT="\${TUTTI_APP_PORT:-\${NEXTOP_APP_PORT:-3001}}"
 export AIMC_APP_VERSION="${version}"
 export AIMC_WEB_DIST="$package_dir/dist"
-export AIMC_DATA_ROOT="\${NEXTOP_APP_DATA_DIR:-$package_dir/.data}"
+export AIMC_DATA_ROOT="\${TUTTI_APP_DATA_DIR:-\${NEXTOP_APP_DATA_DIR:-$package_dir/.data}}"
 export AIMC_SKILLS_ROOT="$package_dir/skills"
 export AIMC_TOOLS_MCP_PATH="$package_dir/server/tools-mcp.js"
-export AIMC_AGENT_FILES_ROOT="\${NEXTOP_WORKSPACE_ROOT:-$AIMC_DATA_ROOT}"
+export AIMC_AGENT_FILES_ROOT="\${TUTTI_WORKSPACE_ROOT:-\${NEXTOP_WORKSPACE_ROOT:-$AIMC_DATA_ROOT}}"
 
-base_url="\${NEXTOP_APP_BASE_URL:-http://$HOST:$AIMC_SERVER_PORT}"
+base_url="\${TUTTI_APP_BASE_URL:-\${NEXTOP_APP_BASE_URL:-http://$HOST:$AIMC_SERVER_PORT}}"
 export AIMC_WEB_ORIGIN="$base_url"
 export AIMC_SERVER_BASE_URL="$base_url"
 
-node_bin="\${NEXTOP_APP_NODE:-node}"
-runtime_dir="\${NEXTOP_APP_RUNTIME_DIR:-$AIMC_DATA_ROOT/.runtime}"
+node_bin="\${TUTTI_APP_NODE:-\${NEXTOP_APP_NODE:-node}}"
+runtime_dir="\${TUTTI_APP_RUNTIME_DIR:-\${NEXTOP_APP_RUNTIME_DIR:-$AIMC_DATA_ROOT/.runtime}}"
 mkdir -p "$AIMC_DATA_ROOT" "$runtime_dir"
 worker_status_file="$runtime_dir/worker.exit"
 server_status_file="$runtime_dir/server.exit"
@@ -539,13 +539,13 @@ monitor_children
 }
 
 export function renderAgentsGuide() {
-  return `# AI Media Canvas Nextop Package
+  return `# AI Media Canvas Tutti Package
 
-This package runs AI Media Canvas as a Nextop workspace app.
+This package runs AI Media Canvas as a Tutti workspace app.
 
 ## Package Layout
 
-- \`nextop.app.json\`: Nextop manifest.
+- \`tutti.app.json\`: Tutti manifest.
 - \`bootstrap.sh\`: executable runtime entrypoint.
 - \`dist/\`: static frontend files from \`apps/web/out\`.
 - \`server/server.js\`: bundled Fastify server.
@@ -555,15 +555,15 @@ This package runs AI Media Canvas as a Nextop workspace app.
 
 ## Runtime
 
-Nextop executes \`bootstrap.sh\` with no arguments. The bootstrap script binds
-the server to \`NEXTOP_APP_HOST:NEXTOP_APP_PORT\`, serves \`dist/\`, and stores
-durable SQLite data and local assets under \`NEXTOP_APP_DATA_DIR\`.
+Tutti executes \`bootstrap.sh\` with no arguments. The bootstrap script binds
+the server to \`TUTTI_APP_HOST:TUTTI_APP_PORT\`, serves \`dist/\`, and stores
+durable SQLite data and local assets under \`TUTTI_APP_DATA_DIR\`.
 When those variables are absent during local direct startup, it falls back to
 \`127.0.0.1:3001\`, \`./.data\`, and the system \`node\` command.
 
-Treat \`NEXTOP_APP_PACKAGE_DIR\` as read-only. Use \`NEXTOP_APP_DATA_DIR\` for
-durable data, \`NEXTOP_APP_RUNTIME_DIR\` for scratch files, and
-\`NEXTOP_APP_LOG_DIR\` for additional logs if future changes add them.
+Treat \`TUTTI_APP_PACKAGE_DIR\` as read-only. Use \`TUTTI_APP_DATA_DIR\` for
+durable data, \`TUTTI_APP_RUNTIME_DIR\` for scratch files, and
+\`TUTTI_APP_LOG_DIR\` for additional logs if future changes add them.
 `;
 }
 
@@ -612,25 +612,25 @@ export async function validatePackageRoot(root) {
   }
 
   const manifest = JSON.parse(
-    await readFile(path.join(root, "nextop.app.json"), "utf8"),
+    await readFile(path.join(root, "tutti.app.json"), "utf8"),
   );
   if (manifest.runtime && "kind" in manifest.runtime) {
-    throw new Error("nextop.app.json must not declare runtime.kind.");
+    throw new Error("tutti.app.json must not declare runtime.kind.");
   }
-  if (manifest.cli?.manifest !== "nextop.cli.json") {
+  if (manifest.cli?.manifest !== "tutti.cli.json") {
     throw new Error(
-      "nextop.app.json must declare cli.manifest as nextop.cli.json.",
+      "tutti.app.json must declare cli.manifest as tutti.cli.json.",
     );
   }
 
   const cliManifest = JSON.parse(
-    await readFile(path.join(root, "nextop.cli.json"), "utf8"),
+    await readFile(path.join(root, "tutti.cli.json"), "utf8"),
   );
   validateCliManifest(cliManifest);
   const docsFile = cliManifest.documentation?.file;
   if (typeof docsFile !== "string" || docsFile !== "COMMANDS.md") {
     throw new Error(
-      "nextop.cli.json must declare documentation.file as COMMANDS.md.",
+      "tutti.cli.json must declare documentation.file as COMMANDS.md.",
     );
   }
   const commandsGuide = await readFile(path.join(root, docsFile), "utf8");
@@ -656,18 +656,18 @@ export async function validatePackageRoot(root) {
 }
 
 function validateCliManifest(manifest) {
-  if (manifest.schemaVersion !== "nextop.app.cli.v1") {
+  if (manifest.schemaVersion !== "tutti.app.cli.v1") {
     throw new Error(
-      "nextop.cli.json must use schemaVersion nextop.app.cli.v1.",
+      "tutti.cli.json must use schemaVersion tutti.app.cli.v1.",
     );
   }
   if (!isCliPathSegment(manifest.scope)) {
     throw new Error(
-      "nextop.cli.json scope must be lowercase letters, numbers, or hyphen.",
+      "tutti.cli.json scope must be lowercase letters, numbers, or hyphen.",
     );
   }
   if (!Array.isArray(manifest.commands) || manifest.commands.length === 0) {
-    throw new Error("nextop.cli.json must declare commands.");
+    throw new Error("tutti.cli.json must declare commands.");
   }
 
   const seenCommands = new Set();
@@ -703,7 +703,7 @@ function validateCliManifest(manifest) {
         `CLI command ${commandKey} must use an HTTP POST handler.`,
       );
     }
-    const expectedHandlerPath = `/nextop/cli/${command.path.join("/")}`;
+    const expectedHandlerPath = `/tutti/cli/${command.path.join("/")}`;
     if (command.handler?.path !== expectedHandlerPath) {
       throw new Error(
         `CLI command ${commandKey} handler.path must be ${expectedHandlerPath}.`,
@@ -757,7 +757,7 @@ function isCliPathSegment(value) {
 
 async function readSourceManifest() {
   return JSON.parse(
-    await readFile(path.join(rootDir, "nextop.app.json"), "utf8"),
+    await readFile(path.join(rootDir, "tutti.app.json"), "utf8"),
   );
 }
 
@@ -865,11 +865,11 @@ async function writePackageFiles(manifest) {
   await mkdir(path.join(packageRoot, "server"), { recursive: true });
 
   await writeFile(
-    path.join(packageRoot, "nextop.app.json"),
+    path.join(packageRoot, "tutti.app.json"),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
   await writeFile(
-    path.join(packageRoot, "nextop.cli.json"),
+    path.join(packageRoot, "tutti.cli.json"),
     `${JSON.stringify(createCliManifest(), null, 2)}\n`,
   );
   for (const { file, metadata } of Object.values(MANIFEST_LOCALIZATIONS)) {
@@ -923,7 +923,7 @@ async function bundleServer() {
     "--platform=node",
     "--format=esm",
     "--target=node22",
-    "--outfile=build/nextop-app/package/server/server.js",
+    "--outfile=build/tutti-app/package/server/server.js",
     "--banner:js=import { createRequire as __aimcCreateRequire } from 'node:module'; const require = __aimcCreateRequire(import.meta.url);",
   ]);
 }
@@ -937,7 +937,7 @@ async function bundleWorker() {
     "--platform=node",
     "--format=esm",
     "--target=node22",
-    "--outfile=build/nextop-app/package/server/worker.js",
+    "--outfile=build/tutti-app/package/server/worker.js",
     "--banner:js=import { createRequire as __aimcCreateRequire } from 'node:module'; const require = __aimcCreateRequire(import.meta.url);",
   ]);
 }
@@ -951,7 +951,7 @@ async function bundleToolsMcpServer() {
     "--platform=node",
     "--format=esm",
     "--target=node22",
-    "--outfile=build/nextop-app/package/server/tools-mcp.js",
+    "--outfile=build/tutti-app/package/server/tools-mcp.js",
   ]);
 }
 
@@ -962,7 +962,7 @@ async function createZip(version) {
   return zipPath;
 }
 
-export async function packageNextopApp() {
+export async function packageTuttiApp() {
   const sourceManifest = await readSourceManifest();
   const version = sourceManifest.version ?? "0.0.0";
 
@@ -985,7 +985,7 @@ export async function packageNextopApp() {
 }
 
 if (process.argv[1] === scriptPath) {
-  packageNextopApp().catch((error) => {
+  packageTuttiApp().catch((error) => {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
   });
