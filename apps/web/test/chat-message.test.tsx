@@ -67,6 +67,34 @@ describe("ChatMessage", () => {
       container.querySelector(".markdown-content .animate-pulse"),
     ).toBeNull();
   });
+
+  it("does not show a media failure card for deferred image jobs", () => {
+    const blocks: ContentBlock[] = [
+      {
+        type: "tool",
+        toolCallId: "tool-1",
+        toolName: "generate_image",
+        status: "completed",
+        outputSummary:
+          "Image generation has started. It will automatically appear on the canvas once ready.",
+        output: {
+          summary:
+            "Image generation has started. It will automatically appear on the canvas once ready.",
+          title: "Storyboard panel",
+          jobId: "job-image-1",
+          jobType: "image_generation",
+          status: "generating",
+        },
+      },
+    ];
+
+    renderAssistantMessage(blocks);
+
+    expect(screen.queryByText("图片生成失败")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText(/Image generation has started/).length,
+    ).toBeGreaterThan(0);
+  });
 });
 
 function renderAssistantMessage(contentBlocks: ContentBlock[]) {

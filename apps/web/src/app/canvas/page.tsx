@@ -295,9 +295,14 @@ function CanvasPageContent() {
         api.addFiles(Object.values(resolved.files));
       }
 
+      window.dispatchEvent(
+        new CustomEvent("aimc:canvas-remote-sync", {
+          detail: { canvasId: canvasData.id },
+        }),
+      );
       api.updateScene({
         elements: resolved.elements,
-        captureUpdate: "IMMEDIATELY",
+        captureUpdate: "NONE",
       });
     } catch (err) {
       console.warn("Failed to sync canvas:", err);

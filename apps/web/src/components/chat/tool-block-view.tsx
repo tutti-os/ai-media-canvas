@@ -174,6 +174,12 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const isImageTool = canonicalToolName === "generate_image";
   const isVideoTool = canonicalToolName === "generate_video";
   const isMediaTool = isImageTool || isVideoTool;
+  const outputData = block.output as Record<string, unknown> | undefined;
+  const isDeferredMediaJob =
+    isMediaTool &&
+    isCompleted &&
+    outputData?.status === "generating" &&
+    typeof outputData.jobId === "string";
   const shouldShowImageArtifactCard =
     isCompleted &&
     !!imageArtifact &&
@@ -181,10 +187,12 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       canonicalToolName === "persist_sandbox_file" ||
       canonicalToolName === "screenshot_canvas");
   const mediaError =
-    isMediaTool && (isFailed || isCompleted) && !imageArtifact && !videoArtifact
-      ? (((block.output as Record<string, unknown> | undefined)?.error as
-          | string
-          | undefined) ?? block.outputSummary)
+    isMediaTool &&
+    !isDeferredMediaJob &&
+    (isFailed || isCompleted) &&
+    !imageArtifact &&
+    !videoArtifact
+      ? ((outputData?.error as string | undefined) ?? block.outputSummary)
       : undefined;
   const inputData = block.input as Record<string, unknown> | undefined;
   const modelName = inputData?.model as string | undefined;
