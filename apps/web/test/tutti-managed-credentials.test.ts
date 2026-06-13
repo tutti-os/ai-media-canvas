@@ -30,22 +30,19 @@ type HostBridge = {
   };
 };
 
-function setHostBridge(name: "tutti" | "nextop", bridge: HostBridge) {
+function setHostBridge(bridge: HostBridge) {
   const hostWindow = window as Window & {
-    nextop?: HostBridge;
     tutti?: HostBridge;
   };
-  hostWindow[name] = bridge;
+  hostWindow.tutti = bridge;
 }
 
 describe("Tutti managed credential bridge", () => {
   afterEach(() => {
     const hostWindow = window as Window & {
-      nextop?: HostBridge;
       tutti?: HostBridge;
     };
     hostWindow.tutti = undefined;
-    hostWindow.nextop = undefined;
     vi.clearAllMocks();
   });
 
@@ -54,7 +51,7 @@ describe("Tutti managed credential bridge", () => {
       grantCode: "grant-code",
       providers: ["openai"],
     });
-    setHostBridge("tutti", {
+    setHostBridge({
       appContext: {
         get: vi.fn().mockResolvedValue({
           appId: "app-1",
@@ -95,22 +92,9 @@ describe("Tutti managed credential bridge", () => {
     );
   });
 
-  it("falls back to the legacy window.nextop bridge", () => {
-    setHostBridge("nextop", {
-      appContext: {
-        get: vi.fn().mockResolvedValue({ contextToken: "context-token" }),
-      },
-      managedCredentials: {
-        requestGrant: vi.fn(),
-      },
-    });
-
-    expect(hasNextopManagedCredentialBridge()).toBe(true);
-  });
-
   it("opens Tutti managed model settings through window.tutti", async () => {
     const openSettings = vi.fn().mockResolvedValue(undefined);
-    setHostBridge("tutti", {
+    setHostBridge({
       workspace: { openSettings },
     });
 

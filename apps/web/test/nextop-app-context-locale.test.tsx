@@ -18,8 +18,6 @@ type HostAppContext = {
 
 function setHostAppContext(appContext: HostAppContext | undefined) {
   const hostWindow = window as Window & {
-    nextop?: { appContext?: HostAppContext };
-    nextopAppContext?: HostAppContext;
     tutti?: { appContext?: HostAppContext };
     tuttiAppContext?: HostAppContext;
   };
@@ -31,8 +29,6 @@ function setHostAppContext(appContext: HostAppContext | undefined) {
 
   hostWindow.tutti = undefined;
   hostWindow.tuttiAppContext = undefined;
-  hostWindow.nextop = undefined;
-  hostWindow.nextopAppContext = undefined;
 }
 
 describe("Tutti host app context locale", () => {
@@ -89,23 +85,6 @@ describe("Tutti host app context locale", () => {
 
     result.unmount();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
-  });
-
-  it("falls back to the legacy Nextop host app context locale", async () => {
-    const hostWindow = window as Window & {
-      nextopAppContext?: HostAppContext;
-    };
-    hostWindow.nextopAppContext = {
-      get: vi.fn().mockResolvedValue({ locale: "zh-CN" }),
-    };
-
-    render(
-      <I18nProvider>
-        <div>content</div>
-      </I18nProvider>,
-    );
-
-    await waitFor(() => expect(document.documentElement.lang).toBe("zh-CN"));
   });
 });
 

@@ -47,14 +47,13 @@ type NextopBridge = {
 
 declare global {
   interface Window {
-    nextop?: NextopBridge;
     tutti?: NextopBridge;
   }
 }
 
 function getManagedCredentialBridge() {
   if (typeof window === "undefined") return undefined;
-  return window.tutti ?? window.nextop;
+  return window.tutti;
 }
 
 export function hasNextopManagedCredentialBridge() {
