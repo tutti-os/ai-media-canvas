@@ -9,6 +9,7 @@ export const placementSchema = z.object({
 
 export const imageArtifactSchema = z.object({
   type: z.literal("image"),
+  assetId: z.string().optional(),
   title: z.string().optional(),
   url: z.string(),
   mimeType: z.string(),
@@ -20,6 +21,7 @@ export const imageArtifactSchema = z.object({
 
 export const videoArtifactSchema = z.object({
   type: z.literal("video"),
+  assetId: z.string().optional(),
   title: z.string().optional(),
   url: z.string(),
   mimeType: z.string(),

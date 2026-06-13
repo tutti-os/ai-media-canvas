@@ -972,6 +972,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
             if (current.status === "succeeded" && current.result) {
               const result = current.result as {
+                asset_id?: string;
                 signed_url?: string;
                 object_path?: string;
                 width?: number;
@@ -993,6 +994,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     {
                       canvasId,
                       objectPath: result.object_path,
+                      ...(result.asset_id ? { assetId: result.asset_id } : {}),
                       ...(result.signed_url
                         ? { signedUrl: result.signed_url }
                         : {}),
@@ -1213,6 +1215,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
             if (current.status === "succeeded" && current.result) {
               const result = current.result as {
+                asset_id?: string;
                 signed_url?: string;
                 duration_seconds?: number;
                 width?: number;
@@ -1243,6 +1246,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     {
                       canvasId,
                       signedUrl: result.signed_url,
+                      ...(result.asset_id ? { assetId: result.asset_id } : {}),
                       width: result.width ?? 1280,
                       height: result.height ?? 720,
                       mimeType: result.mime_type ?? "video/mp4",

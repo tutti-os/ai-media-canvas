@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { ImageArtifact, ToolBlock, VideoArtifact } from "@aimc/shared";
+import { toRuntimeAssetUrl } from "../../lib/local-assets";
 import { ChatImage } from "./image-lightbox";
 import {
   formatModelDisplayName,
@@ -435,10 +436,11 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
   hasDetails: boolean;
   onOpenPanel: () => void;
 }) {
+  const url = toRuntimeAssetUrl(artifact.url, artifact.assetId);
   const handleDownload = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      fetch(artifact.url)
+      fetch(url)
         .then((res) => res.blob())
         .then((blob) => {
           const a = document.createElement("a");
@@ -447,9 +449,9 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
           a.click();
           URL.revokeObjectURL(a.href);
         })
-        .catch(() => window.open(artifact.url, "_blank"));
+        .catch(() => window.open(url, "_blank"));
     },
-    [artifact.url, artifact.title],
+    [url, artifact.title],
   );
 
   return (
@@ -460,7 +462,7 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
       {/* Image preview */}
       <div className="relative aspect-square max-h-[280px] w-full overflow-hidden bg-muted">
         <img
-          src={artifact.url}
+          src={url}
           alt={artifact.title ?? "Generated image"}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
           loading="lazy"
@@ -513,11 +515,12 @@ const VideoArtifactCard = React.memo(function VideoArtifactCard({
 }: {
   artifact: VideoArtifact;
 }) {
+  const url = toRuntimeAssetUrl(artifact.url, artifact.assetId);
   return (
     <div className="overflow-hidden rounded-xl border-[0.5px] border-border">
       <div className="bg-black">
         <video
-          src={artifact.url}
+          src={url}
           controls
           className="max-h-[280px] w-full object-contain"
         />
@@ -674,14 +677,14 @@ function ToolDetailPanel({
                   artifact.type === "image" ? (
                     <ChatImage
                       key={artifact.url}
-                      src={artifact.url}
+                      src={toRuntimeAssetUrl(artifact.url, artifact.assetId)}
                       alt={artifact.title ?? "Generated image"}
                       className="max-w-[200px] rounded-lg border border-border"
                     />
                   ) : artifact.type === "video" ? (
                     <video
                       key={artifact.url}
-                      src={artifact.url}
+                      src={toRuntimeAssetUrl(artifact.url, artifact.assetId)}
                       controls
                       className="max-w-[240px] rounded-lg border border-border bg-black"
                     />

@@ -47,6 +47,7 @@ describe("canvas element writer", () => {
     });
 
     const result = await insertImageElement(client, {
+      assetId: "image-asset-1",
       canvasId: "canvas-1",
       height: 768,
       mimeType: "image/png",
@@ -68,16 +69,18 @@ describe("canvas element writer", () => {
       width: 600,
       height: 450,
       customData: {
+        assetId: "image-asset-1",
         source: "generated",
-        storageUrl: "http://127.0.0.1:3001/local-assets/image-1",
+        storageUrl: "/local-assets/image-asset-1",
         title: "Dancing girl",
       },
     });
     const fileId = content.elements[0]?.fileId as string;
     expect(content.files[fileId]).toMatchObject({
       id: fileId,
+      assetId: "image-asset-1",
       mimeType: "image/png",
-      storageUrl: "http://127.0.0.1:3001/local-assets/image-1",
+      storageUrl: "/local-assets/image-asset-1",
     });
   });
 
@@ -155,7 +158,10 @@ describe("canvas element writer", () => {
       appState: {},
       files: {},
     });
-    const sequence = await createCanvasAutoPlacementSequence(client, "canvas-1");
+    const sequence = await createCanvasAutoPlacementSequence(
+      client,
+      "canvas-1",
+    );
 
     const first = sequence.reserve({ width: 600, height: 338 });
     const second = sequence.reserve({ width: 600, height: 338 });
@@ -182,6 +188,7 @@ describe("canvas element writer", () => {
     });
 
     const result = await insertVideoElement(client, {
+      assetId: "video-asset-1",
       canvasId: "canvas-1",
       durationSeconds: 5,
       height: 720,
@@ -200,10 +207,11 @@ describe("canvas element writer", () => {
     expect(content.elements[0]).toMatchObject({
       id: result.elementId,
       type: "embeddable",
-      link: "http://127.0.0.1:3001/local-assets/video-1",
+      link: "/local-assets/video-asset-1",
       width: 640,
       height: 360,
       customData: {
+        assetId: "video-asset-1",
         durationSeconds: 5,
         isVideo: true,
         mimeType: "video/mp4",

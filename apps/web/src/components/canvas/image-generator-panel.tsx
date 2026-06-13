@@ -19,6 +19,7 @@ import {
 } from "../../lib/canvas-image-generator";
 import { withNormalizedCanvasElementIndices } from "../../lib/canvas-normalize";
 import { isExcalidrawContextMenuTarget } from "../../lib/excalidraw-context-menu";
+import { normalizeLocalAssetStorageUrl } from "../../lib/local-assets";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { ImageModelInfo } from "../../lib/server-api";
 import { fetchImageModels, generateImageDirect } from "../../lib/server-api";
@@ -241,16 +242,24 @@ export function ImageGeneratorPanel({
           dataURL,
           mimeType: result.mimeType,
           created: Date.now(),
+          assetId: result.assetId,
+          storageUrl:
+            normalizeLocalAssetStorageUrl(result.url, result.assetId) ??
+            result.url,
         },
       ]);
 
       const imageElement = createExcalidrawImageElement({
+        assetId: result.assetId,
         fileId,
         x: elementBounds.x,
         y: elementBounds.y,
         width: elementBounds.width,
         height: elementBounds.height,
         title: prompt.trim().slice(0, 60),
+        storageUrl:
+          normalizeLocalAssetStorageUrl(result.url, result.assetId) ??
+          result.url,
       });
 
       // Replace: delete placeholder, add image

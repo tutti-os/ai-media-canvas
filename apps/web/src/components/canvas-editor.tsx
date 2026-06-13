@@ -18,6 +18,7 @@ import {
   normalizeCanvasElements,
 } from "../lib/canvas-normalize";
 import { getServerBaseUrl } from "../lib/env";
+import { toRuntimeAssetUrl } from "../lib/local-assets";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
 import { CanvasContextMenuExtensions } from "./canvas-context-menu-extensions";
 import { CanvasToolMenu } from "./canvas-tool-menu";
@@ -651,9 +652,11 @@ export function CanvasEditor({
       typeof link === "string" &&
       (isVideoUrl(link) || customData.isVideo === true)
     ) {
+      const assetId =
+        typeof customData.assetId === "string" ? customData.assetId : null;
       return (
         <VideoCanvasElement
-          src={link}
+          src={toRuntimeAssetUrl(link, assetId)}
           width={typeof record.width === "number" ? record.width : 640}
           height={typeof record.height === "number" ? record.height : 360}
         />

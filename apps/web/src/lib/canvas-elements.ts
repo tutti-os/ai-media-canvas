@@ -1,6 +1,10 @@
 import type { ImageArtifact, VideoArtifact } from "@aimc/shared";
 import { withNormalizedCanvasElementIndices } from "./canvas-normalize";
 import { getServerBaseUrl } from "./env";
+import {
+  normalizeLocalAssetStorageUrl,
+  toRuntimeAssetUrl,
+} from "./local-assets";
 
 const VIDEO_EXTENSIONS = [".mp4", ".webm", ".ogg", ".mov"];
 const AUTO_PLACEMENT_GAP = 40;
@@ -124,7 +128,9 @@ function firstOpenPlacement(
     }
   }
 
-  const maxRight = Math.max(...existingRects.map((rect) => rect.x + rect.width));
+  const maxRight = Math.max(
+    ...existingRects.map((rect) => rect.x + rect.width),
+  );
   return {
     x: maxRight + AUTO_PLACEMENT_GAP,
     y: desired.y,
@@ -137,6 +143,7 @@ function firstOpenPlacement(
  * Create an Excalidraw image element with all required fields.
  */
 export function createExcalidrawImageElement(opts: {
+  assetId?: string;
   fileId: string;
   x: number;
   y: number;
@@ -178,8 +185,9 @@ export function createExcalidrawImageElement(opts: {
     scale: [1, 1],
     crop: null,
   };
-  if (opts.title || opts.source || opts.storageUrl) {
+  if (opts.assetId || opts.title || opts.source || opts.storageUrl) {
     element.customData = {
+      ...(opts.assetId ? { assetId: opts.assetId } : {}),
       ...(opts.title ? { title: opts.title } : {}),
       ...(opts.source ? { source: opts.source } : {}),
       ...(opts.storageUrl ? { storageUrl: opts.storageUrl } : {}),
@@ -193,9 +201,9 @@ export function createExcalidrawImageElement(opts: {
  * Routes through the server proxy to bypass browser CORS restrictions.
  */
 export async function fetchAsDataURL(url: string): Promise<string> {
-  let fetchUrl = url;
+  let fetchUrl = toRuntimeAssetUrl(url);
   try {
-    const parsed = new URL(url, window.location.origin);
+    const parsed = new URL(fetchUrl, window.location.origin);
     const isSameOrigin = parsed.origin === window.location.origin;
     if (!isSameOrigin) {
       const proxyUrl = new URL("/api/asset-proxy", getServerBaseUrl());
@@ -229,9 +237,7 @@ export async function fetchAsDataURL(url: string): Promise<string> {
  */
 export async function insertImageOnCanvas(
   api: {
-    addFiles: (
-      files: { id: any; dataURL: any; mimeType: string; created: number }[],
-    ) => void;
+    addFiles: (files: Record<string, unknown>[]) => void;
     getSceneElements: () => readonly any[];
     getAppState: () => any;
     updateScene: (scene: {
@@ -241,7 +247,12 @@ export async function insertImageOnCanvas(
   },
   artifact: ImageArtifact,
 ): Promise<void> {
-  const dataURL = await fetchAsDataURL(artifact.url);
+  const assetId = artifact.assetId;
+  const storageUrl =
+    normalizeLocalAssetStorageUrl(artifact.url, assetId) ?? artifact.url;
+  const dataURL = await fetchAsDataURL(
+    toRuntimeAssetUrl(artifact.url, assetId),
+  );
   const fileId = generateId();
 
   api.addFiles([
@@ -250,6 +261,8 @@ export async function insertImageOnCanvas(
       dataURL: dataURL as any,
       mimeType: artifact.mimeType,
       created: Date.now(),
+      ...(assetId ? { assetId } : {}),
+      storageUrl,
     },
   ]);
 
@@ -304,6 +317,7 @@ export async function insertImageOnCanvas(
   }
 
   const element = createExcalidrawImageElement({
+    ...(assetId ? { assetId } : {}),
     fileId,
     x,
     y,
@@ -311,7 +325,7 @@ export async function insertImageOnCanvas(
     height,
     ...(artifact.title ? { title: artifact.title } : {}),
     source: "generated",
-    storageUrl: artifact.url,
+    storageUrl,
   });
 
   api.updateScene({
@@ -334,8 +348,15 @@ export async function insertVideoOnCanvas(
   },
   artifact: VideoArtifact,
 ): Promise<void> {
-  const width = artifact.placement?.width ?? scaleToFit(artifact.width, artifact.height, 640).width;
-  const height = artifact.placement?.height ?? scaleToFit(artifact.width, artifact.height, 640).height;
+  const assetId = artifact.assetId;
+  const link =
+    normalizeLocalAssetStorageUrl(artifact.url, assetId) ?? artifact.url;
+  const width =
+    artifact.placement?.width ??
+    scaleToFit(artifact.width, artifact.height, 640).width;
+  const height =
+    artifact.placement?.height ??
+    scaleToFit(artifact.width, artifact.height, 640).height;
   const elements = api.getSceneElements().filter((el: any) => !el.isDeleted);
 
   let x: number;
@@ -376,17 +397,20 @@ export async function insertVideoOnCanvas(
     }
   }
 
-  const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+  const { convertToExcalidrawElements } = await import(
+    "@excalidraw/excalidraw"
+  );
   const newElements = convertToExcalidrawElements([
     {
       type: "embeddable",
-      link: artifact.url,
+      link,
       x,
       y,
       width,
       height,
       customData: {
         isVideo: true,
+        ...(assetId ? { assetId } : {}),
         mimeType: artifact.mimeType,
         ...(artifact.durationSeconds != null
           ? { durationSeconds: artifact.durationSeconds }
@@ -407,7 +431,6 @@ export async function insertVideoOnCanvas(
 
 function generateId(): string {
   return (
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2)
+    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   ).slice(0, 20);
 }

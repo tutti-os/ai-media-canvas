@@ -15,6 +15,7 @@ import {
   updateVideoGeneratorElement,
 } from "../../lib/canvas-video-generator";
 import { isExcalidrawContextMenuTarget } from "../../lib/excalidraw-context-menu";
+import { normalizeLocalAssetStorageUrl } from "../../lib/local-assets";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { VideoModelInfo } from "../../lib/server-api";
 import { fetchVideoModels, generateVideoDirect } from "../../lib/server-api";
@@ -329,13 +330,16 @@ export function VideoGeneratorPanel({
       const newElements = convertToExcalidrawElements([
         {
           type: "embeddable",
-          link: result.url,
+          link:
+            normalizeLocalAssetStorageUrl(result.url, result.assetId) ??
+            result.url,
           x: elementBounds.x,
           y: elementBounds.y,
           width: elementBounds.width,
           height: elementBounds.height,
           customData: {
             isVideo: true,
+            assetId: result.assetId,
             mimeType: result.mimeType,
             durationSeconds: result.durationSeconds,
             title: prompt.trim().slice(0, 60),
