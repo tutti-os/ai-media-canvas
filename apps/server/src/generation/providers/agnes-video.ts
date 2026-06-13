@@ -24,12 +24,14 @@ type AgnesRemoteTaskMetadata = {
   onRemoteTaskCreated?: (task: {
     provider: string;
     taskId: string;
+    videoId?: string;
     status?: string;
     raw?: unknown;
   }) => void | Promise<void>;
   onRemoteTaskStatus?: (task: {
     provider: string;
     taskId: string;
+    videoId?: string;
     status?: string;
     raw?: unknown;
   }) => void | Promise<void>;
@@ -42,8 +44,12 @@ type AgnesVideoTaskResponse = {
   raw?: unknown;
   seconds?: number | string | null;
   status?: string;
+  task_id?: string;
+  taskId?: string;
   url?: string;
+  video_id?: string;
   video_url?: string;
+  videoId?: string;
   videoUrl?: string;
 };
 
@@ -186,11 +192,9 @@ function resolveAgnesNumFrames(
 
 function resolveAgnesVideoModel(modelId: string): AgnesVideoModelId {
   const normalized = modelId.includes("/")
-    ? modelId.split("/").pop() ?? modelId
+    ? (modelId.split("/").pop() ?? modelId)
     : modelId;
-  if (
-    AGNES_VIDEO_MODEL_IDS.includes(normalized as AgnesVideoModelId)
-  ) {
+  if (AGNES_VIDEO_MODEL_IDS.includes(normalized as AgnesVideoModelId)) {
     return normalized as AgnesVideoModelId;
   }
   throw new GenerationError(
@@ -206,6 +210,16 @@ function resolveAgnesVideoMode(params: VideoGenerateParams) {
   if (inputImages.length === 1) return "img2video" as const;
   if (params.videoMode === "keyframes") return "keyframes" as const;
   return "multivideo" as const;
+}
+
+function getFirstAgnesInputImage(inputImages: string[]) {
+  const [image] = inputImages;
+  if (image) return image;
+  throw new GenerationError(
+    "agnes-video",
+    "invalid_input",
+    "Agnes img2video requires exactly one image.",
+  );
 }
 
 function getAgnesRemoteTaskMetadata(
@@ -288,7 +302,7 @@ export class AgnesVideoProvider implements VideoProvider {
           : request.mode === "img2video"
             ? await this.client.video.generate({
                 mode: request.mode,
-                image: request.inputImages[0]!,
+                image: getFirstAgnesInputImage(request.inputImages),
                 prompt: params.prompt,
                 width: request.width,
                 height: request.height,
@@ -318,11 +332,16 @@ export class AgnesVideoProvider implements VideoProvider {
       await metadata.onRemoteTaskCreated?.({
         provider: this.name,
         taskId: task.taskId,
+        ...(task.videoId ? { videoId: task.videoId } : {}),
         ...(typeof task.status === "string" ? { status: task.status } : {}),
         raw: task.raw,
       });
 
-      return await this.pollTask(task.taskId, request, metadata);
+      return await this.pollTask(
+        task.videoId ?? task.taskId,
+        request,
+        metadata,
+      );
     } catch (error) {
       if (error instanceof GenerationError) throw error;
       if (isAgnesPollTimeoutError(error)) {
@@ -366,18 +385,23 @@ export class AgnesVideoProvider implements VideoProvider {
   }
 
   private async pollTask(
-    taskId: string,
+    initialPollId: string,
     request: ReturnType<typeof resolveAgnesVideoRequest>,
     metadata: AgnesRemoteTaskMetadata,
   ): Promise<GeneratedVideo> {
     const startedAt = Date.now();
+    let pollId = initialPollId;
 
     for (;;) {
-      const task = await this.fetchVideoTask(taskId);
+      const task = await this.fetchVideoTask(pollId);
       const status = normalizeAgnesVideoStatus(task.status);
+      const videoId = extractAgnesVideoId(task, pollId);
+      const remoteTaskId =
+        videoId ?? extractAgnesTaskId(task, pollId) ?? pollId;
       await metadata.onRemoteTaskStatus?.({
         provider: this.name,
-        taskId,
+        taskId: remoteTaskId,
+        ...(videoId ? { videoId } : {}),
         ...(status ? { status } : {}),
         raw: task.raw ?? task,
       });
@@ -411,14 +435,15 @@ export class AgnesVideoProvider implements VideoProvider {
         );
       }
 
-      if (
-        Date.now() - startedAt >=
-        AGNES_VIDEO_POLL_TIMEOUT_SECONDS * 1_000
-      ) {
+      if (videoId) {
+        pollId = videoId;
+      }
+
+      if (Date.now() - startedAt >= AGNES_VIDEO_POLL_TIMEOUT_SECONDS * 1_000) {
         throw new GenerationError(
           this.name,
           "poll_timeout",
-          `Agnes video task ${taskId} did not finish within ${AGNES_VIDEO_POLL_TIMEOUT_SECONDS} seconds.`,
+          `Agnes video task ${pollId} did not finish within ${AGNES_VIDEO_POLL_TIMEOUT_SECONDS} seconds.`,
         );
       }
 
@@ -426,16 +451,15 @@ export class AgnesVideoProvider implements VideoProvider {
     }
   }
 
-  private async fetchVideoTask(taskId: string): Promise<AgnesVideoTaskResponse> {
-    const response = await fetch(
-      `${this.baseUrl}/videos/${encodeURIComponent(taskId)}`,
-      {
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
+  private async fetchVideoTask(
+    pollId: string,
+  ): Promise<AgnesVideoTaskResponse> {
+    const response = await fetch(buildAgnesVideoPollUrl(this.baseUrl, pollId), {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
       },
-    );
+    });
     const text = await response.text();
     const body = parseAgnesJson(text);
     if (!response.ok) {
@@ -454,6 +478,39 @@ export class AgnesVideoProvider implements VideoProvider {
       ? (body as AgnesVideoTaskResponse)
       : { raw: body };
   }
+}
+
+function buildAgnesVideoPollUrl(baseUrl: string, pollId: string): string {
+  if (pollId.startsWith("task_")) {
+    return `${baseUrl}/videos/${encodeURIComponent(pollId)}`;
+  }
+  const url = new URL("/agnesapi", new URL(baseUrl));
+  url.searchParams.set("video_id", pollId);
+  return url.toString();
+}
+
+function extractAgnesVideoId(
+  task: AgnesVideoTaskResponse,
+  fallbackId: string,
+): string | undefined {
+  if (typeof task.video_id === "string") return task.video_id;
+  if (typeof task.videoId === "string") return task.videoId;
+  if (typeof task.id === "string" && task.id.startsWith("video_")) {
+    return task.id;
+  }
+  return fallbackId.startsWith("video_") ? fallbackId : undefined;
+}
+
+function extractAgnesTaskId(
+  task: AgnesVideoTaskResponse,
+  fallbackId: string,
+): string | undefined {
+  if (typeof task.task_id === "string") return task.task_id;
+  if (typeof task.taskId === "string") return task.taskId;
+  if (typeof task.id === "string" && task.id.startsWith("task_")) {
+    return task.id;
+  }
+  return fallbackId.startsWith("task_") ? fallbackId : undefined;
 }
 
 function normalizeAgnesVideoStatus(status: string | undefined) {

@@ -11,7 +11,12 @@ const { fetchMock, videoGenerateMock, videoPollMock, createAgnesClientMock } =
         poll: videoPollMock,
       },
     }));
-    return { fetchMock, videoGenerateMock, videoPollMock, createAgnesClientMock };
+    return {
+      fetchMock,
+      videoGenerateMock,
+      videoPollMock,
+      createAgnesClientMock,
+    };
   });
 
 vi.mock("agnes-ai-cli", () => ({
@@ -30,6 +35,7 @@ describe("AgnesVideoProvider", () => {
     videoGenerateMock.mockResolvedValue({
       ok: true,
       taskId: "task_123",
+      videoId: "video_123",
       status: "queued",
       model: "agnes-video-v2.0",
       raw: {},
@@ -49,6 +55,7 @@ describe("AgnesVideoProvider", () => {
           id: "task_123",
           object: "video",
           status: "completed",
+          video_id: "video_123",
           video_url: "https://cdn.agnes.example/generated.mp4",
           seconds: "5.0",
         }),
@@ -84,7 +91,7 @@ describe("AgnesVideoProvider", () => {
       frameRate: 24,
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://agnes.example/v1/videos/task_123",
+      "https://agnes.example/agnesapi?video_id=video_123",
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: "Bearer agnes-test-key",
@@ -180,8 +187,7 @@ describe("AgnesVideoProvider", () => {
       }),
     ).rejects.toMatchObject({
       code: "invalid_input",
-      message:
-        "Unsupported Agnes video aspect ratio: 1:1. Use 16:9 or 9:16.",
+      message: "Unsupported Agnes video aspect ratio: 1:1. Use 16:9 or 9:16.",
       provider: "agnes-video",
     });
     expect(videoGenerateMock).not.toHaveBeenCalled();
@@ -239,18 +245,12 @@ describe("AgnesVideoProvider", () => {
       duration: 6,
       aspectRatio: "16:9",
       resolution: "1080p",
-      inputImages: [
-        "data:image/png;base64,AAAA",
-        "data:image/png;base64,BBBB",
-      ],
+      inputImages: ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"],
     });
 
     expect(videoGenerateMock).toHaveBeenCalledWith({
       mode: "multivideo",
-      images: [
-        "data:image/png;base64,AAAA",
-        "data:image/png;base64,BBBB",
-      ],
+      images: ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"],
       prompt: "Blend these two concepts",
       width: 1920,
       height: 1080,
@@ -269,19 +269,13 @@ describe("AgnesVideoProvider", () => {
       duration: 4,
       aspectRatio: "16:9",
       resolution: "720p",
-      inputImages: [
-        "data:image/png;base64,AAAA",
-        "data:image/png;base64,BBBB",
-      ],
+      inputImages: ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"],
       videoMode: "keyframes",
     });
 
     expect(videoGenerateMock).toHaveBeenCalledWith({
       mode: "keyframes",
-      images: [
-        "data:image/png;base64,AAAA",
-        "data:image/png;base64,BBBB",
-      ],
+      images: ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"],
       prompt: "Morph between the two scenes",
       width: 1280,
       height: 720,
@@ -293,6 +287,13 @@ describe("AgnesVideoProvider", () => {
 
   it("keeps polling queued Agnes tasks instead of using the SDK timeout", async () => {
     const provider = new AgnesVideoProvider("agnes-test-key");
+    videoGenerateMock.mockResolvedValueOnce({
+      ok: true,
+      taskId: "task_123",
+      status: "queued",
+      model: "agnes-video-v2.0",
+      raw: {},
+    });
     fetchMock
       .mockResolvedValueOnce(
         new Response(
@@ -300,6 +301,7 @@ describe("AgnesVideoProvider", () => {
             id: "task_123",
             object: "video",
             status: "queued",
+            video_id: "video_123",
             progress: 0,
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -311,6 +313,7 @@ describe("AgnesVideoProvider", () => {
             id: "task_123",
             object: "video",
             status: "completed",
+            video_id: "video_123",
             video_url: "https://cdn.agnes.example/generated.mp4",
             seconds: "5.0",
           }),
@@ -330,8 +333,74 @@ describe("AgnesVideoProvider", () => {
 
     expect(videoPollMock).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://apihub.agnes-ai.com/v1/videos/task_123",
+      expect.any(Object),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://apihub.agnes-ai.com/agnesapi?video_id=video_123",
+      expect.any(Object),
+    );
     expect(result.url).toBe("https://cdn.agnes.example/generated.mp4");
     vi.useRealTimers();
+  });
+
+  it("keeps legacy task_id polling compatible when resuming old Agnes jobs", async () => {
+    const provider = new AgnesVideoProvider(
+      "agnes-test-key",
+      "https://agnes.example/v1",
+    );
+
+    const result = await provider.resume("task_legacy_123", {
+      prompt: "Resume an older queued Agnes video",
+      model: "agnes-video/agnes-video-v2.0",
+      aspectRatio: "16:9",
+      resolution: "720p",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://agnes.example/v1/videos/task_legacy_123",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer agnes-test-key",
+        }),
+      }),
+    );
+    expect(result.url).toBe("https://cdn.agnes.example/generated.mp4");
+  });
+
+  it("reports video_id through Agnes task metadata for persisted recovery", async () => {
+    const provider = new AgnesVideoProvider("agnes-test-key");
+    const onRemoteTaskCreated = vi.fn();
+    const onRemoteTaskStatus = vi.fn();
+
+    await provider.generate({
+      prompt: "Track the preferred Agnes video poll id",
+      model: "agnes-video/agnes-video-v2.0",
+      aspectRatio: "16:9",
+      resolution: "720p",
+      metadata: {
+        onRemoteTaskCreated,
+        onRemoteTaskStatus,
+      },
+    });
+
+    expect(onRemoteTaskCreated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "agnes-video",
+        taskId: "task_123",
+        videoId: "video_123",
+        status: "queued",
+      }),
+    );
+    expect(onRemoteTaskStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "agnes-video",
+        taskId: "video_123",
+        videoId: "video_123",
+        status: "completed",
+      }),
+    );
   });
 
   it("reports provider failures from Agnes task polling", async () => {
