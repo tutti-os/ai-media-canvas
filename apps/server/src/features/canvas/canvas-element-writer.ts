@@ -104,6 +104,106 @@ export async function insertImageElement(
   return { elementId };
 }
 
+export async function completeImageGenerationNode(
+  client: CanvasClient,
+  input: {
+    assetId?: string;
+    canvasId: string;
+    elementId?: string;
+    height: number;
+    jobId: string;
+    mimeType: string;
+    objectPath?: string;
+    signedUrl: string;
+    title?: string;
+    width: number;
+  },
+): Promise<{ elementId: string }> {
+  const content = await readCanvasContent(client, input.canvasId);
+  const elements = [...(content.elements ?? [])];
+  const files = { ...(content.files ?? {}) };
+  const storageUrl = input.assetId
+    ? `/local-assets/${input.assetId}`
+    : input.signedUrl;
+
+  const existingImage = elements.find(
+    (el) =>
+      !el.isDeleted &&
+      el.type === "image" &&
+      input.assetId &&
+      recordValue(el.customData)?.assetId === input.assetId,
+  );
+  if (existingImage?.id && typeof existingImage.id === "string") {
+    return { elementId: existingImage.id };
+  }
+
+  const generatorIndex = elements.findIndex((el) => {
+    const customData = recordValue(el.customData);
+    if (!customData) return false;
+    if (customData.type !== "image-generator") return false;
+    if (customData.jobId !== input.jobId) return false;
+    return input.elementId ? el.id === input.elementId : true;
+  });
+
+  const generator = generatorIndex >= 0 ? elements[generatorIndex] : undefined;
+  const scaled = scaleToFit(input.width, input.height, 600);
+  const display = generator
+    ? {
+        x: finiteNumber(generator.x) ?? 0,
+        y: finiteNumber(generator.y) ?? 0,
+        width: finiteNumber(generator.width) ?? scaled.width,
+        height: finiteNumber(generator.height) ?? scaled.height,
+      }
+    : autoPlacement(elements, scaled, content.appState);
+  const elementId =
+    generator && typeof generator.id === "string" ? generator.id : generateId();
+  const fileId = generateId();
+
+  files[fileId] = {
+    id: fileId,
+    ...(input.assetId ? { assetId: input.assetId } : {}),
+    mimeType: input.mimeType,
+    created: Date.now(),
+    storageUrl,
+    objectPath: input.objectPath ?? storageUrl,
+  };
+
+  const imageElement = {
+    ...createElementBase(elementId),
+    type: "image",
+    x: display.x,
+    y: display.y,
+    width: display.width,
+    height: display.height,
+    fileId,
+    status: "saved",
+    scale: [1, 1],
+    crop: null,
+    customData: {
+      source: "generated",
+      jobId: input.jobId,
+      ...(input.assetId ? { assetId: input.assetId } : {}),
+      storageUrl,
+      objectPath: input.objectPath ?? storageUrl,
+      ...(input.title ? { title: input.title } : {}),
+    },
+  };
+
+  if (generatorIndex >= 0) {
+    elements[generatorIndex] = imageElement;
+  } else {
+    elements.push(imageElement);
+  }
+
+  await writeCanvasContent(client, input.canvasId, {
+    ...content,
+    elements,
+    files,
+  });
+
+  return { elementId };
+}
+
 export async function insertVideoElement(
   client: CanvasClient,
   input: {
@@ -446,6 +546,12 @@ function finiteNumber(value: unknown) {
 
 function numberOrZero(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function generateId(): string {

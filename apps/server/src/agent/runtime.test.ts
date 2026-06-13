@@ -380,6 +380,7 @@ describe("createAgentRunService", () => {
       result: {
         asset_id: "asset-1",
         signed_url: "http://127.0.0.1:3001/local-assets/asset-1",
+        object_path: "generated/asset-1.png",
         mime_type: "image/png",
         width: 1024,
         height: 1024,
@@ -508,6 +509,183 @@ describe("createAgentRunService", () => {
     });
     expect(canvasState.content.elements).toHaveLength(1);
     expect(canvasState.content.elements[0]).toMatchObject({
+      type: "image",
+      customData: {
+        assetId: "asset-1",
+        jobId: "job-1",
+        source: "generated",
+        storageUrl: "/local-assets/asset-1",
+        title: "logo",
+      },
+    });
+    const fileId = canvasState.content.elements[0]?.fileId as string;
+    expect(canvasState.content.files[fileId]).toMatchObject({
+      assetId: "asset-1",
+      mimeType: "image/png",
+      objectPath: "generated/asset-1.png",
+      storageUrl: "/local-assets/asset-1",
+    });
+    expect(getJobAdmin).toHaveBeenCalledWith("job-1");
+  });
+
+  it("keeps image generation nodes visible while job polling is pending", async () => {
+    let capturedGatewaySession:
+      | {
+          submitImageJob?: (input: {
+            aspectRatio: string;
+            model: string;
+            prompt: string;
+            title: string;
+          }) => Promise<{
+            error?: string;
+            elementId?: string;
+            imageUrl?: string;
+            jobId: string;
+            mimeType?: string;
+            status?: "generating";
+            width?: number;
+            height?: number;
+          }>;
+        }
+      | undefined;
+    const createSession = vi.fn((input) => {
+      capturedGatewaySession = input;
+      return { token: "tool-token" };
+    });
+    const canvasState = {
+      content: {
+        elements: [] as Array<Record<string, unknown>>,
+        appState: {},
+        files: {},
+      },
+    };
+    let releaseJob: (() => void) | undefined;
+    const getJobAdmin = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          releaseJob = () =>
+            resolve({
+              attempt_count: 0,
+              max_attempts: 3,
+              result: {
+                asset_id: "asset-1",
+                signed_url: "http://127.0.0.1:3001/local-assets/asset-1",
+                mime_type: "image/png",
+                width: 1024,
+                height: 1024,
+              },
+              status: "succeeded",
+            });
+        }),
+    );
+
+    const runs = createAgentRunService({
+      createUserClient: () => ({
+        from(table: string) {
+          if (table === "canvases") {
+            return {
+              select() {
+                return this;
+              },
+              eq() {
+                return this;
+              },
+              async single() {
+                return { data: { content: canvasState.content }, error: null };
+              },
+              async maybeSingle() {
+                return { data: null, error: null };
+              },
+              update(payload: {
+                content: {
+                  elements: Array<Record<string, unknown>>;
+                  appState: Record<string, unknown>;
+                  files: Record<string, unknown>;
+                };
+              }) {
+                canvasState.content = payload.content;
+                return {
+                  async eq() {
+                    return { error: null };
+                  },
+                };
+              },
+            };
+          }
+          expect(table).toBe("workspaces");
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            limit() {
+              return this;
+            },
+            async single() {
+              return { data: { id: "workspace-1" }, error: null };
+            },
+          };
+        },
+      }),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {
+        createJob: vi.fn(async () => ({ id: "job-1" })),
+        getJobAdmin,
+      } as never,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession,
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "conversation-1",
+        prompt: "生成一张图",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the local tool gateway session is created.
+    }
+
+    const submitImageJob = capturedGatewaySession?.submitImageJob;
+    expect(submitImageJob).toBeTypeOf("function");
+    if (!submitImageJob) {
+      throw new Error("Expected local tool gateway to receive submitImageJob");
+    }
+    const promise = submitImageJob({
+      aspectRatio: "1:1",
+      model: "agnes-image/agnes-image-2.1-flash",
+      prompt: "young playful logo",
+      title: "logo",
+    });
+    await vi.waitFor(() => {
+      expect(canvasState.content.elements).toHaveLength(1);
+    });
+    expect(canvasState.content.elements[0]).toMatchObject({
       type: "rectangle",
       customData: {
         type: "image-generator",
@@ -516,7 +694,12 @@ describe("createAgentRunService", () => {
         prompt: "young playful logo",
       },
     });
-    expect(getJobAdmin).toHaveBeenCalledWith("job-1");
+    releaseJob?.();
+    await expect(promise).resolves.toMatchObject({
+      elementId: expect.any(String),
+      imageUrl: "http://127.0.0.1:3001/local-assets/asset-1",
+      jobId: "job-1",
+    });
   });
 
   it("returns video jobs with canvas generation nodes before polling", async () => {

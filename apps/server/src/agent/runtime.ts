@@ -29,6 +29,7 @@ import type { ServerEnv } from "../config/env.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
   type Placement,
+  completeImageGenerationNode,
   createCanvasAutoPlacementSequence,
   insertImageGenerationNode,
   insertVideoGenerationNode,
@@ -1010,6 +1011,36 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             job.id,
             jobLap,
           );
+          if (canvasId) {
+            try {
+              const completed = await completeImageGenerationNode(client, {
+                canvasId,
+                jobId: job.id,
+                ...(elementId != null ? { elementId } : {}),
+                ...(finalResult.assetId != null
+                  ? { assetId: finalResult.assetId }
+                  : {}),
+                signedUrl: finalResult.imageUrl,
+                ...(finalResult.objectPath != null
+                  ? { objectPath: finalResult.objectPath }
+                  : {}),
+                mimeType: finalResult.mimeType,
+                width: finalResult.width,
+                height: finalResult.height,
+                title: input.title,
+              });
+              elementId = completed.elementId;
+              publishCanvasSync();
+              jobLap("canvas_generation_node_completed", {
+                elementId,
+              });
+            } catch (completeErr) {
+              console.error(
+                "[submitImageJob] canvas generation node complete failed:",
+                completeErr,
+              );
+            }
+          }
           return {
             jobId: job.id,
             ...(elementId != null ? { elementId } : {}),
@@ -1426,6 +1457,7 @@ async function waitForImageJobResult(
       const mimeType = result.mime_type;
       const width = result.width;
       const height = result.height;
+      const objectPath = result.object_path;
       if (
         typeof imageUrl !== "string" ||
         typeof mimeType !== "string" ||
@@ -1441,6 +1473,7 @@ async function waitForImageJobResult(
       return {
         imageUrl,
         ...(typeof assetId === "string" ? { assetId } : {}),
+        ...(typeof objectPath === "string" ? { objectPath } : {}),
         mimeType,
         width,
         height,
