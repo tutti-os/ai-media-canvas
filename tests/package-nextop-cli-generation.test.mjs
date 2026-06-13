@@ -4,9 +4,9 @@ import test from "node:test";
 import {
   createCliManifest,
   renderCommandsGuide,
-} from "../scripts/package-nextop-app.mjs";
+} from "../scripts/package-tutti-app.mjs";
 
-test("Nextop CLI generation commands require explicit models", () => {
+test("Tutti CLI generation commands require explicit models", () => {
   const manifest = createCliManifest();
   const imageCommand = manifest.commands.find(
     (command) => command.path.join(" ") === "generation image",

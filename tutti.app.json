@@ -1,7 +1,7 @@
 {
-  "schemaVersion": "nextop.app.manifest.v1",
+  "schemaVersion": "tutti.app.manifest.v1",
   "appId": "ai-media-canvas",
-  "version": "0.0.10",
+  "version": "0.0.12",
   "name": "AI Media Canvas",
   "description": "Local-first AI canvas for image and video generation.",
   "icon": {
@@ -13,7 +13,7 @@
     "healthcheckPath": "/api/health"
   },
   "cli": {
-    "manifest": "nextop.cli.json"
+    "manifest": "tutti.cli.json"
   },
   "localizationInfo": {
     "defaultLocale": "en",
@@ -28,7 +28,7 @@
     "mode": "workspace-open"
   },
   "author": {
-    "name": "Nextop"
+    "name": "Tutti"
   },
   "tags": [
     "generated",

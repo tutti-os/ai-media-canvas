@@ -1251,10 +1251,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       let runtimeLease: { release(): void } | null = null;
 
       try {
-        const resolvedModel = run.modelOverride
-          ? run.runtimeKind === "local-agent" || run.modelOverride.includes(":")
-            ? run.modelOverride
-            : createDefaultModelSpecifier({ agentModel: run.modelOverride })
+        const modelOverride =
+          run.modelOverride?.startsWith("nextop:") && runtimeEnv.agentModel
+            ? runtimeEnv.agentModel
+            : run.modelOverride;
+        const resolvedModel = modelOverride
+          ? run.runtimeKind === "local-agent" || modelOverride.includes(":")
+            ? modelOverride
+            : createDefaultModelSpecifier({ agentModel: modelOverride })
           : options.model;
         const resolvedRuntimeTarget = runtimeControlPlane.resolveRuntimeTarget({
           model: resolvedModel,

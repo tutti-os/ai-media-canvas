@@ -2,11 +2,11 @@ import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { loadServerEnv } from "../config/env.js";
-import { registerNextopCliRoutes } from "./nextop-cli.js";
+import { registerTuttiCliRoutes } from "./nextop-cli.js";
 
 const apps: Array<ReturnType<typeof Fastify>> = [];
 
-describe("registerNextopCliRoutes", () => {
+describe("registerTuttiCliRoutes", () => {
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
   });
@@ -26,7 +26,7 @@ describe("registerNextopCliRoutes", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/nextop/cli/projects/create",
+      url: "/tutti/cli/projects/create",
       payload: {
         name: "Launch board",
         description: "A local planning canvas",
@@ -64,7 +64,7 @@ describe("registerNextopCliRoutes", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/nextop/cli/agent/run",
+      url: "/tutti/cli/agent/run",
       payload: {
         "session-id": "session-1",
         "conversation-id": "canvas-1",
@@ -101,7 +101,7 @@ describe("registerNextopCliRoutes", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/nextop/cli/generation/image",
+      url: "/tutti/cli/generation/image",
       payload: {
         prompt: "A launch poster",
       },
@@ -126,7 +126,7 @@ describe("registerNextopCliRoutes", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/nextop/cli/generation/video",
+      url: "/tutti/cli/generation/video",
       payload: {
         prompt: "A launch video",
       },
@@ -157,7 +157,7 @@ describe("registerNextopCliRoutes", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/nextop/cli/generation/image",
+      url: "/tutti/cli/generation/image",
       payload: {
         prompt: "A launch poster",
         model: "agnes-image/agnes-image-2.1-flash",
@@ -176,7 +176,7 @@ describe("registerNextopCliRoutes", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/nextop/cli/projects/get",
+      url: "/tutti/cli/projects/get",
       payload: {},
     });
 
@@ -194,7 +194,7 @@ describe("registerNextopCliRoutes", () => {
 function buildTestApp(overrides: Record<string, unknown> = {}) {
   const app = Fastify();
   apps.push(app);
-  void registerNextopCliRoutes(app, {
+  void registerTuttiCliRoutes(app, {
     agentOperations: {
       cancelRun: vi.fn(),
       listRunEvents: vi.fn(),

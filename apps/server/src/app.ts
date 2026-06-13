@@ -965,10 +965,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         ? payload.modelSource
         : workspaceSettings.defaultModelSource,
     );
+    const runtimeModel =
+      resolvedModel?.startsWith("nextop:") && runtimeEnv.agentModel
+        ? runtimeEnv.agentModel
+        : resolvedModel;
     if (
       runtimeEnv.trustedLocalAgentMode === false &&
       isLocalAgentRuntimeRequested({
-        ...(resolvedModel ? { model: resolvedModel } : {}),
+        ...(runtimeModel ? { model: runtimeModel } : {}),
         ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
         ...(payload.runtimeProvider
           ? { runtimeProvider: payload.runtimeProvider }
@@ -995,7 +999,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         accessToken: LOCAL_AGENT_ACCESS_TOKEN,
         assistantMessageId: assistantMessage.id,
         env: runtimeEnv,
-        ...(resolvedModel ? { model: resolvedModel } : {}),
+        ...(runtimeModel ? { model: runtimeModel } : {}),
         ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
         ...(payload.runtimeProvider
           ? { runtimeProvider: payload.runtimeProvider }

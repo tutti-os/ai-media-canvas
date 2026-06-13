@@ -429,11 +429,15 @@ async function handleRunCommand(
             : runtimeSettings?.settings.defaultModelSource,
         )
       : effectiveEnv;
-  log.lap("resolve", { threadId: !!threadId, model: resolvedModel });
+  const runtimeModel =
+    resolvedModel?.startsWith("nextop:") && runtimeEnv?.agentModel
+      ? runtimeEnv.agentModel
+      : resolvedModel;
+  log.lap("resolve", { threadId: !!threadId, model: runtimeModel });
   if (
     runtimeEnv?.trustedLocalAgentMode === false &&
     isLocalAgentRuntimeRequested({
-      model: resolvedModel,
+      model: runtimeModel,
       ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
       ...(payload.runtimeProvider
         ? { runtimeProvider: payload.runtimeProvider }
@@ -474,7 +478,7 @@ async function handleRunCommand(
     connectionId,
     ...(runtimeEnv ? { env: runtimeEnv } : {}),
     userId: authenticatedUser.id,
-    ...(resolvedModel ? { model: resolvedModel } : {}),
+    ...(runtimeModel ? { model: runtimeModel } : {}),
     ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
     ...(payload.runtimeProvider
       ? { runtimeProvider: payload.runtimeProvider }

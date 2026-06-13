@@ -1902,4 +1902,68 @@ describe("createAgentRunService", () => {
 
     expect(localAgentRuntimeRunMock).not.toHaveBeenCalled();
   });
+
+  it("uses the managed credential runtime model instead of the Nextop model id", async () => {
+    let capturedAgentOptions: unknown;
+    const agentFactory = vi.fn((agentOptions) => {
+      capturedAgentOptions = agentOptions;
+      return {
+        stream: vi.fn(),
+        streamEvents: vi.fn(() =>
+          (async function* () {
+            yield {
+              type: "run.completed" as const,
+              runId: "run-managed-agnes",
+              timestamp: "2026-06-13T00:00:00.000Z",
+            };
+          })(),
+        ),
+      };
+    });
+
+    const runs = createAgentRunService({
+      agentFactory,
+      env: {
+        agentBackendMode: "state",
+        agentModel: "openai:gpt-5.1",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      loadSessionMessages: async () => [],
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "hi",
+        sessionId: "session-1",
+      },
+      {
+        env: {
+          agentBackendMode: "state",
+          agentModel: "agnes:agnes-2.0-flash",
+          agnesApiKey: "nextop-managed-agnes-key",
+          port: 3001,
+          version: "0.0.0",
+          webOrigin: "http://localhost:3000",
+        },
+        model: "nextop:agnes:agnes-2.0-flash",
+        runtimeKind: "server-deepagent",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the agent factory.
+    }
+
+    expect(capturedAgentOptions).toMatchObject({
+      env: expect.objectContaining({
+        agentModel: "agnes:agnes-2.0-flash",
+        agnesApiKey: "nextop-managed-agnes-key",
+      }),
+      model: "agnes:agnes-2.0-flash",
+    });
+  });
 });
