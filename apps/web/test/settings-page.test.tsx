@@ -111,7 +111,6 @@ describe("SettingsPage", () => {
         volcesBaseUrl: "",
       },
     });
-
     render(<SettingsPage />);
 
     await userEvent.click(await screen.findByRole("button", { name: /通用/ }));
@@ -201,6 +200,185 @@ describe("SettingsPage", () => {
     expect(screen.queryByLabelText("OpenAI API Key")).not.toBeInTheDocument();
   });
 
+  it("prefills Agnes base URL and preset model IDs when Agnes settings are empty", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    updateWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
+        },
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+        agnesDefaultModel: "agnes:agnes-2.0-flash",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+
+    expect(await screen.findByLabelText("Agnes Base URL")).toHaveValue(
+      "https://apihub.agnes-ai.com/v1",
+    );
+    expect(screen.getByLabelText("Agnes model 1")).toHaveValue(
+      "agnes-2.0-flash",
+    );
+    expect(screen.getByLabelText("Agnes model 2")).toHaveValue(
+      "agnes-1.5-flash",
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Get Agnes API Key" }),
+    );
+
+    expect(openSpy).toHaveBeenCalledWith(
+      "https://platform.agnes-ai.com/settings/apiKeys",
+      "_blank",
+      "noopener,noreferrer",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerModels: expect.objectContaining({
+            agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
+          }),
+          agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+          agnesDefaultModel: "agnes:agnes-2.0-flash",
+        }),
+      ),
+    );
+    openSpy.mockRestore();
+  });
+
+  it("adds missing Agnes preset model IDs without removing existing custom models", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "agnes:agnes-custom",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          agnes: ["agnes:agnes-custom"],
+        },
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "agnes:agnes-custom",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+
+    expect(await screen.findByLabelText("Agnes model 1")).toHaveValue(
+      "agnes-2.0-flash",
+    );
+    expect(screen.getByLabelText("Agnes model 2")).toHaveValue(
+      "agnes-1.5-flash",
+    );
+    expect(screen.getByLabelText("Agnes model 3")).toHaveValue("agnes-custom");
+  });
+
+  it("hides Google Gemini and Vertex AI protocol credential entries", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "google:gemini-2.5-flash",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          google: ["google:gemini-2.5-flash"],
+        },
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://agnes.example/v1",
+        agnesDefaultModel: "",
+        googleApiKey: "google-local-key",
+        googleVertexProject: "vertex-project",
+        googleVertexLocation: "global",
+        googleVertexVideoLocation: "us-central1",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Google Gemini" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Vertex AI" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Agnes" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "OpenAI-compatible" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Anthropic" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Agnes API Key")).toHaveValue(
+      "sk-local-agnes",
+    );
+    expect(screen.queryByLabelText("Google API Key")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Vertex Project")).not.toBeInTheDocument();
+  });
+
   it("auto-imports detected API provider models when the provider has no configured models", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
@@ -236,7 +414,7 @@ describe("SettingsPage", () => {
         defaultModel: "agnes:agnes-2.0-flash",
         providerModels: {
           ...EMPTY_PROVIDER_MODELS,
-          agnes: ["agnes:agnes-2.0-flash"],
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
         },
         openAIApiKey: "",
         openAIApiBase: "",
@@ -277,9 +455,9 @@ describe("SettingsPage", () => {
     await waitFor(() =>
       expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          defaultModel: "agnes:agnes-2.0-flash",
+          defaultModel: "",
           providerModels: expect.objectContaining({
-            agnes: ["agnes:agnes-2.0-flash"],
+            agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
           }),
           agnesDefaultModel: "agnes:agnes-2.0-flash",
         }),
@@ -294,7 +472,7 @@ describe("SettingsPage", () => {
         providerModels: {
           openai: ["openai:gpt-4.1"],
           anthropic: ["anthropic:claude-sonnet-4-5"],
-          agnes: ["agnes:agnes-2.0-flash"],
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
           google: ["google:gemini-2.5-flash"],
           vertex: [],
         },
@@ -320,7 +498,7 @@ describe("SettingsPage", () => {
         providerModels: {
           openai: ["openai:gpt-4.1"],
           anthropic: ["anthropic:claude-sonnet-4-5"],
-          agnes: ["agnes:agnes-2.0-flash"],
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
           google: ["google:gemini-2.5-flash"],
           vertex: [],
         },
@@ -403,7 +581,7 @@ describe("SettingsPage", () => {
         providerModels: {
           openai: ["openai:gpt-4.1"],
           anthropic: ["anthropic:claude-sonnet-4-5"],
-          agnes: ["agnes:agnes-2.0-flash"],
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
           google: ["google:gemini-2.5-flash"],
           vertex: [],
         },
@@ -546,18 +724,94 @@ describe("SettingsPage", () => {
     });
     updateWorkspaceSettingsMock.mockResolvedValue({
       settings: {
-        defaultModel: "openai:deepseek-chat",
+        defaultModel: "openai:deepseek-v4-flash",
         providerModels: {
           ...EMPTY_PROVIDER_MODELS,
           openai: [
-            "openai:deepseek-chat",
-            "openai:deepseek-reasoner",
             "openai:deepseek-v4-flash",
             "openai:deepseek-v4-pro",
+            "openai:deepseek-chat",
+            "openai:deepseek-reasoner",
           ],
         },
         openAIApiKey: "sk-local-openai",
         openAIApiBase: "https://api.deepseek.com",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "OpenAI-compatible" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("combobox", { name: "Quick fill provider" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "DeepSeek - OpenAI" }),
+    );
+
+    expect(screen.getByLabelText("OpenAI Base URL")).toHaveValue(
+      "https://api.deepseek.com",
+    );
+    expect(screen.getByLabelText("OpenAI-compatible model 1")).toHaveValue(
+      "deepseek-v4-flash",
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Get DeepSeek - OpenAI API Key" }),
+    );
+
+    expect(openSpy).toHaveBeenCalledWith(
+      "https://platform.deepseek.com/api_keys",
+      "_blank",
+      "noopener,noreferrer",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaultModel: "openai:deepseek-v4-flash",
+          openAIApiBase: "https://api.deepseek.com",
+          providerModels: expect.objectContaining({
+            openai: [
+              "openai:deepseek-v4-flash",
+              "openai:deepseek-v4-pro",
+              "openai:deepseek-chat",
+              "openai:deepseek-reasoner",
+            ],
+          }),
+        }),
+      ),
+    );
+    openSpy.mockRestore();
+  });
+
+  it("quick fills current OpenAI API model presets", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
         anthropicApiKey: "",
         anthropicBaseUrl: "",
         agnesApiKey: "",
@@ -581,35 +835,27 @@ describe("SettingsPage", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "OpenAI-compatible" }),
     );
-    await userEvent.selectOptions(
-      await screen.findByLabelText("Quick fill provider"),
-      "https://api.deepseek.com",
+    await userEvent.click(
+      await screen.findByRole("combobox", { name: "Quick fill provider" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "OpenAI" }),
     );
 
     expect(screen.getByLabelText("OpenAI Base URL")).toHaveValue(
-      "https://api.deepseek.com",
+      "https://api.openai.com/v1",
     );
     expect(screen.getByLabelText("OpenAI-compatible model 1")).toHaveValue(
-      "deepseek-chat",
+      "gpt-5.5",
     );
-
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          defaultModel: "openai:deepseek-chat",
-          openAIApiBase: "https://api.deepseek.com",
-          providerModels: expect.objectContaining({
-            openai: [
-              "openai:deepseek-chat",
-              "openai:deepseek-reasoner",
-              "openai:deepseek-v4-flash",
-              "openai:deepseek-v4-pro",
-            ],
-          }),
-        }),
-      ),
+    expect(screen.getByLabelText("OpenAI-compatible model 2")).toHaveValue(
+      "gpt-5.4",
+    );
+    expect(screen.getByLabelText("OpenAI-compatible model 3")).toHaveValue(
+      "gpt-5.4-mini",
+    );
+    expect(screen.getByLabelText("OpenAI-compatible model 4")).toHaveValue(
+      "gpt-5.4-nano",
     );
   });
 

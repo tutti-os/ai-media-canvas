@@ -458,6 +458,7 @@ export default interface Resources {
         "defaultLlmModel": "默认 LLM 模型",
         "defaultModelDescription": "从下方已配置的模型列表中选择工作区默认模型。",
         "defaultModelTitle": "默认模型",
+        "getApiKey": "获取 {{provider}} API Key",
         "importDetected": "导入已检测模型",
         "noApiProviderModelSelected": "未选择 API provider 模型",
         "noModelsYet": "暂无模型",

@@ -41,7 +41,10 @@ import {
   ChatServiceError,
 } from "./features/chat/chat-service.js";
 import { createJobService } from "./features/jobs/job-service.js";
-import { createNextopManagedCredentialService } from "./features/nextop-managed/credential-service.js";
+import {
+  createNextopManagedCredentialService,
+  isManagedModelId,
+} from "./features/nextop-managed/credential-service.js";
 import {
   type ProjectService,
   ProjectServiceError,
@@ -966,7 +969,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         : workspaceSettings.defaultModelSource,
     );
     const runtimeModel =
-      resolvedModel?.startsWith("nextop:") && runtimeEnv.agentModel
+      isManagedModelId(resolvedModel) && runtimeEnv.agentModel
         ? runtimeEnv.agentModel
         : resolvedModel;
     if (

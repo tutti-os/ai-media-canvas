@@ -115,16 +115,25 @@ describe("createNextopManagedCredentialService", () => {
     );
     expect(apiProviderEnv.openAIApiKey).toBe("api-provider-key");
 
+    await expect(service.listModels()).resolves.toEqual([
+      {
+        id: "tutti:openai:gpt-5.1",
+        name: "GPT-5.1",
+        provider: "openai",
+        source: "nextop-managed",
+      },
+    ]);
+
     const nextopManagedEnv = await service.resolveEnvForModel(
       createEnv(),
-      "nextop:openai:gpt-5.1",
+      "tutti:openai:gpt-5.1",
       "nextop-managed",
     );
     expect(nextopManagedEnv.openAIApiKey).toBe("nextop-managed-key");
     expect(nextopManagedEnv.agentModel).toBe("openai:gpt-5.1");
   });
 
-  it("resolves Nextop-prefixed models even when the stored source is stale", async () => {
+  it("resolves Tutti-prefixed models even when the stored source is stale", async () => {
     const env = createEnv();
     const requestedModels: string[] = [];
     const service = createNextopManagedCredentialService({
@@ -159,7 +168,7 @@ describe("createNextopManagedCredentialService", () => {
 
     const resolvedEnv = await service.resolveEnvForModel(
       createEnv(),
-      "nextop:agnes:agnes-2.0-flash",
+      "tutti:agnes:agnes-2.0-flash",
       "api-provider",
     );
 
@@ -257,17 +266,17 @@ describe("createNextopManagedCredentialService", () => {
 
     const modelAEnv = await service.resolveEnvForModel(
       createEnv(),
-      "nextop:agnes:model-a",
+      "tutti:agnes:model-a",
       "nextop-managed",
     );
     const modelBEnv = await service.resolveEnvForModel(
       createEnv(),
-      "nextop:agnes:model-b",
+      "tutti:agnes:model-b",
       "nextop-managed",
     );
     const modelAEnvAgain = await service.resolveEnvForModel(
       createEnv(),
-      "nextop:agnes:model-a",
+      "tutti:agnes:model-a",
       "nextop-managed",
     );
 
@@ -285,7 +294,7 @@ describe("createNextopManagedCredentialService", () => {
       providers: ["openai"],
       models: [
         {
-          id: "nextop:openai:gpt-5.1",
+          id: "tutti:openai:gpt-5.1",
           name: "GPT-5.1",
           provider: "openai",
         },
@@ -317,7 +326,7 @@ describe("createNextopManagedCredentialService", () => {
     await expect(service.listModels()).resolves.toEqual([]);
     const env = await service.resolveEnvForModel(
       createEnv(),
-      "nextop:openai:gpt-5.1",
+      "tutti:openai:gpt-5.1",
       "nextop-managed",
     );
     expect(env.openAIApiKey).toBe("api-provider-key");

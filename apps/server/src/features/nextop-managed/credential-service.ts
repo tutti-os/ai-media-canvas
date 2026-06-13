@@ -15,6 +15,8 @@ import type { LocalStore } from "../../local/store.js";
 const PROVIDER_CREDENTIAL_TTL_MS = 5 * 60 * 60 * 1000;
 const PROVIDER_CREDENTIAL_REFRESH_WINDOW_MS = 10 * 60 * 1000;
 const CONNECT_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const MANAGED_MODEL_ID_PREFIX = "tutti";
+const LEGACY_MANAGED_MODEL_ID_PREFIX = "nextop";
 
 export type NextopManagedProviderCredential = {
   provider: NextopManagedProviderId;
@@ -103,7 +105,8 @@ export function createNextopManagedCredentialService(options: {
   const exchangeClient =
     options.exchangeClient ?? createDefaultNextopManagedExchangeClient();
   const modelCatalogClient =
-    options.modelCatalogClient ?? createDefaultNextopManagedModelCatalogClient();
+    options.modelCatalogClient ??
+    createDefaultNextopManagedModelCatalogClient();
   const providerCredentialClient =
     options.providerCredentialClient ??
     createDefaultNextopManagedProviderCredentialClient();
@@ -159,7 +162,7 @@ export function createNextopManagedCredentialService(options: {
     });
     const expiresAt = normalizeCredentialExpiry(exchange.expiresAt, now());
     const models = normalizeModels(
-      exchange.models?.length ? exchange.models : input.models ?? [],
+      exchange.models?.length ? exchange.models : (input.models ?? []),
     );
     const providers = normalizeProviderIds(
       input.providers?.length ? input.providers : exchange.providers,
@@ -208,10 +211,11 @@ export function createNextopManagedCredentialService(options: {
   ) {
     if (!modelId) return false;
     const connection = getConnection();
-    if (modelId.startsWith("nextop:")) {
+    const normalizedModelId = normalizeManagedModelId(modelId);
+    if (normalizedModelId) {
       return (
         connection.connected &&
-        connection.models.some((model) => model.id === modelId)
+        connection.models.some((model) => model.id === normalizedModelId)
       );
     }
     if (source === "api-provider" || source === "local-agent") return false;
@@ -236,7 +240,11 @@ export function createNextopManagedCredentialService(options: {
       modelRef.model,
       "agent",
     );
-    return applyProviderCredential(baseEnv, credential, modelRef.runtimeModelId);
+    return applyProviderCredential(
+      baseEnv,
+      credential,
+      modelRef.runtimeModelId,
+    );
   }
 
   async function getFreshCredential(
@@ -431,7 +439,9 @@ function createNextopManagedGrantCollectionUrl(env: ServerEnv) {
   };
 }
 
-function isNextopManagedRuntimeConfigured(env: ServerEnv): env is ServerEnv &
+function isNextopManagedRuntimeConfigured(
+  env: ServerEnv,
+): env is ServerEnv &
   Required<
     Pick<
       ServerEnv,
@@ -455,7 +465,9 @@ function createNextopManagedGrantUrl(env: ServerEnv, grantRef: string) {
   return { token, url };
 }
 
-function normalizeExchangePayload(payload: unknown): NextopManagedExchangeResult {
+function normalizeExchangePayload(
+  payload: unknown,
+): NextopManagedExchangeResult {
   const result = normalizeResultRecord(payload);
   const grantRef = String(result.grantRef ?? result.grant_ref ?? "").trim();
   if (!grantRef) {
@@ -511,7 +523,11 @@ function normalizeCredentialPayload(
           ? { baseUrl: rawCredential.base_url }
           : {}),
       ...(Array.isArray(rawCredential.models)
-        ? { models: normalizeModels(rawCredential.models as NextopManagedModel[]) }
+        ? {
+            models: normalizeModels(
+              rawCredential.models as NextopManagedModel[],
+            ),
+          }
         : {}),
     }),
     ...(expiresAt ? { expiresAt } : {}),
@@ -537,7 +553,10 @@ function readExpiresAt(record: Record<string, unknown>) {
       : undefined;
 }
 
-function normalizeCredentialExpiry(expiresAt: string | undefined, nowMs: number) {
+function normalizeCredentialExpiry(
+  expiresAt: string | undefined,
+  nowMs: number,
+) {
   const maxExpiresAtMs = nowMs + PROVIDER_CREDENTIAL_TTL_MS;
   const parsed = expiresAt ? Date.parse(expiresAt) : Number.NaN;
   const expiresAtMs =
@@ -570,8 +589,8 @@ function normalizeModels(models: readonly NextopManagedModel[]) {
     if (!provider) continue;
     const rawId = model.id.trim();
     if (!rawId) continue;
-    const modelPart = stripProviderPrefix(provider, stripNextopPrefix(rawId));
-    const id = `nextop:${provider}:${modelPart}`;
+    const modelPart = stripProviderPrefix(provider, stripManagedPrefix(rawId));
+    const id = `${MANAGED_MODEL_ID_PREFIX}:${provider}:${modelPart}`;
     if (seen.has(id)) continue;
     seen.add(id);
     normalized.push({
@@ -604,16 +623,16 @@ function normalizeCredential(
 
 function parseManagedModelRef(modelId: string) {
   const parts = modelId.split(":");
-  if (parts.length < 3 || parts[0] !== "nextop") {
-    throw new Error(`Invalid Nextop Managed model id: ${modelId}`);
+  if (parts.length < 3 || !isManagedModelPrefix(parts[0] ?? "")) {
+    throw new Error(`Invalid Tutti Managed model id: ${modelId}`);
   }
   const [provider] = normalizeProviderIds([parts[1] ?? ""]);
   if (!provider) {
-    throw new Error(`Unsupported Nextop Managed provider: ${parts[1] ?? ""}`);
+    throw new Error(`Unsupported Tutti Managed provider: ${parts[1] ?? ""}`);
   }
   const model = parts.slice(2).join(":").trim();
   if (!model) {
-    throw new Error(`Invalid Nextop Managed model id: ${modelId}`);
+    throw new Error(`Invalid Tutti Managed model id: ${modelId}`);
   }
   return {
     model,
@@ -622,8 +641,29 @@ function parseManagedModelRef(modelId: string) {
   };
 }
 
-function stripNextopPrefix(value: string) {
-  return value.startsWith("nextop:") ? value.slice("nextop:".length) : value;
+export function isManagedModelId(modelId: string | null | undefined) {
+  const prefix = modelId?.split(":", 1)[0] ?? "";
+  return isManagedModelPrefix(prefix);
+}
+
+function normalizeManagedModelId(modelId: string) {
+  if (!isManagedModelId(modelId)) return null;
+  const modelRef = parseManagedModelRef(modelId);
+  return `${MANAGED_MODEL_ID_PREFIX}:${modelRef.provider}:${modelRef.model}`;
+}
+
+function isManagedModelPrefix(prefix: string) {
+  return (
+    prefix === MANAGED_MODEL_ID_PREFIX ||
+    prefix === LEGACY_MANAGED_MODEL_ID_PREFIX
+  );
+}
+
+function stripManagedPrefix(value: string) {
+  const prefix = value.split(":", 1)[0] ?? "";
+  return isManagedModelPrefix(prefix)
+    ? value.slice(`${prefix}:`.length)
+    : value;
 }
 
 function stripProviderPrefix(provider: string, value: string) {
@@ -666,12 +706,9 @@ function credentialCacheKey(input: {
   model: string;
   provider: NextopManagedProviderId;
 }) {
-  return [
-    input.grantRef,
-    input.provider,
-    input.model,
-    input.capability,
-  ].join("\u0000");
+  return [input.grantRef, input.provider, input.model, input.capability].join(
+    "\u0000",
+  );
 }
 
 function verifyContextToken(env: ServerEnv, token: string) {

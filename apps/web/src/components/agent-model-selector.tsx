@@ -158,8 +158,9 @@ export function AgentModelSelector({
   const { model, modelSource, setModel } = useAgentModel();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsInitialSourceTab, setSettingsInitialSourceTab] =
-    useState<AgentModelSourceTab | undefined>();
+  const [settingsInitialSourceTab, setSettingsInitialSourceTab] = useState<
+    AgentModelSourceTab | undefined
+  >();
   const [models, setModels] = useState<ModelOption[]>([]);
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
     string | null
@@ -263,30 +264,41 @@ export function AgentModelSelector({
   }, [open]);
 
   const selectedModel = models.find((m) => m.id === model);
+  const selectedModelSource =
+    modelSource ??
+    (selectedModel
+      ? getModelSourceTab(selectedModel)
+      : getAgentModelSourceTab(model));
   const selectedProvider = selectedModel?.provider || getModelProvider(model);
+  const resolvedWorkspaceDefaultModelSource =
+    workspaceDefaultModelSource ??
+    getAgentModelSourceTab(workspaceDefaultModel);
   const workspaceDefaultProvider = getModelProvider(workspaceDefaultModel);
   const selectedProviderIsSupportedLocal =
+    selectedModelSource === "local-agent" &&
     selectedProvider &&
     isLocalCliProvider(selectedProvider) &&
     isSupportedLocalCliProvider(selectedProvider);
   const selectedProviderIsUnsupportedLocal =
+    selectedModelSource === "local-agent" &&
     selectedProvider &&
     isLocalCliProvider(selectedProvider) &&
     !isSupportedLocalCliProvider(selectedProvider);
   const workspaceDefaultProviderIsSupportedLocal =
+    resolvedWorkspaceDefaultModelSource === "local-agent" &&
     workspaceDefaultProvider &&
     isLocalCliProvider(workspaceDefaultProvider) &&
     isSupportedLocalCliProvider(workspaceDefaultProvider);
   const workspaceDefaultProviderIsUnsupportedLocal =
+    resolvedWorkspaceDefaultModelSource === "local-agent" &&
     workspaceDefaultProvider &&
     isLocalCliProvider(workspaceDefaultProvider) &&
     !isSupportedLocalCliProvider(workspaceDefaultProvider);
-  const triggerLocalProvider =
-    selectedProviderIsSupportedLocal
-      ? selectedProvider
-      : !model && workspaceDefaultProviderIsSupportedLocal
-        ? workspaceDefaultProvider
-        : "";
+  const triggerLocalProvider = selectedProviderIsSupportedLocal
+    ? selectedProvider
+    : !model && workspaceDefaultProviderIsSupportedLocal
+      ? workspaceDefaultProvider
+      : "";
   const triggerLocalProviderLabel = triggerLocalProvider
     ? formatLocalCliProviderLabel(triggerLocalProvider)
     : null;
@@ -573,7 +585,7 @@ export function AgentModelSelector({
                     ? t("agentModelSelector.noLocalCliModels")
                     : activeModelTab === "nextop-managed"
                       ? t("agentModelSelector.noNextopManagedModels")
-                    : t("agentModelSelector.noApiProviderModels")}
+                      : t("agentModelSelector.noApiProviderModels")}
                 </p>
                 {activeModelTab === "nextop-managed" ? (
                   <button
