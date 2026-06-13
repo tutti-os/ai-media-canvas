@@ -27,7 +27,10 @@ import type { ServerEnv } from "../config/env.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
-import type { NextopManagedCredentialService } from "../features/nextop-managed/credential-service.js";
+import {
+  type NextopManagedCredentialService,
+  isManagedModelId,
+} from "../features/nextop-managed/credential-service.js";
 import {
   LOCAL_WORKSPACE_ID,
   type SettingsService,
@@ -430,7 +433,7 @@ async function handleRunCommand(
         )
       : effectiveEnv;
   const runtimeModel =
-    resolvedModel?.startsWith("nextop:") && runtimeEnv?.agentModel
+    isManagedModelId(resolvedModel) && runtimeEnv?.agentModel
       ? runtimeEnv.agentModel
       : resolvedModel;
   log.lap("resolve", { threadId: !!threadId, model: runtimeModel });
