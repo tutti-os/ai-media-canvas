@@ -105,6 +105,10 @@ type ExcalidrawApi = {
   getAppState(): CanvasAppState;
   getFiles(): Record<string, CanvasFileRecord>;
   getSceneElements(): readonly CanvasSceneElement[];
+  onChange(
+    handler: (elements: CanvasSceneElement[], appState: CanvasAppState) => void,
+  ): () => void;
+  setActiveTool(tool: { type: string }): void;
   updateScene(scene: Record<string, unknown>): void;
 };
 

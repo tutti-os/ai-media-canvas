@@ -18,6 +18,7 @@ import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useToast } from "../../components/toast";
 import { Button } from "../../components/ui/button";
+import { useCanvasGenerationJobRecovery } from "../../hooks/use-canvas-generation-job-recovery";
 import { useWebSocket } from "../../hooks/use-websocket";
 import { useAppTranslation } from "../../i18n";
 import {
@@ -54,6 +55,12 @@ type ExcalidrawApiLike = {
   getAppState(): Record<string, unknown>;
   getFiles(): Record<string, CanvasFileRecord>;
   getSceneElements(): readonly CanvasSceneElement[];
+  onChange(
+    handler: (
+      elements: CanvasSceneElement[],
+      appState: Record<string, unknown>,
+    ) => void,
+  ): () => void;
   updateScene(scene: {
     captureUpdate?: string;
     elements: Record<string, unknown>[];
@@ -125,6 +132,7 @@ function CanvasPageContent() {
   tRef.current = t;
   toastErrorRef.current = toastError;
   currentCanvasIdRef.current = canvasId;
+  useCanvasGenerationJobRecovery(excalidrawApi);
 
   const routerRef = useRef(router);
   routerRef.current = router;
