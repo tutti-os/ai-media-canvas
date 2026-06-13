@@ -13,6 +13,7 @@
       "defaultLlmModel": "Default LLM Model",
       "defaultModelDescription": "Pick the workspace default from the model lists configured below.",
       "defaultModelTitle": "Default model",
+      "getApiKey": "Get {{provider}} API Key",
       "importDetected": "Import detected",
       "noApiProviderModelSelected": "No API provider model selected",
       "noModelsYet": "No models yet",

@@ -32,25 +32,40 @@ import {
 } from "../features/settings/settings-service.js";
 
 const OPENAI_MODELS: ModelInfo[] = [
-  { id: "openai:gpt-4.1", name: "OpenAI GPT-4.1", provider: "openai" },
-  { id: "openai:gpt-4o", name: "OpenAI GPT-4o", provider: "openai" },
-  { id: "openai:gpt-4o-mini", name: "OpenAI GPT-4o Mini", provider: "openai" },
+  { id: "openai:gpt-5.2", name: "OpenAI GPT-5.2", provider: "openai" },
+  {
+    id: "openai:gpt-5.2-pro",
+    name: "OpenAI GPT-5.2 Pro",
+    provider: "openai",
+  },
+  { id: "openai:gpt-5.1", name: "OpenAI GPT-5.1", provider: "openai" },
+  { id: "openai:gpt-5", name: "OpenAI GPT-5", provider: "openai" },
+  {
+    id: "openai:gpt-5-mini",
+    name: "OpenAI GPT-5 Mini",
+    provider: "openai",
+  },
+  {
+    id: "openai:gpt-5-nano",
+    name: "OpenAI GPT-5 Nano",
+    provider: "openai",
+  },
 ];
 
 const ANTHROPIC_MODELS: ModelInfo[] = [
   {
-    id: "anthropic:claude-sonnet-4-5",
-    name: "Claude Sonnet 4.5",
+    id: "anthropic:claude-sonnet-4-6",
+    name: "Claude Sonnet 4.6",
+    provider: "anthropic",
+  },
+  {
+    id: "anthropic:claude-opus-4-8",
+    name: "Claude Opus 4.8",
     provider: "anthropic",
   },
   {
     id: "anthropic:claude-haiku-4-5",
     name: "Claude Haiku 4.5",
-    provider: "anthropic",
-  },
-  {
-    id: "anthropic:claude-opus-4-1",
-    name: "Claude Opus 4.1",
     provider: "anthropic",
   },
 ];
@@ -71,6 +86,7 @@ const GOOGLE_MODELS: ModelInfo[] = [
 
 const AGNES_MODELS: ModelInfo[] = [
   { id: "agnes:agnes-2.0-flash", name: "Agnes 2.0 Flash", provider: "agnes" },
+  { id: "agnes:agnes-1.5-flash", name: "Agnes 1.5 Flash", provider: "agnes" },
 ];
 
 type LocalAgentModelDiscovery = Pick<

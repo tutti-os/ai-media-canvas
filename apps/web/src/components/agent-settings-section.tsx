@@ -1,6 +1,12 @@
 "use client";
 
-import { Cloud, Loader2, RefreshCw, Terminal } from "lucide-react";
+import {
+  Cloud,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  Terminal,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
@@ -79,11 +85,18 @@ type ApiProviderPreset = {
   provider: AgentProtocolId;
   label: string;
   baseUrl: string;
+  apiKeyUrl: string;
   model: string;
   models: string[];
 };
 
 const LOCAL_CLI_PROVIDER_ORDER = [...SUPPORTED_LOCAL_CLI_PROVIDERS];
+const AGNES_API_KEYS_URL = "https://platform.agnes-ai.com/settings/apiKeys";
+const ANTHROPIC_API_KEYS_URL = "https://console.anthropic.com/settings/keys";
+const DEEPSEEK_API_KEYS_URL = "https://platform.deepseek.com/api_keys";
+const MINIMAX_API_KEYS_URL = "https://platform.minimax.io/console/access";
+const MIMO_API_KEYS_URL = "https://platform.xiaomimimo.com/console/api-keys";
+const OPENAI_API_KEYS_URL = "https://platform.openai.com/api-keys";
 const DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
 const DEFAULT_AGNES_PROVIDER_MODELS = [
   "agnes:agnes-2.0-flash",
@@ -133,27 +146,31 @@ const API_PROVIDER_PRESETS: ApiProviderPreset[] = [
     provider: "anthropic",
     label: "Anthropic (Claude)",
     baseUrl: "https://api.anthropic.com",
-    model: "claude-sonnet-4-5",
-    models: ["claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"],
+    apiKeyUrl: ANTHROPIC_API_KEYS_URL,
+    model: "claude-sonnet-4-6",
+    models: ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5"],
   },
   {
     provider: "anthropic",
     label: "DeepSeek - Anthropic",
     baseUrl: "https://api.deepseek.com/anthropic",
-    model: "deepseek-chat",
+    apiKeyUrl: DEEPSEEK_API_KEYS_URL,
+    model: "deepseek-v4-flash",
     models: [
-      "deepseek-chat",
-      "deepseek-reasoner",
       "deepseek-v4-flash",
       "deepseek-v4-pro",
+      "deepseek-chat",
+      "deepseek-reasoner",
     ],
   },
   {
     provider: "anthropic",
     label: "MiniMax - Anthropic",
     baseUrl: "https://api.minimaxi.com/anthropic",
-    model: "MiniMax-M2.7-highspeed",
+    apiKeyUrl: MINIMAX_API_KEYS_URL,
+    model: "MiniMax-M3",
     models: [
+      "MiniMax-M3",
       "MiniMax-M2.7-highspeed",
       "MiniMax-M2.7",
       "MiniMax-M2.5-highspeed",
@@ -167,27 +184,38 @@ const API_PROVIDER_PRESETS: ApiProviderPreset[] = [
     provider: "openai",
     label: "OpenAI",
     baseUrl: "https://api.openai.com/v1",
-    model: "gpt-4o",
-    models: ["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
+    apiKeyUrl: OPENAI_API_KEYS_URL,
+    model: "gpt-5.2",
+    models: [
+      "gpt-5.2",
+      "gpt-5.2-pro",
+      "gpt-5.1",
+      "gpt-5",
+      "gpt-5-mini",
+      "gpt-5-nano",
+    ],
   },
   {
     provider: "openai",
     label: "DeepSeek - OpenAI",
     baseUrl: "https://api.deepseek.com",
-    model: "deepseek-chat",
+    apiKeyUrl: DEEPSEEK_API_KEYS_URL,
+    model: "deepseek-v4-flash",
     models: [
-      "deepseek-chat",
-      "deepseek-reasoner",
       "deepseek-v4-flash",
       "deepseek-v4-pro",
+      "deepseek-chat",
+      "deepseek-reasoner",
     ],
   },
   {
     provider: "openai",
     label: "MiniMax - OpenAI",
     baseUrl: "https://api.minimaxi.com/v1",
-    model: "MiniMax-M2.7-highspeed",
+    apiKeyUrl: MINIMAX_API_KEYS_URL,
+    model: "MiniMax-M3",
     models: [
+      "MiniMax-M3",
       "MiniMax-M2.7-highspeed",
       "MiniMax-M2.7",
       "MiniMax-M2.5-highspeed",
@@ -201,6 +229,7 @@ const API_PROVIDER_PRESETS: ApiProviderPreset[] = [
     provider: "openai",
     label: "MiMo (Xiaomi) - OpenAI",
     baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
+    apiKeyUrl: MIMO_API_KEYS_URL,
     model: "mimo-v2.5-pro",
     models: ["mimo-v2.5-pro"],
   },
@@ -208,6 +237,7 @@ const API_PROVIDER_PRESETS: ApiProviderPreset[] = [
     provider: "anthropic",
     label: "MiMo (Xiaomi) - Anthropic",
     baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic",
+    apiKeyUrl: MIMO_API_KEYS_URL,
     model: "mimo-v2.5-pro",
     models: ["mimo-v2.5-pro"],
   },
@@ -408,6 +438,17 @@ function getApiProviderBaseUrl(
   return "";
 }
 
+function getSelectedApiProviderPreset(
+  settings: WorkspaceSettings,
+  provider: AgentProtocolId,
+) {
+  const currentBaseUrl = getApiProviderBaseUrl(settings, provider);
+  return API_PROVIDER_PRESETS.find(
+    (preset) =>
+      preset.provider === provider && preset.baseUrl === currentBaseUrl,
+  );
+}
+
 function withApiProviderBaseUrl(
   settings: WorkspaceSettings,
   provider: AgentProtocolId,
@@ -472,10 +513,7 @@ function QuickFillProviderField({
   );
   if (presets.length === 0) return null;
 
-  const currentBaseUrl = getApiProviderBaseUrl(settings, provider);
-  const selectedPreset = presets.find(
-    (preset) => preset.baseUrl === currentBaseUrl,
-  );
+  const selectedPreset = getSelectedApiProviderPreset(settings, provider);
   const selectedValue =
     selectedPreset?.baseUrl ?? CUSTOM_API_PROVIDER_PRESET_VALUE;
   const items = [
@@ -531,6 +569,29 @@ function QuickFillProviderField({
         </SelectContent>
       </Select>
     </div>
+  );
+}
+
+function ApiKeyLinkButton({
+  href,
+  providerLabel,
+}: {
+  href: string;
+  providerLabel: string;
+}) {
+  const { t } = useAppTranslation("settings");
+
+  return (
+    <Button
+      type="button"
+      variant="link"
+      size="sm"
+      className="h-auto px-0 text-sm"
+      onClick={() => window.open(href, "_blank", "noopener,noreferrer")}
+    >
+      {t("agentSettings.api.getApiKey", { provider: providerLabel })}
+      <ExternalLink data-icon="inline-end" />
+    </Button>
   );
 }
 
@@ -977,6 +1038,11 @@ export function AgentSettingsSection({
           )?.name ?? "")
         : "",
     [nextopManagedModels, settings],
+  );
+  const selectedOpenAIPreset = getSelectedApiProviderPreset(settings, "openai");
+  const selectedAnthropicPreset = getSelectedApiProviderPreset(
+    settings,
+    "anthropic",
   );
 
   function updateField<Key extends keyof WorkspaceSettings>(
@@ -1452,6 +1518,10 @@ export function AgentSettingsSection({
                           }
                           placeholder="sk-..."
                         />
+                        <ApiKeyLinkButton
+                          href={AGNES_API_KEYS_URL}
+                          providerLabel="Agnes"
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="agnesBaseUrl">Agnes Base URL</Label>
@@ -1504,6 +1574,12 @@ export function AgentSettingsSection({
                           }
                           placeholder="sk-..."
                         />
+                        {selectedOpenAIPreset ? (
+                          <ApiKeyLinkButton
+                            href={selectedOpenAIPreset.apiKeyUrl}
+                            providerLabel={selectedOpenAIPreset.label}
+                          />
+                        ) : null}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="openAIApiBase">OpenAI Base URL</Label>
@@ -1657,6 +1733,12 @@ export function AgentSettingsSection({
                           }
                           placeholder="sk-ant-..."
                         />
+                        {selectedAnthropicPreset ? (
+                          <ApiKeyLinkButton
+                            href={selectedAnthropicPreset.apiKeyUrl}
+                            providerLabel={selectedAnthropicPreset.label}
+                          />
+                        ) : null}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="anthropicBaseUrl">

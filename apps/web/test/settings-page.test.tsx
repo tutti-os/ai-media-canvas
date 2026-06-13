@@ -111,7 +111,6 @@ describe("SettingsPage", () => {
         volcesBaseUrl: "",
       },
     });
-
     render(<SettingsPage />);
 
     await userEvent.click(await screen.findByRole("button", { name: /通用/ }));
@@ -245,6 +244,7 @@ describe("SettingsPage", () => {
         volcesBaseUrl: "",
       },
     });
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
 
     render(<SettingsPage />);
 
@@ -262,6 +262,16 @@ describe("SettingsPage", () => {
       "agnes-1.5-flash",
     );
 
+    await userEvent.click(
+      screen.getByRole("button", { name: "Get Agnes API Key" }),
+    );
+
+    expect(openSpy).toHaveBeenCalledWith(
+      "https://platform.agnes-ai.com/settings/apiKeys",
+      "_blank",
+      "noopener,noreferrer",
+    );
+
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -275,6 +285,7 @@ describe("SettingsPage", () => {
         }),
       ),
     );
+    openSpy.mockRestore();
   });
 
   it("adds missing Agnes preset model IDs without removing existing custom models", async () => {
@@ -713,14 +724,14 @@ describe("SettingsPage", () => {
     });
     updateWorkspaceSettingsMock.mockResolvedValue({
       settings: {
-        defaultModel: "openai:deepseek-chat",
+        defaultModel: "openai:deepseek-v4-flash",
         providerModels: {
           ...EMPTY_PROVIDER_MODELS,
           openai: [
-            "openai:deepseek-chat",
-            "openai:deepseek-reasoner",
             "openai:deepseek-v4-flash",
             "openai:deepseek-v4-pro",
+            "openai:deepseek-chat",
+            "openai:deepseek-reasoner",
           ],
         },
         openAIApiKey: "sk-local-openai",
@@ -739,6 +750,7 @@ describe("SettingsPage", () => {
         volcesBaseUrl: "",
       },
     });
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
 
     render(<SettingsPage />);
 
@@ -759,7 +771,17 @@ describe("SettingsPage", () => {
       "https://api.deepseek.com",
     );
     expect(screen.getByLabelText("OpenAI-compatible model 1")).toHaveValue(
-      "deepseek-chat",
+      "deepseek-v4-flash",
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Get DeepSeek - OpenAI API Key" }),
+    );
+
+    expect(openSpy).toHaveBeenCalledWith(
+      "https://platform.deepseek.com/api_keys",
+      "_blank",
+      "noopener,noreferrer",
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -767,19 +789,20 @@ describe("SettingsPage", () => {
     await waitFor(() =>
       expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          defaultModel: "openai:deepseek-chat",
+          defaultModel: "openai:deepseek-v4-flash",
           openAIApiBase: "https://api.deepseek.com",
           providerModels: expect.objectContaining({
             openai: [
-              "openai:deepseek-chat",
-              "openai:deepseek-reasoner",
               "openai:deepseek-v4-flash",
               "openai:deepseek-v4-pro",
+              "openai:deepseek-chat",
+              "openai:deepseek-reasoner",
             ],
           }),
         }),
       ),
     );
+    openSpy.mockRestore();
   });
 
   it("lets the default model picker switch to Anthropic and choose a model", async () => {
