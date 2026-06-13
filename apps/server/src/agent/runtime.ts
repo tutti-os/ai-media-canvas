@@ -28,10 +28,10 @@ import type { AuthenticatedUser, UserDataClient } from "../auth/request.js";
 import type { ServerEnv } from "../config/env.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
+  type Placement,
   createCanvasAutoPlacementSequence,
   insertImageElement,
   insertVideoElement,
-  type Placement,
 } from "../features/canvas/canvas-element-writer.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import {
@@ -75,6 +75,9 @@ import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
 type BillingErrorCode = string;
 type ImageQualityLevel = "standard" | "hd" | "ultra";
+const IMAGE_JOB_POLL_INTERVAL_MS = 2_000;
+const IMAGE_JOB_MAX_WAIT_MS = 240_000;
+const LOCAL_AGENT_IMAGE_JOB_MAX_WAIT_MS = 110_000;
 type CanvasSummaryClient = {
   from(table: "canvases"): {
     select(columns: string): {
@@ -953,15 +956,22 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             runId,
           });
 
+          if (run.runtimeKind === "local-agent") {
+            jobLap("job_poll_done", { pollCount: 0, status: "deferred" });
+            return {
+              jobId: job.id,
+              error: `Job timed out after ${LOCAL_AGENT_IMAGE_JOB_MAX_WAIT_MS / 1000}s`,
+            };
+          }
+
           // Poll until terminal state
           // Worker image VT=120s, but Replicate calls can take 100s+ plus queue delay.
-          const POLL_INTERVAL = 2000;
-          const MAX_WAIT = 240_000; // 4 minutes
+          const maxWaitMs = IMAGE_JOB_MAX_WAIT_MS;
           const start = Date.now();
           let pollCount = 0;
 
-          while (Date.now() - start < MAX_WAIT) {
-            await delay(POLL_INTERVAL);
+          while (Date.now() - start < maxWaitMs) {
+            await delay(IMAGE_JOB_POLL_INTERVAL_MS);
             pollCount++;
 
             if (run.controller.signal.aborted) {
@@ -1073,7 +1083,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           jobLap("job_poll_done", { pollCount, status: "timeout" });
           return {
             jobId: job.id,
-            error: `Job timed out after ${MAX_WAIT / 1000}s`,
+            error: `Job timed out after ${maxWaitMs / 1000}s`,
           };
         };
 
@@ -1364,10 +1374,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       let runtimeLease: { release(): void } | null = null;
 
       try {
-        const resolvedModel = run.modelOverride
-          ? run.runtimeKind === "local-agent" || run.modelOverride.includes(":")
-            ? run.modelOverride
-            : createDefaultModelSpecifier({ agentModel: run.modelOverride })
+        const modelOverride =
+          run.modelOverride?.startsWith("nextop:") && runtimeEnv.agentModel
+            ? runtimeEnv.agentModel
+            : run.modelOverride;
+        const resolvedModel = modelOverride
+          ? run.runtimeKind === "local-agent" || modelOverride.includes(":")
+            ? modelOverride
+            : createDefaultModelSpecifier({ agentModel: modelOverride })
           : options.model;
         const resolvedRuntimeTarget = runtimeControlPlane.resolveRuntimeTarget({
           model: resolvedModel,

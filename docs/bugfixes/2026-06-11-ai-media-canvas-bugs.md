@@ -356,3 +356,15 @@
 - 验证方式和结果: 扩展 `apps/web/test/canvas-generation-panels.test.tsx`，覆盖图片/视频生成器面板点击删除后会向 Excalidraw scene 写入 `isDeleted: true` 并调用 `onClose`；`pnpm --filter @aimc/web exec vitest run test/canvas-generation-panels.test.tsx -t "deletes|skips inserting"` 通过；本批组合验证 `pnpm check:i18n`、`pnpm --filter @aimc/web typecheck` 通过。
 - 是否已修复完: 是
 - commit hash: `cda8bbd`
+
+## 追加批次（2026-06-13）
+
+### 35. Canvas 应用稳定生图失败
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/HeiorbBqPeV9MXc0K8icB2BZnac
+- 真实 record id: `recvmkIMkqbxiV`
+- Bug 原因: 附件截图中多次出现 `timed out awaiting tools/call after 120s` 和 Agnes 503；日志包 `/tmp/feishu-bug-runner/recvmkIMkqbxiV/nextop-logs-20260612-205834.zip` 显示 local-agent 触发 `generate_image` 后，图片生成请求耗时超过本地 MCP tool call 的 120s 上限，慢请求在工具层超时前没有把后台 `jobId` 返回给前端，导致用户看到稳定生图失败，后续 provider 503/422 也只能表现为失败卡片。
+- 修复方案: local-agent 路径的 `submitImageJob` 在创建后台图片 job 后立即返回带 `jobId` 的 timeout-style 结果，不再等待 worker 轮询；前端沿用既有 `jobId` fallback 轮询/自动插入链路，图片可继续在后台生成并落入画布，避免被 120s MCP 工具调用超时截断。非 local-agent 的 server 路径保留原有最多 4 分钟轮询行为。
+- 验证方式和结果: 新增 `apps/server/src/agent/runtime.test.ts` 回归用例，验证 local-agent 图片 job 创建后直接返回 `jobId` 且不会调用 `getJobAdmin` 进入轮询；`pnpm --filter @aimc/server exec vitest run src/agent/runtime.test.ts -t "returns local-agent image jobs"` 通过；`pnpm --filter @aimc/server exec vitest run src/agent/runtime.test.ts src/agent/local-agent-host/tool-gateway.test.ts` 通过（25 个测试）；`pnpm --filter @aimc/server typecheck` 通过。
+- 是否已修复完: 是
+- commit hash: 待提交后回填
