@@ -76,6 +76,11 @@ type ApiProviderPreset = {
 };
 
 const LOCAL_CLI_PROVIDER_ORDER = [...SUPPORTED_LOCAL_CLI_PROVIDERS];
+const DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
+const DEFAULT_AGNES_PROVIDER_MODELS = [
+  "agnes:agnes-2.0-flash",
+  "agnes:agnes-1.5-flash",
+];
 
 const AGENT_PROTOCOLS: Array<{
   id: AgentProtocolId;
@@ -252,6 +257,32 @@ function isInstallableLocalProvider(
   provider: string,
 ): provider is InstallableAgentProviderId {
   return provider === "codex" || provider === "claude";
+}
+
+function normalizeAgentSettings(
+  initialSettings: WorkspaceSettings,
+): WorkspaceSettings {
+  const agnesModels = Array.from(
+    new Set([
+      ...DEFAULT_AGNES_PROVIDER_MODELS,
+      ...(initialSettings.providerModels?.agnes ?? []),
+    ]),
+  );
+
+  return {
+    ...initialSettings,
+    agnesBaseUrl: initialSettings.agnesBaseUrl || DEFAULT_AGNES_BASE_URL,
+    agnesDefaultModel:
+      initialSettings.agnesDefaultModel || agnesModels[0] || "",
+    defaultModelSource: inferDefaultModelSource(initialSettings),
+    providerModels: {
+      openai: initialSettings.providerModels?.openai ?? [],
+      anthropic: initialSettings.providerModels?.anthropic ?? [],
+      agnes: agnesModels,
+      google: initialSettings.providerModels?.google ?? [],
+      vertex: initialSettings.providerModels?.vertex ?? [],
+    },
+  };
 }
 
 function groupLocalCliModels(models: ModelInfo[]): LocalCliProviderGroup[] {
@@ -763,17 +794,9 @@ export function AgentSettingsSection({
   surface = "page",
 }: AgentSettingsSectionProps) {
   const { t } = useAppTranslation("settings");
-  const [settings, setSettings] = useState<WorkspaceSettings>({
-    ...initialSettings,
-    defaultModelSource: inferDefaultModelSource(initialSettings),
-    providerModels: {
-      openai: initialSettings.providerModels?.openai ?? [],
-      anthropic: initialSettings.providerModels?.anthropic ?? [],
-      agnes: initialSettings.providerModels?.agnes ?? [],
-      google: initialSettings.providerModels?.google ?? [],
-      vertex: initialSettings.providerModels?.vertex ?? [],
-    },
-  });
+  const [settings, setSettings] = useState<WorkspaceSettings>(() =>
+    normalizeAgentSettings(initialSettings),
+  );
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [nextopManagedConnection, setNextopManagedConnection] =
     useState<NextopManagedConnection>({
@@ -804,17 +827,7 @@ export function AgentSettingsSection({
   } | null>(null);
 
   useEffect(() => {
-    setSettings({
-      ...initialSettings,
-      defaultModelSource: inferDefaultModelSource(initialSettings),
-      providerModels: {
-        openai: initialSettings.providerModels?.openai ?? [],
-        anthropic: initialSettings.providerModels?.anthropic ?? [],
-        agnes: initialSettings.providerModels?.agnes ?? [],
-        google: initialSettings.providerModels?.google ?? [],
-        vertex: initialSettings.providerModels?.vertex ?? [],
-      },
-    });
+    setSettings(normalizeAgentSettings(initialSettings));
   }, [initialSettings]);
 
   useEffect(() => {

@@ -201,6 +201,122 @@ describe("SettingsPage", () => {
     expect(screen.queryByLabelText("OpenAI API Key")).not.toBeInTheDocument();
   });
 
+  it("prefills Agnes base URL and preset model IDs when Agnes settings are empty", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    updateWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
+        },
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+        agnesDefaultModel: "agnes:agnes-2.0-flash",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+
+    expect(await screen.findByLabelText("Agnes Base URL")).toHaveValue(
+      "https://apihub.agnes-ai.com/v1",
+    );
+    expect(screen.getByLabelText("Agnes model 1")).toHaveValue(
+      "agnes-2.0-flash",
+    );
+    expect(screen.getByLabelText("Agnes model 2")).toHaveValue(
+      "agnes-1.5-flash",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerModels: expect.objectContaining({
+            agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
+          }),
+          agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+          agnesDefaultModel: "agnes:agnes-2.0-flash",
+        }),
+      ),
+    );
+  });
+
+  it("adds missing Agnes preset model IDs without removing existing custom models", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "agnes:agnes-custom",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          agnes: ["agnes:agnes-custom"],
+        },
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "agnes:agnes-custom",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+
+    expect(await screen.findByLabelText("Agnes model 1")).toHaveValue(
+      "agnes-2.0-flash",
+    );
+    expect(screen.getByLabelText("Agnes model 2")).toHaveValue(
+      "agnes-1.5-flash",
+    );
+    expect(screen.getByLabelText("Agnes model 3")).toHaveValue("agnes-custom");
+  });
+
   it("hides Google Gemini and Vertex AI protocol credential entries", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
@@ -287,7 +403,7 @@ describe("SettingsPage", () => {
         defaultModel: "agnes:agnes-2.0-flash",
         providerModels: {
           ...EMPTY_PROVIDER_MODELS,
-          agnes: ["agnes:agnes-2.0-flash"],
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
         },
         openAIApiKey: "",
         openAIApiBase: "",
@@ -328,9 +444,9 @@ describe("SettingsPage", () => {
     await waitFor(() =>
       expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          defaultModel: "agnes:agnes-2.0-flash",
+          defaultModel: "",
           providerModels: expect.objectContaining({
-            agnes: ["agnes:agnes-2.0-flash"],
+            agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
           }),
           agnesDefaultModel: "agnes:agnes-2.0-flash",
         }),
@@ -345,7 +461,7 @@ describe("SettingsPage", () => {
         providerModels: {
           openai: ["openai:gpt-4.1"],
           anthropic: ["anthropic:claude-sonnet-4-5"],
-          agnes: ["agnes:agnes-2.0-flash"],
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
           google: ["google:gemini-2.5-flash"],
           vertex: [],
         },
@@ -371,7 +487,7 @@ describe("SettingsPage", () => {
         providerModels: {
           openai: ["openai:gpt-4.1"],
           anthropic: ["anthropic:claude-sonnet-4-5"],
-          agnes: ["agnes:agnes-2.0-flash"],
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
           google: ["google:gemini-2.5-flash"],
           vertex: [],
         },
@@ -454,7 +570,7 @@ describe("SettingsPage", () => {
         providerModels: {
           openai: ["openai:gpt-4.1"],
           anthropic: ["anthropic:claude-sonnet-4-5"],
-          agnes: ["agnes:agnes-2.0-flash"],
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
           google: ["google:gemini-2.5-flash"],
           vertex: [],
         },
