@@ -52,6 +52,7 @@ import {
   type GenerationJobSubscription,
   generationJobService,
 } from "../lib/generation-job-service";
+import { normalizeLocalAssetStorageUrl } from "../lib/local-assets";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
 import { VideoPlayerPanel } from "./canvas/video-player-panel";
@@ -457,6 +458,7 @@ export function CanvasToolMenu({
   const replaceRecoveredImageGenerator = useCallback(
     async (element: any, result: Record<string, unknown>, jobId: string) => {
       const url = result.signed_url;
+      const assetId = result.asset_id;
       const mimeType = result.mime_type;
       const width = result.width;
       const height = result.height;
@@ -490,10 +492,17 @@ export function CanvasToolMenu({
           dataURL,
           mimeType,
           created: Date.now(),
+          ...(typeof assetId === "string" ? { assetId } : {}),
+          storageUrl:
+            normalizeLocalAssetStorageUrl(
+              url,
+              typeof assetId === "string" ? assetId : null,
+            ) ?? url,
         },
       ]);
 
       const imageElement = createExcalidrawImageElement({
+        ...(typeof assetId === "string" ? { assetId } : {}),
         fileId,
         x: current.x,
         y: current.y,
@@ -501,7 +510,11 @@ export function CanvasToolMenu({
         height: current.height,
         title: String(current.customData?.prompt ?? "").slice(0, 60),
         source: "generated",
-        storageUrl: url,
+        storageUrl:
+          normalizeLocalAssetStorageUrl(
+            url,
+            typeof assetId === "string" ? assetId : null,
+          ) ?? url,
       });
       const elements = excalidrawApi
         .getSceneElements()
@@ -509,7 +522,10 @@ export function CanvasToolMenu({
           item.id === current.id ? { ...item, isDeleted: true } : item,
         );
       excalidrawApi.updateScene({
-        elements: withNormalizedCanvasElementIndices([...elements, imageElement]),
+        elements: withNormalizedCanvasElementIndices([
+          ...elements,
+          imageElement,
+        ]),
         captureUpdate: "IMMEDIATELY",
       });
     },
@@ -519,6 +535,7 @@ export function CanvasToolMenu({
   const replaceRecoveredVideoGenerator = useCallback(
     async (element: any, result: Record<string, unknown>, jobId: string) => {
       const url = result.signed_url;
+      const assetId = result.asset_id;
       const mimeType = result.mime_type;
       const width = result.width;
       const height = result.height;
@@ -551,13 +568,18 @@ export function CanvasToolMenu({
       const newElements = convertToExcalidrawElements([
         {
           type: "embeddable",
-          link: url,
+          link:
+            normalizeLocalAssetStorageUrl(
+              url,
+              typeof assetId === "string" ? assetId : null,
+            ) ?? url,
           x: current.x,
           y: current.y,
           width: current.width,
           height: current.height,
           customData: {
             isVideo: true,
+            ...(typeof assetId === "string" ? { assetId } : {}),
             mimeType,
             ...(typeof durationSeconds === "number" ? { durationSeconds } : {}),
             title: String(current.customData?.prompt ?? "").slice(0, 60),
@@ -962,7 +984,8 @@ export function CanvasToolMenu({
   const clearSelectionForElement = useCallback(
     (elementId: string | null) => {
       if (!elementId || !excalidrawApi) return;
-      const selectedElementIds = excalidrawApi.getAppState()?.selectedElementIds;
+      const selectedElementIds =
+        excalidrawApi.getAppState()?.selectedElementIds;
       if (!selectedElementIds?.[elementId]) return;
       excalidrawApi.updateScene({
         appState: { selectedElementIds: {} },

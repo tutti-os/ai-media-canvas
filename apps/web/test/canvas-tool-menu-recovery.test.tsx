@@ -4,8 +4,8 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { generationJobWatchMock, convertToExcalidrawElementsMock } =
-  vi.hoisted(() => ({
+const { generationJobWatchMock, convertToExcalidrawElementsMock } = vi.hoisted(
+  () => ({
     generationJobWatchMock: vi.fn(),
     convertToExcalidrawElementsMock: vi.fn((items: any[]) =>
       items.map((item, index) => ({
@@ -13,7 +13,8 @@ const { generationJobWatchMock, convertToExcalidrawElementsMock } =
         ...item,
       })),
     ),
-  }));
+  }),
+);
 
 vi.mock("../src/lib/generation-job-service", async () => {
   const actual = await vi.importActual<
@@ -51,22 +52,24 @@ describe("CanvasToolMenu generation recovery", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    generationJobWatchMock.mockImplementation((_jobId: string, options: any) => {
-      const promise = Promise.resolve({
-      signed_url: "http://localhost:3001/local-assets/video-1",
-      mime_type: "video/mp4",
-      width: 1280,
-      height: 720,
-      duration_seconds: 5,
-      }).then((result) => {
-        options?.onSucceeded?.(result);
-        return result;
-      });
-      return {
-        promise,
-        unsubscribe: vi.fn(),
-      };
-    });
+    generationJobWatchMock.mockImplementation(
+      (_jobId: string, options: any) => {
+        const promise = Promise.resolve({
+          signed_url: "http://localhost:3001/local-assets/video-1",
+          mime_type: "video/mp4",
+          width: 1280,
+          height: 720,
+          duration_seconds: 5,
+        }).then((result) => {
+          options?.onSucceeded?.(result);
+          return result;
+        });
+        return {
+          promise,
+          unsubscribe: vi.fn(),
+        };
+      },
+    );
     global.fetch = vi.fn(async () => ({
       ok: true,
       blob: async () => new Blob(["image"], { type: "image/png" }),
@@ -107,21 +110,23 @@ describe("CanvasToolMenu generation recovery", () => {
         },
       },
     ];
-    generationJobWatchMock.mockImplementationOnce((_jobId: string, options: any) => {
-      const promise = Promise.resolve({
-        signed_url: "http://localhost:3001/local-assets/image-1",
-        mime_type: "image/png",
-        width: 1024,
-        height: 1024,
-      }).then((result) => {
-        options?.onSucceeded?.(result);
-        return result;
-      });
-      return {
-        promise,
-        unsubscribe: vi.fn(),
-      };
-    });
+    generationJobWatchMock.mockImplementationOnce(
+      (_jobId: string, options: any) => {
+        const promise = Promise.resolve({
+          signed_url: "http://localhost:3001/local-assets/image-1",
+          mime_type: "image/png",
+          width: 1024,
+          height: 1024,
+        }).then((result) => {
+          options?.onSucceeded?.(result);
+          return result;
+        });
+        return {
+          promise,
+          unsubscribe: vi.fn(),
+        };
+      },
+    );
     const addFiles = vi.fn();
     const updateScene = vi.fn(({ elements: next }: { elements: any[] }) => {
       elements = next;
@@ -248,7 +253,7 @@ describe("CanvasToolMenu generation recovery", () => {
           expect.objectContaining({
             id: "video-result-0",
             type: "embeddable",
-            link: "http://localhost:3001/local-assets/video-1",
+            link: "/local-assets/video-1",
           }),
         ]),
         captureUpdate: "IMMEDIATELY",

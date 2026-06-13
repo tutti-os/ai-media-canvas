@@ -1,3 +1,9 @@
+import {
+  extractLocalAssetId,
+  normalizeLocalAssetStorageUrl,
+  toRuntimeAssetUrl,
+} from "./local-assets";
+
 type CanvasElement = Record<string, unknown>;
 type CanvasFile = Record<string, unknown>;
 
@@ -29,12 +35,24 @@ export function prepareCanvasImageFiles(content: CanvasContent): {
     }
     const customData = asRecord(element.customData);
     const storageUrl = stringValue(customData?.storageUrl);
-    if (!storageUrl) continue;
+    const assetId =
+      stringValue(customData?.assetId) ?? extractLocalAssetId(storageUrl);
+    if (!storageUrl && !assetId) continue;
 
     const existing = recoveredFiles[element.fileId] ?? { id: element.fileId };
+    const existingStorageUrl = stringValue(existing.storageUrl);
+    const normalizedAssetId =
+      stringValue(existing.assetId) ??
+      assetId ??
+      extractLocalAssetId(existingStorageUrl);
+    const normalizedStorageUrl = normalizeLocalAssetStorageUrl(
+      existingStorageUrl ?? storageUrl,
+      normalizedAssetId,
+    );
     recoveredFiles[element.fileId] = {
       ...existing,
-      storageUrl: stringValue(existing.storageUrl) ?? storageUrl,
+      ...(normalizedAssetId ? { assetId: normalizedAssetId } : {}),
+      ...(normalizedStorageUrl ? { storageUrl: normalizedStorageUrl } : {}),
       ...(stringValue(customData?.objectPath)
         ? { objectPath: stringValue(customData?.objectPath) }
         : {}),
@@ -43,8 +61,20 @@ export function prepareCanvasImageFiles(content: CanvasContent): {
 
   for (const [fileId, fileData] of Object.entries(recoveredFiles)) {
     const storageUrl = stringValue(fileData.storageUrl);
-    if (storageUrl) {
-      pendingUrls.push({ fileId, url: storageUrl, meta: fileData });
+    const assetId =
+      stringValue(fileData.assetId) ?? extractLocalAssetId(storageUrl);
+    if (storageUrl || assetId) {
+      pendingUrls.push({
+        fileId,
+        url: toRuntimeAssetUrl(storageUrl ?? "", assetId),
+        meta: {
+          ...fileData,
+          ...(assetId ? { assetId } : {}),
+          ...(normalizeLocalAssetStorageUrl(storageUrl, assetId)
+            ? { storageUrl: normalizeLocalAssetStorageUrl(storageUrl, assetId) }
+            : {}),
+        },
+      });
     } else {
       inlineFiles[fileId] = fileData;
     }
@@ -76,17 +106,23 @@ export function serializeExcalidrawFiles(
   const files: Record<string, CanvasFile> = {};
   for (const [id, file] of Object.entries(rawFiles)) {
     const fallback = fallbackFiles[id] ?? {};
+    const storageUrl =
+      stringValue(file.storageUrl) ?? stringValue(fallback.storageUrl);
+    const assetId =
+      stringValue(file.assetId) ??
+      stringValue(fallback.assetId) ??
+      extractLocalAssetId(storageUrl);
+    const normalizedStorageUrl = normalizeLocalAssetStorageUrl(
+      storageUrl,
+      assetId,
+    );
     files[id] = {
       id: file.id ?? fallback.id ?? id,
       dataURL: file.dataURL ?? fallback.dataURL,
       mimeType: file.mimeType ?? fallback.mimeType,
       created: file.created ?? fallback.created,
-      ...((stringValue(file.storageUrl) ?? stringValue(fallback.storageUrl))
-        ? {
-            storageUrl:
-              stringValue(file.storageUrl) ?? stringValue(fallback.storageUrl),
-          }
-        : {}),
+      ...(assetId ? { assetId } : {}),
+      ...(normalizedStorageUrl ? { storageUrl: normalizedStorageUrl } : {}),
       ...((stringValue(file.objectPath) ?? stringValue(fallback.objectPath))
         ? {
             objectPath:
@@ -111,14 +147,23 @@ export async function resolveCanvasImageFiles(
   await Promise.all(
     prepared.pendingUrls.map(async ({ fileId, meta, url }) => {
       const dataURL = await fetchDataURL(url);
+      const storageUrl = stringValue(meta.storageUrl);
+      const assetId =
+        stringValue(meta.assetId) ?? extractLocalAssetId(storageUrl);
       files[fileId] = {
         id: meta.id ?? fileId,
         dataURL,
         mimeType:
           meta.mimeType ?? /^data:([^;]+)/.exec(dataURL)?.[1] ?? "image/png",
         created: meta.created ?? Date.now(),
-        ...((stringValue(meta.storageUrl) ?? url)
-          ? { storageUrl: stringValue(meta.storageUrl) ?? url }
+        ...(assetId ? { assetId } : {}),
+        ...(normalizeLocalAssetStorageUrl(storageUrl ?? url, assetId)
+          ? {
+              storageUrl: normalizeLocalAssetStorageUrl(
+                storageUrl ?? url,
+                assetId,
+              ),
+            }
           : {}),
         ...(stringValue(meta.objectPath)
           ? { objectPath: stringValue(meta.objectPath) }

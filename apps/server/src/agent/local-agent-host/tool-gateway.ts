@@ -99,6 +99,30 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
+function extractLocalAssetId(value: string | undefined) {
+  if (!value) return undefined;
+  try {
+    const parsed = new URL(value, "http://localhost");
+    const isRelative = value.startsWith("/");
+    const isLoopback =
+      parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+    if (!isRelative && !isLoopback) return undefined;
+    if (!parsed.pathname.startsWith("/local-assets/")) return undefined;
+    return (
+      parsed.pathname.slice("/local-assets/".length).split("/")[0] || undefined
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+function toPersistentLocalAssetUrl(
+  assetId: string | undefined,
+  fallback: string,
+) {
+  return assetId ? `/local-assets/${assetId}` : fallback;
+}
+
 function buildArtifacts(
   toolName: string,
   output: Record<string, unknown>,
@@ -121,9 +145,14 @@ function buildArtifacts(
       toolName === "persist_sandbox_file") &&
     imageUrl
   ) {
+    const assetId =
+      typeof output.assetId === "string"
+        ? output.assetId
+        : extractLocalAssetId(imageUrl);
     const parsed = imageArtifactSchema.safeParse({
       type: "image",
-      url: imageUrl,
+      ...(assetId ? { assetId } : {}),
+      url: toPersistentLocalAssetUrl(assetId, imageUrl),
       mimeType:
         typeof output.mimeType === "string" && output.mimeType.length > 0
           ? output.mimeType
@@ -141,9 +170,14 @@ function buildArtifacts(
     typeof output.videoUrl === "string" &&
     output.videoUrl.length > 0
   ) {
+    const assetId =
+      typeof output.assetId === "string"
+        ? output.assetId
+        : extractLocalAssetId(output.videoUrl);
     const parsed = videoArtifactSchema.safeParse({
       type: "video",
-      url: output.videoUrl,
+      ...(assetId ? { assetId } : {}),
+      url: toPersistentLocalAssetUrl(assetId, output.videoUrl),
       mimeType:
         typeof output.mimeType === "string" && output.mimeType.length > 0
           ? output.mimeType
@@ -253,12 +287,17 @@ async function insertDirectGeneratedImage(input: {
     typeof input.output.objectPath === "string"
       ? input.output.objectPath
       : imageUrl;
+  const assetId =
+    typeof input.output.assetId === "string"
+      ? input.output.assetId
+      : extractLocalAssetId(imageUrl);
 
   const { elementId } = await insertImageElement(
     input.createUserClient(input.session.accessToken),
     {
       canvasId: input.session.canvasId,
       objectPath,
+      ...(assetId ? { assetId } : {}),
       signedUrl: imageUrl,
       width,
       height,

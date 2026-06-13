@@ -196,6 +196,7 @@ function CanvasPageContent() {
         onSucceeded: (result) => {
           if (currentCanvasIdRef.current !== sourceCanvasId) return;
           const url = result.signed_url;
+          const assetId = result.asset_id;
           const mimeType = result.mime_type;
           const width = result.width;
           const height = result.height;
@@ -211,6 +212,7 @@ function CanvasPageContent() {
             const durationSeconds = result.duration_seconds;
             handleImageGenerated({
               type: "video",
+              ...(typeof assetId === "string" ? { assetId } : {}),
               url,
               mimeType,
               width,
@@ -223,6 +225,7 @@ function CanvasPageContent() {
           } else {
             handleImageGenerated({
               type: "image",
+              ...(typeof assetId === "string" ? { assetId } : {}),
               url,
               mimeType,
               width,

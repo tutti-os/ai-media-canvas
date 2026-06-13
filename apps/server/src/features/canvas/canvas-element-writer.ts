@@ -27,6 +27,7 @@ const DEFAULT_VIEWPORT = {
 export async function insertImageElement(
   client: CanvasClient,
   input: {
+    assetId?: string;
     canvasId: string;
     height: number;
     mimeType: string;
@@ -49,10 +50,13 @@ export async function insertImageElement(
     );
   const fileId = generateId();
   const elementId = generateId();
-  const storageUrl = input.signedUrl ?? input.objectPath;
+  const storageUrl = input.assetId
+    ? `/local-assets/${input.assetId}`
+    : (input.signedUrl ?? input.objectPath);
 
   files[fileId] = {
     id: fileId,
+    ...(input.assetId ? { assetId: input.assetId } : {}),
     mimeType: input.mimeType,
     created: Date.now(),
     storageUrl,
@@ -72,6 +76,7 @@ export async function insertImageElement(
     crop: null,
     customData: {
       source: "generated",
+      ...(input.assetId ? { assetId: input.assetId } : {}),
       storageUrl,
       objectPath: input.objectPath,
       ...(input.title ? { title: input.title } : {}),
@@ -90,6 +95,7 @@ export async function insertImageElement(
 export async function insertVideoElement(
   client: CanvasClient,
   input: {
+    assetId?: string;
     canvasId: string;
     durationSeconds?: number;
     height: number;
@@ -111,6 +117,9 @@ export async function insertVideoElement(
       content.appState,
     );
   const elementId = generateId();
+  const link = input.assetId
+    ? `/local-assets/${input.assetId}`
+    : input.signedUrl;
 
   elements.push({
     ...createElementBase(elementId),
@@ -119,9 +128,10 @@ export async function insertVideoElement(
     y: display.y,
     width: display.width,
     height: display.height,
-    link: input.signedUrl,
+    link,
     customData: {
       isVideo: true,
+      ...(input.assetId ? { assetId: input.assetId } : {}),
       mimeType: input.mimeType,
       prompt: input.prompt,
       ...(input.title ? { title: input.title } : {}),
