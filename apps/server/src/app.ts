@@ -41,6 +41,7 @@ import {
   ChatServiceError,
 } from "./features/chat/chat-service.js";
 import { createJobService } from "./features/jobs/job-service.js";
+import { createNextopManagedCredentialService } from "./features/nextop-managed/credential-service.js";
 import {
   type ProjectService,
   ProjectServiceError,
@@ -69,8 +70,8 @@ import { registerImageModelRoutes } from "./http/image-models.js";
 import { createJobOperations } from "./http/job-operations.js";
 import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
-import { registerNextopManagedModelConnectionRoutes } from "./http/nextop-managed-model-connection.js";
 import { registerNextopCliRoutes } from "./http/nextop-cli.js";
+import { registerNextopManagedModelConnectionRoutes } from "./http/nextop-managed-model-connection.js";
 import { createProjectOperations } from "./http/project-operations.js";
 import { registerProjectRoutes } from "./http/projects.js";
 import { registerSettingsRoutes } from "./http/settings.js";
@@ -78,7 +79,6 @@ import { createSkillOperations } from "./http/skill-operations.js";
 import { registerSkillRoutes } from "./http/skills.js";
 import { registerUploadRoutes } from "./http/uploads.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
-import { createNextopManagedCredentialService } from "./features/nextop-managed/credential-service.js";
 import { type LocalStore, createLocalStore } from "./local/store.js";
 import { createLocalUserClient } from "./local/user-client.js";
 import { ConnectionManager } from "./ws/connection-manager.js";
@@ -797,6 +797,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     connectionManager,
     createUserClient,
     env: createStandaloneAgentEnv(env),
+    jobService,
     loadSessionMessages: (sessionId) =>
       chatService.listMessages(localUser, sessionId),
     publishCanvasSyncEvent: ({ canvasId, event, runId }) => {
@@ -960,7 +961,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     const runtimeEnv = await nextopManagedCredentials.resolveEnvForModel(
       baseRuntimeEnv,
       resolvedModel ?? baseRuntimeEnv.agentModel,
-      payload.model ? payload.modelSource : workspaceSettings.defaultModelSource,
+      payload.model
+        ? payload.modelSource
+        : workspaceSettings.defaultModelSource,
     );
     if (
       runtimeEnv.trustedLocalAgentMode === false &&
