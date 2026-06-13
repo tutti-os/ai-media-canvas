@@ -110,6 +110,10 @@ const AGENT_PROTOCOLS: Array<{
   },
 ];
 
+const AGENT_CREDENTIAL_PROTOCOLS = AGENT_PROTOCOLS.filter(
+  (protocol) => protocol.id !== "google" && protocol.id !== "vertex",
+);
+
 const API_PROVIDER_PRESETS: ApiProviderPreset[] = [
   {
     provider: "anthropic",
@@ -197,14 +201,11 @@ const API_PROVIDER_PRESETS: ApiProviderPreset[] = [
 
 function getInitialProtocol(settings: WorkspaceSettings): AgentProtocolId {
   const provider = settings.defaultModel.split(":")[0];
-  if (
-    provider === "agnes" ||
-    provider === "openai" ||
-    provider === "google" ||
-    provider === "vertex" ||
-    provider === "anthropic"
-  ) {
-    return provider;
+  const credentialProtocol = AGENT_CREDENTIAL_PROTOCOLS.find(
+    (protocol) => protocol.id === provider,
+  );
+  if (credentialProtocol) {
+    return credentialProtocol.id;
   }
   return "agnes";
 }
@@ -1374,7 +1375,7 @@ export function AgentSettingsSection({
                 </div>
 
                 <div className="mb-5 flex flex-wrap gap-2">
-                  {AGENT_PROTOCOLS.map((protocol) => (
+                  {AGENT_CREDENTIAL_PROTOCOLS.map((protocol) => (
                     <button
                       key={protocol.id}
                       type="button"

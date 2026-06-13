@@ -201,6 +201,57 @@ describe("SettingsPage", () => {
     expect(screen.queryByLabelText("OpenAI API Key")).not.toBeInTheDocument();
   });
 
+  it("hides Google Gemini and Vertex AI protocol credential entries", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "google:gemini-2.5-flash",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          google: ["google:gemini-2.5-flash"],
+        },
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://agnes.example/v1",
+        agnesDefaultModel: "",
+        googleApiKey: "google-local-key",
+        googleVertexProject: "vertex-project",
+        googleVertexLocation: "global",
+        googleVertexVideoLocation: "us-central1",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Google Gemini" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Vertex AI" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Agnes" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "OpenAI-compatible" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Anthropic" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Agnes API Key")).toHaveValue(
+      "sk-local-agnes",
+    );
+    expect(screen.queryByLabelText("Google API Key")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Vertex Project")).not.toBeInTheDocument();
+  });
+
   it("auto-imports detected API provider models when the provider has no configured models", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
