@@ -61,7 +61,7 @@ type ChatSidebarProps = {
   onToggle: () => void;
   onImageGenerated?: (artifact: ToolArtifact) => void;
   onCanvasSync?: () => void;
-  /** Called for every stream event — used by job fallback polling to detect timed-out jobs */
+  /** Called for every stream event for job fallback polling. */
   onStreamEvent?: (event: StreamEvent) => void;
   initialPrompt?: string | undefined;
   initialSessionId?: string | undefined;
@@ -262,8 +262,7 @@ export function ChatSidebar({
     model: agentModel,
     modelSource: agentModelSource,
     ensureAgentModelConfigured,
-  } =
-    useAgentModelRequirement();
+  } = useAgentModelRequirement();
   const agentModelRef = useRef(agentModel);
   agentModelRef.current = agentModel;
   const agentModelSourceRef = useRef(agentModelSource);
@@ -628,7 +627,7 @@ export function ChatSidebar({
           // Apply event to messages (single source of truth — shared with reconnect)
           applyStreamEvent(event, assistantIdRef.current, currentSessionId);
 
-          // Forward event to parent for fallback job polling (timed-out generation recovery)
+          // Forward event to parent for fallback job polling.
           onStreamEvent?.(event);
 
           // Fire canvas insertion callbacks for image/video artifacts.

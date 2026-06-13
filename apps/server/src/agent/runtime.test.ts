@@ -30,6 +30,7 @@ import { createAgentRunService } from "./runtime.js";
 const tempDirs: string[] = [];
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -347,6 +348,318 @@ describe("createAgentRunService", () => {
         provider: "codex",
       }),
     );
+  });
+
+  it("returns image jobs with canvas generation nodes before polling", async () => {
+    let capturedGatewaySession:
+      | {
+          submitImageJob?: (input: {
+            aspectRatio: string;
+            model: string;
+            prompt: string;
+            title: string;
+          }) => Promise<{
+            error?: string;
+            elementId?: string;
+            jobId: string;
+          }>;
+        }
+      | undefined;
+    const createSession = vi.fn((input) => {
+      capturedGatewaySession = input;
+      return { token: "tool-token" };
+    });
+    const getJobAdmin = vi.fn(async () => ({
+      attempt_count: 0,
+      max_attempts: 3,
+      status: "running",
+    }));
+    const canvasState = {
+      content: {
+        elements: [] as Array<Record<string, unknown>>,
+        appState: {},
+        files: {},
+      },
+    };
+
+    const runs = createAgentRunService({
+      createUserClient: () => ({
+        from(table: string) {
+          if (table === "canvases") {
+            return {
+              select() {
+                return this;
+              },
+              eq() {
+                return this;
+              },
+              async single() {
+                return { data: { content: canvasState.content }, error: null };
+              },
+              async maybeSingle() {
+                return { data: null, error: null };
+              },
+              update(payload: {
+                content: {
+                  elements: Array<Record<string, unknown>>;
+                  appState: Record<string, unknown>;
+                  files: Record<string, unknown>;
+                };
+              }) {
+                canvasState.content = payload.content;
+                return {
+                  async eq() {
+                    return { error: null };
+                  },
+                };
+              },
+            };
+          }
+          expect(table).toBe("workspaces");
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            limit() {
+              return this;
+            },
+            async single() {
+              return { data: { id: "workspace-1" }, error: null };
+            },
+          };
+        },
+      }),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {
+        createJob: vi.fn(async () => ({ id: "job-1" })),
+        getJobAdmin,
+      } as never,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession,
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "conversation-1",
+        prompt: "生成一张图",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the local tool gateway session is created.
+    }
+
+    const submitImageJob = capturedGatewaySession?.submitImageJob;
+    expect(submitImageJob).toBeTypeOf("function");
+    if (!submitImageJob) {
+      throw new Error("Expected local tool gateway to receive submitImageJob");
+    }
+    await expect(
+      submitImageJob({
+        aspectRatio: "1:1",
+        model: "agnes-image/agnes-image-2.1-flash",
+        prompt: "young playful logo",
+        title: "logo",
+      }),
+    ).resolves.toMatchObject({
+      elementId: expect.any(String),
+      jobId: "job-1",
+      status: "generating",
+    });
+    expect(canvasState.content.elements).toHaveLength(1);
+    expect(canvasState.content.elements[0]).toMatchObject({
+      type: "rectangle",
+      customData: {
+        type: "image-generator",
+        status: "generating",
+        jobId: "job-1",
+        prompt: "young playful logo",
+      },
+    });
+    expect(getJobAdmin).not.toHaveBeenCalled();
+  });
+
+  it("returns video jobs with canvas generation nodes before polling", async () => {
+    let capturedGatewaySession:
+      | {
+          submitVideoJob?: (input: {
+            aspectRatio: string;
+            duration: number;
+            model: string;
+            prompt: string;
+            resolution: string;
+            title: string;
+          }) => Promise<{
+            error?: string;
+            elementId?: string;
+            jobId: string;
+          }>;
+        }
+      | undefined;
+    const createSession = vi.fn((input) => {
+      capturedGatewaySession = input;
+      return { token: "tool-token" };
+    });
+    const getJobAdmin = vi.fn(async () => ({
+      attempt_count: 0,
+      max_attempts: 3,
+      status: "running",
+    }));
+    const canvasState = {
+      content: {
+        elements: [] as Array<Record<string, unknown>>,
+        appState: {},
+        files: {},
+      },
+    };
+
+    const runs = createAgentRunService({
+      createUserClient: () => ({
+        from(table: string) {
+          if (table === "canvases") {
+            return {
+              select() {
+                return this;
+              },
+              eq() {
+                return this;
+              },
+              async single() {
+                return { data: { content: canvasState.content }, error: null };
+              },
+              async maybeSingle() {
+                return { data: null, error: null };
+              },
+              update(payload: {
+                content: {
+                  elements: Array<Record<string, unknown>>;
+                  appState: Record<string, unknown>;
+                  files: Record<string, unknown>;
+                };
+              }) {
+                canvasState.content = payload.content;
+                return {
+                  async eq() {
+                    return { error: null };
+                  },
+                };
+              },
+            };
+          }
+          expect(table).toBe("workspaces");
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            limit() {
+              return this;
+            },
+            async single() {
+              return { data: { id: "workspace-1" }, error: null };
+            },
+          };
+        },
+      }),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {
+        createJob: vi.fn(async () => ({ id: "job-video-1" })),
+        getJobAdmin,
+      } as never,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession,
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "conversation-1",
+        prompt: "生成一段视频",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the local tool gateway session is created.
+    }
+
+    const submitVideoJob = capturedGatewaySession?.submitVideoJob;
+    expect(submitVideoJob).toBeTypeOf("function");
+    if (!submitVideoJob) {
+      throw new Error("Expected local tool gateway to receive submitVideoJob");
+    }
+    await expect(
+      submitVideoJob({
+        aspectRatio: "16:9",
+        duration: 5,
+        model: "google-official/veo-3.1-generate-preview",
+        prompt: "product reveal",
+        resolution: "720p",
+        title: "product reveal",
+      }),
+    ).resolves.toMatchObject({
+      elementId: expect.any(String),
+      jobId: "job-video-1",
+      status: "generating",
+    });
+    expect(canvasState.content.elements).toHaveLength(1);
+    expect(canvasState.content.elements[0]).toMatchObject({
+      type: "rectangle",
+      customData: {
+        type: "video-generator",
+        status: "generating",
+        jobId: "job-video-1",
+        prompt: "product reveal",
+      },
+    });
+    expect(getJobAdmin).not.toHaveBeenCalled();
   });
 
   it("passes non-Codex local-agent providers through the host adapter", async () => {

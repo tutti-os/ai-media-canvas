@@ -356,3 +356,15 @@
 - 验证方式和结果: 扩展 `apps/web/test/canvas-generation-panels.test.tsx`，覆盖图片/视频生成器面板点击删除后会向 Excalidraw scene 写入 `isDeleted: true` 并调用 `onClose`；`pnpm --filter @aimc/web exec vitest run test/canvas-generation-panels.test.tsx -t "deletes|skips inserting"` 通过；本批组合验证 `pnpm check:i18n`、`pnpm --filter @aimc/web typecheck` 通过。
 - 是否已修复完: 是
 - commit hash: `cda8bbd`
+
+## 追加批次（2026-06-13）
+
+### 35. Canvas 应用稳定生图失败
+
+- Bug 链接: https://ccn53rwonxso.feishu.cn/record/HeiorbBqPeV9MXc0K8icB2BZnac
+- 真实 record id: `recvmkIMkqbxiV`
+- Bug 原因: 附件截图中多次出现 `timed out awaiting tools/call after 120s` 和 Agnes 503；日志包 `/tmp/feishu-bug-runner/recvmkIMkqbxiV/nextop-logs-20260612-205834.zip` 显示 local-agent 触发 `generate_image` 后，图片生成请求耗时超过本地 MCP tool call 的 120s 上限，慢请求在工具层超时前没有把后台 `jobId` 返回给前端，导致用户看到稳定生图失败，后续 provider 503/422 也只能表现为失败卡片。
+- 修复方案: 图片/视频工具提交后台 job 后，服务端立即在画布写入带 `jobId` 的 `image-generator` / `video-generator` 生成中节点，返回 `{ jobId, elementId, status: "generating" }` 并推送 `canvas.sync`；后端不再等待 job 成功后替换元素，也不再使用 `placeholderElementId` 协议。前端扫描画布中 `status: generating` 且带 `jobId` 的生成节点并轮询对应 job，成功后将该节点转换为真实图片/视频，失败后保留节点并展示错误样式。
+- 验证方式和结果: 新增/扩展 `apps/server/src/agent/runtime.test.ts`、`apps/server/src/features/canvas/canvas-element-writer.test.ts`、`apps/web/test/canvas-tool-menu-recovery.test.tsx` 回归用例，验证图片/视频 job 创建后直接写入带 `jobId` 的生成中节点、不调用 `getJobAdmin` 进入后端轮询，且前端会对后续同步出现的生成节点启动轮询；`pnpm --filter @aimc/server exec vitest run src/features/canvas/canvas-element-writer.test.ts src/agent/runtime.test.ts src/agent/local-agent-host/tool-gateway.test.ts` 通过（33 个测试）；`pnpm --filter @aimc/web exec vitest run test/canvas-tool-menu-recovery.test.tsx test/canvas-page.test.tsx test/canvas-elements.test.ts` 通过（7 个测试）；`pnpm --filter @aimc/server typecheck && pnpm --filter @aimc/web typecheck` 通过。
+- 是否已修复完: 是
+- commit hash: 待提交后回填

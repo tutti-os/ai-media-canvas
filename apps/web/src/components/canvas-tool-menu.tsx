@@ -439,7 +439,7 @@ export function CanvasToolMenu({
   // Track previous generating element IDs to avoid re-renders when nothing changed
   const prevGeneratingKeyRef = useRef("");
   const prevErrorKeyRef = useRef("");
-  const didInitialRecoveryScanRef = useRef(false);
+  const watchedGenerationJobIdsRef = useRef(new Set<string>());
   const recoverySubscriptionsRef = useRef<GenerationJobSubscription[]>([]);
 
   // Helper: close all generator / player panels
@@ -630,11 +630,9 @@ export function CanvasToolMenu({
     [excalidrawApi],
   );
 
-  const recoverInitialGeneratingJobs = useCallback(
+  const recoverGeneratingJobs = useCallback(
     (elements: readonly any[]) => {
-      if (!excalidrawApi || didInitialRecoveryScanRef.current) return;
-      if (elements.length === 0) return;
-      didInitialRecoveryScanRef.current = true;
+      if (!excalidrawApi || elements.length === 0) return;
 
       for (const element of elements) {
         if (element.isDeleted || element.customData?.status !== "generating") {
@@ -642,9 +640,11 @@ export function CanvasToolMenu({
         }
         const jobId = element.customData?.jobId;
         if (typeof jobId !== "string") continue;
+        if (watchedGenerationJobIdsRef.current.has(jobId)) continue;
         const isVideo = isVideoGeneratorElement(element);
         const isImage = isImageGeneratorElement(element);
         if (!isVideo && !isImage) continue;
+        watchedGenerationJobIdsRef.current.add(jobId);
 
         const subscription = generationJobService.watch(jobId, {
           jobType: isVideo ? "video_generation" : "image_generation",
@@ -657,6 +657,7 @@ export function CanvasToolMenu({
                 "[canvas-tool-menu] recovered generation replacement failed:",
                 error,
               );
+              watchedGenerationJobIdsRef.current.delete(jobId);
               markRecoveredGeneratorFailed(element.id as string, jobId);
             });
           },
@@ -665,6 +666,7 @@ export function CanvasToolMenu({
               "[canvas-tool-menu] recovered generation failed:",
               error,
             );
+            watchedGenerationJobIdsRef.current.delete(jobId);
             markRecoveredGeneratorFailed(element.id as string, jobId);
           },
         });
@@ -683,20 +685,21 @@ export function CanvasToolMenu({
   );
 
   useEffect(() => {
-    didInitialRecoveryScanRef.current = false;
+    watchedGenerationJobIdsRef.current.clear();
     recoverySubscriptionsRef.current.forEach((subscription) =>
       subscription.unsubscribe(),
     );
     recoverySubscriptionsRef.current = [];
     if (!excalidrawApi) return;
-    recoverInitialGeneratingJobs(excalidrawApi.getSceneElements());
+    recoverGeneratingJobs(excalidrawApi.getSceneElements());
     return () => {
       recoverySubscriptionsRef.current.forEach((subscription) =>
         subscription.unsubscribe(),
       );
       recoverySubscriptionsRef.current = [];
+      watchedGenerationJobIdsRef.current.clear();
     };
-  }, [excalidrawApi, recoverInitialGeneratingJobs]);
+  }, [excalidrawApi, recoverGeneratingJobs]);
 
   useEffect(() => {
     if (!excalidrawApi) return;
@@ -754,9 +757,10 @@ export function CanvasToolMenu({
             elements: normalized,
             captureUpdate: "IMMEDIATELY",
           });
+          recoverGeneratingJobs(normalized);
           return;
         }
-        recoverInitialGeneratingJobs(elements);
+        recoverGeneratingJobs(elements);
 
         // --- Tool sync (cheap string comparison, skip if unchanged) ---
         const tool = appState?.activeTool?.type;

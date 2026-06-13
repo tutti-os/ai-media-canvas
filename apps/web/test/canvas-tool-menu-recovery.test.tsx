@@ -260,4 +260,82 @@ describe("CanvasToolMenu generation recovery", () => {
       }),
     );
   });
+
+  it("starts polling generator jobs that appear after the initial scan", async () => {
+    let elements: any[] = [
+      {
+        id: "existing-shape",
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        isDeleted: false,
+      },
+    ];
+    let onChange:
+      | ((elements: any[], appState: Record<string, unknown>) => void)
+      | undefined;
+    const excalidrawApi = {
+      addFiles: vi.fn(),
+      getSceneElements: () => elements,
+      getAppState: () => ({
+        scrollX: 0,
+        scrollY: 0,
+        zoom: { value: 1 },
+        activeTool: { type: "selection" },
+        selectedElementIds: {},
+      }),
+      updateScene: vi.fn(({ elements: next }: { elements: any[] }) => {
+        elements = next;
+      }),
+      onChange: vi.fn((handler) => {
+        onChange = handler;
+        return () => {};
+      }),
+      setActiveTool: vi.fn(),
+    };
+
+    render(
+      <CanvasToolMenu
+        canvasId="canvas-1"
+        projectId="project-1"
+        excalidrawApi={excalidrawApi}
+      />,
+    );
+
+    expect(generationJobWatchMock).not.toHaveBeenCalled();
+
+    elements = [
+      ...elements,
+      {
+        id: "image-placeholder-2",
+        type: "rectangle",
+        x: 10,
+        y: 20,
+        width: 320,
+        height: 320,
+        isDeleted: false,
+        customData: {
+          type: "image-generator",
+          status: "generating",
+          jobId: "job-image-2",
+          prompt: "new image",
+          model: "agnes-image/agnes-image-2.1-flash",
+          aspectRatio: "1:1",
+          quality: "hd",
+        },
+      },
+    ];
+    onChange?.(elements, excalidrawApi.getAppState());
+
+    await waitFor(() =>
+      expect(generationJobWatchMock).toHaveBeenCalledWith(
+        "job-image-2",
+        expect.objectContaining({
+          jobType: "image_generation",
+        }),
+      ),
+    );
+  });
 });
