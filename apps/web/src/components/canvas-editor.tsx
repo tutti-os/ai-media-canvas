@@ -105,12 +105,17 @@ type ExcalidrawApi = {
   getAppState(): CanvasAppState;
   getFiles(): Record<string, CanvasFileRecord>;
   getSceneElements(): readonly CanvasSceneElement[];
+  onChange(
+    handler: (elements: CanvasSceneElement[], appState: CanvasAppState) => void,
+  ): () => void;
+  setActiveTool(tool: { type: string }): void;
   updateScene(scene: Record<string, unknown>): void;
 };
 
 const SAVE_DEBOUNCE_MS = 1500;
 const THUMBNAIL_DEBOUNCE_MS = 10_000;
 const THUMBNAIL_MAX_SIZE = 800;
+const REMOTE_SYNC_SAVE_SUPPRESSION_MS = 1200;
 
 function pickPersistedAppState(appState: CanvasAppState) {
   return {
@@ -168,6 +173,7 @@ export function CanvasEditor({
   onSelectionChangeRef.current = onSelectionChange;
   // Tracks whether the one-time normalization pass has already run
   const normalizedRef = useRef(false);
+  const suppressSaveUntilRef = useRef(0);
 
   // Guard: prevent auto-save until Excalidraw has fully hydrated with initial data.
   // Without this, a page reload can fire onChange with empty elements before
@@ -200,6 +206,24 @@ export function CanvasEditor({
   } = preparedInitialContent;
   const initialIndicesChangedRef = useRef(initialIndicesChanged);
   initialIndicesChangedRef.current = initialIndicesChanged;
+
+  useEffect(() => {
+    const handleRemoteSync = (event: Event) => {
+      const detail = (event as CustomEvent<{ canvasId?: string }>).detail;
+      if (detail?.canvasId && detail.canvasId !== canvasIdRef.current) return;
+      suppressSaveUntilRef.current =
+        Date.now() + REMOTE_SYNC_SAVE_SUPPRESSION_MS;
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      pendingSaveRef.current = null;
+    };
+    window.addEventListener("aimc:canvas-remote-sync", handleRemoteSync);
+    return () => {
+      window.removeEventListener("aimc:canvas-remote-sync", handleRemoteSync);
+    };
+  }, []);
 
   // Ref to hold recovered file metadata for storageUrl lookup in handleChange
   // without adding the full initialContent to the dependency array.
@@ -318,82 +342,86 @@ export function CanvasEditor({
       // which would wipe the persisted canvas via FULL REPLACE.
       if (!hydratedRef.current) return;
 
-      // --- 1. Debounced save ---
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      const shouldPersist = Date.now() >= suppressSaveUntilRef.current;
 
-      // Mark that a save is pending. The full payload is built lazily inside
-      // the timeout to avoid constructing the files map on every drag frame.
-      pendingSaveRef.current = { elements: [], appState: {}, files: {} };
+      if (shouldPersist) {
+        // --- 1. Debounced save ---
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
-      saveTimerRef.current = setTimeout(() => {
-        // Build the full payload only when the debounce fires
-        const files: Record<string, Record<string, unknown>> = {};
-        if (excalidrawApi) {
-          const rawFiles = excalidrawApi.getFiles();
-          Object.assign(
+        // Mark that a save is pending. The full payload is built lazily inside
+        // the timeout to avoid constructing the files map on every drag frame.
+        pendingSaveRef.current = { elements: [], appState: {}, files: {} };
+
+        saveTimerRef.current = setTimeout(() => {
+          // Build the full payload only when the debounce fires
+          const files: Record<string, Record<string, unknown>> = {};
+          if (excalidrawApi) {
+            const rawFiles = excalidrawApi.getFiles();
+            Object.assign(
+              files,
+              serializeExcalidrawFiles(rawFiles, initialFilesRef.current),
+            );
+          }
+          const content = {
+            elements: elements.filter(isLiveElement),
+            appState: pickPersistedAppState(appState),
             files,
-            serializeExcalidrawFiles(rawFiles, initialFilesRef.current),
-          );
-        }
-        const content = {
-          elements: elements.filter(isLiveElement),
-          appState: pickPersistedAppState(appState),
-          files,
-        };
-        if (
-          content.elements.length === 0 &&
-          initialElementCountRef.current > 0
-        ) {
-          console.warn(
-            "[canvas-editor] skipping debounced save: 0 elements but loaded with",
-            initialElementCountRef.current,
-          );
-          pendingSaveRef.current = null;
-          return;
-        }
-        pendingSaveRef.current = content;
+          };
+          if (
+            content.elements.length === 0 &&
+            initialElementCountRef.current > 0
+          ) {
+            console.warn(
+              "[canvas-editor] skipping debounced save: 0 elements but loaded with",
+              initialElementCountRef.current,
+            );
+            pendingSaveRef.current = null;
+            return;
+          }
+          pendingSaveRef.current = content;
 
-        saveCanvas(canvasId, content)
-          .then(() => {
-            if (pendingSaveRef.current === content) {
-              pendingSaveRef.current = null;
-            }
-          })
-          .catch((err) => console.error("[canvas-editor] save failed:", err));
-      }, SAVE_DEBOUNCE_MS);
+          saveCanvas(canvasId, content)
+            .then(() => {
+              if (pendingSaveRef.current === content) {
+                pendingSaveRef.current = null;
+              }
+            })
+            .catch((err) => console.error("[canvas-editor] save failed:", err));
+        }, SAVE_DEBOUNCE_MS);
 
-      // --- 2. Debounced thumbnail (runs much less frequently than save) ---
-      if (thumbnailTimerRef.current) clearTimeout(thumbnailTimerRef.current);
-      thumbnailTimerRef.current = setTimeout(async () => {
-        if (!excalidrawApi) return;
-        try {
-          const { exportToBlob } = await import("@excalidraw/excalidraw");
-          const sceneElements = excalidrawApi.getSceneElements();
-          const sceneFiles = excalidrawApi.getFiles();
-          if (!sceneElements.length) return;
+        // --- 2. Debounced thumbnail (runs much less frequently than save) ---
+        if (thumbnailTimerRef.current) clearTimeout(thumbnailTimerRef.current);
+        thumbnailTimerRef.current = setTimeout(async () => {
+          if (!excalidrawApi) return;
+          try {
+            const { exportToBlob } = await import("@excalidraw/excalidraw");
+            const sceneElements = excalidrawApi.getSceneElements();
+            const sceneFiles = excalidrawApi.getFiles();
+            if (!sceneElements.length) return;
 
-          const blob = await exportToBlob({
-            elements: sceneElements as never,
-            appState: { exportBackground: true },
-            files: sceneFiles as never,
-            mimeType: "image/webp",
-            quality: 0.8,
-            maxWidthOrHeight: THUMBNAIL_MAX_SIZE,
-          });
+            const blob = await exportToBlob({
+              elements: sceneElements as never,
+              appState: { exportBackground: true },
+              files: sceneFiles as never,
+              mimeType: "image/webp",
+              quality: 0.8,
+              maxWidthOrHeight: THUMBNAIL_MAX_SIZE,
+            });
 
-          console.log(
-            "[canvas-editor] uploading thumbnail, blob size:",
-            blob.size,
-          );
-          await uploadThumbnail(projectId, blob);
-          console.log("[canvas-editor] thumbnail uploaded OK");
-        } catch (err) {
-          console.warn(
-            "[canvas-editor] thumbnail generation/upload failed:",
-            err,
-          );
-        }
-      }, THUMBNAIL_DEBOUNCE_MS);
+            console.log(
+              "[canvas-editor] uploading thumbnail, blob size:",
+              blob.size,
+            );
+            await uploadThumbnail(projectId, blob);
+            console.log("[canvas-editor] thumbnail uploaded OK");
+          } catch (err) {
+            console.warn(
+              "[canvas-editor] thumbnail generation/upload failed:",
+              err,
+            );
+          }
+        }, THUMBNAIL_DEBOUNCE_MS);
+      }
 
       // --- 3. Selection change detection ---
       // Cheap string comparison avoids unnecessary downstream re-renders.

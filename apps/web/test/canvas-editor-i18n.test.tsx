@@ -145,4 +145,81 @@ describe("CanvasEditor i18n", () => {
 
     expect(saveCanvas).not.toHaveBeenCalled();
   });
+
+  it("does not save remote canvas sync updates back as local edits", async () => {
+    vi.useFakeTimers();
+    const canvasApi = {
+      addFiles: vi.fn(),
+      getAppState: vi.fn(() => ({})),
+      getFiles: vi.fn(() => ({})),
+      getSceneElements: vi.fn(() => [
+        {
+          id: "generator-1",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 320,
+          height: 320,
+          isDeleted: false,
+          customData: {
+            type: "image-generator",
+            status: "generating",
+            jobId: "job-image-1",
+          },
+        },
+      ]),
+      onChange: vi.fn(() => () => {}),
+      updateScene: vi.fn(),
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasEditor
+          canvasId="canvas-1"
+          projectId="project-1"
+          initialContent={{
+            appState: {},
+            elements: [
+              {
+                id: "shape-1",
+                type: "rectangle",
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+              },
+            ],
+            files: {},
+          }}
+        />
+      </ToastProvider>,
+    );
+
+    await act(async () => {
+      (excalidrawPropsRef.current?.excalidrawAPI as (api: unknown) => void)(
+        canvasApi,
+      );
+    });
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+    });
+    vi.mocked(saveCanvas).mockClear();
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("aimc:canvas-remote-sync", {
+          detail: { canvasId: "canvas-1" },
+        }),
+      );
+      (
+        excalidrawPropsRef.current?.onChange as (
+          elements: unknown[],
+          appState: unknown,
+        ) => void
+      )(canvasApi.getSceneElements(), {});
+      vi.advanceTimersByTime(1500);
+    });
+
+    expect(saveCanvas).not.toHaveBeenCalled();
+  });
 });

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  completeImageGenerationNode,
   createCanvasAutoPlacementSequence,
   insertImageElement,
+  insertImageGenerationNode,
   insertVideoElement,
+  insertVideoGenerationNode,
 } from "./canvas-element-writer.js";
 
 function createCanvasClient(initialContent: Record<string, unknown>) {
@@ -177,6 +180,145 @@ describe("canvas element writer", () => {
       y: -9,
       width: 600,
       height: 338,
+    });
+  });
+
+  it("inserts image generation nodes with job metadata", async () => {
+    const client = createCanvasClient({
+      elements: [],
+      appState: {},
+      files: {},
+    });
+
+    const result = await insertImageGenerationNode(client, {
+      aspectRatio: "16:9",
+      canvasId: "canvas-1",
+      jobId: "job-image-1",
+      model: "agnes-image/agnes-image-2.1-flash",
+      prompt: "A neon city logo",
+      quality: "hd",
+      title: "Neon logo",
+    });
+
+    const content = client.state.content as {
+      elements: Array<Record<string, unknown>>;
+    };
+    expect(result.elementId).toBeTypeOf("string");
+    expect(content.elements).toHaveLength(1);
+    expect(content.elements[0]).toMatchObject({
+      id: result.elementId,
+      type: "rectangle",
+      width: 400,
+      height: 225,
+      customData: {
+        type: "image-generator",
+        status: "generating",
+        jobId: "job-image-1",
+        prompt: "A neon city logo",
+        model: "agnes-image/agnes-image-2.1-flash",
+        aspectRatio: "16:9",
+        quality: "hd",
+      },
+    });
+  });
+
+  it("completes image generation nodes in place with generated image metadata", async () => {
+    const client = createCanvasClient({
+      elements: [],
+      appState: {},
+      files: {},
+    });
+
+    const pending = await insertImageGenerationNode(client, {
+      aspectRatio: "4:3",
+      canvasId: "canvas-1",
+      jobId: "job-image-1",
+      model: "agnes-image/agnes-image-2.1-flash",
+      prompt: "A neon city logo",
+      quality: "hd",
+      title: "Neon logo",
+    });
+
+    const completed = await completeImageGenerationNode(client, {
+      assetId: "image-asset-1",
+      canvasId: "canvas-1",
+      elementId: pending.elementId,
+      height: 768,
+      jobId: "job-image-1",
+      mimeType: "image/png",
+      objectPath: "generated/image-asset-1.png",
+      signedUrl: "http://127.0.0.1:3001/local-assets/image-asset-1",
+      title: "Neon logo",
+      width: 1024,
+    });
+
+    const content = client.state.content as {
+      elements: Array<Record<string, unknown>>;
+      files: Record<string, Record<string, unknown>>;
+    };
+    expect(completed.elementId).toBe(pending.elementId);
+    expect(content.elements).toHaveLength(1);
+    expect(content.elements[0]).toMatchObject({
+      id: pending.elementId,
+      type: "image",
+      width: 400,
+      height: 300,
+      customData: {
+        assetId: "image-asset-1",
+        jobId: "job-image-1",
+        source: "generated",
+        storageUrl: "/local-assets/image-asset-1",
+        title: "Neon logo",
+      },
+    });
+    const fileId = content.elements[0]?.fileId as string;
+    expect(content.files[fileId]).toMatchObject({
+      id: fileId,
+      assetId: "image-asset-1",
+      mimeType: "image/png",
+      objectPath: "generated/image-asset-1.png",
+      storageUrl: "/local-assets/image-asset-1",
+    });
+  });
+
+  it("inserts video generation nodes with job metadata", async () => {
+    const client = createCanvasClient({
+      elements: [],
+      appState: {},
+      files: {},
+    });
+
+    const result = await insertVideoGenerationNode(client, {
+      aspectRatio: "16:9",
+      canvasId: "canvas-1",
+      duration: 5,
+      jobId: "job-video-1",
+      model: "google-official/veo-3.1-generate-preview",
+      prompt: "A rotating product video",
+      resolution: "720p",
+      title: "Product video",
+    });
+
+    const content = client.state.content as {
+      elements: Array<Record<string, unknown>>;
+    };
+    expect(result.elementId).toBeTypeOf("string");
+    expect(content.elements).toHaveLength(1);
+    expect(content.elements[0]).toMatchObject({
+      id: result.elementId,
+      type: "rectangle",
+      width: 400,
+      height: 225,
+      customData: {
+        type: "video-generator",
+        status: "generating",
+        jobId: "job-video-1",
+        prompt: "A rotating product video",
+        model: "google-official/veo-3.1-generate-preview",
+        aspectRatio: "16:9",
+        duration: 5,
+        resolution: "720p",
+      },
     });
   });
 

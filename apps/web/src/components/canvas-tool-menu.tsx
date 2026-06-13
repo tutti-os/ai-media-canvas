@@ -29,18 +29,13 @@ import { createPortal } from "react-dom";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import { useAppTranslation } from "../i18n";
-import {
-  createExcalidrawImageElement,
-  fetchAsDataURL,
-  isVideoUrl,
-} from "../lib/canvas-elements";
+import { isVideoUrl } from "../lib/canvas-elements";
 import {
   type ImageGeneratorData,
   createImageGeneratorElement,
   getImageGeneratorData,
   isImageGeneratorElement,
 } from "../lib/canvas-image-generator";
-import { withNormalizedCanvasElementIndices } from "../lib/canvas-normalize";
 import {
   type VideoGeneratorData,
   createVideoGeneratorElement,
@@ -48,11 +43,6 @@ import {
   isVideoGeneratorElement,
 } from "../lib/canvas-video-generator";
 import { isExcalidrawContextMenuTarget } from "../lib/excalidraw-context-menu";
-import {
-  type GenerationJobSubscription,
-  generationJobService,
-} from "../lib/generation-job-service";
-import { normalizeLocalAssetStorageUrl } from "../lib/local-assets";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
 import { VideoPlayerPanel } from "./canvas/video-player-panel";
@@ -68,18 +58,18 @@ type ToolType =
   | "text"
   | "image";
 
-const TOOL_GROUPS: (ToolType | null)[] = [
-  "hand",
-  "selection",
-  "image",
-  null,
-  "rectangle",
-  "ellipse",
-  "arrow",
-  "line",
-  "freedraw",
-  null,
-  "text",
+const TOOL_GROUPS: Array<{ id: string; tool: ToolType | null }> = [
+  { id: "hand", tool: "hand" },
+  { id: "selection", tool: "selection" },
+  { id: "image", tool: "image" },
+  { id: "separator-primary", tool: null },
+  { id: "rectangle", tool: "rectangle" },
+  { id: "ellipse", tool: "ellipse" },
+  { id: "arrow", tool: "arrow" },
+  { id: "line", tool: "line" },
+  { id: "freedraw", tool: "freedraw" },
+  { id: "separator-text", tool: null },
+  { id: "text", tool: "text" },
 ];
 
 type GeneratorOverlayItem = {
@@ -122,9 +112,42 @@ const TOOL_LABEL_KEYS: Record<ToolType, string> = {
 
 type CanvasToolMenuProps = {
   canvasId: string;
-  excalidrawApi: any;
+  excalidrawApi: CanvasToolExcalidrawApi | null;
   leftPanelOpen?: boolean;
   projectId: string;
+};
+
+type CanvasToolElement = Record<string, unknown> & {
+  customData?: Record<string, unknown>;
+  height?: number;
+  id?: string;
+  isDeleted?: boolean;
+  link?: string | null;
+  type?: string;
+  width?: number;
+  x?: number;
+  y?: number;
+};
+
+type CanvasToolAppState = {
+  activeTool?: { type?: string };
+  scrollX?: number;
+  scrollY?: number;
+  selectedElementIds?: Record<string, boolean>;
+  zoom?: { value?: number };
+};
+
+type CanvasToolExcalidrawApi = {
+  getAppState(): CanvasToolAppState;
+  getSceneElements(): readonly CanvasToolElement[];
+  onChange(
+    handler: (
+      elements: CanvasToolElement[],
+      appState: CanvasToolAppState,
+    ) => void,
+  ): () => void;
+  setActiveTool(tool: { type: string }): void;
+  updateScene(scene: Record<string, unknown>): void;
 };
 
 function ToolbarTooltip({ label }: { label: string }) {
@@ -175,12 +198,6 @@ function ImageGeneratorIcon() {
   );
 }
 
-function generateRecoveryFileId(): string {
-  return (
-    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
-  ).slice(0, 20);
-}
-
 function getGeneratorOverlayRadius(width: number, height: number) {
   return Math.max(6, Math.min(32, Math.min(width, height) * 0.08));
 }
@@ -198,9 +215,11 @@ function getGeneratorElementStyle(status: unknown) {
   return status === "error" ? GENERATOR_ERROR_STYLE : GENERATOR_DEFAULT_STYLE;
 }
 
-function normalizeGeneratorElementStyles(elements: readonly any[]) {
+function normalizeGeneratorElementStyles(
+  elements: readonly CanvasToolElement[],
+) {
   let changed = false;
-  const normalized = elements.map((element: any) => {
+  const normalized = elements.map((element) => {
     if (
       element.isDeleted ||
       (!isImageGeneratorElement(element) && !isVideoGeneratorElement(element))
@@ -224,6 +243,15 @@ function normalizeGeneratorElementStyles(elements: readonly any[]) {
     };
   });
   return changed ? normalized : null;
+}
+
+function getElementBounds(element: CanvasToolElement) {
+  return {
+    x: element.x ?? 0,
+    y: element.y ?? 0,
+    width: element.width ?? 0,
+    height: element.height ?? 0,
+  };
 }
 
 /** Memoized shimmer overlay for a single generating element */
@@ -274,6 +302,7 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
         >
           {showIcon && (
             <svg
+              aria-hidden="true"
               className="h-12 w-12 text-muted-foreground/40"
               viewBox="0 0 24 24"
               fill="currentColor"
@@ -439,8 +468,6 @@ export function CanvasToolMenu({
   // Track previous generating element IDs to avoid re-renders when nothing changed
   const prevGeneratingKeyRef = useRef("");
   const prevErrorKeyRef = useRef("");
-  const didInitialRecoveryScanRef = useRef(false);
-  const recoverySubscriptionsRef = useRef<GenerationJobSubscription[]>([]);
 
   // Helper: close all generator / player panels
   const closeAllPanels = useCallback(() => {
@@ -455,249 +482,6 @@ export function CanvasToolMenu({
     setVideoPlayerBounds(null);
   }, []);
 
-  const replaceRecoveredImageGenerator = useCallback(
-    async (element: any, result: Record<string, unknown>, jobId: string) => {
-      const url = result.signed_url;
-      const assetId = result.asset_id;
-      const mimeType = result.mime_type;
-      const width = result.width;
-      const height = result.height;
-      if (
-        !excalidrawApi ||
-        typeof url !== "string" ||
-        typeof mimeType !== "string" ||
-        typeof width !== "number" ||
-        typeof height !== "number"
-      ) {
-        return;
-      }
-
-      const current = excalidrawApi
-        .getSceneElements()
-        .find((item: any) => item.id === element.id);
-      if (
-        !current ||
-        current.isDeleted ||
-        current.customData?.jobId !== jobId ||
-        current.customData?.status !== "generating"
-      ) {
-        return;
-      }
-
-      const dataURL = await fetchAsDataURL(url);
-      const fileId = generateRecoveryFileId();
-      excalidrawApi.addFiles([
-        {
-          id: fileId,
-          dataURL,
-          mimeType,
-          created: Date.now(),
-          ...(typeof assetId === "string" ? { assetId } : {}),
-          storageUrl:
-            normalizeLocalAssetStorageUrl(
-              url,
-              typeof assetId === "string" ? assetId : null,
-            ) ?? url,
-        },
-      ]);
-
-      const imageElement = createExcalidrawImageElement({
-        ...(typeof assetId === "string" ? { assetId } : {}),
-        fileId,
-        x: current.x,
-        y: current.y,
-        width: current.width,
-        height: current.height,
-        title: String(current.customData?.prompt ?? "").slice(0, 60),
-        source: "generated",
-        storageUrl:
-          normalizeLocalAssetStorageUrl(
-            url,
-            typeof assetId === "string" ? assetId : null,
-          ) ?? url,
-      });
-      const elements = excalidrawApi
-        .getSceneElements()
-        .map((item: any) =>
-          item.id === current.id ? { ...item, isDeleted: true } : item,
-        );
-      excalidrawApi.updateScene({
-        elements: withNormalizedCanvasElementIndices([
-          ...elements,
-          imageElement,
-        ]),
-        captureUpdate: "IMMEDIATELY",
-      });
-    },
-    [excalidrawApi],
-  );
-
-  const replaceRecoveredVideoGenerator = useCallback(
-    async (element: any, result: Record<string, unknown>, jobId: string) => {
-      const url = result.signed_url;
-      const assetId = result.asset_id;
-      const mimeType = result.mime_type;
-      const width = result.width;
-      const height = result.height;
-      if (
-        !excalidrawApi ||
-        typeof url !== "string" ||
-        typeof mimeType !== "string" ||
-        typeof width !== "number" ||
-        typeof height !== "number"
-      ) {
-        return;
-      }
-
-      const current = excalidrawApi
-        .getSceneElements()
-        .find((item: any) => item.id === element.id);
-      if (
-        !current ||
-        current.isDeleted ||
-        current.customData?.jobId !== jobId ||
-        current.customData?.status !== "generating"
-      ) {
-        return;
-      }
-
-      const { convertToExcalidrawElements } = await import(
-        "@excalidraw/excalidraw"
-      );
-      const durationSeconds = result.duration_seconds;
-      const newElements = convertToExcalidrawElements([
-        {
-          type: "embeddable",
-          link:
-            normalizeLocalAssetStorageUrl(
-              url,
-              typeof assetId === "string" ? assetId : null,
-            ) ?? url,
-          x: current.x,
-          y: current.y,
-          width: current.width,
-          height: current.height,
-          customData: {
-            isVideo: true,
-            ...(typeof assetId === "string" ? { assetId } : {}),
-            mimeType,
-            ...(typeof durationSeconds === "number" ? { durationSeconds } : {}),
-            title: String(current.customData?.prompt ?? "").slice(0, 60),
-            prompt: current.customData?.prompt,
-          },
-        } as any,
-      ]);
-      const elements = excalidrawApi
-        .getSceneElements()
-        .map((item: any) =>
-          item.id === current.id ? { ...item, isDeleted: true } : item,
-        );
-      excalidrawApi.updateScene({
-        elements: withNormalizedCanvasElementIndices([
-          ...elements,
-          ...newElements,
-        ]),
-        captureUpdate: "IMMEDIATELY",
-      });
-    },
-    [excalidrawApi],
-  );
-
-  const markRecoveredGeneratorFailed = useCallback(
-    (elementId: string, jobId: string) => {
-      if (!excalidrawApi) return;
-      const elements = excalidrawApi.getSceneElements().map((item: any) => {
-        if (item.id !== elementId) return item;
-        if (
-          item.customData?.jobId !== jobId ||
-          item.customData?.status !== "generating"
-        ) {
-          return item;
-        }
-        return {
-          ...item,
-          strokeColor: "#FCA5A5",
-          backgroundColor: "#FDECEE",
-          customData: {
-            ...item.customData,
-            status: "error",
-            errorMessage: "生成失败",
-          },
-        };
-      });
-      excalidrawApi.updateScene({ elements, captureUpdate: "IMMEDIATELY" });
-    },
-    [excalidrawApi],
-  );
-
-  const recoverInitialGeneratingJobs = useCallback(
-    (elements: readonly any[]) => {
-      if (!excalidrawApi || didInitialRecoveryScanRef.current) return;
-      if (elements.length === 0) return;
-      didInitialRecoveryScanRef.current = true;
-
-      for (const element of elements) {
-        if (element.isDeleted || element.customData?.status !== "generating") {
-          continue;
-        }
-        const jobId = element.customData?.jobId;
-        if (typeof jobId !== "string") continue;
-        const isVideo = isVideoGeneratorElement(element);
-        const isImage = isImageGeneratorElement(element);
-        if (!isVideo && !isImage) continue;
-
-        const subscription = generationJobService.watch(jobId, {
-          jobType: isVideo ? "video_generation" : "image_generation",
-          onSucceeded: (result) => {
-            const recovery = isVideo
-              ? replaceRecoveredVideoGenerator(element, result, jobId)
-              : replaceRecoveredImageGenerator(element, result, jobId);
-            void recovery.catch((error) => {
-              console.warn(
-                "[canvas-tool-menu] recovered generation replacement failed:",
-                error,
-              );
-              markRecoveredGeneratorFailed(element.id as string, jobId);
-            });
-          },
-          onFailed: (error) => {
-            console.warn(
-              "[canvas-tool-menu] recovered generation failed:",
-              error,
-            );
-            markRecoveredGeneratorFailed(element.id as string, jobId);
-          },
-        });
-        void subscription.promise.catch(() => {
-          // Failure is handled through onFailed so the placeholder can stay visible.
-        });
-        recoverySubscriptionsRef.current.push(subscription);
-      }
-    },
-    [
-      excalidrawApi,
-      markRecoveredGeneratorFailed,
-      replaceRecoveredImageGenerator,
-      replaceRecoveredVideoGenerator,
-    ],
-  );
-
-  useEffect(() => {
-    didInitialRecoveryScanRef.current = false;
-    recoverySubscriptionsRef.current.forEach((subscription) =>
-      subscription.unsubscribe(),
-    );
-    recoverySubscriptionsRef.current = [];
-    if (!excalidrawApi) return;
-    recoverInitialGeneratingJobs(excalidrawApi.getSceneElements());
-    return () => {
-      recoverySubscriptionsRef.current.forEach((subscription) =>
-        subscription.unsubscribe(),
-      );
-      recoverySubscriptionsRef.current = [];
-    };
-  }, [excalidrawApi, recoverInitialGeneratingJobs]);
-
   useEffect(() => {
     if (!excalidrawApi) return;
     const normalized = normalizeGeneratorElementStyles(
@@ -709,29 +493,31 @@ export function CanvasToolMenu({
         captureUpdate: "IMMEDIATELY",
       });
     }
-    const { scrollX, scrollY, zoom } = excalidrawApi.getAppState();
+    const appState = excalidrawApi.getAppState();
+    const scrollX = appState.scrollX ?? 0;
+    const scrollY = appState.scrollY ?? 0;
+    const zoom = appState.zoom?.value ?? 1;
     const errorRaw = excalidrawApi
       .getSceneElements()
       .filter(
-        (el: any) =>
+        (el) =>
           !el.isDeleted &&
           (isImageGeneratorElement(el) || isVideoGeneratorElement(el)) &&
           el.customData?.status === "error",
       );
-    prevErrorKeyRef.current =
-      errorRaw
-        .map(
-          (el: any) =>
-            `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${el.customData?.errorMessage ?? ""}`,
-        )
-        .join("|") + `@${scrollX}:${scrollY}:${zoom}`;
+    prevErrorKeyRef.current = `${errorRaw
+      .map(
+        (el) =>
+          `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${el.customData?.errorMessage ?? ""}`,
+      )
+      .join("|")}@${scrollX}:${scrollY}:${zoom}`;
     setErrorElements(
-      errorRaw.map((el: any) => ({
-        id: el.id as string,
-        screenX: ((el.x as number) + scrollX) * zoom,
-        screenY: ((el.y as number) + scrollY) * zoom,
-        screenW: (el.width as number) * zoom,
-        screenH: (el.height as number) * zoom,
+      errorRaw.map((el) => ({
+        id: el.id ?? "",
+        screenX: ((el.x ?? 0) + scrollX) * zoom,
+        screenY: ((el.y ?? 0) + scrollY) * zoom,
+        screenW: (el.width ?? 0) * zoom,
+        screenH: (el.height ?? 0) * zoom,
         zoom,
         ...(typeof el.customData?.errorMessage === "string"
           ? { errorMessage: el.customData.errorMessage }
@@ -746,205 +532,186 @@ export function CanvasToolMenu({
   useEffect(() => {
     if (!excalidrawApi) return;
 
-    const unsubscribe = excalidrawApi.onChange(
-      (elements: any[], appState: any) => {
-        const normalized = normalizeGeneratorElementStyles(elements);
-        if (normalized) {
-          excalidrawApi.updateScene({
-            elements: normalized,
-            captureUpdate: "IMMEDIATELY",
-          });
-          return;
-        }
-        recoverInitialGeneratingJobs(elements);
-
-        // --- Tool sync (cheap string comparison, skip if unchanged) ---
-        const tool = appState?.activeTool?.type;
-        if (tool)
-          setActiveTool((prev: string) => (prev === tool ? prev : tool));
-
-        const scrollX = appState?.scrollX ?? 0;
-        const scrollY = appState?.scrollY ?? 0;
-        const zoom = appState?.zoom?.value ?? 1;
-        // Only update scroll/zoom state if values actually changed
-        setCanvasScrollZoom((prev) => {
-          if (
-            prev.scrollX === scrollX &&
-            prev.scrollY === scrollY &&
-            prev.zoom === zoom
-          )
-            return prev;
-          return { scrollX, scrollY, zoom };
+    const unsubscribe = excalidrawApi.onChange((elements, appState) => {
+      const normalized = normalizeGeneratorElementStyles(elements);
+      if (normalized) {
+        excalidrawApi.updateScene({
+          elements: normalized,
+          captureUpdate: "IMMEDIATELY",
         });
+        return;
+      }
 
-        // --- Selection-based panel management ---
-        const selectedIds = appState?.selectedElementIds ?? {};
-        const selectedElements = elements.filter(
-          (el: any) => selectedIds[el.id] && !el.isDeleted,
-        );
+      // --- Tool sync (cheap string comparison, skip if unchanged) ---
+      const tool = appState?.activeTool?.type;
+      if (tool) setActiveTool((prev: string) => (prev === tool ? prev : tool));
 
-        const currentId = activeGeneratorIdRef.current;
-        const currentVideoId = activeVideoGenIdRef.current;
-        if (selectedElements.length === 1) {
-          const sel = selectedElements[0];
+      const scrollX = appState?.scrollX ?? 0;
+      const scrollY = appState?.scrollY ?? 0;
+      const zoom = appState?.zoom?.value ?? 1;
+      // Only update scroll/zoom state if values actually changed
+      setCanvasScrollZoom((prev) => {
+        if (
+          prev.scrollX === scrollX &&
+          prev.scrollY === scrollY &&
+          prev.zoom === zoom
+        )
+          return prev;
+        return { scrollX, scrollY, zoom };
+      });
 
-          if (isImageGeneratorElement(sel)) {
-            // Only update if the selected generator changed
-            if (currentId !== sel.id) {
-              const data = getImageGeneratorData(sel);
-              setActiveGeneratorId(sel.id as string);
-              setGeneratorData(data);
-              if (currentVideoId) {
-                setActiveVideoGenId(null);
-                setVideoGenData(null);
-                setVideoGenBounds(null);
-              }
-              if (activeVideoPlayerIdRef.current) {
-                setActiveVideoPlayerId(null);
-                setVideoPlayerData(null);
-                setVideoPlayerBounds(null);
-              }
+      // --- Selection-based panel management ---
+      const selectedIds = appState?.selectedElementIds ?? {};
+      const selectedElements = elements.filter(
+        (el) =>
+          typeof el.id === "string" && selectedIds[el.id] && !el.isDeleted,
+      );
+
+      const currentId = activeGeneratorIdRef.current;
+      const currentVideoId = activeVideoGenIdRef.current;
+      if (selectedElements.length === 1) {
+        const sel = selectedElements[0];
+        if (!sel) return;
+        const selectedId = typeof sel.id === "string" ? sel.id : "";
+        const selectedBounds = getElementBounds(sel);
+
+        if (isImageGeneratorElement(sel)) {
+          // Only update if the selected generator changed
+          if (currentId !== selectedId) {
+            const data = getImageGeneratorData(sel);
+            setActiveGeneratorId(selectedId);
+            setGeneratorData(data);
+            if (currentVideoId) {
+              setActiveVideoGenId(null);
+              setVideoGenData(null);
+              setVideoGenBounds(null);
             }
-            // Always update bounds (element may have been moved/resized)
-            setGeneratorBounds({
-              x: sel.x as number,
-              y: sel.y as number,
-              width: sel.width as number,
-              height: sel.height as number,
-            });
-          } else if (isVideoGeneratorElement(sel)) {
-            if (currentVideoId !== sel.id) {
-              const data = getVideoGeneratorData(sel);
-              setActiveVideoGenId(sel.id as string);
-              setVideoGenData(data);
-              if (currentId) {
-                setActiveGeneratorId(null);
-                setGeneratorData(null);
-                setGeneratorBounds(null);
-              }
-              if (activeVideoPlayerIdRef.current) {
-                setActiveVideoPlayerId(null);
-                setVideoPlayerData(null);
-                setVideoPlayerBounds(null);
-              }
-            }
-            setVideoGenBounds({
-              x: sel.x as number,
-              y: sel.y as number,
-              width: sel.width as number,
-              height: sel.height as number,
-            });
-          } else if (
-            sel.type === "embeddable" &&
-            (isVideoUrl(sel.link as string) || sel.customData?.isVideo === true)
-          ) {
-            if (activeVideoPlayerIdRef.current !== sel.id) {
-              setActiveVideoPlayerId(sel.id as string);
-              setVideoPlayerData({
-                videoUrl: sel.link as string,
-                mimeType: (sel.customData?.mimeType as string) ?? "video/mp4",
-                ...(sel.customData?.durationSeconds != null
-                  ? {
-                      durationSeconds: sel.customData.durationSeconds as number,
-                    }
-                  : {}),
-                ...(sel.customData?.title != null
-                  ? { title: sel.customData.title as string }
-                  : {}),
-              });
-              if (currentId) {
-                setActiveGeneratorId(null);
-                setGeneratorData(null);
-                setGeneratorBounds(null);
-              }
-              if (currentVideoId) {
-                setActiveVideoGenId(null);
-                setVideoGenData(null);
-                setVideoGenBounds(null);
-              }
-            }
-            setVideoPlayerBounds({
-              x: sel.x as number,
-              y: sel.y as number,
-              width: sel.width as number,
-              height: sel.height as number,
-            });
-          } else {
-            if (currentId || currentVideoId || activeVideoPlayerIdRef.current) {
-              closeAllPanels();
+            if (activeVideoPlayerIdRef.current) {
+              setActiveVideoPlayerId(null);
+              setVideoPlayerData(null);
+              setVideoPlayerBounds(null);
             }
           }
+          // Always update bounds (element may have been moved/resized)
+          setGeneratorBounds(selectedBounds);
+        } else if (isVideoGeneratorElement(sel)) {
+          if (currentVideoId !== selectedId) {
+            const data = getVideoGeneratorData(sel);
+            setActiveVideoGenId(selectedId);
+            setVideoGenData(data);
+            if (currentId) {
+              setActiveGeneratorId(null);
+              setGeneratorData(null);
+              setGeneratorBounds(null);
+            }
+            if (activeVideoPlayerIdRef.current) {
+              setActiveVideoPlayerId(null);
+              setVideoPlayerData(null);
+              setVideoPlayerBounds(null);
+            }
+          }
+          setVideoGenBounds(selectedBounds);
+        } else if (
+          sel.type === "embeddable" &&
+          (isVideoUrl(sel.link as string) || sel.customData?.isVideo === true)
+        ) {
+          if (activeVideoPlayerIdRef.current !== selectedId) {
+            setActiveVideoPlayerId(selectedId);
+            setVideoPlayerData({
+              videoUrl: sel.link as string,
+              mimeType: (sel.customData?.mimeType as string) ?? "video/mp4",
+              ...(sel.customData?.durationSeconds != null
+                ? {
+                    durationSeconds: sel.customData.durationSeconds as number,
+                  }
+                : {}),
+              ...(sel.customData?.title != null
+                ? { title: sel.customData.title as string }
+                : {}),
+            });
+            if (currentId) {
+              setActiveGeneratorId(null);
+              setGeneratorData(null);
+              setGeneratorBounds(null);
+            }
+            if (currentVideoId) {
+              setActiveVideoGenId(null);
+              setVideoGenData(null);
+              setVideoGenBounds(null);
+            }
+          }
+          setVideoPlayerBounds(selectedBounds);
         } else {
           if (currentId || currentVideoId || activeVideoPlayerIdRef.current) {
             closeAllPanels();
           }
         }
-
-        // --- Generator status overlays ---
-        // Build stable keys so we skip setState when overlay sets are unchanged.
-        const generatorRaw = elements.filter(
-          (el: any) =>
-            !el.isDeleted &&
-            (isImageGeneratorElement(el) || isVideoGeneratorElement(el)),
-        );
-        const generatingRaw = generatorRaw.filter(
-          (el: any) => el.customData?.status === "generating",
-        );
-        const errorRaw = generatorRaw.filter(
-          (el: any) => el.customData?.status === "error",
-        );
-
-        // Include viewport state as well, because the shimmer overlay is
-        // rendered in screen coordinates and must move when the canvas pans
-        // or zooms even if the scene element itself did not change.
-        const genKey =
-          generatingRaw
-            .map(
-              (el: any) => `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}`,
-            )
-            .join("|") + `@${scrollX}:${scrollY}:${zoom}`;
-
-        if (genKey !== prevGeneratingKeyRef.current) {
-          prevGeneratingKeyRef.current = genKey;
-          const generating = generatingRaw.map((el: any) => ({
-            id: el.id as string,
-            screenX: ((el.x as number) + scrollX) * zoom,
-            screenY: ((el.y as number) + scrollY) * zoom,
-            screenW: (el.width as number) * zoom,
-            screenH: (el.height as number) * zoom,
-            zoom,
-            ...(el.customData?.model
-              ? { model: el.customData.model as string }
-              : {}),
-          }));
-          setGeneratingElements(generating);
+      } else {
+        if (currentId || currentVideoId || activeVideoPlayerIdRef.current) {
+          closeAllPanels();
         }
+      }
 
-        const errorKey =
-          errorRaw
-            .map(
-              (el: any) =>
-                `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${el.customData?.errorMessage ?? ""}`,
-            )
-            .join("|") + `@${scrollX}:${scrollY}:${zoom}`;
+      // --- Generator status overlays ---
+      // Build stable keys so we skip setState when overlay sets are unchanged.
+      const generatorRaw = elements.filter(
+        (el) =>
+          !el.isDeleted &&
+          (isImageGeneratorElement(el) || isVideoGeneratorElement(el)),
+      );
+      const generatingRaw = generatorRaw.filter(
+        (el) => el.customData?.status === "generating",
+      );
+      const errorRaw = generatorRaw.filter(
+        (el) => el.customData?.status === "error",
+      );
 
-        if (errorKey !== prevErrorKeyRef.current) {
-          prevErrorKeyRef.current = errorKey;
-          const errored = errorRaw.map((el: any) => ({
-            id: el.id as string,
-            screenX: ((el.x as number) + scrollX) * zoom,
-            screenY: ((el.y as number) + scrollY) * zoom,
-            screenW: (el.width as number) * zoom,
-            screenH: (el.height as number) * zoom,
-            zoom,
-            ...(typeof el.customData?.errorMessage === "string"
-              ? { errorMessage: el.customData.errorMessage }
-              : {}),
-          }));
-          setErrorElements(errored);
-        }
-      },
-    );
+      // Include viewport state as well, because the shimmer overlay is
+      // rendered in screen coordinates and must move when the canvas pans
+      // or zooms even if the scene element itself did not change.
+      const genKey = `${generatingRaw
+        .map((el) => `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}`)
+        .join("|")}@${scrollX}:${scrollY}:${zoom}`;
+
+      if (genKey !== prevGeneratingKeyRef.current) {
+        prevGeneratingKeyRef.current = genKey;
+        const generating = generatingRaw.map((el) => ({
+          id: el.id ?? "",
+          screenX: ((el.x ?? 0) + scrollX) * zoom,
+          screenY: ((el.y ?? 0) + scrollY) * zoom,
+          screenW: (el.width ?? 0) * zoom,
+          screenH: (el.height ?? 0) * zoom,
+          zoom,
+          ...(el.customData?.model
+            ? { model: el.customData.model as string }
+            : {}),
+        }));
+        setGeneratingElements(generating);
+      }
+
+      const errorKey = `${errorRaw
+        .map(
+          (el) =>
+            `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${el.customData?.errorMessage ?? ""}`,
+        )
+        .join("|")}@${scrollX}:${scrollY}:${zoom}`;
+
+      if (errorKey !== prevErrorKeyRef.current) {
+        prevErrorKeyRef.current = errorKey;
+        const errored = errorRaw.map((el) => ({
+          id: el.id ?? "",
+          screenX: ((el.x ?? 0) + scrollX) * zoom,
+          screenY: ((el.y ?? 0) + scrollY) * zoom,
+          screenW: (el.width ?? 0) * zoom,
+          screenH: (el.height ?? 0) * zoom,
+          zoom,
+          ...(typeof el.customData?.errorMessage === "string"
+            ? { errorMessage: el.customData.errorMessage }
+            : {}),
+        }));
+        setErrorElements(errored);
+      }
+    });
 
     return unsubscribe;
   }, [excalidrawApi, closeAllPanels]);
@@ -969,7 +736,7 @@ export function CanvasToolMenu({
     setActiveGeneratorId(elementId);
     // Read back the created element to populate initial state
     const elements = excalidrawApi.getSceneElements();
-    const el = elements.find((e: any) => e.id === elementId);
+    const el = elements.find((e) => e.id === elementId);
     if (el) {
       setGeneratorData(getImageGeneratorData(el));
       setGeneratorBounds({
@@ -1014,7 +781,7 @@ export function CanvasToolMenu({
     });
     setActiveVideoGenId(elementId);
     const elements = excalidrawApi.getSceneElements();
-    const el = elements.find((item: any) => item.id === elementId);
+    const el = elements.find((item) => item.id === elementId);
     if (el) {
       setVideoGenData(getVideoGeneratorData(el));
       setVideoGenBounds({
@@ -1081,13 +848,10 @@ export function CanvasToolMenu({
         }}
       >
         {/* Standard Excalidraw tools */}
-        {TOOL_GROUPS.map((tool, i) => {
+        {TOOL_GROUPS.map(({ id, tool }) => {
           if (tool === null) {
             return (
-              <div
-                key={`sep-${i}`}
-                className="mx-0.5 h-6 w-px shrink-0 bg-border"
-              />
+              <div key={id} className="mx-0.5 h-6 w-px shrink-0 bg-border" />
             );
           }
 
@@ -1112,7 +876,7 @@ export function CanvasToolMenu({
         {/* Separator before AI tools */}
         <div className="mx-0.5 h-6 w-px shrink-0 bg-border" />
 
-        {/* AI Image -- creates a placeholder on canvas */}
+        {/* AI Image -- creates a generator node on canvas */}
         <ToolbarButton
           label={t("tools.generateImage")}
           active={Boolean(activeGeneratorId)}
@@ -1130,7 +894,7 @@ export function CanvasToolMenu({
         </ToolbarButton>
       </div>
 
-      {/* Image Generator Panel -- floats below the selected placeholder */}
+      {/* Image Generator Panel -- floats below the selected generator node */}
       {activeGeneratorId && generatorData && generatorBounds && (
         <ImageGeneratorPanel
           elementId={activeGeneratorId}
@@ -1175,29 +939,25 @@ export function CanvasToolMenu({
       {/* Shimmer overlays for generating elements */}
       {generatingElements.length > 0 &&
         createPortal(
-          <>
-            {generatingElements.map((el) => (
-              <GeneratingOverlay
-                key={el.id}
-                {...el}
-                label={t("tools.generating")}
-              />
-            ))}
-          </>,
+          generatingElements.map((el) => (
+            <GeneratingOverlay
+              key={el.id}
+              {...el}
+              label={t("tools.generating")}
+            />
+          )),
           document.body,
         )}
 
       {errorElements.length > 0 &&
         createPortal(
-          <>
-            {errorElements.map((el) => (
-              <GeneratorErrorOverlay
-                key={el.id}
-                {...el}
-                errorMessage={el.errorMessage || t("tools.generateFailed")}
-              />
-            ))}
-          </>,
+          errorElements.map((el) => (
+            <GeneratorErrorOverlay
+              key={el.id}
+              {...el}
+              errorMessage={el.errorMessage || t("tools.generateFailed")}
+            />
+          )),
           document.body,
         )}
     </>

@@ -122,14 +122,15 @@ export async function registerNextopCliRoutes(
     handler: (body: unknown) => Promise<unknown>,
     statusCode = 200,
   ) => {
-    const register = (routePath: string) => app.post(routePath, async (request, reply) => {
-      try {
-        const result = await handler(request.body);
-        return sendCliJson(reply, result, statusCode);
-      } catch (error) {
-        return sendCliRouteError(error, reply);
-      }
-    });
+    const register = (routePath: string) =>
+      app.post(routePath, async (request, reply) => {
+        try {
+          const result = await handler(request.body);
+          return sendCliJson(reply, result, statusCode);
+        } catch (error) {
+          return sendCliRouteError(error, reply);
+        }
+      });
     register(path);
     if (path.startsWith("/tutti/cli/")) {
       register(path.replace("/tutti/cli/", "/nextop/cli/"));
@@ -378,6 +379,8 @@ export async function registerNextopCliRoutes(
     );
   });
 }
+
+export const registerTuttiCliRoutes = registerNextopCliRoutes;
 
 function parseRequiredString(body: unknown, key: string) {
   const payload = z.record(z.string(), z.unknown()).parse(body);

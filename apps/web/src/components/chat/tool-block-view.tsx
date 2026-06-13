@@ -159,10 +159,6 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       ? block.outputSummary
       : config.label;
 
-  const previewLines = hasOutput ? formatOutputPreview(block.output!) : [];
-  const showCard =
-    config.showCard && isCompleted && (block.outputSummary || hasOutput);
-
   // Extract image artifacts for inline preview
   const imageArtifact = block.artifacts?.find(
     (artifact): artifact is ImageArtifact => artifact.type === "image",
@@ -174,6 +170,19 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const isImageTool = canonicalToolName === "generate_image";
   const isVideoTool = canonicalToolName === "generate_video";
   const isMediaTool = isImageTool || isVideoTool;
+  const outputData = block.output as Record<string, unknown> | undefined;
+  const isDeferredMediaJob =
+    isMediaTool &&
+    isCompleted &&
+    outputData?.status === "generating" &&
+    typeof outputData.jobId === "string";
+  const isVisuallyRunning = isRunning || isDeferredMediaJob;
+  const previewLines = outputData ? formatOutputPreview(outputData) : [];
+  const showCard =
+    config.showCard &&
+    isCompleted &&
+    !isDeferredMediaJob &&
+    (block.outputSummary || hasOutput);
   const shouldShowImageArtifactCard =
     isCompleted &&
     !!imageArtifact &&
@@ -181,10 +190,12 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       canonicalToolName === "persist_sandbox_file" ||
       canonicalToolName === "screenshot_canvas");
   const mediaError =
-    isMediaTool && (isFailed || isCompleted) && !imageArtifact && !videoArtifact
-      ? (((block.output as Record<string, unknown> | undefined)?.error as
-          | string
-          | undefined) ?? block.outputSummary)
+    isMediaTool &&
+    !isDeferredMediaJob &&
+    (isFailed || isCompleted) &&
+    !imageArtifact &&
+    !videoArtifact
+      ? ((outputData?.error as string | undefined) ?? block.outputSummary)
       : undefined;
   const inputData = block.input as Record<string, unknown> | undefined;
   const modelName = inputData?.model as string | undefined;
@@ -205,7 +216,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
     <div ref={containerRef} className="space-y-1.5">
       {/* Layer 1: Status line */}
       <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-        {isRunning ? (
+        {isVisuallyRunning ? (
           <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-muted-foreground/30 border-t-muted-foreground" />
         ) : isFailed ? (
           <svg
@@ -232,7 +243,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       </div>
 
       {/* Layer 2a: Media generation shimmer placeholder */}
-      {isMediaTool && isRunning && (
+      {isMediaTool && isVisuallyRunning && !imageArtifact && !videoArtifact && (
         <MediaShimmer
           isVideoTool={isVideoTool}
           aspectRatio={aspectRatio}

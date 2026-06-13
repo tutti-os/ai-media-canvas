@@ -7,11 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { generationJobWatchMock, convertToExcalidrawElementsMock } = vi.hoisted(
   () => ({
     generationJobWatchMock: vi.fn(),
-    convertToExcalidrawElementsMock: vi.fn((items: any[]) =>
-      items.map((item, index) => ({
-        id: `video-result-${index}`,
-        ...item,
-      })),
+    convertToExcalidrawElementsMock: vi.fn(
+      (items: Array<Record<string, unknown>>) =>
+        items.map((item, index) => ({
+          id: `video-result-${index}`,
+          ...item,
+        })),
     ),
   }),
 );
@@ -33,27 +34,32 @@ vi.mock("@excalidraw/excalidraw", () => ({
   convertToExcalidrawElements: convertToExcalidrawElementsMock,
 }));
 
-vi.mock("../src/hooks/use-image-model-preference", () => ({
-  useImageModelPreference: () => ({
-    activeImageGenerationPreference: null,
-  }),
-}));
+import {
+  type CanvasGenerationRecoveryApi,
+  type CanvasRecoveryElement,
+  useCanvasGenerationJobRecovery,
+} from "../src/hooks/use-canvas-generation-job-recovery";
 
-vi.mock("../src/hooks/use-video-model-preference", () => ({
-  useVideoModelPreference: () => ({
-    activeVideoGenerationPreference: null,
-  }),
-}));
+type WatchOptions = {
+  onSucceeded?: (result: Record<string, unknown>) => void;
+};
 
-import { CanvasToolMenu } from "../src/components/canvas-tool-menu";
+function RecoveryHarness({
+  excalidrawApi,
+}: {
+  excalidrawApi: CanvasGenerationRecoveryApi;
+}) {
+  useCanvasGenerationJobRecovery(excalidrawApi);
+  return null;
+}
 
-describe("CanvasToolMenu generation recovery", () => {
+describe("canvas generation job recovery", () => {
   const originalFileReader = globalThis.FileReader;
 
   beforeEach(() => {
     vi.clearAllMocks();
     generationJobWatchMock.mockImplementation(
-      (_jobId: string, options: any) => {
+      (_jobId: string, options: WatchOptions) => {
         const promise = Promise.resolve({
           signed_url: "http://localhost:3001/local-assets/video-1",
           mime_type: "video/mp4",
@@ -70,10 +76,9 @@ describe("CanvasToolMenu generation recovery", () => {
         };
       },
     );
-    global.fetch = vi.fn(async () => ({
-      ok: true,
-      blob: async () => new Blob(["image"], { type: "image/png" }),
-    })) as any;
+    global.fetch = vi.fn(
+      async () => new Response(new Blob(["image"], { type: "image/png" })),
+    ) as typeof fetch;
     class TestFileReader {
       onload: null | (() => void) = null;
       result: string | ArrayBuffer | null = "data:image/png;base64,aW1hZ2U=";
@@ -90,9 +95,9 @@ describe("CanvasToolMenu generation recovery", () => {
   });
 
   it("resumes polling a persisted image generator job after canvas reload", async () => {
-    let elements: any[] = [
+    let elements: CanvasRecoveryElement[] = [
       {
-        id: "image-placeholder-1",
+        id: "image-generator-1",
         type: "rectangle",
         x: 10,
         y: 20,
@@ -111,7 +116,7 @@ describe("CanvasToolMenu generation recovery", () => {
       },
     ];
     generationJobWatchMock.mockImplementationOnce(
-      (_jobId: string, options: any) => {
+      (_jobId: string, options: WatchOptions) => {
         const promise = Promise.resolve({
           signed_url: "http://localhost:3001/local-assets/image-1",
           mime_type: "image/png",
@@ -128,31 +133,19 @@ describe("CanvasToolMenu generation recovery", () => {
       },
     );
     const addFiles = vi.fn();
-    const updateScene = vi.fn(({ elements: next }: { elements: any[] }) => {
-      elements = next;
-    });
+    const updateScene = vi.fn(
+      ({ elements: next }: { elements: CanvasRecoveryElement[] }) => {
+        elements = next;
+      },
+    );
     const excalidrawApi = {
       addFiles,
       getSceneElements: () => elements,
-      getAppState: () => ({
-        scrollX: 0,
-        scrollY: 0,
-        zoom: { value: 1 },
-        activeTool: { type: "selection" },
-        selectedElementIds: {},
-      }),
       updateScene,
       onChange: vi.fn(() => () => {}),
-      setActiveTool: vi.fn(),
     };
 
-    render(
-      <CanvasToolMenu
-        canvasId="canvas-1"
-        projectId="project-1"
-        excalidrawApi={excalidrawApi}
-      />,
-    );
+    render(<RecoveryHarness excalidrawApi={excalidrawApi} />);
 
     await waitFor(() =>
       expect(generationJobWatchMock).toHaveBeenCalledWith(
@@ -173,7 +166,7 @@ describe("CanvasToolMenu generation recovery", () => {
     expect(updateScene).toHaveBeenCalledWith({
       elements: expect.arrayContaining([
         expect.objectContaining({
-          id: "image-placeholder-1",
+          id: "image-generator-1",
           isDeleted: true,
         }),
         expect.objectContaining({
@@ -189,9 +182,9 @@ describe("CanvasToolMenu generation recovery", () => {
   });
 
   it("resumes polling a persisted video generator job after canvas reload", async () => {
-    let elements: any[] = [
+    let elements: CanvasRecoveryElement[] = [
       {
-        id: "video-placeholder-1",
+        id: "video-generator-1",
         type: "rectangle",
         x: 10,
         y: 20,
@@ -210,30 +203,19 @@ describe("CanvasToolMenu generation recovery", () => {
         },
       },
     ];
-    const updateScene = vi.fn(({ elements: next }: { elements: any[] }) => {
-      elements = next;
-    });
+    const updateScene = vi.fn(
+      ({ elements: next }: { elements: CanvasRecoveryElement[] }) => {
+        elements = next;
+      },
+    );
     const excalidrawApi = {
+      addFiles: vi.fn(),
       getSceneElements: () => elements,
-      getAppState: () => ({
-        scrollX: 0,
-        scrollY: 0,
-        zoom: { value: 1 },
-        activeTool: { type: "selection" },
-        selectedElementIds: {},
-      }),
       updateScene,
       onChange: vi.fn(() => () => {}),
-      setActiveTool: vi.fn(),
     };
 
-    render(
-      <CanvasToolMenu
-        canvasId="canvas-1"
-        projectId="project-1"
-        excalidrawApi={excalidrawApi}
-      />,
-    );
+    render(<RecoveryHarness excalidrawApi={excalidrawApi} />);
 
     await waitFor(() =>
       expect(generationJobWatchMock).toHaveBeenCalledWith(
@@ -247,7 +229,7 @@ describe("CanvasToolMenu generation recovery", () => {
       expect(updateScene).toHaveBeenCalledWith({
         elements: expect.arrayContaining([
           expect.objectContaining({
-            id: "video-placeholder-1",
+            id: "video-generator-1",
             isDeleted: true,
           }),
           expect.objectContaining({
@@ -258,6 +240,82 @@ describe("CanvasToolMenu generation recovery", () => {
         ]),
         captureUpdate: "IMMEDIATELY",
       }),
+    );
+  });
+
+  it("starts polling generator jobs that appear after the initial scan", async () => {
+    let elements: CanvasRecoveryElement[] = [
+      {
+        id: "existing-shape",
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        isDeleted: false,
+      },
+    ];
+    let onChange:
+      | ((
+          elements: CanvasRecoveryElement[],
+          appState: Record<string, unknown>,
+        ) => void)
+      | undefined;
+    const excalidrawApi = {
+      addFiles: vi.fn(),
+      getSceneElements: () => elements,
+      updateScene: vi.fn(
+        ({ elements: next }: { elements: CanvasRecoveryElement[] }) => {
+          elements = next;
+        },
+      ),
+      onChange: vi.fn(
+        (
+          handler: (
+            elements: CanvasRecoveryElement[],
+            appState: Record<string, unknown>,
+          ) => void,
+        ) => {
+          onChange = handler;
+          return () => {};
+        },
+      ),
+    };
+
+    render(<RecoveryHarness excalidrawApi={excalidrawApi} />);
+
+    expect(generationJobWatchMock).not.toHaveBeenCalled();
+
+    elements = [
+      ...elements,
+      {
+        id: "image-generator-2",
+        type: "rectangle",
+        x: 10,
+        y: 20,
+        width: 320,
+        height: 320,
+        isDeleted: false,
+        customData: {
+          type: "image-generator",
+          status: "generating",
+          jobId: "job-image-2",
+          prompt: "new image",
+          model: "agnes-image/agnes-image-2.1-flash",
+          aspectRatio: "1:1",
+          quality: "hd",
+        },
+      },
+    ];
+    onChange?.(elements, {});
+
+    await waitFor(() =>
+      expect(generationJobWatchMock).toHaveBeenCalledWith(
+        "job-image-2",
+        expect.objectContaining({
+          jobType: "image_generation",
+        }),
+      ),
     );
   });
 });

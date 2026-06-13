@@ -18,6 +18,7 @@ import type {
 } from "@aimc/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { InMemoryStore } from "@langchain/langgraph";
 import {
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
@@ -29,9 +30,10 @@ import type { ServerEnv } from "../config/env.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
   type Placement,
+  completeImageGenerationNode,
   createCanvasAutoPlacementSequence,
-  insertImageElement,
-  insertVideoElement,
+  insertImageGenerationNode,
+  insertVideoGenerationNode,
 } from "../features/canvas/canvas-element-writer.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import {
@@ -75,9 +77,8 @@ import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
 type BillingErrorCode = string;
 type ImageQualityLevel = "standard" | "hd" | "ultra";
-const IMAGE_JOB_POLL_INTERVAL_MS = 2_000;
-const IMAGE_JOB_MAX_WAIT_MS = 240_000;
-const LOCAL_AGENT_IMAGE_JOB_MAX_WAIT_MS = 110_000;
+const IMAGE_JOB_POLL_INTERVAL_MS = 3_000;
+const IMAGE_JOB_MAX_WAIT_MS = 180_000;
 type CanvasSummaryClient = {
   from(table: "canvases"): {
     select(columns: string): {
@@ -431,16 +432,23 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
   const now = options.now ?? (() => new Date().toISOString());
   const runs = new Map<string, RuntimeRunRecord>();
   const runIdFactory = options.runIdFactory ?? (() => randomUUID());
+  const serverDeepAgentStore = new InMemoryStore();
+  const customAgentFactory = options.agentFactory;
 
-  const resolvedAgentFactory: AimcAgentFactory =
-    options.agentFactory ??
-    ((agentOptions) =>
-      createAimcDeepAgent({
-        ...agentOptions,
-        ...(options.createUserClient
-          ? { createUserClient: options.createUserClient }
-          : {}),
-      }));
+  const resolvedAgentFactory: AimcAgentFactory = customAgentFactory
+    ? (agentOptions) =>
+        customAgentFactory({
+          ...agentOptions,
+          store: serverDeepAgentStore,
+        })
+    : (agentOptions) =>
+        createAimcDeepAgent({
+          ...agentOptions,
+          store: serverDeepAgentStore,
+          ...(options.createUserClient
+            ? { createUserClient: options.createUserClient }
+            : {}),
+        });
 
   // ── Billing error helper: push WS event + abort run ──────────
   function pushBillingErrorAndAbort(
@@ -807,6 +815,25 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           reserve(size: Pick<Placement, "height" | "width">): Placement;
         }> | null = null;
 
+        const publishCanvasSync = () => {
+          if (!canvasId) return;
+          const event = {
+            type: "canvas.sync" as const,
+            runId,
+            timestamp: new Date().toISOString(),
+          } satisfies StreamEvent;
+          const replayEnvelope = options.publishCanvasSyncEvent?.({
+            canvasId,
+            event,
+            runId,
+          });
+          options.connectionManager?.pushToCanvas(
+            canvasId,
+            event,
+            replayEnvelope,
+          );
+        };
+
         const reserveImagePlacement = async (
           input: Parameters<SubmitImageJobFn>[0],
         ): Promise<Placement | undefined> => {
@@ -956,134 +983,76 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             runId,
           });
 
-          if (run.runtimeKind === "local-agent") {
-            jobLap("job_poll_done", { pollCount: 0, status: "deferred" });
-            return {
-              jobId: job.id,
-              error: `Job timed out after ${LOCAL_AGENT_IMAGE_JOB_MAX_WAIT_MS / 1000}s`,
-            };
-          }
-
-          // Poll until terminal state
-          // Worker image VT=120s, but Replicate calls can take 100s+ plus queue delay.
-          const maxWaitMs = IMAGE_JOB_MAX_WAIT_MS;
-          const start = Date.now();
-          let pollCount = 0;
-
-          while (Date.now() - start < maxWaitMs) {
-            await delay(IMAGE_JOB_POLL_INTERVAL_MS);
-            pollCount++;
-
-            if (run.controller.signal.aborted) {
-              throw new Error("Run was canceled");
+          let elementId: string | undefined;
+          if (canvasId) {
+            try {
+              const insertResult = await insertImageGenerationNode(
+                client,
+                {
+                  canvasId,
+                  jobId: job.id,
+                  prompt: input.prompt,
+                  title: input.title,
+                  model: input.model,
+                  aspectRatio: input.aspectRatio,
+                  ...(input.quality ? { quality: input.quality } : {}),
+                  ...(input.inputImages
+                    ? { inputImages: input.inputImages }
+                    : {}),
+                },
+                reservedPlacement,
+              );
+              elementId = insertResult.elementId;
+              publishCanvasSync();
+              jobLap("canvas_generation_node_inserted", {
+                elementId,
+              });
+            } catch (insertErr) {
+              console.error(
+                "[submitImageJob] canvas generation node insert failed:",
+                insertErr,
+              );
             }
-
-            const current = await jobSvc.getJobAdmin(job.id);
-
-            if (current.status === "succeeded" && current.result) {
-              const result = current.result as {
-                asset_id?: string;
-                signed_url?: string;
-                object_path?: string;
-                width?: number;
-                height?: number;
-                mime_type?: string;
-              };
-              jobLap("job_poll_done", { pollCount, status: "succeeded" });
-
-              // Write element directly to canvas (backend-driven insertion)
-              let elementId: string | undefined;
-              if (canvasId && result.object_path) {
-                try {
-                  const writerClient = createClient(
-                    accessToken,
-                  ) as UserDataClient;
-
-                  const insertResult = await insertImageElement(
-                    writerClient,
-                    {
-                      canvasId,
-                      objectPath: result.object_path,
-                      ...(result.asset_id ? { assetId: result.asset_id } : {}),
-                      ...(result.signed_url
-                        ? { signedUrl: result.signed_url }
-                        : {}),
-                      width: result.width ?? 1024,
-                      height: result.height ?? 1024,
-                      mimeType: result.mime_type ?? "image/png",
-                      title: input.title,
-                    },
-                    reservedPlacement,
-                  );
-                  elementId = insertResult.elementId;
-
-                  // Notify connected frontends to refresh canvas
-                  const event = {
-                    type: "canvas.sync" as const,
-                    runId,
-                    timestamp: new Date().toISOString(),
-                  } satisfies StreamEvent;
-                  const replayEnvelope = options.publishCanvasSyncEvent?.({
-                    canvasId,
-                    event,
-                    runId,
-                  });
-                  options.connectionManager?.pushToCanvas(
-                    canvasId,
-                    event,
-                    replayEnvelope,
-                  );
-                  jobLap("canvas_element_inserted", { elementId });
-                } catch (insertErr) {
-                  // Graceful degradation: log error but still return result
-                  console.error(
-                    "[submitImageJob] canvas insert failed:",
-                    insertErr,
-                  );
-                }
-              }
-
-              return {
+          }
+          const finalResult = await waitForImageJobResult(
+            jobSvc,
+            job.id,
+            jobLap,
+          );
+          if (canvasId) {
+            try {
+              const completed = await completeImageGenerationNode(client, {
+                canvasId,
                 jobId: job.id,
                 ...(elementId != null ? { elementId } : {}),
-                imageUrl: result.signed_url ?? "",
-                width: result.width ?? 1024,
-                height: result.height ?? 1024,
-                mimeType: result.mime_type ?? "image/png",
-              };
-            }
-
-            if (
-              current.status === "dead_letter" ||
-              current.status === "canceled"
-            ) {
-              jobLap("job_poll_done", { pollCount, status: current.status });
-              return {
-                jobId: job.id,
-                error: current.error_message ?? `Job ${current.status}`,
-              };
-            }
-
-            // "failed" with attempts exhausted
-            if (
-              current.status === "failed" &&
-              current.attempt_count >= current.max_attempts
-            ) {
-              jobLap("job_poll_done", {
-                pollCount,
-                status: "failed_max_retries",
+                ...(finalResult.assetId != null
+                  ? { assetId: finalResult.assetId }
+                  : {}),
+                signedUrl: finalResult.imageUrl,
+                ...(finalResult.objectPath != null
+                  ? { objectPath: finalResult.objectPath }
+                  : {}),
+                mimeType: finalResult.mimeType,
+                width: finalResult.width,
+                height: finalResult.height,
+                title: input.title,
               });
-              return {
-                jobId: job.id,
-                error: current.error_message ?? "Job failed after max retries",
-              };
+              elementId = completed.elementId;
+              publishCanvasSync();
+              jobLap("canvas_generation_node_completed", {
+                elementId,
+              });
+            } catch (completeErr) {
+              console.error(
+                "[submitImageJob] canvas generation node complete failed:",
+                completeErr,
+              );
             }
           }
-
-          jobLap("job_poll_done", { pollCount, status: "timeout" });
           return {
             jobId: job.id,
-            error: `Job timed out after ${maxWaitMs / 1000}s`,
+            ...(elementId != null ? { elementId } : {}),
+            ...finalResult,
           };
         };
 
@@ -1206,139 +1175,55 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             runId,
           });
 
-          // Poll until terminal state - video generation can sit in a provider
-          // queue for a while, so keep the outer wait longer than provider poll.
-          const POLL_INTERVAL = 10_000;
-          const MAX_WAIT = 1_950_000; // 32.5 minutes
-          const start = Date.now();
-          let pollCount = 0;
+          let elementId: string | undefined;
+          if (canvasId) {
+            try {
+              const explicitPlacement =
+                input.placementX != null && input.placementY != null
+                  ? {
+                      x: input.placementX,
+                      y: input.placementY,
+                      width: input.placementWidth ?? 640,
+                      height: input.placementHeight ?? 360,
+                    }
+                  : undefined;
 
-          while (Date.now() - start < MAX_WAIT) {
-            await delay(POLL_INTERVAL);
-            pollCount++;
-
-            if (run.controller.signal.aborted) {
-              throw new Error("Run was canceled");
-            }
-
-            const current = await jobSvc.getJobAdmin(job.id);
-
-            if (current.status === "succeeded" && current.result) {
-              const result = current.result as {
-                asset_id?: string;
-                signed_url?: string;
-                duration_seconds?: number;
-                width?: number;
-                height?: number;
-                mime_type?: string;
-              };
-              jobLap("job_poll_done", { pollCount, status: "succeeded" });
-
-              // Write element directly to canvas (backend-driven insertion)
-              let elementId: string | undefined;
-              if (canvasId && result.signed_url) {
-                try {
-                  const writerClient = createClient(
-                    accessToken,
-                  ) as UserDataClient;
-                  const explicitPlacement =
-                    input.placementX != null && input.placementY != null
-                      ? {
-                          x: input.placementX,
-                          y: input.placementY,
-                          width: input.placementWidth ?? 640,
-                          height: input.placementHeight ?? 360,
-                        }
-                      : undefined;
-
-                  const insertResult = await insertVideoElement(
-                    writerClient,
-                    {
-                      canvasId,
-                      signedUrl: result.signed_url,
-                      ...(result.asset_id ? { assetId: result.asset_id } : {}),
-                      width: result.width ?? 1280,
-                      height: result.height ?? 720,
-                      mimeType: result.mime_type ?? "video/mp4",
-                      ...(result.duration_seconds != null
-                        ? { durationSeconds: result.duration_seconds }
-                        : {}),
-                      title: input.title,
-                      prompt: input.prompt,
-                    },
-                    explicitPlacement,
-                  );
-                  elementId = insertResult.elementId;
-
-                  // Notify connected frontends to refresh canvas
-                  const event = {
-                    type: "canvas.sync" as const,
-                    runId,
-                    timestamp: new Date().toISOString(),
-                  } satisfies StreamEvent;
-                  const replayEnvelope = options.publishCanvasSyncEvent?.({
-                    canvasId,
-                    event,
-                    runId,
-                  });
-                  options.connectionManager?.pushToCanvas(
-                    canvasId,
-                    event,
-                    replayEnvelope,
-                  );
-                  jobLap("canvas_element_inserted", { elementId });
-                } catch (insertErr) {
-                  // Graceful degradation: log error but still return result
-                  console.error(
-                    "[submitVideoJob] canvas insert failed:",
-                    insertErr,
-                  );
-                }
-              }
-
-              return {
-                jobId: job.id,
-                ...(elementId != null ? { elementId } : {}),
-                videoUrl: result.signed_url ?? "",
-                width: result.width ?? 1280,
-                height: result.height ?? 720,
-                mimeType: result.mime_type ?? "video/mp4",
-                ...(result.duration_seconds != null
-                  ? { durationSeconds: result.duration_seconds }
-                  : {}),
-              };
-            }
-
-            if (
-              current.status === "dead_letter" ||
-              current.status === "canceled"
-            ) {
-              jobLap("job_poll_done", { pollCount, status: current.status });
-              return {
-                jobId: job.id,
-                error: current.error_message ?? `Job ${current.status}`,
-              };
-            }
-
-            if (
-              current.status === "failed" &&
-              current.attempt_count >= current.max_attempts
-            ) {
-              jobLap("job_poll_done", {
-                pollCount,
-                status: "failed_max_retries",
+              const insertResult = await insertVideoGenerationNode(
+                client,
+                {
+                  canvasId,
+                  jobId: job.id,
+                  prompt: input.prompt,
+                  title: input.title,
+                  model: input.model,
+                  aspectRatio: input.aspectRatio ?? "16:9",
+                  ...(input.duration != null
+                    ? { duration: input.duration }
+                    : {}),
+                  ...(input.resolution ? { resolution: input.resolution } : {}),
+                  ...(input.inputImages
+                    ? { inputImages: input.inputImages }
+                    : {}),
+                },
+                explicitPlacement,
+              );
+              elementId = insertResult.elementId;
+              publishCanvasSync();
+              jobLap("canvas_generation_node_inserted", {
+                elementId,
               });
-              return {
-                jobId: job.id,
-                error: current.error_message ?? "Job failed after max retries",
-              };
+            } catch (insertErr) {
+              console.error(
+                "[submitVideoJob] canvas generation node insert failed:",
+                insertErr,
+              );
             }
           }
-
-          jobLap("job_poll_done", { pollCount, status: "timeout" });
+          jobLap("job_poll_done", { pollCount: 0, status: "deferred" });
           return {
             jobId: job.id,
-            error: `Job timed out after ${MAX_WAIT / 1000}s`,
+            ...(elementId != null ? { elementId } : {}),
+            status: "generating",
           };
         };
       }
@@ -1564,6 +1449,63 @@ function parseAspectRatio(aspectRatio: string | undefined) {
     return null;
   }
   return width / height;
+}
+
+async function waitForImageJobResult(
+  jobSvc: JobService,
+  jobId: string,
+  jobLap: (label: string, extra?: Record<string, unknown>) => void,
+) {
+  const startedAt = Date.now();
+  let pollCount = 0;
+
+  for (;;) {
+    const job = await jobSvc.getJobAdmin(jobId);
+    pollCount += 1;
+    if (job.status === "succeeded") {
+      const result = recordOrNull(job.result) ?? {};
+      const imageUrl = result.signed_url;
+      const assetId = result.asset_id;
+      const mimeType = result.mime_type;
+      const width = result.width;
+      const height = result.height;
+      const objectPath = result.object_path;
+      if (
+        typeof imageUrl !== "string" ||
+        typeof mimeType !== "string" ||
+        typeof width !== "number" ||
+        typeof height !== "number"
+      ) {
+        throw new Error("Image generation completed without a usable result.");
+      }
+      jobLap("job_poll_done", {
+        pollCount,
+        status: job.status,
+      });
+      return {
+        imageUrl,
+        ...(typeof assetId === "string" ? { assetId } : {}),
+        ...(typeof objectPath === "string" ? { objectPath } : {}),
+        mimeType,
+        width,
+        height,
+      };
+    }
+
+    if (job.status === "dead_letter" || job.status === "failed") {
+      throw new Error(job.error_message ?? "Image generation failed.");
+    }
+
+    if (job.status === "canceled") {
+      throw new Error("Image generation was canceled.");
+    }
+
+    if (Date.now() - startedAt >= IMAGE_JOB_MAX_WAIT_MS) {
+      throw new Error(`Image generation job ${jobId} timed out.`);
+    }
+
+    await delay(IMAGE_JOB_POLL_INTERVAL_MS);
+  }
 }
 
 function mapEventToStatus(event: StreamEvent): RuntimeRunStatus {
