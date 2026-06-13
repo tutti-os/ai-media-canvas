@@ -748,9 +748,11 @@ describe("SettingsPage", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "OpenAI-compatible" }),
     );
-    await userEvent.selectOptions(
-      await screen.findByLabelText("Quick fill provider"),
-      "https://api.deepseek.com",
+    await userEvent.click(
+      await screen.findByRole("combobox", { name: "Quick fill provider" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "DeepSeek - OpenAI" }),
     );
 
     expect(screen.getByLabelText("OpenAI Base URL")).toHaveValue(

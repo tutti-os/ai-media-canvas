@@ -47,6 +47,14 @@ import {
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
 
 interface AgentSettingsSectionProps {
   initialSourceTab?: AgentModelSourceTab | undefined;
@@ -81,6 +89,7 @@ const DEFAULT_AGNES_PROVIDER_MODELS = [
   "agnes:agnes-2.0-flash",
   "agnes:agnes-1.5-flash",
 ];
+const CUSTOM_API_PROVIDER_PRESET_VALUE = "__custom_api_provider__";
 
 const AGENT_PROTOCOLS: Array<{
   id: AgentProtocolId;
@@ -467,35 +476,60 @@ function QuickFillProviderField({
   const selectedPreset = presets.find(
     (preset) => preset.baseUrl === currentBaseUrl,
   );
+  const selectedValue =
+    selectedPreset?.baseUrl ?? CUSTOM_API_PROVIDER_PRESET_VALUE;
+  const items = [
+    {
+      label: t("agentSettings.api.customProvider"),
+      value: CUSTOM_API_PROVIDER_PRESET_VALUE,
+    },
+    ...presets.map((preset) => ({
+      label: preset.label,
+      value: preset.baseUrl,
+    })),
+  ];
 
   return (
     <div className="space-y-2">
       <Label htmlFor={`${provider}QuickFillProvider`}>
         {t("agentSettings.api.quickFillProvider")}
       </Label>
-      <select
-        id={`${provider}QuickFillProvider`}
-        aria-label={t("agentSettings.api.quickFillProvider")}
-        value={selectedPreset?.baseUrl ?? ""}
-        onChange={(event) => {
+      <Select
+        items={items}
+        value={selectedValue}
+        onValueChange={(value) => {
+          if (value === CUSTOM_API_PROVIDER_PRESET_VALUE) {
+            onChange(null);
+            return;
+          }
           const preset =
-            presets.find(
-              (candidate) => candidate.baseUrl === event.target.value,
-            ) ?? null;
+            presets.find((candidate) => candidate.baseUrl === value) ?? null;
           onChange(preset);
         }}
-        className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus:border-accent focus:ring-3 focus:ring-accent/20"
       >
-        <option value="">{t("agentSettings.api.customProvider")}</option>
-        {presets.map((preset) => (
-          <option
-            key={`${preset.provider}-${preset.baseUrl}`}
-            value={preset.baseUrl}
-          >
-            {preset.label}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger
+          id={`${provider}QuickFillProvider`}
+          aria-label={t("agentSettings.api.quickFillProvider")}
+          className="h-11 w-full bg-background shadow-sm"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false}>
+          <SelectGroup>
+            <SelectItem value={CUSTOM_API_PROVIDER_PRESET_VALUE}>
+              {t("agentSettings.api.customProvider")}
+            </SelectItem>
+            {presets.map((preset) => (
+              <SelectItem
+                key={`${preset.provider}-${preset.baseUrl}`}
+                value={preset.baseUrl}
+              >
+                {preset.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
     </div>
   );
 }
