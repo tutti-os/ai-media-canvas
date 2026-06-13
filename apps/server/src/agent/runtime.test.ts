@@ -350,7 +350,7 @@ describe("createAgentRunService", () => {
     );
   });
 
-  it("returns image jobs with canvas generation nodes before polling", async () => {
+  it("returns image jobs after inserting canvas generation nodes and polling", async () => {
     let capturedGatewaySession:
       | {
           submitImageJob?: (input: {
@@ -361,7 +361,12 @@ describe("createAgentRunService", () => {
           }) => Promise<{
             error?: string;
             elementId?: string;
+            imageUrl?: string;
             jobId: string;
+            mimeType?: string;
+            status?: "generating";
+            width?: number;
+            height?: number;
           }>;
         }
       | undefined;
@@ -372,7 +377,14 @@ describe("createAgentRunService", () => {
     const getJobAdmin = vi.fn(async () => ({
       attempt_count: 0,
       max_attempts: 3,
-      status: "running",
+      result: {
+        asset_id: "asset-1",
+        signed_url: "http://127.0.0.1:3001/local-assets/asset-1",
+        mime_type: "image/png",
+        width: 1024,
+        height: 1024,
+      },
+      status: "succeeded",
     }));
     const canvasState = {
       content: {
@@ -488,8 +500,11 @@ describe("createAgentRunService", () => {
       }),
     ).resolves.toMatchObject({
       elementId: expect.any(String),
+      imageUrl: "http://127.0.0.1:3001/local-assets/asset-1",
       jobId: "job-1",
-      status: "generating",
+      mimeType: "image/png",
+      width: 1024,
+      height: 1024,
     });
     expect(canvasState.content.elements).toHaveLength(1);
     expect(canvasState.content.elements[0]).toMatchObject({
@@ -501,7 +516,7 @@ describe("createAgentRunService", () => {
         prompt: "young playful logo",
       },
     });
-    expect(getJobAdmin).not.toHaveBeenCalled();
+    expect(getJobAdmin).toHaveBeenCalledWith("job-1");
   });
 
   it("returns video jobs with canvas generation nodes before polling", async () => {

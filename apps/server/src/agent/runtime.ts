@@ -75,6 +75,8 @@ import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
 type BillingErrorCode = string;
 type ImageQualityLevel = "standard" | "hd" | "ultra";
+const IMAGE_JOB_POLL_INTERVAL_MS = 3_000;
+const IMAGE_JOB_MAX_WAIT_MS = 180_000;
 type CanvasSummaryClient = {
   from(table: "canvases"): {
     select(columns: string): {
@@ -1003,11 +1005,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               );
             }
           }
-          jobLap("job_poll_done", { pollCount: 0, status: "deferred" });
+          const finalResult = await waitForImageJobResult(
+            jobSvc,
+            job.id,
+            jobLap,
+          );
           return {
             jobId: job.id,
             ...(elementId != null ? { elementId } : {}),
-            status: "generating",
+            ...finalResult,
           };
         };
 
@@ -1400,6 +1406,61 @@ function parseAspectRatio(aspectRatio: string | undefined) {
     return null;
   }
   return width / height;
+}
+
+async function waitForImageJobResult(
+  jobSvc: JobService,
+  jobId: string,
+  jobLap: (label: string, extra?: Record<string, unknown>) => void,
+) {
+  const startedAt = Date.now();
+  let pollCount = 0;
+
+  for (;;) {
+    const job = await jobSvc.getJobAdmin(jobId);
+    pollCount += 1;
+    if (job.status === "succeeded") {
+      const result = recordOrNull(job.result) ?? {};
+      const imageUrl = result.signed_url;
+      const assetId = result.asset_id;
+      const mimeType = result.mime_type;
+      const width = result.width;
+      const height = result.height;
+      if (
+        typeof imageUrl !== "string" ||
+        typeof mimeType !== "string" ||
+        typeof width !== "number" ||
+        typeof height !== "number"
+      ) {
+        throw new Error("Image generation completed without a usable result.");
+      }
+      jobLap("job_poll_done", {
+        pollCount,
+        status: job.status,
+      });
+      return {
+        imageUrl,
+        ...(typeof assetId === "string" ? { assetId } : {}),
+        mimeType,
+        width,
+        height,
+      };
+    }
+
+    if (job.status === "dead_letter" || job.status === "failed") {
+      throw new Error(job.error_message ?? "Image generation failed.");
+    }
+
+    if (job.status === "canceled") {
+      throw new Error("Image generation was canceled.");
+    }
+
+    if (Date.now() - startedAt >= IMAGE_JOB_MAX_WAIT_MS) {
+      throw new Error(`Image generation job ${jobId} timed out.`);
+    }
+
+    await delay(IMAGE_JOB_POLL_INTERVAL_MS);
+  }
 }
 
 function mapEventToStatus(event: StreamEvent): RuntimeRunStatus {

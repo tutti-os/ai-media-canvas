@@ -145,6 +145,7 @@ type ImageGenerateResult = {
   summary: string;
   title?: string;
   elementId?: string;
+  assetId?: string;
   imageUrl?: string;
   mimeType?: string;
   width?: number;
@@ -173,8 +174,8 @@ export type PersistImageFn = (
 ) => Promise<string>;
 
 /**
- * Submit an image generation job. The result may be final, or it may indicate
- * that a canvas generation node is now polling the job.
+ * Submit an image generation job and wait for the final image result.
+ * The canvas may still receive a generation node before the job completes.
  */
 export type SubmitImageJobFn = (input: {
   prompt: string;
@@ -192,6 +193,7 @@ export type SubmitImageJobFn = (input: {
 }) => Promise<{
   jobId: string;
   elementId?: string;
+  assetId?: string;
   imageUrl?: string;
   width?: number;
   height?: number;
@@ -342,6 +344,7 @@ export async function runImageGenerate(
         ...(jobResult.elementId != null
           ? { elementId: jobResult.elementId }
           : {}),
+        ...(jobResult.assetId != null ? { assetId: jobResult.assetId } : {}),
         imageUrl: jobResult.imageUrl ?? "",
         mimeType: jobResult.mimeType ?? "image/png",
         ...(jobResult.width != null ? { width: jobResult.width } : {}),
