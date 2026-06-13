@@ -107,26 +107,35 @@ export function loadServerEnv(
   const nextopApiBaseUrl =
     overrides.nextopApiBaseUrl ??
     normalizeOptionalString(
-      source.NEXTOP_API_BASE_URL ?? source.AIMC_NEXTOP_API_BASE_URL,
+      source.TUTTI_API_BASE_URL ??
+        source.NEXTOP_API_BASE_URL ??
+        source.AIMC_NEXTOP_API_BASE_URL,
     );
   const nextopAppId =
     overrides.nextopAppId ??
-    normalizeOptionalString(source.NEXTOP_APP_ID ?? source.AIMC_NEXTOP_APP_ID);
+    normalizeOptionalString(
+      source.TUTTI_APP_ID ?? source.NEXTOP_APP_ID ?? source.AIMC_NEXTOP_APP_ID,
+    );
   const nextopAppInstallationId =
     overrides.nextopAppInstallationId ??
     normalizeOptionalString(
-      source.NEXTOP_APP_INSTALLATION_ID ??
+      source.TUTTI_APP_INSTALLATION_ID ??
+        source.NEXTOP_APP_INSTALLATION_ID ??
         source.AIMC_NEXTOP_APP_INSTALLATION_ID,
     );
   const nextopAppServerToken =
     overrides.nextopAppServerToken ??
     normalizeOptionalString(
-      source.NEXTOP_APP_SERVER_TOKEN ?? source.AIMC_NEXTOP_APP_SERVER_TOKEN,
+      source.TUTTI_APP_SERVER_TOKEN ??
+        source.NEXTOP_APP_SERVER_TOKEN ??
+        source.AIMC_NEXTOP_APP_SERVER_TOKEN,
     );
   const nextopWorkspaceId =
     overrides.nextopWorkspaceId ??
     normalizeOptionalString(
-      source.NEXTOP_WORKSPACE_ID ?? source.AIMC_NEXTOP_WORKSPACE_ID,
+      source.TUTTI_WORKSPACE_ID ??
+        source.NEXTOP_WORKSPACE_ID ??
+        source.AIMC_NEXTOP_WORKSPACE_ID,
     );
   const googleApiKey =
     overrides.googleApiKey ??

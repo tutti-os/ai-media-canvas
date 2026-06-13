@@ -23,10 +23,10 @@ import {
   renderBootstrap,
   renderCommandsGuide,
   validatePackageRoot,
-} from "../scripts/package-nextop-app.mjs";
+} from "../scripts/package-tutti-app.mjs";
 
 async function makeTempPackageRoot() {
-  return mkdtemp(path.join(os.tmpdir(), "aimc-nextop-package-test-"));
+  return mkdtemp(path.join(os.tmpdir(), "aimc-tutti-package-test-"));
 }
 
 function readPngAlphaBounds(png) {
@@ -129,11 +129,11 @@ function readPngAlphaBounds(png) {
   };
 }
 
-test("createManifest returns the Nextop package manifest contract", () => {
+test("createManifest returns the Tutti package manifest contract", () => {
   const manifest = createManifest({ version: "1.2.3" });
 
   assert.deepEqual(manifest, {
-    schemaVersion: "nextop.app.manifest.v1",
+    schemaVersion: "tutti.app.manifest.v1",
     appId: "ai-media-canvas",
     version: "1.2.3",
     name: "AI Media Canvas",
@@ -147,7 +147,7 @@ test("createManifest returns the Nextop package manifest contract", () => {
       healthcheckPath: "/api/health",
     },
     cli: {
-      manifest: "nextop.cli.json",
+      manifest: "tutti.cli.json",
     },
     localizationInfo: {
       defaultLocale: "en",
@@ -162,22 +162,22 @@ test("createManifest returns the Nextop package manifest contract", () => {
       mode: "workspace-open",
     },
     author: {
-      name: "Nextop",
+      name: "Tutti",
     },
     tags: ["generated", "local-first", "media-canvas"],
   });
 });
 
-test("root Nextop app manifest matches the generated package manifest", async () => {
-  const manifest = JSON.parse(await readFile("nextop.app.json", "utf8"));
+test("root Tutti app manifest matches the generated package manifest", async () => {
+  const manifest = JSON.parse(await readFile("tutti.app.json", "utf8"));
 
   assert.deepEqual(manifest, createManifest({ version: manifest.version }));
 });
 
-test("createCliManifest returns the Nextop CLI manifest contract", () => {
+test("createCliManifest returns the Tutti CLI manifest contract", () => {
   const manifest = createCliManifest();
 
-  assert.equal(manifest.schemaVersion, "nextop.app.cli.v1");
+  assert.equal(manifest.schemaVersion, "tutti.app.cli.v1");
   assert.equal(manifest.scope, "aimc");
   assert.equal(manifest.documentation.file, "COMMANDS.md");
   assert.ok(manifest.commands.length >= 20);
@@ -208,7 +208,7 @@ test("createCliManifest returns the Nextop CLI manifest contract", () => {
       handler: {
         kind: "http",
         method: "POST",
-        path: "/nextop/cli/projects/create",
+        path: "/tutti/cli/projects/create",
         timeoutMs: 30000,
       },
     },
@@ -219,8 +219,8 @@ test("createCliManifest keeps command metadata discoverable for agents", () => {
   const manifest = createCliManifest();
 
   for (const command of manifest.commands) {
-    assert.match(command.handler.path, /^\/nextop\/cli\//);
-    assert.equal(command.handler.path, `/nextop/cli/${command.path.join("/")}`);
+    assert.match(command.handler.path, /^\/tutti\/cli\//);
+    assert.equal(command.handler.path, `/tutti/cli/${command.path.join("/")}`);
     assert.ok(command.summary.length > 0);
     assert.ok(command.description.length > command.summary.length);
 
@@ -239,27 +239,30 @@ test("renderCommandsGuide documents CLI commands", () => {
 
   assert.match(guide, /AI Media Canvas CLI Commands/);
   assert.match(guide, /`aimc projects create --name <required> --description`/);
-  assert.match(guide, /\/nextop\/cli\/agent\/run/);
+  assert.match(guide, /\/tutti\/cli\/agent\/run/);
 });
 
-test("renderBootstrap maps Nextop runtime env into AI Media Canvas env", () => {
+test("renderBootstrap maps Tutti runtime env into AI Media Canvas env", () => {
   const bootstrap = renderBootstrap({ version: "1.2.3" });
 
   assert.match(bootstrap, /^#!\/bin\/sh\n/);
   assert.match(
     bootstrap,
-    /package_dir="\$\{NEXTOP_APP_PACKAGE_DIR:-\$script_dir\}"/,
+    /package_dir="\$\{TUTTI_APP_PACKAGE_DIR:-\$\{NEXTOP_APP_PACKAGE_DIR:-\$script_dir\}\}"/,
   );
-  assert.match(bootstrap, /export HOST="\$\{NEXTOP_APP_HOST:-127\.0\.0\.1\}"/);
   assert.match(
     bootstrap,
-    /export AIMC_SERVER_PORT="\$\{NEXTOP_APP_PORT:-3001\}"/,
+    /export HOST="\$\{TUTTI_APP_HOST:-\$\{NEXTOP_APP_HOST:-127\.0\.0\.1\}\}"/,
+  );
+  assert.match(
+    bootstrap,
+    /export AIMC_SERVER_PORT="\$\{TUTTI_APP_PORT:-\$\{NEXTOP_APP_PORT:-3001\}\}"/,
   );
   assert.match(bootstrap, /export AIMC_APP_VERSION="1\.2\.3"/);
   assert.match(bootstrap, /export AIMC_WEB_DIST="\$package_dir\/dist"/);
   assert.match(
     bootstrap,
-    /export AIMC_DATA_ROOT="\$\{NEXTOP_APP_DATA_DIR:-\$package_dir\/\.data\}"/,
+    /export AIMC_DATA_ROOT="\$\{TUTTI_APP_DATA_DIR:-\$\{NEXTOP_APP_DATA_DIR:-\$package_dir\/\.data\}\}"/,
   );
   assert.match(bootstrap, /export AIMC_SKILLS_ROOT="\$package_dir\/skills"/);
   assert.match(
@@ -268,16 +271,19 @@ test("renderBootstrap maps Nextop runtime env into AI Media Canvas env", () => {
   );
   assert.match(
     bootstrap,
-    /export AIMC_AGENT_FILES_ROOT="\$\{NEXTOP_WORKSPACE_ROOT:-\$AIMC_DATA_ROOT\}"/,
+    /export AIMC_AGENT_FILES_ROOT="\$\{TUTTI_WORKSPACE_ROOT:-\$\{NEXTOP_WORKSPACE_ROOT:-\$AIMC_DATA_ROOT\}\}"/,
   );
   assert.match(
     bootstrap,
-    /base_url="\$\{NEXTOP_APP_BASE_URL:-http:\/\/\$HOST:\$AIMC_SERVER_PORT\}"/,
+    /base_url="\$\{TUTTI_APP_BASE_URL:-\$\{NEXTOP_APP_BASE_URL:-http:\/\/\$HOST:\$AIMC_SERVER_PORT\}\}"/,
   );
-  assert.match(bootstrap, /node_bin="\$\{NEXTOP_APP_NODE:-node\}"/);
   assert.match(
     bootstrap,
-    /runtime_dir="\$\{NEXTOP_APP_RUNTIME_DIR:-\$AIMC_DATA_ROOT\/\.runtime\}"/,
+    /node_bin="\$\{TUTTI_APP_NODE:-\$\{NEXTOP_APP_NODE:-node\}\}"/,
+  );
+  assert.match(
+    bootstrap,
+    /runtime_dir="\$\{TUTTI_APP_RUNTIME_DIR:-\$\{NEXTOP_APP_RUNTIME_DIR:-\$AIMC_DATA_ROOT\/\.runtime\}\}"/,
   );
   assert.match(
     bootstrap,
@@ -298,13 +304,13 @@ test("renderAgentsGuide is non-empty and documents package layout", () => {
   const guide = renderAgentsGuide();
 
   assert.match(guide, /AI Media Canvas/);
-  assert.match(guide, /nextop\.app\.json/);
+  assert.match(guide, /tutti\.app\.json/);
   assert.match(guide, /bootstrap\.sh/);
   assert.match(guide, /icon\.png/);
-  assert.match(guide, /NEXTOP_APP_DATA_DIR/);
+  assert.match(guide, /TUTTI_APP_DATA_DIR/);
 });
 
-test("Nextop icon asset is a generated PNG with a contrast-safe tile", async () => {
+test("Tutti icon asset is a generated PNG with a contrast-safe tile", async () => {
   const iconPath = path.resolve(
     "apps/web/public/brand/aimc-nextop-app-icon.png",
   );
@@ -331,20 +337,20 @@ test("createWebBuildEnv prevents local dev server URLs from being baked into pac
   assert.equal(env.NEXT_PUBLIC_AIMC_SERVER_BASE_URL, "");
 });
 
-test("validatePackageRoot requires the files Nextop imports", async () => {
+test("validatePackageRoot requires the files Tutti imports", async () => {
   const packageRoot = await makeTempPackageRoot();
 
   await assert.rejects(
     validatePackageRoot(packageRoot),
-    /Missing required package file: nextop\.app\.json/,
+    /Missing required package file: tutti\.app\.json/,
   );
 
   await writeFile(
-    path.join(packageRoot, "nextop.app.json"),
+    path.join(packageRoot, "tutti.app.json"),
     `${JSON.stringify(createManifest({ version: "1.2.3" }))}\n`,
   );
   await writeFile(
-    path.join(packageRoot, "nextop.cli.json"),
+    path.join(packageRoot, "tutti.cli.json"),
     `${JSON.stringify(createCliManifest())}\n`,
   );
   await writeFile(path.join(packageRoot, "COMMANDS.md"), renderCommandsGuide());
@@ -381,7 +387,7 @@ test("normalizePackageTimestamps makes package mtimes deterministic", async () =
   const mtime = new Date("2024-01-02T03:04:05.000Z");
 
   await mkdir(nestedDir);
-  await writeFile(path.join(packageRoot, "nextop.app.json"), "{}\n");
+  await writeFile(path.join(packageRoot, "tutti.app.json"), "{}\n");
   await writeFile(nestedFile, "ok\n");
 
   await normalizePackageTimestamps(packageRoot, mtime);
