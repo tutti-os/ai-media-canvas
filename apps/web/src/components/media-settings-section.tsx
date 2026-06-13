@@ -27,7 +27,7 @@ type StringSettingsKey = Exclude<
 >;
 
 type MediaProviderCard = {
-  id: "agnes" | "openai" | "google" | "vertex" | "replicate" | "volces";
+  id: "agnes" | "kie" | "openai" | "google" | "vertex" | "replicate" | "volces";
   label: string;
   capabilitiesKey: string;
   summaryKey: string;
@@ -60,6 +60,39 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
         key: "agnesBaseUrl",
         label: "Agnes Base URL",
         placeholder: "https://apihub.agnes-ai.com/v1",
+      },
+    ],
+  },
+  {
+    id: "kie",
+    label: "Kie.ai",
+    capabilitiesKey: "media.capabilities.imageVideo",
+    summaryKey: "media.cards.kie.summary",
+    models: [
+      "Z-Image",
+      "Seedream 5.0 Lite",
+      "GPT Image 2",
+      "Qwen2",
+      "Nano Banana Pro",
+      "Nano Banana",
+      "Runway",
+      "Grok",
+      "Hailuo",
+      "Veo",
+      "Kling",
+      "Seedance 2.0",
+      "HappyHorse 1.0",
+    ],
+    fields: [
+      {
+        key: "kieApiKey",
+        label: "Kie API Key",
+        placeholder: "kie-...",
+      },
+      {
+        key: "kieBaseUrl",
+        label: "Kie Base URL",
+        placeholder: "https://api.kie.ai",
       },
     ],
   },

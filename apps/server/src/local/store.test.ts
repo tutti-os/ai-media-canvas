@@ -806,6 +806,8 @@ license: MIT
       googleVertexLocation: "global",
       googleVertexVideoLocation: "us-central1",
       replicateApiToken: "replicate-local-token",
+      kieApiKey: "",
+      kieBaseUrl: "",
       volcesApiKey: "volces-local-key",
       volcesBaseUrl: "https://volces.example.com/api/v3",
     });
@@ -836,6 +838,8 @@ license: MIT
       googleVertexLocation: "global",
       googleVertexVideoLocation: "us-central1",
       replicateApiToken: "replicate-local-token",
+      kieApiKey: "",
+      kieBaseUrl: "",
       volcesApiKey: "volces-local-key",
       volcesBaseUrl: "https://volces.example.com/api/v3",
     });
@@ -882,6 +886,8 @@ license: MIT
       googleVertexLocation: "",
       googleVertexVideoLocation: "",
       replicateApiToken: "",
+      kieApiKey: "",
+      kieBaseUrl: "",
       volcesApiKey: "",
       volcesBaseUrl: "",
     });
@@ -929,6 +935,8 @@ license: MIT
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       }),
@@ -953,6 +961,8 @@ license: MIT
       googleVertexLocation: "",
       googleVertexVideoLocation: "",
       replicateApiToken: "",
+      kieApiKey: "",
+      kieBaseUrl: "",
       volcesApiKey: "",
       volcesBaseUrl: "",
     });

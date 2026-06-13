@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { runCreateRequestSchema } from "./contracts.js";
+import {
+  runCreateRequestSchema,
+  workspaceSettingsSchema,
+} from "./contracts.js";
 
 const baseRunCreateRequest = {
   conversationId: "canvas_1",
@@ -90,10 +93,44 @@ describe("runCreateRequestSchema", () => {
     expect(result.error?.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          message: "resumeMode requires resumeFromRunId unless resumeMode=fresh.",
+          message:
+            "resumeMode requires resumeFromRunId unless resumeMode=fresh.",
           path: ["resumeFromRunId"],
         }),
       ]),
     );
+  });
+});
+
+describe("workspaceSettingsSchema", () => {
+  it("accepts Kie media provider settings", () => {
+    const result = workspaceSettingsSchema.safeParse({
+      defaultModel: "",
+      providerModels: {
+        openai: [],
+        anthropic: [],
+        agnes: [],
+        google: [],
+        vertex: [],
+      },
+      openAIApiKey: "",
+      openAIApiBase: "",
+      anthropicApiKey: "",
+      anthropicBaseUrl: "",
+      agnesApiKey: "",
+      agnesBaseUrl: "",
+      agnesDefaultModel: "",
+      googleApiKey: "",
+      googleVertexProject: "",
+      googleVertexLocation: "",
+      googleVertexVideoLocation: "",
+      replicateApiToken: "",
+      volcesApiKey: "",
+      volcesBaseUrl: "",
+      kieApiKey: "local-kie-key",
+      kieBaseUrl: "https://api.kie.ai",
+    });
+
+    expect(result.success).toBe(true);
   });
 });

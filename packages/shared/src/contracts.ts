@@ -68,10 +68,7 @@ export const videoGenerationPreferenceSchema = z.object({
   models: z.array(z.string().min(1)),
 });
 
-export const runtimeKindSchema = z.enum([
-  "server-deepagent",
-  "local-agent",
-]);
+export const runtimeKindSchema = z.enum(["server-deepagent", "local-agent"]);
 
 export const agentRuntimeProviderSchema = z
   .string()
@@ -123,7 +120,11 @@ export const runCreateRequestSchema = z
         path: ["runtimeProvider"],
       });
     }
-    if (value.resumeMode && value.resumeMode !== "fresh" && !value.resumeFromRunId) {
+    if (
+      value.resumeMode &&
+      value.resumeMode !== "fresh" &&
+      !value.resumeFromRunId
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "resumeMode requires resumeFromRunId unless resumeMode=fresh.",
@@ -208,6 +209,8 @@ export const workspaceSettingsSchema = z.object({
   googleVertexLocation: z.string(),
   googleVertexVideoLocation: z.string(),
   replicateApiToken: z.string(),
+  kieApiKey: z.string(),
+  kieBaseUrl: z.string(),
   volcesApiKey: z.string(),
   volcesBaseUrl: z.string(),
 });
@@ -407,14 +410,14 @@ export type VideoGenerationPreference = z.infer<
 >;
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 export type RuntimeKind = z.infer<typeof runtimeKindSchema>;
-export type AgentRuntimeProvider = z.infer<
-  typeof agentRuntimeProviderSchema
->;
+export type AgentRuntimeProvider = z.infer<typeof agentRuntimeProviderSchema>;
 export type AgentModelSource = z.infer<typeof agentModelSourceSchema>;
 export type AgentRunResumeMode = z.infer<typeof agentRunResumeModeSchema>;
 export type ChatSessionSummary = z.infer<typeof chatSessionSummarySchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
-export type ChatMessageCreateRequest = z.infer<typeof chatMessageCreateRequestSchema>;
+export type ChatMessageCreateRequest = z.infer<
+  typeof chatMessageCreateRequestSchema
+>;
 export type ChatToolActivity = z.infer<typeof chatToolActivitySchema>;
 export type ProfileUpdateRequest = z.infer<typeof profileUpdateRequestSchema>;
 export type ModelInfo = z.infer<typeof modelInfoSchema>;

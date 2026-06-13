@@ -43,6 +43,8 @@ export const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   googleVertexLocation: "",
   googleVertexVideoLocation: "",
   replicateApiToken: "",
+  kieApiKey: "",
+  kieBaseUrl: "",
   volcesApiKey: "",
   volcesBaseUrl: "",
 };
@@ -124,6 +126,8 @@ export function normalizeWorkspaceSettings(
     googleVertexLocation: input.googleVertexLocation?.trim() ?? "",
     googleVertexVideoLocation: input.googleVertexVideoLocation?.trim() ?? "",
     replicateApiToken: input.replicateApiToken?.trim() ?? "",
+    kieApiKey: input.kieApiKey?.trim() ?? "",
+    kieBaseUrl: input.kieBaseUrl?.trim() ?? "",
     volcesApiKey: input.volcesApiKey?.trim() ?? "",
     volcesBaseUrl: input.volcesBaseUrl?.trim() ?? "",
   };
@@ -158,6 +162,8 @@ export function resolveEffectiveServerEnv(
     settings.googleVertexVideoLocation || baseEnv.googleVertexVideoLocation;
   const replicateApiToken =
     settings.replicateApiToken || baseEnv.replicateApiToken;
+  const kieApiKey = settings.kieApiKey || baseEnv.kieApiKey;
+  const kieBaseUrl = settings.kieBaseUrl || baseEnv.kieBaseUrl;
   const volcesApiKey = settings.volcesApiKey || baseEnv.volcesApiKey;
   const volcesBaseUrl = settings.volcesBaseUrl || baseEnv.volcesBaseUrl;
 
@@ -179,6 +185,8 @@ export function resolveEffectiveServerEnv(
     ...(googleVertexLocation ? { googleVertexLocation } : {}),
     ...(googleVertexVideoLocation ? { googleVertexVideoLocation } : {}),
     ...(replicateApiToken ? { replicateApiToken } : {}),
+    ...(kieApiKey ? { kieApiKey } : {}),
+    ...(kieBaseUrl ? { kieBaseUrl } : {}),
     ...(volcesApiKey ? { volcesApiKey } : {}),
     ...(volcesBaseUrl ? { volcesBaseUrl } : {}),
   };
@@ -211,6 +219,8 @@ export function applyEffectiveProviderEnv(
     | "openAIApiBase"
     | "openAIApiKey"
     | "replicateApiToken"
+    | "kieApiKey"
+    | "kieBaseUrl"
     | "volcesApiKey"
     | "volcesBaseUrl"
   >,
@@ -256,6 +266,10 @@ export function applyEffectiveProviderEnv(
 
   assignEnvValue(target, "AIMC_REPLICATE_API_TOKEN", env.replicateApiToken);
   assignEnvValue(target, "REPLICATE_API_TOKEN", env.replicateApiToken);
+  assignEnvValue(target, "AIMC_KIE_API_KEY", env.kieApiKey);
+  assignEnvValue(target, "KIE_API_KEY", env.kieApiKey);
+  assignEnvValue(target, "AIMC_KIE_BASE_URL", env.kieBaseUrl);
+  assignEnvValue(target, "KIE_BASE_URL", env.kieBaseUrl);
   assignEnvValue(target, "AIMC_VOLCES_API_KEY", env.volcesApiKey);
   assignEnvValue(target, "VOLCES_API_KEY", env.volcesApiKey);
   assignEnvValue(target, "AIMC_VOLCES_BASE_URL", env.volcesBaseUrl);

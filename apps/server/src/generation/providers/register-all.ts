@@ -12,6 +12,8 @@ import { GoogleImageProvider } from "./google-image.js";
 import { GoogleVertexImageProvider } from "./google-vertex-image.js";
 import { GoogleVertexVideoProvider } from "./google-vertex-video.js";
 import { GoogleVideoProvider } from "./google-video.js";
+import { KieImageProvider } from "./kie-image.js";
+import { KieVideoProvider } from "./kie-video.js";
 import { OpenAIImageProvider } from "./openai-image.js";
 import { registerImageProvider, registerVideoProvider } from "./registry.js";
 import { ReplicateImageProvider } from "./replicate-image.js";
@@ -33,6 +35,11 @@ export function registerAllProviders(env: ServerEnv): void {
     registerVideoProvider(
       new AgnesVideoProvider(env.agnesApiKey, env.agnesBaseUrl),
     );
+  }
+
+  if (env.kieApiKey) {
+    registerImageProvider(new KieImageProvider(env.kieApiKey, env.kieBaseUrl));
+    registerVideoProvider(new KieVideoProvider(env.kieApiKey, env.kieBaseUrl));
   }
 
   // Replicate — image + video
@@ -57,11 +64,14 @@ export function registerAllProviders(env: ServerEnv): void {
     };
     registerImageProvider(new GoogleVertexImageProvider(vertexConfig));
 
-    const videoLocation = env.googleVertexVideoLocation ?? env.googleVertexLocation;
-    registerVideoProvider(new GoogleVertexVideoProvider({
-      project: env.googleVertexProject,
-      location: videoLocation,
-    }));
+    const videoLocation =
+      env.googleVertexVideoLocation ?? env.googleVertexLocation;
+    registerVideoProvider(
+      new GoogleVertexVideoProvider({
+        project: env.googleVertexProject,
+        location: videoLocation,
+      }),
+    );
   }
 
   // OpenAI — image only

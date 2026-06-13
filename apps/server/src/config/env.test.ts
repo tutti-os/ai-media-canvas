@@ -36,4 +36,19 @@ describe("loadServerEnv", () => {
     expect(env.nextopAppServerToken).toBe("tutti-token");
     expect(env.nextopWorkspaceId).toBe("tutti-workspace");
   });
+
+  it("loads Kie provider credentials and endpoint overrides", () => {
+    const env = loadServerEnv(
+      {},
+      {
+        AIMC_KIE_API_KEY: "env-kie-key",
+        AIMC_KIE_BASE_URL: "https://kie-api.example",
+        AIMC_KIE_UPLOAD_BASE_URL: "https://kie-upload.example",
+      },
+    );
+
+    expect(env.kieApiKey).toBe("env-kie-key");
+    expect(env.kieBaseUrl).toBe("https://kie-api.example");
+    expect(env.kieUploadBaseUrl).toBe("https://kie-upload.example");
+  });
 });
