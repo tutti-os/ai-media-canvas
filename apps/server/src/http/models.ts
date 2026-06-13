@@ -32,22 +32,20 @@ import {
 } from "../features/settings/settings-service.js";
 
 const OPENAI_MODELS: ModelInfo[] = [
-  { id: "openai:gpt-5.2", name: "OpenAI GPT-5.2", provider: "openai" },
+  { id: "openai:gpt-5.5", name: "OpenAI GPT-5.5", provider: "openai" },
   {
-    id: "openai:gpt-5.2-pro",
-    name: "OpenAI GPT-5.2 Pro",
-    provider: "openai",
-  },
-  { id: "openai:gpt-5.1", name: "OpenAI GPT-5.1", provider: "openai" },
-  { id: "openai:gpt-5", name: "OpenAI GPT-5", provider: "openai" },
-  {
-    id: "openai:gpt-5-mini",
-    name: "OpenAI GPT-5 Mini",
+    id: "openai:gpt-5.4",
+    name: "OpenAI GPT-5.4",
     provider: "openai",
   },
   {
-    id: "openai:gpt-5-nano",
-    name: "OpenAI GPT-5 Nano",
+    id: "openai:gpt-5.4-mini",
+    name: "OpenAI GPT-5.4 Mini",
+    provider: "openai",
+  },
+  {
+    id: "openai:gpt-5.4-nano",
+    name: "OpenAI GPT-5.4 Nano",
     provider: "openai",
   },
 ];

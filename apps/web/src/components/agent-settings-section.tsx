@@ -185,15 +185,8 @@ const API_PROVIDER_PRESETS: ApiProviderPreset[] = [
     label: "OpenAI",
     baseUrl: "https://api.openai.com/v1",
     apiKeyUrl: OPENAI_API_KEYS_URL,
-    model: "gpt-5.2",
-    models: [
-      "gpt-5.2",
-      "gpt-5.2-pro",
-      "gpt-5.1",
-      "gpt-5",
-      "gpt-5-mini",
-      "gpt-5-nano",
-    ],
+    model: "gpt-5.5",
+    models: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"],
   },
   {
     provider: "openai",

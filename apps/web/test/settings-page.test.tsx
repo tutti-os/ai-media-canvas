@@ -805,6 +805,60 @@ describe("SettingsPage", () => {
     openSpy.mockRestore();
   });
 
+  it("quick fills current OpenAI API model presets", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "API provider" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "OpenAI-compatible" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("combobox", { name: "Quick fill provider" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "OpenAI" }),
+    );
+
+    expect(screen.getByLabelText("OpenAI Base URL")).toHaveValue(
+      "https://api.openai.com/v1",
+    );
+    expect(screen.getByLabelText("OpenAI-compatible model 1")).toHaveValue(
+      "gpt-5.5",
+    );
+    expect(screen.getByLabelText("OpenAI-compatible model 2")).toHaveValue(
+      "gpt-5.4",
+    );
+    expect(screen.getByLabelText("OpenAI-compatible model 3")).toHaveValue(
+      "gpt-5.4-mini",
+    );
+    expect(screen.getByLabelText("OpenAI-compatible model 4")).toHaveValue(
+      "gpt-5.4-nano",
+    );
+  });
+
   it("lets the default model picker switch to Anthropic and choose a model", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
