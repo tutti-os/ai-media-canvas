@@ -27,25 +27,41 @@ test("production Nextop app workflow publishes ai-media-canvas on main", async (
   const source = await readFile(workflowPath, "utf8");
   const workflow = parseWorkflow(workflowPath);
   const on = workflowTriggers(workflow);
-  const publish = workflow.jobs.publish;
+  const publishPush = workflow.jobs["publish-push"];
+  const publishDispatch = workflow.jobs["publish-dispatch"];
 
   assert.equal(workflow.name, "Publish Nextop App Production");
   assert.equal(workflow.permissions.contents, "write");
+  assert.equal(workflow.permissions["id-token"], "write");
   assert.deepEqual(on.push.branches, ["main"]);
   assert.equal(on.workflow_dispatch.inputs.publish_catalog.type, "boolean");
   assert.equal(on.workflow_dispatch.inputs.publish_catalog.default, false);
   assert.equal(on.workflow_dispatch.inputs.catalog_only.type, "boolean");
   assert.equal(on.workflow_dispatch.inputs.catalog_only.default, false);
   assert.equal(
-    publish.uses,
+    publishPush.uses,
     "tutti-os/tutti/.github/workflows/publish-nextop-app-release.yml@main",
   );
-  assert.equal(publish.with.app_id, "ai-media-canvas");
-  assert.equal(publish.with.package_command, "pnpm package:nextop");
-  assert.equal(publish.with.package_dir, "build/nextop-app/package");
-  assert.equal(publish.with.icon_path, "build/nextop-app/package/icon.png");
-  assert.match(source, /inputs\.publish_catalog/);
-  assert.match(source, /inputs\.catalog_only/);
+  assert.equal(
+    publishDispatch.uses,
+    "tutti-os/tutti/.github/workflows/publish-nextop-app-release.yml@main",
+  );
+  assert.equal(publishPush.if, "${{ github.event_name != 'workflow_dispatch' }}");
+  assert.equal(publishDispatch.if, "${{ github.event_name == 'workflow_dispatch' }}");
+  assert.equal(publishPush.with.app_id, "ai-media-canvas");
+  assert.equal(publishDispatch.with.app_id, "ai-media-canvas");
+  assert.equal(publishPush.with.package_command, "pnpm package:nextop");
+  assert.equal(publishPush.with.package_dir, "build/nextop-app/package");
+  assert.equal(publishPush.with.icon_path, "build/nextop-app/package/icon.png");
+  assert.equal(publishPush.with.release_version, "");
+  assert.equal(
+    publishPush.with.publish_catalog,
+    "${{ vars.NEXTOP_APP_RELEASES_PRODUCTION_PUBLISH_CATALOG == 'true' }}",
+  );
+  assert.equal(publishPush.with.catalog_only, false);
+  assert.equal(publishDispatch.with.release_version, "${{ inputs.release_version || '' }}");
+  assert.equal(publishDispatch.with.publish_catalog, "${{ inputs.publish_catalog }}");
+  assert.equal(publishDispatch.with.catalog_only, "${{ inputs.catalog_only }}");
   assert.match(source, /NEXTOP_APP_RELEASES_PRODUCTION_PUBLISH_CATALOG/);
   assert.match(source, /catalog_cloudfront_distribution_id/);
   assert.match(source, /NEXTOP_APP_RELEASES_PRODUCTION_AWS_REGION/);
