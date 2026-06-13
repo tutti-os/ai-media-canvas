@@ -1,21 +1,24 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { executeImageGenerationJob } from "./image-generation.js";
-import {
-  executeVideoGenerationJob,
-  isRetryableVideoGenerationError,
-} from "./video-generation.js";
-import { createLocalStore } from "../../../local/store.js";
 import {
   clearProviders,
   registerImageProvider,
   registerVideoProvider,
 } from "../../../generation/providers/registry.js";
-import type { ImageProvider, VideoProvider } from "../../../generation/types.js";
+import type {
+  ImageProvider,
+  VideoProvider,
+} from "../../../generation/types.js";
 import { GenerationError } from "../../../generation/utils.js";
+import { createLocalStore } from "../../../local/store.js";
+import { executeImageGenerationJob } from "./image-generation.js";
+import {
+  executeVideoGenerationJob,
+  isRetryableVideoGenerationError,
+} from "./video-generation.js";
 
 const tempDirs: string[] = [];
 
@@ -81,8 +84,9 @@ describe("generation executors", () => {
     });
 
     const asset = store.getAssetResponse(result.asset_id as string);
+    if (!asset) throw new Error("Expected generated image asset to be stored.");
     expect(asset?.mimeType).toBe("image/png");
-    expect(readFileSync(asset!.filePath)).toEqual(imageBytes);
+    expect(readFileSync(asset.filePath)).toEqual(imageBytes);
   });
 
   it("persists generated video bytes locally and returns AIMC-compatible fields", async () => {
@@ -153,8 +157,9 @@ describe("generation executors", () => {
     });
 
     const asset = store.getAssetResponse(result.asset_id as string);
+    if (!asset) throw new Error("Expected generated video asset to be stored.");
     expect(asset?.mimeType).toBe("video/mp4");
-    expect(readFileSync(asset!.filePath)).toEqual(videoBytes);
+    expect(readFileSync(asset.filePath)).toEqual(videoBytes);
   });
 
   it("forwards Agnes phase-2 video controls through the video executor", async () => {
@@ -201,7 +206,9 @@ describe("generation executors", () => {
 
     registerVideoProvider(videoProvider);
 
-    const project = store.createProject({ name: "Executor Agnes Video Project" });
+    const project = store.createProject({
+      name: "Executor Agnes Video Project",
+    });
     const job = store.createBackgroundJob({
       jobType: "video_generation",
       queueName: "video_generation_jobs",
@@ -233,10 +240,7 @@ describe("generation executors", () => {
       negativePrompt: "shake, blur",
       frameRate: 12,
       numFrames: 97,
-      inputImages: [
-        "data:image/png;base64,AAAA",
-        "data:image/png;base64,BBBB",
-      ],
+      inputImages: ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"],
     });
   });
 
@@ -250,6 +254,101 @@ describe("generation executors", () => {
         ),
       ),
     ).toBe(false);
+  });
+
+  it("persists Agnes video_id as the resumable remote video task id", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-job-video-id-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const videoBytes = Buffer.from("agnes-video-id-binary");
+    const videoProvider: VideoProvider = {
+      name: "agnes-video",
+      models: [
+        {
+          id: "agnes-video/agnes-video-v2.0",
+          displayName: "Agnes Video",
+          description: "Agnes video provider",
+          capabilities: {
+            textToVideo: true,
+            imageToVideo: true,
+            videoToVideo: false,
+            audio: false,
+          },
+          limits: {
+            maxDuration: 16,
+            maxResolution: "1080p",
+            maxInputImages: 8,
+          },
+        },
+      ],
+      async generate(params) {
+        const metadata = params.metadata as
+          | {
+              onRemoteTaskCreated?: (task: {
+                provider: string;
+                taskId: string;
+                videoId?: string;
+                status?: string;
+              }) => Promise<void> | void;
+              onRemoteTaskStatus?: (task: {
+                provider: string;
+                taskId: string;
+                videoId?: string;
+                status?: string;
+              }) => Promise<void> | void;
+            }
+          | undefined;
+        await metadata?.onRemoteTaskCreated?.({
+          provider: "agnes-video",
+          taskId: "task_123",
+          videoId: "video_123",
+          status: "queued",
+        });
+        await metadata?.onRemoteTaskStatus?.({
+          provider: "agnes-video",
+          taskId: "video_123",
+          videoId: "video_123",
+          status: "completed",
+        });
+        return {
+          url: `data:video/mp4;base64,${videoBytes.toString("base64")}`,
+          mimeType: "video/mp4",
+          width: 1280,
+          height: 720,
+          durationSeconds: 5,
+        };
+      },
+    };
+
+    registerVideoProvider(videoProvider);
+
+    const project = store.createProject({
+      name: "Executor Agnes Video ID Project",
+    });
+    const job = store.createBackgroundJob({
+      jobType: "video_generation",
+      queueName: "video_generation_jobs",
+      projectId: project.id,
+      payload: {
+        prompt: "Persist the Agnes video id",
+        model: "agnes-video/agnes-video-v2.0",
+        duration: 5,
+        aspect_ratio: "16:9",
+      },
+    });
+
+    await executeVideoGenerationJob(store, job);
+
+    expect(store.getBackgroundJob(job.id)).toMatchObject({
+      remote_provider: "agnes-video",
+      remote_task_id: "video_123",
+      remote_status: "completed",
+    });
   });
 
   it("continues polling a saved remote video task without creating a duplicate", async () => {
@@ -296,7 +395,9 @@ describe("generation executors", () => {
 
     registerVideoProvider(videoProvider);
 
-    const project = store.createProject({ name: "Executor Resume Video Project" });
+    const project = store.createProject({
+      name: "Executor Resume Video Project",
+    });
     const job = store.createBackgroundJob({
       jobType: "video_generation",
       queueName: "video_generation_jobs",
@@ -313,7 +414,8 @@ describe("generation executors", () => {
       remoteTaskId: "task_resume_123",
       remoteStatus: "queued",
     });
-    const resumedJob = store.getBackgroundJob(job.id)!;
+    const resumedJob = store.getBackgroundJob(job.id);
+    if (!resumedJob) throw new Error("Expected resumed video job to exist.");
 
     const result = await executeVideoGenerationJob(store, resumedJob);
 
