@@ -34,6 +34,11 @@ import type { WebSocketHandle } from "../hooks/use-websocket";
 import { useAppTranslation } from "../i18n";
 import { fetchBrandKit } from "../lib/brand-kit-api";
 import {
+  type GenerationJobSubscription,
+  type GenerationJobType,
+  generationJobService,
+} from "../lib/generation-job-service";
+import {
   fetchImageModels,
   fetchRunEvents,
   saveMessage,
@@ -71,6 +76,89 @@ type ChatSidebarProps = {
   ws: WebSocketHandle;
   selectedCanvasElements?: CanvasSelectedElement[];
 };
+
+type DeferredMediaJob = {
+  jobId: string;
+  jobType: GenerationJobType;
+  output: Record<string, unknown>;
+};
+
+function extractDeferredMediaJobFromOutput(
+  output: Record<string, unknown> | undefined,
+): DeferredMediaJob | null {
+  const jobId = typeof output?.jobId === "string" ? output.jobId : null;
+  const jobType =
+    output?.jobType === "image_generation" ||
+    output?.jobType === "video_generation"
+      ? output.jobType
+      : null;
+  if (!jobId || !jobType || output?.status !== "generating") return null;
+  if (
+    typeof output.url === "string" ||
+    typeof output.videoUrl === "string" ||
+    typeof output.signed_url === "string"
+  ) {
+    return null;
+  }
+  return { jobId, jobType, output };
+}
+
+function extractDeferredMediaJob(event: StreamEvent): DeferredMediaJob | null {
+  if (event.type !== "tool.completed") return null;
+  return extractDeferredMediaJobFromOutput(
+    event.output as Record<string, unknown> | undefined,
+  );
+}
+
+function buildGeneratedMediaArtifact(
+  job: DeferredMediaJob,
+  result: Record<string, unknown>,
+): ToolArtifact | null {
+  const url = result.signed_url;
+  const assetId = result.asset_id;
+  const mimeType = result.mime_type;
+  const width = result.width;
+  const height = result.height;
+  const title = job.output.title;
+  if (
+    typeof url !== "string" ||
+    typeof mimeType !== "string" ||
+    typeof width !== "number" ||
+    typeof height !== "number"
+  ) {
+    return null;
+  }
+
+  if (job.jobType === "video_generation") {
+    const durationSeconds = result.duration_seconds;
+    return {
+      type: "video",
+      ...(typeof assetId === "string" ? { assetId } : {}),
+      ...(typeof title === "string" ? { title } : {}),
+      url,
+      mimeType,
+      width,
+      height,
+      ...(typeof durationSeconds === "number" ? { durationSeconds } : {}),
+      jobId: job.jobId,
+    };
+  }
+
+  return {
+    type: "image",
+    ...(typeof assetId === "string" ? { assetId } : {}),
+    ...(typeof title === "string" ? { title } : {}),
+    url,
+    mimeType,
+    width,
+    height,
+    jobId: job.jobId,
+  };
+}
+
+function getGenerationJobErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function ChatSidebar({
   canvasId,
@@ -117,7 +205,8 @@ export function ChatSidebar({
   });
 
   // ── Stream event handler (extracted hook, shared between send & reconnect) ──
-  const { applyStreamEvent } = useChatStream(updateSessionMessages);
+  const { applyStreamEvent, completeToolBlockWithArtifacts, failToolBlock } =
+    useChatStream(updateSessionMessages);
 
   // ── Mention & attachment state ──
   const [atQuery, setAtQuery] = useState<string | null>(null);
@@ -140,8 +229,20 @@ export function ChatSidebar({
   selectedCanvasElementsRef.current = selectedCanvasElements;
   const prevConnectedRef = useRef(false);
   const replayedArtifactKeysRef = useRef<Set<string>>(new Set());
+  const chatMediaJobSubscriptionsRef = useRef<
+    Map<string, GenerationJobSubscription>
+  >(new Map());
   const currentCanvasIdRef = useRef(canvasId);
   currentCanvasIdRef.current = canvasId;
+
+  useEffect(() => {
+    return () => {
+      for (const subscription of chatMediaJobSubscriptionsRef.current.values()) {
+        subscription.unsubscribe();
+      }
+      chatMediaJobSubscriptionsRef.current.clear();
+    };
+  }, []);
 
   useEffect(() => {
     setStreaming(
@@ -220,20 +321,93 @@ export function ChatSidebar({
     ],
   );
 
+  const watchDeferredMediaJobByToolCall = useCallback(
+    (job: DeferredMediaJob, sessionId: string, toolCallId: string) => {
+      const subscriptionKey = `${sessionId}:${toolCallId}:${job.jobId}`;
+      if (chatMediaJobSubscriptionsRef.current.has(subscriptionKey)) return;
+
+      const subscription = generationJobService.watch(job.jobId, {
+        jobType: job.jobType,
+        onSucceeded: (result) => {
+          const artifact = buildGeneratedMediaArtifact(job, result);
+          if (!artifact) return;
+          const url =
+            typeof result.signed_url === "string"
+              ? result.signed_url
+              : undefined;
+          completeToolBlockWithArtifacts(sessionId, toolCallId, [artifact], {
+            ...(url ? { url } : {}),
+            ...(artifact.type === "video" && url ? { videoUrl: url } : {}),
+            ...(artifact.assetId ? { assetId: artifact.assetId } : {}),
+            mimeType: artifact.mimeType,
+            width: artifact.width,
+            height: artifact.height,
+          });
+        },
+        onFailed: (error) => {
+          failToolBlock(
+            sessionId,
+            toolCallId,
+            getGenerationJobErrorMessage(error),
+          );
+        },
+      });
+
+      chatMediaJobSubscriptionsRef.current.set(subscriptionKey, subscription);
+      void subscription.promise
+        .catch(() => {
+          // Failure is rendered through onFailed on the corresponding tool block.
+        })
+        .finally(() => {
+          chatMediaJobSubscriptionsRef.current.delete(subscriptionKey);
+        });
+    },
+    [completeToolBlockWithArtifacts, failToolBlock],
+  );
+
+  const watchDeferredMediaJob = useCallback(
+    (event: StreamEvent, sessionId: string) => {
+      const job = extractDeferredMediaJob(event);
+      if (!job || event.type !== "tool.completed") return;
+      watchDeferredMediaJobByToolCall(job, sessionId, event.toolCallId);
+    },
+    [watchDeferredMediaJobByToolCall],
+  );
+
+  const watchDeferredMediaJobsFromBlocks = useCallback(
+    (contentBlocks: ContentBlock[], sessionId: string) => {
+      for (const block of contentBlocks) {
+        if (block.type !== "tool" || block.status !== "completed") continue;
+        const job = extractDeferredMediaJobFromOutput(
+          block.output as Record<string, unknown> | undefined,
+        );
+        if (!job) continue;
+        watchDeferredMediaJobByToolCall(job, sessionId, block.toolCallId);
+      }
+    },
+    [watchDeferredMediaJobByToolCall],
+  );
+
   const recoverPersistedMediaArtifacts = useCallback(
     (
       sessionMessages: Array<{
         contentBlocks: ContentBlock[];
         role: "user" | "assistant";
       }>,
+      sessionId: string,
     ) => {
       const latestAssistantMessage = [...sessionMessages]
         .reverse()
         .find((message) => message.role === "assistant");
-      if (!latestAssistantMessage) return;
-      recoverMediaArtifactsFromBlocks(latestAssistantMessage.contentBlocks);
+      if (latestAssistantMessage) {
+        recoverMediaArtifactsFromBlocks(latestAssistantMessage.contentBlocks);
+      }
+      for (const message of sessionMessages) {
+        if (message.role !== "assistant") continue;
+        watchDeferredMediaJobsFromBlocks(message.contentBlocks, sessionId);
+      }
     },
-    [recoverMediaArtifactsFromBlocks],
+    [recoverMediaArtifactsFromBlocks, watchDeferredMediaJobsFromBlocks],
   );
 
   const {
@@ -626,6 +800,7 @@ export function ChatSidebar({
 
           // Apply event to messages (single source of truth — shared with reconnect)
           applyStreamEvent(event, assistantIdRef.current, currentSessionId);
+          watchDeferredMediaJob(event, currentSessionId);
 
           // Forward event to parent for fallback job polling.
           onStreamEvent?.(event);
@@ -771,6 +946,7 @@ export function ChatSidebar({
     [
       canvasId,
       applyStreamEvent,
+      watchDeferredMediaJob,
       updateSessionMessages,
       onImageGenerated,
       onCanvasSync,
@@ -959,7 +1135,7 @@ export function ChatSidebar({
       // Reload messages from DB (server may have persisted while disconnected)
       const reloadedMessages = await reloadMessages(sessionId);
       if (canceled) return;
-      recoverPersistedMediaArtifacts(reloadedMessages);
+      recoverPersistedMediaArtifacts(reloadedMessages, sessionId);
       const latestReloadedAssistantId =
         [...reloadedMessages]
           .reverse()
@@ -987,6 +1163,7 @@ export function ChatSidebar({
       ) => {
         const evt = entry.event;
         applyStreamEvent(evt, assistantId, sessionId);
+        watchDeferredMediaJob(evt, sessionId);
         if (!entry.replayed) {
           onStreamEvent?.(evt);
         }
@@ -1120,6 +1297,9 @@ export function ChatSidebar({
                 ),
               );
               recoverMediaArtifactsFromBlocks(hydratedBlocks);
+              for (const entry of entries) {
+                watchDeferredMediaJob(entry.event, sessionId);
+              }
             } catch (error) {
               console.warn(
                 "[chat] Failed to hydrate active run from durable events:",
@@ -1158,6 +1338,7 @@ export function ChatSidebar({
     canvasId,
     sessionsLoading,
     applyStreamEvent,
+    watchDeferredMediaJob,
     onStreamEvent,
     onImageGenerated,
     onCanvasSync,

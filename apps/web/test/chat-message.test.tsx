@@ -91,9 +91,7 @@ describe("ChatMessage", () => {
     renderAssistantMessage(blocks);
 
     expect(screen.queryByText("图片生成失败")).not.toBeInTheDocument();
-    expect(
-      screen.getAllByText(/Image generation has started/).length,
-    ).toBeGreaterThan(0);
+    expect(screen.getByText("图片生成中...")).toBeInTheDocument();
   });
 });
 

@@ -2,6 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -14,8 +15,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatSidebar } from "../src/components/chat-sidebar";
 import { ToastProvider } from "../src/components/toast";
 import { INITIAL_ATTACHMENTS_KEY } from "../src/hooks/use-create-project";
-import { i18n } from "../src/i18n";
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
+import { i18n } from "../src/i18n";
 
 const settingsDialogSpy = vi.fn();
 const chatInputPlaceholder = /从一个想法开始/;
@@ -32,6 +33,7 @@ const {
   fetchVideoModelsMock,
   fetchModelsMock,
   fetchWorkspaceSettingsMock,
+  generationJobWatchMock,
 } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
   deleteSessionMock: vi.fn(),
@@ -41,6 +43,7 @@ const {
   fetchVideoModelsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
   fetchWorkspaceSettingsMock: vi.fn(),
+  generationJobWatchMock: vi.fn(),
   fetchSessionsMock: vi.fn(),
   saveMessageMock: vi.fn(),
   updateSessionTitleMock: vi.fn(),
@@ -58,6 +61,12 @@ vi.mock("../src/lib/server-api", () => ({
   fetchSessions: fetchSessionsMock,
   saveMessage: saveMessageMock,
   updateSessionTitle: updateSessionTitleMock,
+}));
+
+vi.mock("../src/lib/generation-job-service", () => ({
+  generationJobService: {
+    watch: generationJobWatchMock,
+  },
 }));
 
 vi.mock("../src/components/settings-dialog", () => ({
@@ -196,6 +205,11 @@ describe("ChatSidebar", () => {
         volcesApiKey: "",
       },
     });
+    generationJobWatchMock.mockReset();
+    generationJobWatchMock.mockImplementation(() => ({
+      promise: new Promise(() => {}),
+      unsubscribe: vi.fn(),
+    }));
     fetchMessagesMock.mockReset();
     fetchMessagesMock.mockResolvedValue({ messages: [] });
     fetchSessionsMock.mockReset();
@@ -477,9 +491,7 @@ describe("ChatSidebar", () => {
 
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "新建对话" }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "新建对话" }));
     await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
 
     const nextInput = await screen.findByPlaceholderText(chatInputPlaceholder);
@@ -521,7 +533,9 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    await userEvent.click(await screen.findByRole("button", { name: "分镜故事板" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "分镜故事板" }),
+    );
 
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
     expect(mockWs.startRun).toHaveBeenCalledWith(
@@ -686,6 +700,149 @@ describe("ChatSidebar", () => {
         url: "https://example.com/active-canvas.png",
       }),
     );
+  });
+
+  it("shows a chat media loading card for deferred image jobs", async () => {
+    const listeners: Array<
+      (entry: {
+        event: Record<string, unknown>;
+        replayed?: boolean;
+        eventId?: string;
+        seq?: number;
+      }) => void
+    > = [];
+    mockWs = {
+      ...mockWs,
+      onEvent: vi.fn((nextListener) => {
+        const listener = nextListener as (typeof listeners)[number];
+        listeners.push(listener);
+        return () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) listeners.splice(index, 1);
+        };
+      }),
+    };
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "generate image{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+
+    for (const listener of [...listeners]) {
+      listener({
+        event: {
+          type: "tool.completed",
+          runId: "run_123",
+          toolCallId: "tool-deferred-image",
+          toolName: "generate_image",
+          output: {
+            status: "generating",
+            jobId: "job-image-1",
+            jobType: "image_generation",
+            elementId: "generator-1",
+            title: "Deferred image",
+          },
+          timestamp: "2026-06-04T00:00:00.000Z",
+        },
+      });
+    }
+
+    expect(await screen.findByText("图片生成中...")).toBeInTheDocument();
+    expect(generationJobWatchMock).toHaveBeenCalledWith(
+      "job-image-1",
+      expect.objectContaining({ jobType: "image_generation" }),
+    );
+  });
+
+  it("updates deferred image jobs in chat when polling succeeds", async () => {
+    let onSucceeded: ((result: Record<string, unknown>) => void) | undefined;
+    generationJobWatchMock.mockImplementation((_jobId, options) => {
+      onSucceeded = options.onSucceeded;
+      return {
+        promise: new Promise(() => {}),
+        unsubscribe: vi.fn(),
+      };
+    });
+    const listeners: Array<
+      (entry: {
+        event: Record<string, unknown>;
+        replayed?: boolean;
+        eventId?: string;
+        seq?: number;
+      }) => void
+    > = [];
+    mockWs = {
+      ...mockWs,
+      onEvent: vi.fn((nextListener) => {
+        const listener = nextListener as (typeof listeners)[number];
+        listeners.push(listener);
+        return () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) listeners.splice(index, 1);
+        };
+      }),
+    };
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "generate image{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+
+    for (const listener of [...listeners]) {
+      listener({
+        event: {
+          type: "tool.completed",
+          runId: "run_123",
+          toolCallId: "tool-deferred-image",
+          toolName: "generate_image",
+          output: {
+            status: "generating",
+            jobId: "job-image-1",
+            jobType: "image_generation",
+            elementId: "generator-1",
+            title: "Deferred image",
+          },
+          timestamp: "2026-06-04T00:00:00.000Z",
+        },
+      });
+    }
+
+    await waitFor(() => expect(onSucceeded).toBeTypeOf("function"));
+    act(() => {
+      onSucceeded?.({
+        signed_url: "https://example.com/deferred.png",
+        asset_id: "asset-1",
+        mime_type: "image/png",
+        width: 1024,
+        height: 1024,
+      });
+    });
+
+    expect(
+      await screen.findByRole("img", { name: "Deferred image" }),
+    ).toHaveAttribute("src", "http://localhost:3000/local-assets/asset-1");
   });
 
   it("opens the settings dialog from the chat header action", async () => {
@@ -886,6 +1043,89 @@ describe("ChatSidebar", () => {
         url: "https://example.com/from-snapshot.png",
       }),
     );
+  });
+
+  it("recovers persisted deferred image jobs in chat after reconnect", async () => {
+    let onSucceeded: ((result: Record<string, unknown>) => void) | undefined;
+    generationJobWatchMock.mockImplementation((_jobId, options) => {
+      onSucceeded = options.onSucceeded;
+      return {
+        promise: new Promise(() => {}),
+        unsubscribe: vi.fn(),
+      };
+    });
+    fetchMessagesMock.mockResolvedValue({
+      messages: [
+        {
+          id: "assistant-deferred",
+          role: "assistant",
+          content: "",
+          createdAt: "2026-03-24T00:00:00.000Z",
+          toolActivities: null,
+          contentBlocks: [
+            {
+              type: "tool",
+              toolCallId: "tool-deferred-saved",
+              toolName: "generate_image",
+              status: "completed",
+              output: {
+                status: "generating",
+                jobId: "job-saved-image",
+                jobType: "image_generation",
+                elementId: "generator-saved",
+                title: "Saved deferred image",
+              },
+            },
+          ],
+        },
+        {
+          id: "assistant-latest",
+          role: "assistant",
+          content: "Later assistant message",
+          createdAt: "2026-03-24T00:01:00.000Z",
+          toolActivities: null,
+          contentBlocks: [
+            {
+              type: "text",
+              text: "Later assistant message",
+            },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() =>
+      expect(generationJobWatchMock).toHaveBeenCalledWith(
+        "job-saved-image",
+        expect.objectContaining({ jobType: "image_generation" }),
+      ),
+    );
+
+    act(() => {
+      onSucceeded?.({
+        signed_url: "https://example.com/saved.png",
+        asset_id: "asset-saved",
+        mime_type: "image/png",
+        width: 1024,
+        height: 1024,
+      });
+    });
+
+    expect(
+      await screen.findByRole("img", { name: "Saved deferred image" }),
+    ).toHaveAttribute("src", "http://localhost:3000/local-assets/asset-saved");
   });
 
   it("does not reinsert persisted media when backend already inserted the canvas element", async () => {

@@ -2,7 +2,12 @@
 
 import { useCallback } from "react";
 
-import type { ContentBlock, StreamEvent, ToolBlock } from "@aimc/shared";
+import type {
+  ContentBlock,
+  StreamEvent,
+  ToolArtifact,
+  ToolBlock,
+} from "@aimc/shared";
 import type { Message } from "./use-chat-sessions";
 
 type MessageUpdater = (
@@ -25,6 +30,23 @@ const upsertToolBlock = (
   );
 };
 
+const mergeToolArtifacts = (
+  existing: ToolArtifact[] | undefined,
+  next: ToolArtifact[],
+): ToolArtifact[] => {
+  const artifacts = [...(existing ?? [])];
+  for (const artifact of next) {
+    const duplicate = artifacts.some(
+      (item) =>
+        item.type === artifact.type &&
+        item.url === artifact.url &&
+        item.jobId === artifact.jobId,
+    );
+    if (!duplicate) artifacts.push(artifact);
+  }
+  return artifacts;
+};
+
 /**
  * Extracts the stream event handling logic into a reusable hook.
  * Used by both the main send flow and the reconnection resume flow,
@@ -45,11 +67,14 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
   const applyStreamEvent = useCallback(
     (event: StreamEvent, assistantId: string, sessionId: string) => {
       if (!assistantId || !sessionId) {
-        console.warn("[chat-stream] applyStreamEvent called with missing ids:", {
-          assistantId,
-          sessionId,
-          eventType: event.type,
-        });
+        console.warn(
+          "[chat-stream] applyStreamEvent called with missing ids:",
+          {
+            assistantId,
+            sessionId,
+            eventType: event.type,
+          },
+        );
         return;
       }
 
@@ -129,7 +154,8 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
               if (m.id !== assistantId) return m;
               const existingBlock = m.contentBlocks.find(
                 (block) =>
-                  block.type === "tool" && block.toolCallId === event.toolCallId,
+                  block.type === "tool" &&
+                  block.toolCallId === event.toolCallId,
               ) as ToolBlock | undefined;
               const completedBlock: ToolBlock = {
                 type: "tool",
@@ -157,7 +183,8 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
               if (m.id !== assistantId) return m;
               const existingBlock = m.contentBlocks.find(
                 (block) =>
-                  block.type === "tool" && block.toolCallId === event.toolCallId,
+                  block.type === "tool" &&
+                  block.toolCallId === event.toolCallId,
               ) as ToolBlock | undefined;
               const failedBlock: ToolBlock = {
                 type: "tool",
@@ -180,7 +207,7 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
           );
           break;
 
-        case "run.failed":
+        case "run.failed": {
           console.warn("[chat-stream] run.failed:", event.error.message);
           const failureMessage =
             event.error.message
@@ -193,7 +220,11 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
               // Mark all running tool blocks as failed so spinners stop while preserving error state
               const blocks = m.contentBlocks.map((block) =>
                 block.type === "tool" && block.status === "running"
-                  ? { ...block, status: "failed" as const, outputSummary: "\u5904\u7406\u5931\u8d25" }
+                  ? {
+                      ...block,
+                      status: "failed" as const,
+                      outputSummary: "\u5904\u7406\u5931\u8d25",
+                    }
                   : block,
               );
               const hasText = blocks.some((b) => b.type === "text");
@@ -212,6 +243,7 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
             }),
           );
           break;
+        }
 
         case "run.canceled":
           // Clean up running tool blocks when a run stops before completion.
@@ -226,7 +258,11 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
                 ...m,
                 contentBlocks: m.contentBlocks.map((block) =>
                   block.type === "tool" && block.status === "running"
-                    ? { ...block, status: "canceled" as const, outputSummary: "\u5df2\u53d6\u6d88" }
+                    ? {
+                        ...block,
+                        status: "canceled" as const,
+                        outputSummary: "\u5df2\u53d6\u6d88",
+                      }
                     : block,
                 ),
               };
@@ -243,7 +279,68 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
     [updateSessionMessages],
   );
 
-  return { applyStreamEvent };
+  const updateToolBlock = useCallback(
+    (
+      sessionId: string,
+      toolCallId: string,
+      updater: (block: ToolBlock) => ToolBlock,
+    ) => {
+      if (!sessionId || !toolCallId) return;
+      updateSessionMessages(sessionId, (prev) =>
+        prev.map((message) => {
+          let changed = false;
+          const contentBlocks = message.contentBlocks.map((block) => {
+            if (block.type !== "tool" || block.toolCallId !== toolCallId) {
+              return block;
+            }
+            changed = true;
+            return updater(block);
+          });
+          return changed ? { ...message, contentBlocks } : message;
+        }),
+      );
+    },
+    [updateSessionMessages],
+  );
+
+  const completeToolBlockWithArtifacts = useCallback(
+    (
+      sessionId: string,
+      toolCallId: string,
+      artifacts: ToolArtifact[],
+      outputPatch?: Record<string, unknown>,
+    ) => {
+      updateToolBlock(sessionId, toolCallId, (block) => ({
+        ...block,
+        status: "completed",
+        output: {
+          ...(block.output ?? {}),
+          ...(outputPatch ?? {}),
+          status: "succeeded",
+        },
+        artifacts: mergeToolArtifacts(block.artifacts, artifacts),
+      }));
+    },
+    [updateToolBlock],
+  );
+
+  const failToolBlock = useCallback(
+    (sessionId: string, toolCallId: string, errorMessage: string) => {
+      updateToolBlock(sessionId, toolCallId, (block) => ({
+        ...block,
+        status: "failed",
+        output: {
+          ...(block.output ?? {}),
+          status: "failed",
+          error: errorMessage,
+        },
+        outputSummary: errorMessage,
+      }));
+    },
+    [updateToolBlock],
+  );
+
+  return { applyStreamEvent, completeToolBlockWithArtifacts, failToolBlock };
 }
 
 export function materializeAssistantBlocksFromEvents(
@@ -359,7 +456,11 @@ export function materializeAssistantBlocksFromEvents(
         updateBlocks((prev) => {
           const next = prev.map((block) =>
             block.type === "tool" && block.status === "running"
-              ? { ...block, status: "failed" as const, outputSummary: "\u5904\u7406\u5931\u8d25" }
+              ? {
+                  ...block,
+                  status: "failed" as const,
+                  outputSummary: "\u5904\u7406\u5931\u8d25",
+                }
               : block,
           );
           const hasText = next.some((block) => block.type === "text");
@@ -384,7 +485,11 @@ export function materializeAssistantBlocksFromEvents(
         updateBlocks((prev) =>
           prev.map((block) =>
             block.type === "tool" && block.status === "running"
-              ? { ...block, status: "canceled" as const, outputSummary: "\u5df2\u53d6\u6d88" }
+              ? {
+                  ...block,
+                  status: "canceled" as const,
+                  outputSummary: "\u5df2\u53d6\u6d88",
+                }
               : block,
           ),
         );
