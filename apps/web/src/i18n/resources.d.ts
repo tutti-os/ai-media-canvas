@@ -109,10 +109,10 @@ export default interface Resources {
       "customModelId": "自定义模型 ID",
       "localAgent": "本地 Agent",
       "localAssistant": "本地助手",
-      "nextopManaged": "Nextop Managed",
+      "nextopManaged": "Tutti Managed",
       "noApiProviderModels": "未配置 API provider 模型。",
       "noLocalCliModels": "未检测到本地 CLI 模型。",
-      "noNextopManagedModels": "未连接 Nextop Managed 模型。",
+      "noNextopManagedModels": "未连接 Tutti Managed 模型。",
       "openSettings": "打开 Agent 设置",
       "settings": "设置",
       "tooltip": "选择 Agent 模型",
@@ -497,33 +497,33 @@ export default interface Resources {
         "selectModel": "选择模型..."
       },
       "nextopManaged": {
-        "bridgeUnavailable": "请在 Nextop 中打开 AI Media Canvas 后授权托管模型。",
-        "chooseModel": "请在下方选择 Nextop Managed 模型。",
+        "bridgeUnavailable": "请在 Tutti 中打开 AI Media Canvas 后授权托管模型。",
+        "chooseModel": "请在下方选择 Tutti Managed 模型。",
         "connect": "连接",
-        "connectFirst": "连接 Nextop Managed 后导入可用模型。",
+        "connectFirst": "连接 Tutti Managed 后导入可用模型。",
         "connected": "已连接",
         "defaultModel": "默认模型",
-        "description": "使用由 Nextop 托管的模型凭证，不在当前应用中保存 provider key。",
+        "description": "使用由 Tutti 托管的模型凭证，不在当前应用中保存 provider key。",
         "disconnect": "断开",
-        "emptyModels": "暂无可用的 Nextop Managed 模型。请在 Nextop 设置中配置 provider。",
+        "emptyModels": "暂无可用的 Tutti Managed 模型。请在 Tutti 设置中配置 provider。",
         "feedback": {
-          "connectFailed": "无法连接 Nextop Managed 模型。",
-          "connected": "Nextop Managed 模型已连接。",
-          "disconnectFailed": "无法断开 Nextop Managed 模型。",
-          "disconnected": "Nextop Managed 模型已断开。",
-          "openSettingsFailed": "无法打开 Nextop 设置。"
+          "connectFailed": "无法连接 Tutti Managed 模型。",
+          "connected": "Tutti Managed 模型已连接。",
+          "disconnectFailed": "无法断开 Tutti Managed 模型。",
+          "disconnected": "Tutti Managed 模型已断开。",
+          "openSettingsFailed": "无法打开 Tutti 设置。"
         },
-        "manageInNextop": "在 Nextop 中管理",
-        "noModelSelected": "未选择 Nextop Managed 模型",
+        "manageInNextop": "在 Tutti 中管理",
+        "noModelSelected": "未选择 Tutti Managed 模型",
         "notConnected": "未连接",
         "reauthorize": "重新授权",
-        "title": "Nextop Managed"
+        "title": "Tutti Managed"
       },
       "source": {
         "apiProvider": "API provider",
         "detected": "已检测 {{cliCount}} 个",
         "localAgent": "本地 Agent",
-        "nextopManaged": "Nextop Managed"
+        "nextopManaged": "Tutti Managed"
       }
     },
     "dialogTitle": "设置",

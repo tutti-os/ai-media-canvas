@@ -225,7 +225,7 @@ describe("AgentModelSelector", () => {
     expect(screen.queryByText("Codex")).not.toBeInTheDocument();
   });
 
-  it("opens agent settings on the Nextop Managed panel from the empty state", async () => {
+  it("opens agent settings on the Tutti Managed panel from the empty state", async () => {
     fetchModelsMock.mockResolvedValue({
       models: [{ id: "codex:gpt-5.5", name: "Codex", provider: "codex" }],
     });
@@ -235,11 +235,11 @@ describe("AgentModelSelector", () => {
     await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
     await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
     await userEvent.click(
-      await screen.findByRole("button", { name: "Nextop Managed" }),
+      await screen.findByRole("button", { name: "Tutti Managed" }),
     );
 
     expect(
-      await screen.findByText("No Nextop Managed models connected."),
+      await screen.findByText("No Tutti Managed models connected."),
     ).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: "Connect in settings" }),
