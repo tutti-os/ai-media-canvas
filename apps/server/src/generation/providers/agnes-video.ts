@@ -51,6 +51,7 @@ type AgnesVideoTaskResponse = {
   video_url?: string;
   videoId?: string;
   videoUrl?: string;
+  remixed_from_video_id?: string;
 };
 
 const AGNES_VIDEO_MODELS: readonly VideoModelInfo[] = [
@@ -407,7 +408,7 @@ export class AgnesVideoProvider implements VideoProvider {
       });
 
       if (status === "completed" || task.completed_at) {
-        const videoUrl = task.video_url ?? task.videoUrl ?? task.url;
+        const videoUrl = extractAgnesVideoUrl(task);
         if (!videoUrl) {
           throw new GenerationError(
             this.name,
@@ -511,6 +512,21 @@ function extractAgnesTaskId(
     return task.id;
   }
   return fallbackId.startsWith("task_") ? fallbackId : undefined;
+}
+
+function extractAgnesVideoUrl(
+  task: AgnesVideoTaskResponse,
+): string | undefined {
+  const candidates = [
+    task.video_url,
+    task.videoUrl,
+    task.url,
+    task.remixed_from_video_id,
+  ];
+  return candidates.find(
+    (candidate) =>
+      typeof candidate === "string" && /^https?:\/\//.test(candidate),
+  );
 }
 
 function normalizeAgnesVideoStatus(status: string | undefined) {

@@ -314,7 +314,7 @@ describe("AgnesVideoProvider", () => {
             object: "video",
             status: "completed",
             video_id: "video_123",
-            video_url: "https://cdn.agnes.example/generated.mp4",
+            remixed_from_video_id: "https://cdn.agnes.example/generated.mp4",
             seconds: "5.0",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
