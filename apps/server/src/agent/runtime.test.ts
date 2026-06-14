@@ -1957,7 +1957,7 @@ describe("createAgentRunService", () => {
     expect(localAgentRuntimeRunMock).not.toHaveBeenCalled();
   });
 
-  it("uses the managed credential runtime model instead of the Nextop model id", async () => {
+  it("uses the managed credential runtime model instead of the Tutti model id", async () => {
     let capturedAgentOptions: unknown;
     const agentFactory = vi.fn((agentOptions) => {
       capturedAgentOptions = agentOptions;
@@ -2003,7 +2003,7 @@ describe("createAgentRunService", () => {
           version: "0.0.0",
           webOrigin: "http://localhost:3000",
         },
-        model: "nextop:agnes:agnes-2.0-flash",
+        model: "tutti:agnes:agnes-2.0-flash",
         runtimeKind: "server-deepagent",
       },
     );

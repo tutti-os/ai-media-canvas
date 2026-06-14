@@ -67,8 +67,8 @@ importers:
         specifier: 0.1.8
         version: 0.1.8(@cfworker/json-schema@4.1.1)
       agnes-ai-cli:
-        specifier: ^0.1.2
-        version: 0.1.2
+        specifier: ^0.1.3
+        version: 0.1.3
       deepagents:
         specifier: ^1.10.2
         version: 1.10.2(langsmith@0.7.3(openai@6.41.0(ws@8.20.0)(zod@4.3.6))(ws@8.20.0))(openai@6.41.0(ws@8.20.0)(zod@4.3.6))(react-dom@19.2.4(react@19.2.7))(react@19.2.7)(ws@8.20.0)(zod-to-json-schema@3.25.1(zod@4.3.6))
@@ -3195,8 +3195,8 @@ packages:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
 
-  agnes-ai-cli@0.1.2:
-    resolution: {integrity: sha512-lFbvMFQixt4r764Mqfnv/vA/4pCcgSI4uut8QhI3I/nZjfuwFT4PwVKCcCCoegmqKhQaGOVGqW20nFSqnW5ISw==}
+  agnes-ai-cli@0.1.3:
+    resolution: {integrity: sha512-WFePzns78e6bm+B9Icb0/WUvVnW3R6BGvEv4XxppwNCdA7SmRVqLfM1NRfw25JJeUcJooW6lQkDYFQUNE+nLSQ==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -9946,7 +9946,7 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  agnes-ai-cli@0.1.2:
+  agnes-ai-cli@0.1.3:
     dependencies:
       commander: 15.0.0
       zod: 4.3.6

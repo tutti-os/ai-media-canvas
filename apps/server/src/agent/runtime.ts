@@ -41,6 +41,7 @@ import {
   TierGuardError,
 } from "../features/credits/tier-guard.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import { isManagedModelId } from "../features/nextop-managed/credential-service.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
@@ -1260,7 +1261,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       try {
         const modelOverride =
-          run.modelOverride?.startsWith("nextop:") && runtimeEnv.agentModel
+          isManagedModelId(run.modelOverride) && runtimeEnv.agentModel
             ? runtimeEnv.agentModel
             : run.modelOverride;
         const resolvedModel = modelOverride

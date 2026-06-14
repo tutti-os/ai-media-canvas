@@ -47,28 +47,36 @@ type NextopBridge = {
 
 declare global {
   interface Window {
-    nextop?: NextopBridge;
+    tutti?: NextopBridge;
   }
+}
+
+function getManagedCredentialBridge() {
+  if (typeof window === "undefined") return undefined;
+  return window.tutti;
 }
 
 export function hasNextopManagedCredentialBridge() {
-  return typeof window !== "undefined" &&
-    typeof window.nextop?.appContext?.get === "function" &&
-    typeof window.nextop?.managedCredentials?.requestGrant === "function";
+  const bridge = getManagedCredentialBridge();
+  return (
+    typeof bridge?.appContext?.get === "function" &&
+    typeof bridge?.managedCredentials?.requestGrant === "function"
+  );
 }
 
 export async function requestNextopManagedGrant(): Promise<NextopManagedGrantCreateRequest> {
-  const requestGrant = window.nextop?.managedCredentials?.requestGrant;
+  const bridge = getManagedCredentialBridge();
+  const requestGrant = bridge?.managedCredentials?.requestGrant;
   if (typeof requestGrant !== "function") {
-    throw new Error("Nextop Managed bridge is unavailable.");
+    throw new Error("Tutti Managed bridge is unavailable.");
   }
-  const context = await window.nextop?.appContext?.get?.();
+  const context = await bridge?.appContext?.get?.();
   if (!context?.contextToken) {
-    throw new Error("Nextop app context is unavailable.");
+    throw new Error("Tutti app context is unavailable.");
   }
   const connection = await fetchNextopManagedConnection();
   if (!connection.connectChallenge) {
-    throw new Error("Nextop Managed connect challenge is unavailable.");
+    throw new Error("Tutti Managed connect challenge is unavailable.");
   }
   const { nonce, state } = connection.connectChallenge;
 
@@ -80,10 +88,7 @@ export async function requestNextopManagedGrant(): Promise<NextopManagedGrantCre
       : {}),
     nonce,
     providers: ["agnes", "openai", "anthropic"],
-    scopes: [
-      "managed_models.models.read",
-      "managed_models.credentials.use",
-    ],
+    scopes: ["managed_models.models.read", "managed_models.credentials.use"],
     state,
     ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
   });
@@ -102,9 +107,9 @@ export async function requestNextopManagedGrant(): Promise<NextopManagedGrantCre
 export async function openNextopManagedModelSettings(
   provider?: NextopManagedProviderId,
 ) {
-  const openSettings = window.nextop?.workspace?.openSettings;
+  const openSettings = getManagedCredentialBridge()?.workspace?.openSettings;
   if (typeof openSettings !== "function") {
-    throw new Error("Nextop settings bridge is unavailable.");
+    throw new Error("Tutti settings bridge is unavailable.");
   }
   await openSettings({
     section: "apps",

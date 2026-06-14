@@ -85,6 +85,12 @@ describe("registerModelRoutes", () => {
       provider: "agnes",
       source: "api-provider",
     });
+    expect(withAgnes.json().models).toContainEqual({
+      id: "agnes:agnes-1.5-flash",
+      name: "Agnes 1.5 Flash",
+      provider: "agnes",
+      source: "api-provider",
+    });
   });
 
   it("includes Anthropic models only when Anthropic credentials are configured", async () => {
@@ -110,7 +116,7 @@ describe("registerModelRoutes", () => {
     expect(withoutAnthropic.statusCode).toBe(200);
     expect(withoutAnthropic.json().models).not.toContainEqual(
       expect.objectContaining({
-        id: "anthropic:claude-sonnet-4-5",
+        id: "anthropic:claude-sonnet-4-6",
       }),
     );
 
@@ -120,7 +126,7 @@ describe("registerModelRoutes", () => {
       appWithAnthropic,
       loadServerEnv(
         {
-          agentModel: "anthropic:claude-sonnet-4-5",
+          agentModel: "anthropic:claude-sonnet-4-6",
           anthropicApiKey: "local-anthropic-key",
         },
         {},
@@ -136,8 +142,8 @@ describe("registerModelRoutes", () => {
 
     expect(withAnthropic.statusCode).toBe(200);
     expect(withAnthropic.json().models).toContainEqual({
-      id: "anthropic:claude-sonnet-4-5",
-      name: "Claude Sonnet 4.5",
+      id: "anthropic:claude-sonnet-4-6",
+      name: "Claude Sonnet 4.6",
       provider: "anthropic",
       source: "api-provider",
     });

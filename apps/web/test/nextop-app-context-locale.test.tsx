@@ -18,20 +18,20 @@ type HostAppContext = {
 
 function setHostAppContext(appContext: HostAppContext | undefined) {
   const hostWindow = window as Window & {
-    nextop?: { appContext?: HostAppContext };
-    nextopAppContext?: HostAppContext;
+    tutti?: { appContext?: HostAppContext };
+    tuttiAppContext?: HostAppContext;
   };
 
   if (appContext) {
-    hostWindow.nextop = { appContext };
+    hostWindow.tutti = { appContext };
     return;
   }
 
-  hostWindow.nextop = undefined;
-  hostWindow.nextopAppContext = undefined;
+  hostWindow.tutti = undefined;
+  hostWindow.tuttiAppContext = undefined;
 }
 
-describe("Nextop host app context locale", () => {
+describe("Tutti host app context locale", () => {
   beforeEach(() => {
     installMemoryLocalStorage();
     void i18n.changeLanguage("zh-CN");

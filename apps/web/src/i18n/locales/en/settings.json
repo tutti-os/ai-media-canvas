@@ -13,6 +13,7 @@
       "defaultLlmModel": "Default LLM Model",
       "defaultModelDescription": "Pick the workspace default from the model lists configured below.",
       "defaultModelTitle": "Default model",
+      "getApiKey": "Get {{provider}} API Key",
       "importDetected": "Import detected",
       "noApiProviderModelSelected": "No API provider model selected",
       "noModelsYet": "No models yet",
@@ -52,33 +53,33 @@
       "selectModel": "Select a model..."
     },
     "nextopManaged": {
-      "bridgeUnavailable": "Open AI Media Canvas inside Nextop to authorize managed models.",
-      "chooseModel": "Choose a Nextop Managed model below.",
+      "bridgeUnavailable": "Open AI Media Canvas inside Tutti to authorize managed models.",
+      "chooseModel": "Choose a Tutti Managed model below.",
       "connect": "Connect",
       "connected": "Connected",
-      "connectFirst": "Connect to Nextop Managed to import available models.",
+      "connectFirst": "Connect to Tutti Managed to import available models.",
       "defaultModel": "Default model",
-      "description": "Use model credentials managed by Nextop without storing provider keys in this app.",
+      "description": "Use model credentials managed by Tutti without storing provider keys in this app.",
       "disconnect": "Disconnect",
-      "emptyModels": "No Nextop Managed models are available. Configure providers in Nextop settings.",
+      "emptyModels": "No Tutti Managed models are available. Configure providers in Tutti settings.",
       "feedback": {
-        "connected": "Nextop Managed models connected.",
-        "connectFailed": "Unable to connect Nextop Managed models.",
-        "disconnected": "Nextop Managed models disconnected.",
-        "disconnectFailed": "Unable to disconnect Nextop Managed models.",
-        "openSettingsFailed": "Unable to open Nextop settings."
+        "connected": "Tutti Managed models connected.",
+        "connectFailed": "Unable to connect Tutti Managed models.",
+        "disconnected": "Tutti Managed models disconnected.",
+        "disconnectFailed": "Unable to disconnect Tutti Managed models.",
+        "openSettingsFailed": "Unable to open Tutti settings."
       },
-      "manageInNextop": "Manage in Nextop",
-      "noModelSelected": "No Nextop Managed model selected",
+      "manageInNextop": "Manage in Tutti",
+      "noModelSelected": "No Tutti Managed model selected",
       "notConnected": "Not connected",
       "reauthorize": "Reauthorize",
-      "title": "Nextop Managed"
+      "title": "Tutti Managed"
     },
     "source": {
       "apiProvider": "API provider",
       "detected": "{{cliCount}} detected",
       "localAgent": "Local agent",
-      "nextopManaged": "Nextop Managed"
+      "nextopManaged": "Tutti Managed"
     }
   },
   "dialogTitle": "Settings",

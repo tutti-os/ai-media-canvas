@@ -53,10 +53,10 @@ type NextopAppContext = NextopAppContextValue & {
   ) => (() => void) | undefined;
 };
 type NextopWindow = Window & {
-  nextop?: {
+  tutti?: {
     appContext?: NextopAppContext;
   };
-  nextopAppContext?: NextopAppContext;
+  tuttiAppContext?: NextopAppContext;
 };
 
 const useUntypedTranslation = useTranslation as unknown as (
@@ -287,7 +287,7 @@ function getNestedValue(tree: ResourceTree, keyPath: string) {
 
 function getHostAppContext() {
   const hostWindow = window as NextopWindow;
-  return hostWindow.nextop?.appContext || hostWindow.nextopAppContext || null;
+  return hostWindow.tutti?.appContext || hostWindow.tuttiAppContext || null;
 }
 
 function readHostLocale(context: NextopAppContextValue | null | undefined) {

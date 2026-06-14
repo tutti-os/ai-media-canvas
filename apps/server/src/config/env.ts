@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 export const DEFAULT_SERVER_PORT = 3001;
 export const DEFAULT_WEB_ORIGIN = "http://localhost:3000";
-export const DEFAULT_AGENT_MODEL = "openai:gpt-5-mini";
+export const DEFAULT_AGENT_MODEL = "openai:gpt-5.4-mini";
 export const DEFAULT_GOOGLE_AGENT_MODEL = "gemini-2.5-flash";
 export const DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
 export const DEFAULT_AGNES_AGENT_MODEL = "agnes:agnes-2.0-flash";
