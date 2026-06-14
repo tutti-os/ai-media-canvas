@@ -234,8 +234,11 @@ describe("canvas generation job recovery", () => {
           }),
           expect.objectContaining({
             id: "video-result-0",
-            type: "embeddable",
-            link: "/local-assets/video-1",
+            type: "rectangle",
+            link: null,
+            customData: expect.objectContaining({
+              videoUrl: "/local-assets/video-1",
+            }),
           }),
         ]),
         captureUpdate: "IMMEDIATELY",
@@ -316,6 +319,86 @@ describe("canvas generation job recovery", () => {
           jobType: "image_generation",
         }),
       ),
+    );
+  });
+
+  it("starts polling generator jobs that arrive through remote canvas sync", async () => {
+    let elements: CanvasRecoveryElement[] = [
+      {
+        id: "existing-shape",
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        isDeleted: false,
+      },
+    ];
+    const excalidrawApi = {
+      addFiles: vi.fn(),
+      getSceneElements: () => elements,
+      updateScene: vi.fn(
+        ({ elements: next }: { elements: CanvasRecoveryElement[] }) => {
+          elements = next;
+        },
+      ),
+      onChange: vi.fn(() => () => {}),
+    };
+
+    render(<RecoveryHarness excalidrawApi={excalidrawApi} />);
+
+    expect(generationJobWatchMock).not.toHaveBeenCalled();
+
+    elements = [
+      ...elements,
+      {
+        id: "video-generator-remote",
+        type: "rectangle",
+        x: 10,
+        y: 20,
+        width: 320,
+        height: 180,
+        isDeleted: false,
+        customData: {
+          type: "video-generator",
+          status: "generating",
+          jobId: "job-video-remote",
+          prompt: "remote video",
+          model: "agnes-video/agnes-video-v2.0",
+          aspectRatio: "16:9",
+          duration: 5,
+          resolution: "720p",
+        },
+      },
+    ];
+    window.dispatchEvent(new CustomEvent("aimc:canvas-remote-sync"));
+
+    await waitFor(() =>
+      expect(generationJobWatchMock).toHaveBeenCalledWith(
+        "job-video-remote",
+        expect.objectContaining({
+          jobType: "video_generation",
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(excalidrawApi.updateScene).toHaveBeenCalledWith({
+        elements: expect.arrayContaining([
+          expect.objectContaining({
+            id: "video-generator-remote",
+            isDeleted: true,
+          }),
+          expect.objectContaining({
+            id: "video-result-0",
+            type: "rectangle",
+            link: null,
+            customData: expect.objectContaining({
+              videoUrl: "/local-assets/video-1",
+            }),
+          }),
+        ]),
+        captureUpdate: "IMMEDIATELY",
+      }),
     );
   });
 });

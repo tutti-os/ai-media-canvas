@@ -82,7 +82,20 @@
     "selection": "选择 (V)",
     "text": "文字 (T)",
     "videoPanel": {
-      "deleteCard": "删除视频生成器卡片"
+      "autoSize": "Auto",
+      "captions": "字幕",
+      "closeInfo": "关闭视频信息",
+      "closePlayer": "关闭视频播放器",
+      "deleteCard": "删除视频生成器卡片",
+      "duration": "时长",
+      "infoTitle": "视频生成器",
+      "model": "基础模型",
+      "openInfo": "查看视频信息",
+      "openPlayer": "打开视频播放器",
+      "playerTitle": "播放视频",
+      "prompt": "提示词",
+      "resolution": "分辨率",
+      "size": "尺寸"
     }
   }
 }

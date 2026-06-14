@@ -322,7 +322,7 @@ describe("canvas element writer", () => {
     });
   });
 
-  it("inserts generated videos as embeddable canvas elements", async () => {
+  it("inserts generated videos without Excalidraw link chrome", async () => {
     const client = createCanvasClient({
       elements: [],
       appState: {},
@@ -348,8 +348,10 @@ describe("canvas element writer", () => {
     expect(content.elements).toHaveLength(1);
     expect(content.elements[0]).toMatchObject({
       id: result.elementId,
-      type: "embeddable",
-      link: "/local-assets/video-asset-1",
+      type: "rectangle",
+      link: null,
+      strokeColor: "#111827",
+      backgroundColor: "#000000",
       width: 640,
       height: 360,
       customData: {
@@ -359,6 +361,7 @@ describe("canvas element writer", () => {
         mimeType: "video/mp4",
         prompt: "A spinning product shot",
         title: "Product video",
+        videoUrl: "/local-assets/video-asset-1",
       },
     });
   });

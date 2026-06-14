@@ -1,7 +1,7 @@
 "use client";
 
-import { ImageIcon, Loader2, Trash2, X, Zap } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ImageIcon, Loader2, X, Zap } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
@@ -10,7 +10,6 @@ import { calculateCenteredGeneratorPanelPosition } from "../../lib/canvas-genera
 import { withNormalizedCanvasElementIndices } from "../../lib/canvas-normalize";
 import {
   type VideoGeneratorData,
-  deleteVideoGeneratorElement,
   resizeVideoGeneratorElement,
   updateVideoGeneratorElement,
 } from "../../lib/canvas-video-generator";
@@ -32,10 +31,45 @@ type VideoGeneratorPanelProps = {
 };
 
 const ASPECT_RATIOS = ["16:9", "9:16"] as const;
-const DURATIONS = [4, 5, 6, 8] as const;
+const FALLBACK_DURATION_OPTIONS = [4, 5, 6, 8, 10, 15, 18] as const;
+const RESOLUTION_OPTIONS = ["480p", "720p", "1080p"] as const;
 const PANEL_WIDTH = 520;
 type FrameSlot = "first" | "last";
 type FrameData = { dataUrl: string; file: File };
+type VideoResolution = (typeof RESOLUTION_OPTIONS)[number];
+
+function getDurationOptions(model?: VideoModelInfo): number[] {
+  const allowedDurations = model?.limits?.allowedDurations;
+  if (allowedDurations?.length) {
+    return [...allowedDurations].sort((a, b) => a - b);
+  }
+
+  const maxDuration = model?.limits?.maxDuration;
+  if (!maxDuration) return [4, 5, 6, 8];
+
+  const options = FALLBACK_DURATION_OPTIONS.filter(
+    (value) => value <= maxDuration,
+  );
+  return options.length ? options : [maxDuration];
+}
+
+function getResolutionOptions(model?: VideoModelInfo): VideoResolution[] {
+  const maxResolution = model?.limits?.maxResolution;
+  if (!maxResolution) return ["720p", "1080p"];
+  const maxIndex = RESOLUTION_OPTIONS.indexOf(maxResolution as VideoResolution);
+  if (maxIndex < 0) return [...RESOLUTION_OPTIONS];
+  return RESOLUTION_OPTIONS.slice(0, maxIndex + 1);
+}
+
+function normalizeDuration(duration: number, options: number[]) {
+  return options.includes(duration) ? duration : (options[0] ?? duration);
+}
+
+function normalizeResolution(resolution: string, options: VideoResolution[]) {
+  return options.includes(resolution as VideoResolution)
+    ? resolution
+    : (options.at(-1) ?? resolution);
+}
 
 function FrameUploadTile({
   label,
@@ -207,6 +241,37 @@ export function VideoGeneratorPanel({
   });
 
   const currentModel = models.find((item) => item.id === model);
+  const durationOptions = useMemo(
+    () => getDurationOptions(currentModel),
+    [currentModel],
+  );
+  const resolutionOptions = useMemo(
+    () => getResolutionOptions(currentModel),
+    [currentModel],
+  );
+
+  useEffect(() => {
+    if (!currentModel) return;
+    const nextDuration = normalizeDuration(duration, durationOptions);
+    const nextResolution = normalizeResolution(resolution, resolutionOptions);
+    if (nextDuration === duration && nextResolution === resolution) return;
+
+    if (nextDuration !== duration) setDuration(nextDuration);
+    if (nextResolution !== resolution) setResolution(nextResolution);
+
+    updateVideoGeneratorElement(excalidrawApi, elementId, {
+      ...(nextDuration !== duration ? { duration: nextDuration } : {}),
+      ...(nextResolution !== resolution ? { resolution: nextResolution } : {}),
+    });
+  }, [
+    currentModel,
+    duration,
+    durationOptions,
+    excalidrawApi,
+    elementId,
+    resolution,
+    resolutionOptions,
+  ]);
 
   const handleAspectRatioChange = useCallback(
     (ratio: string) => {
@@ -265,12 +330,6 @@ export function VideoGeneratorPanel({
     [],
   );
 
-  const handleDelete = useCallback(() => {
-    abortRef.current?.abort();
-    deleteVideoGeneratorElement(excalidrawApi, elementId);
-    onClose();
-  }, [excalidrawApi, elementId, onClose]);
-
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || loading) return;
 
@@ -327,16 +386,20 @@ export function VideoGeneratorPanel({
       );
       if (controller.signal.aborted) return;
 
+      const videoUrl =
+        normalizeLocalAssetStorageUrl(result.url, result.assetId) ?? result.url;
       const newElements = convertToExcalidrawElements([
         {
-          type: "embeddable",
-          link:
-            normalizeLocalAssetStorageUrl(result.url, result.assetId) ??
-            result.url,
+          type: "rectangle",
+          link: null,
           x: elementBounds.x,
           y: elementBounds.y,
           width: elementBounds.width,
           height: elementBounds.height,
+          strokeColor: "#111827",
+          backgroundColor: "#000000",
+          fillStyle: "solid",
+          roughness: 0,
           customData: {
             isVideo: true,
             assetId: result.assetId,
@@ -344,6 +407,10 @@ export function VideoGeneratorPanel({
             durationSeconds: result.durationSeconds,
             title: prompt.trim().slice(0, 60),
             prompt: prompt.trim(),
+            videoUrl,
+            model,
+            aspectRatio,
+            resolution,
           },
         } as any,
       ]);
@@ -451,16 +518,6 @@ export function VideoGeneratorPanel({
 
         <div className="mt-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              aria-label={t("tools.videoPanel.deleteCard")}
-              title={t("tools.videoPanel.deleteCard")}
-              onClick={handleDelete}
-              className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-
             <div className="relative">
               <button
                 type="button"
@@ -549,7 +606,7 @@ export function VideoGeneratorPanel({
                         时长
                       </div>
                       <div className="flex gap-2">
-                        {DURATIONS.map((value) => (
+                        {durationOptions.map((value) => (
                           <button
                             key={value}
                             type="button"
@@ -571,7 +628,7 @@ export function VideoGeneratorPanel({
                         分辨率
                       </div>
                       <div className="flex gap-2">
-                        {["720p", "1080p"].map((value) => (
+                        {resolutionOptions.map((value) => (
                           <button
                             key={value}
                             type="button"

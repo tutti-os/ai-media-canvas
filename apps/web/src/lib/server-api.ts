@@ -496,6 +496,18 @@ export type VideoModelInfo = {
   provider: string;
   iconUrl?: string;
   accessible?: boolean;
+  capabilities?: {
+    textToVideo: boolean;
+    imageToVideo: boolean;
+    videoToVideo: boolean;
+    audio: boolean;
+  };
+  limits?: {
+    maxDuration: number;
+    allowedDurations?: number[];
+    maxResolution: "480p" | "720p" | "1080p" | "2160p";
+    maxInputImages: number;
+  };
 };
 
 export async function fetchVideoModels(): Promise<{

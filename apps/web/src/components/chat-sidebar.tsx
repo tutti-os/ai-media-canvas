@@ -131,10 +131,21 @@ function buildGeneratedMediaArtifact(
 
   if (job.jobType === "video_generation") {
     const durationSeconds = result.duration_seconds;
+    const prompt = job.output.prompt;
+    const model = job.output.model;
+    const aspectRatio =
+      typeof job.output.aspectRatio === "string"
+        ? job.output.aspectRatio
+        : job.output.aspect_ratio;
+    const resolution = job.output.resolution;
     return {
       type: "video",
       ...(typeof assetId === "string" ? { assetId } : {}),
       ...(typeof title === "string" ? { title } : {}),
+      ...(typeof prompt === "string" ? { prompt } : {}),
+      ...(typeof model === "string" ? { model } : {}),
+      ...(typeof aspectRatio === "string" ? { aspectRatio } : {}),
+      ...(typeof resolution === "string" ? { resolution } : {}),
       url,
       mimeType,
       width,

@@ -82,7 +82,20 @@
     "selection": "Select (V)",
     "text": "Text (T)",
     "videoPanel": {
-      "deleteCard": "Delete video generator card"
+      "autoSize": "Auto",
+      "captions": "Captions",
+      "closeInfo": "Close video info",
+      "closePlayer": "Close video player",
+      "deleteCard": "Delete video generator card",
+      "duration": "Duration",
+      "infoTitle": "Video Generator",
+      "model": "Base model",
+      "openInfo": "View video info",
+      "openPlayer": "Open video player",
+      "playerTitle": "Play video",
+      "prompt": "Prompt",
+      "resolution": "Resolution",
+      "size": "Size"
     }
   }
 }

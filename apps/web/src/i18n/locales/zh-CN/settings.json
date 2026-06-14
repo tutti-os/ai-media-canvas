@@ -95,6 +95,7 @@
   },
   "media": {
     "actions": {
+      "getApiKey": "获取 {{provider}} API Key",
       "save": "保存",
       "saving": "保存中..."
     },

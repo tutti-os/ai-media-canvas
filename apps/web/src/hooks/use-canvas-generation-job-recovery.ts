@@ -170,16 +170,16 @@ async function replaceRecoveredVideoGenerator(
   const durationSeconds = result.duration_seconds;
   const newElements = convertToExcalidrawElements([
     {
-      type: "embeddable",
-      link:
-        normalizeLocalAssetStorageUrl(
-          url,
-          typeof assetId === "string" ? assetId : null,
-        ) ?? url,
+      type: "rectangle",
+      link: null,
       x: current.x ?? 0,
       y: current.y ?? 0,
       width: current.width ?? width,
       height: current.height ?? height,
+      strokeColor: "#111827",
+      backgroundColor: "#000000",
+      fillStyle: "solid",
+      roughness: 0,
       customData: {
         isVideo: true,
         ...(typeof assetId === "string" ? { assetId } : {}),
@@ -187,6 +187,11 @@ async function replaceRecoveredVideoGenerator(
         ...(typeof durationSeconds === "number" ? { durationSeconds } : {}),
         title: String(current.customData?.prompt ?? "").slice(0, 60),
         prompt: current.customData?.prompt,
+        videoUrl:
+          normalizeLocalAssetStorageUrl(
+            url,
+            typeof assetId === "string" ? assetId : null,
+          ) ?? url,
       },
     } as unknown as never,
   ]);
@@ -310,8 +315,21 @@ export function useCanvasGenerationJobRecovery(
     const unsubscribe = api.onChange((elements) => {
       recoverGeneratingJobs(elements);
     });
+    const remoteSyncTimers = new Set<number>();
+    const handleRemoteSync = () => {
+      const timer = window.setTimeout(() => {
+        remoteSyncTimers.delete(timer);
+        recoverGeneratingJobs(api.getSceneElements());
+      }, 0);
+      remoteSyncTimers.add(timer);
+    };
+    window.addEventListener("aimc:canvas-remote-sync", handleRemoteSync);
 
     return () => {
+      window.removeEventListener("aimc:canvas-remote-sync", handleRemoteSync);
+      for (const timer of remoteSyncTimers) {
+        window.clearTimeout(timer);
+      }
       unsubscribe();
       for (const subscription of recoverySubscriptionsRef.current) {
         subscription.unsubscribe();

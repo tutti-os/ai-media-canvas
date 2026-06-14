@@ -696,6 +696,39 @@ function createStandaloneAgentEnv(baseEnv: ServerEnv): ServerEnv {
   };
 }
 
+function parseByteRange(
+  rangeHeader: string | undefined,
+  fileSize: number,
+): { start: number; end: number } | null | false {
+  if (!rangeHeader) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match) return false;
+
+  const [, startRaw, endRaw] = match;
+  if (!startRaw && !endRaw) return false;
+
+  if (!startRaw) {
+    const suffixLength = Number(endRaw);
+    if (!Number.isInteger(suffixLength) || suffixLength <= 0) return false;
+    const start = Math.max(0, fileSize - suffixLength);
+    return { start, end: fileSize - 1 };
+  }
+
+  const start = Number(startRaw);
+  const end = endRaw ? Number(endRaw) : fileSize - 1;
+  if (
+    !Number.isInteger(start) ||
+    !Number.isInteger(end) ||
+    start < 0 ||
+    end < start ||
+    start >= fileSize
+  ) {
+    return false;
+  }
+
+  return { start, end: Math.min(end, fileSize - 1) };
+}
+
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const env = loadServerEnv(options.env);
   registerAllProviders(env);
@@ -721,7 +754,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         : env.webOrigin;
     reply.header("Access-Control-Allow-Origin", allowOrigin);
     reply.header("Vary", "Origin");
-    reply.header("Access-Control-Allow-Headers", "Content-Type");
+    reply.header("Access-Control-Allow-Headers", "Content-Type, Range");
+    reply.header(
+      "Access-Control-Expose-Headers",
+      "Accept-Ranges, Content-Range, Content-Length",
+    );
     reply.header(
       "Access-Control-Allow-Methods",
       "GET,POST,PUT,PATCH,DELETE,OPTIONS",
@@ -1389,24 +1426,55 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     }
   });
 
-  app.get("/local-assets/:assetId", async (request, reply) => {
-    const asset = store.getAssetResponse(
-      (request.params as { assetId: string }).assetId,
-    );
-    if (!asset) {
-      return reply.code(404).send(
-        applicationErrorResponseSchema.parse({
-          error: {
-            code: "asset_not_found",
-            message: "Asset not found.",
-          },
-        }),
+  app.route({
+    method: ["GET", "HEAD"],
+    url: "/local-assets/:assetId",
+    async handler(request, reply) {
+      const asset = store.getAssetResponse(
+        (request.params as { assetId: string }).assetId,
       );
-    }
+      if (!asset) {
+        return reply.code(404).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "asset_not_found",
+              message: "Asset not found.",
+            },
+          }),
+        );
+      }
 
-    const payload = await readFile(asset.filePath);
-    reply.header("content-type", asset.mimeType);
-    return reply.code(200).send(payload);
+      const fileStat = await stat(asset.filePath);
+      const fileSize = fileStat.size;
+      const range = parseByteRange(request.headers.range, fileSize);
+      if (range === false) {
+        reply.header("content-range", `bytes */${fileSize}`);
+        return reply.code(416).send();
+      }
+
+      reply.header("content-type", asset.mimeType);
+      reply.header("accept-ranges", "bytes");
+
+      if (range) {
+        const payload = await readFile(asset.filePath);
+        const chunk = payload.subarray(range.start, range.end + 1);
+        reply.header(
+          "content-range",
+          `bytes ${range.start}-${range.end}/${fileSize}`,
+        );
+        reply.header("content-length", String(chunk.length));
+        return reply
+          .code(206)
+          .send(request.method === "HEAD" ? undefined : chunk);
+      }
+
+      reply.header("content-length", String(fileSize));
+      if (request.method === "HEAD") {
+        return reply.code(200).send();
+      }
+      const payload = await readFile(asset.filePath);
+      return reply.code(200).send(payload);
+    },
   });
 
   app.route({

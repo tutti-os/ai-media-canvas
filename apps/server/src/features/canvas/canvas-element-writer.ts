@@ -229,23 +229,28 @@ export async function insertVideoElement(
       content.appState,
     );
   const elementId = generateId();
-  const link = input.assetId
+  const videoUrl = input.assetId
     ? `/local-assets/${input.assetId}`
     : input.signedUrl;
 
   elements.push({
     ...createElementBase(elementId),
-    type: "embeddable",
+    type: "rectangle",
     x: display.x,
     y: display.y,
     width: display.width,
     height: display.height,
-    link,
+    strokeColor: "#111827",
+    backgroundColor: "#000000",
+    fillStyle: "solid",
+    roughness: 0,
+    link: null,
     customData: {
       isVideo: true,
       ...(input.assetId ? { assetId: input.assetId } : {}),
       mimeType: input.mimeType,
       prompt: input.prompt,
+      videoUrl,
       ...(input.title ? { title: input.title } : {}),
       ...(input.durationSeconds != null
         ? { durationSeconds: input.durationSeconds }
