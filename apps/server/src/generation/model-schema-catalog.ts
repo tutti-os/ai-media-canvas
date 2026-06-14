@@ -264,6 +264,7 @@ function getExplicitVideoSchema(modelId: string) {
   }
   if (modelId === "kie/kling-2.6") {
     return videoSchema({
+      allowedDurations: [5, 10],
       maxDuration: 10,
       resolutions: ["720p", "1080p"],
       maxInputImages: 1,
@@ -282,6 +283,7 @@ function getExplicitVideoSchema(modelId: string) {
   }
   if (modelId === "kie/seedance-2") {
     return videoSchema({
+      allowedDurations: [5, 10, 15],
       maxDuration: 15,
       resolutions: ["720p", "1080p"],
       maxInputImages: 8,
@@ -310,6 +312,7 @@ function getExplicitVideoSchema(modelId: string) {
   }
   if (modelId === "kie/happyhorse-1") {
     return videoSchema({
+      allowedDurations: [5],
       maxDuration: 5,
       resolutions: ["720p", "1080p"],
       maxInputImages: 4,

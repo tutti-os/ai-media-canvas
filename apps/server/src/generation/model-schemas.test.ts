@@ -101,6 +101,21 @@ describe("generation model schemas", () => {
         resolution: "1080p",
       }),
     ).not.toThrow();
+
+    for (const model of [
+      "kie/kling-2.6",
+      "kie/seedance-2",
+      "kie/happyhorse-1",
+    ]) {
+      expect(() =>
+        validateVideoGenerationParams({
+          prompt: "too short",
+          model,
+          duration: 1,
+          resolution: "720p",
+        }),
+      ).toThrow(/duration/i);
+    }
   });
 });
 

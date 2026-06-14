@@ -142,6 +142,7 @@ const KIE_VIDEO_MODELS: readonly VideoModelInfo[] = [
     },
     limits: {
       maxDuration: 10,
+      allowedDurations: [5, 10],
       maxResolution: "1080p",
       maxInputImages: 1,
     },
@@ -159,6 +160,7 @@ const KIE_VIDEO_MODELS: readonly VideoModelInfo[] = [
     },
     limits: {
       maxDuration: 15,
+      allowedDurations: [5, 10, 15],
       maxResolution: "1080p",
       maxInputImages: 2,
     },
@@ -176,6 +178,7 @@ const KIE_VIDEO_MODELS: readonly VideoModelInfo[] = [
     },
     limits: {
       maxDuration: 5,
+      allowedDurations: [5],
       maxResolution: "1080p",
       maxInputImages: 1,
     },
