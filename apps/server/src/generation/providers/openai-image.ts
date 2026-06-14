@@ -6,7 +6,7 @@ import type {
   ImageProvider,
   ModelInfo,
 } from "../types.js";
-import { aspectRatioToDimensions, GenerationError } from "../utils.js";
+import { GenerationError, aspectRatioToDimensions } from "../utils.js";
 
 const ICON_OPENAI = "https://github.com/openai.png";
 
@@ -21,8 +21,7 @@ const OPENAI_IMAGE_MODELS: readonly ModelInfo[] = [
   {
     id: "gpt-image-1",
     displayName: "GPT Image 1",
-    description:
-      "OpenAI's general-purpose image generation and editing model.",
+    description: "OpenAI's general-purpose image generation and editing model.",
     iconUrl: ICON_OPENAI,
   },
   {
@@ -34,6 +33,22 @@ const OPENAI_IMAGE_MODELS: readonly ModelInfo[] = [
   },
 ];
 
+export function isOfficialOpenAIImageBaseURL(
+  baseURL: string | undefined,
+): boolean {
+  if (!baseURL) return true;
+
+  try {
+    const url = new URL(baseURL);
+    const pathname = url.pathname.replace(/\/+$/, "");
+    return (
+      url.hostname === "api.openai.com" && (!pathname || pathname === "/v1")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export class OpenAIImageProvider implements ImageProvider {
   readonly name = "openai";
   readonly models = OPENAI_IMAGE_MODELS;
@@ -44,7 +59,9 @@ export class OpenAIImageProvider implements ImageProvider {
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
-    const { width, height } = aspectRatioToDimensions(params.aspectRatio ?? "1:1");
+    const { width, height } = aspectRatioToDimensions(
+      params.aspectRatio ?? "1:1",
+    );
     const size = `${width}x${height}`;
 
     try {
@@ -57,7 +74,11 @@ export class OpenAIImageProvider implements ImageProvider {
 
       const url = response.data?.[0]?.url;
       if (!url) {
-        throw new GenerationError("openai", "no_output", "OpenAI returned no image URL");
+        throw new GenerationError(
+          "openai",
+          "no_output",
+          "OpenAI returned no image URL",
+        );
       }
 
       return { url, mimeType: "image/png", width, height };
