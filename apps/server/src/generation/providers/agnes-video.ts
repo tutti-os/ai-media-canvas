@@ -330,16 +330,20 @@ export class AgnesVideoProvider implements VideoProvider {
                   : {}),
               });
 
+      const taskWithVideoId = task as typeof task & { videoId?: string };
+
       await metadata.onRemoteTaskCreated?.({
         provider: this.name,
         taskId: task.taskId,
-        ...(task.videoId ? { videoId: task.videoId } : {}),
+        ...(taskWithVideoId.videoId
+          ? { videoId: taskWithVideoId.videoId }
+          : {}),
         ...(typeof task.status === "string" ? { status: task.status } : {}),
         raw: task.raw,
       });
 
       return await this.pollTask(
-        task.videoId ?? task.taskId,
+        taskWithVideoId.videoId ?? task.taskId,
         request,
         metadata,
       );
