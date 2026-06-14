@@ -462,23 +462,23 @@ export function renderBootstrap({ version = "0.0.0" } = {}) {
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-package_dir="\${TUTTI_APP_PACKAGE_DIR:-\${NEXTOP_APP_PACKAGE_DIR:-$script_dir}}"
+package_dir="\${TUTTI_APP_PACKAGE_DIR:-$script_dir}"
 
-export HOST="\${TUTTI_APP_HOST:-\${NEXTOP_APP_HOST:-127.0.0.1}}"
-export AIMC_SERVER_PORT="\${TUTTI_APP_PORT:-\${NEXTOP_APP_PORT:-3001}}"
+export HOST="\${TUTTI_APP_HOST:-127.0.0.1}"
+export AIMC_SERVER_PORT="\${TUTTI_APP_PORT:-3001}"
 export AIMC_APP_VERSION="${version}"
 export AIMC_WEB_DIST="$package_dir/dist"
-export AIMC_DATA_ROOT="\${TUTTI_APP_DATA_DIR:-\${NEXTOP_APP_DATA_DIR:-$package_dir/.data}}"
+export AIMC_DATA_ROOT="\${TUTTI_APP_DATA_DIR:-$package_dir/.data}"
 export AIMC_SKILLS_ROOT="$package_dir/skills"
 export AIMC_TOOLS_MCP_PATH="$package_dir/server/tools-mcp.js"
-export AIMC_AGENT_FILES_ROOT="\${TUTTI_WORKSPACE_ROOT:-\${NEXTOP_WORKSPACE_ROOT:-$AIMC_DATA_ROOT}}"
+export AIMC_AGENT_FILES_ROOT="\${TUTTI_WORKSPACE_ROOT:-$AIMC_DATA_ROOT}"
 
-base_url="\${TUTTI_APP_BASE_URL:-\${NEXTOP_APP_BASE_URL:-http://$HOST:$AIMC_SERVER_PORT}}"
+base_url="\${TUTTI_APP_BASE_URL:-http://$HOST:$AIMC_SERVER_PORT}"
 export AIMC_WEB_ORIGIN="$base_url"
 export AIMC_SERVER_BASE_URL="$base_url"
 
-node_bin="\${TUTTI_APP_NODE:-\${NEXTOP_APP_NODE:-node}}"
-runtime_dir="\${TUTTI_APP_RUNTIME_DIR:-\${NEXTOP_APP_RUNTIME_DIR:-$AIMC_DATA_ROOT/.runtime}}"
+node_bin="\${TUTTI_APP_NODE:-node}"
+runtime_dir="\${TUTTI_APP_RUNTIME_DIR:-$AIMC_DATA_ROOT/.runtime}"
 mkdir -p "$AIMC_DATA_ROOT" "$runtime_dir"
 worker_status_file="$runtime_dir/worker.exit"
 server_status_file="$runtime_dir/server.exit"
@@ -892,7 +892,7 @@ async function writePackageFiles(manifest) {
       "web",
       "public",
       "brand",
-      "aimc-nextop-app-icon.png",
+      "aimc-tutti-app-icon.png",
     ),
     path.join(packageRoot, "icon.png"),
   );

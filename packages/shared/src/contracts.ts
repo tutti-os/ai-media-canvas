@@ -101,7 +101,7 @@ export const runCreateRequestSchema = z
     mentions: z.array(messageMentionSchema).optional(),
     model: z.string().optional(),
     modelSource: z
-      .enum(["local-agent", "nextop-managed", "api-provider"])
+      .enum(["local-agent", "tutti-managed", "api-provider"])
       .optional(),
     resumeFromRunId: runIdSchema.optional(),
     resumeMode: agentRunResumeModeSchema.optional(),
@@ -187,7 +187,7 @@ export const profileUpdateRequestSchema = z.object({
 export const workspaceSettingsSchema = z.object({
   defaultModel: z.string(),
   defaultModelSource: z
-    .enum(["local-agent", "nextop-managed", "api-provider"])
+    .enum(["local-agent", "tutti-managed", "api-provider"])
     .optional(),
   providerModels: z.object({
     openai: z.array(z.string().min(1)),
@@ -214,7 +214,7 @@ export const workspaceSettingsSchema = z.object({
 
 export const agentModelSourceSchema = z.enum([
   "local-agent",
-  "nextop-managed",
+  "tutti-managed",
   "api-provider",
 ]);
 
@@ -226,45 +226,45 @@ export const modelInfoSchema = z.object({
   source: agentModelSourceSchema.optional(),
 });
 
-export const nextopManagedProviderIdSchema = z.enum([
+export const tuttiManagedProviderIdSchema = z.enum([
   "agnes",
   "openai",
   "anthropic",
 ]);
 
-export const nextopManagedModelSchema = z.object({
+export const tuttiManagedModelSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  provider: nextopManagedProviderIdSchema,
+  provider: tuttiManagedProviderIdSchema,
 });
 
-export const nextopManagedConnectionSchema = z.object({
+export const tuttiManagedConnectionSchema = z.object({
   connected: z.boolean(),
   grantRef: z.string().min(1).optional(),
   expiresAt: timestampSchema.optional(),
-  providers: z.array(nextopManagedProviderIdSchema),
-  models: z.array(nextopManagedModelSchema),
+  providers: z.array(tuttiManagedProviderIdSchema),
+  models: z.array(tuttiManagedModelSchema),
 });
 
-export const nextopManagedPublicConnectionSchema =
-  nextopManagedConnectionSchema.omit({
+export const tuttiManagedPublicConnectionSchema =
+  tuttiManagedConnectionSchema.omit({
     grantRef: true,
   });
 
-export const nextopManagedConnectChallengeSchema = z.object({
+export const tuttiManagedConnectChallengeSchema = z.object({
   expiresAt: timestampSchema,
   nonce: z.string().trim().min(16),
   state: z.string().trim().min(16),
 });
 
-export const nextopManagedGrantRequestSchema = z.object({
+export const tuttiManagedGrantRequestSchema = z.object({
   contextToken: z.string().trim().min(1),
   grantCode: z.string().trim().min(1),
   nonce: z.string().trim().min(16),
   state: z.string().trim().min(16),
   expiresAt: timestampSchema.optional(),
-  providers: z.array(nextopManagedProviderIdSchema).optional(),
-  models: z.array(nextopManagedModelSchema).optional(),
+  providers: z.array(tuttiManagedProviderIdSchema).optional(),
+  models: z.array(tuttiManagedModelSchema).optional(),
 });
 
 export const toolStatusSchema = z.enum([
@@ -418,21 +418,21 @@ export type ChatMessageCreateRequest = z.infer<typeof chatMessageCreateRequestSc
 export type ChatToolActivity = z.infer<typeof chatToolActivitySchema>;
 export type ProfileUpdateRequest = z.infer<typeof profileUpdateRequestSchema>;
 export type ModelInfo = z.infer<typeof modelInfoSchema>;
-export type NextopManagedProviderId = z.infer<
-  typeof nextopManagedProviderIdSchema
+export type TuttiManagedProviderId = z.infer<
+  typeof tuttiManagedProviderIdSchema
 >;
-export type NextopManagedModel = z.infer<typeof nextopManagedModelSchema>;
-export type NextopManagedConnection = z.infer<
-  typeof nextopManagedConnectionSchema
+export type TuttiManagedModel = z.infer<typeof tuttiManagedModelSchema>;
+export type TuttiManagedConnection = z.infer<
+  typeof tuttiManagedConnectionSchema
 >;
-export type NextopManagedPublicConnection = z.infer<
-  typeof nextopManagedPublicConnectionSchema
+export type TuttiManagedPublicConnection = z.infer<
+  typeof tuttiManagedPublicConnectionSchema
 >;
-export type NextopManagedConnectChallenge = z.infer<
-  typeof nextopManagedConnectChallengeSchema
+export type TuttiManagedConnectChallenge = z.infer<
+  typeof tuttiManagedConnectChallengeSchema
 >;
-export type NextopManagedGrantRequest = z.infer<
-  typeof nextopManagedGrantRequestSchema
+export type TuttiManagedGrantRequest = z.infer<
+  typeof tuttiManagedGrantRequestSchema
 >;
 export type RunCreateRequest = z.infer<typeof runCreateRequestSchema>;
 export type RunCreateResponse = z.infer<typeof runCreateResponseSchema>;

@@ -23,7 +23,7 @@ import {
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
   createLocalAgentRuntime,
-} from "@nextop-os/agent-acp-kit";
+} from "@tutti-os/agent-acp-kit";
 
 import type { AuthenticatedUser, UserDataClient } from "../auth/request.js";
 import type { ServerEnv } from "../config/env.js";
@@ -41,7 +41,7 @@ import {
   TierGuardError,
 } from "../features/credits/tier-guard.js";
 import type { JobService } from "../features/jobs/job-service.js";
-import { isManagedModelId } from "../features/nextop-managed/credential-service.js";
+import { isManagedModelId } from "../features/tutti-managed/credential-service.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";

@@ -186,7 +186,7 @@ describe("AgentModelSelector", () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "tutti:agnes:agnes-2.0-flash",
-        defaultModelSource: "nextop-managed",
+        defaultModelSource: "tutti-managed",
       },
     });
     fetchModelsMock.mockResolvedValue({
@@ -195,7 +195,7 @@ describe("AgentModelSelector", () => {
           id: "tutti:agnes:agnes-2.0-flash",
           name: "agnes-2.0-flash",
           provider: "agnes",
-          source: "nextop-managed",
+          source: "tutti-managed",
         },
       ],
     });
@@ -277,7 +277,7 @@ describe("AgentModelSelector", () => {
     );
 
     expect(screen.getByTestId("settings-dialog")).toHaveTextContent(
-      "agent:nextop-managed",
+      "agent:tutti-managed",
     );
   });
 

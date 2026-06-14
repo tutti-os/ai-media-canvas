@@ -14,7 +14,7 @@ import {
   type AgentDetection,
   type LocalAgentRuntime,
   createLocalAgentRuntime,
-} from "@nextop-os/agent-acp-kit";
+} from "@tutti-os/agent-acp-kit";
 
 import {
   type AgentProviderInstallResult,
@@ -25,7 +25,7 @@ import {
   isAimcLocalAgentProvider,
 } from "../agent/local-agent-providers.js";
 import type { ServerEnv } from "../config/env.js";
-import type { NextopManagedCredentialService } from "../features/nextop-managed/credential-service.js";
+import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 import {
   LOCAL_WORKSPACE_ID,
   type SettingsService,
@@ -309,7 +309,7 @@ export async function registerModelRoutes(
   options?: {
     localAgentModelDiscovery?: LocalAgentModelDiscovery;
     localAgentProviderInstaller?: LocalAgentProviderInstaller;
-    nextopManagedCredentials?: NextopManagedCredentialService;
+    tuttiManagedCredentials?: TuttiManagedCredentialService;
   },
 ) {
   const localAgentModelDiscovery =
@@ -323,8 +323,8 @@ export async function registerModelRoutes(
       env,
       localAgentModelDiscovery,
       logger: app.log,
-      ...(options?.nextopManagedCredentials
-        ? { nextopManagedCredentials: options.nextopManagedCredentials }
+      ...(options?.tuttiManagedCredentials
+        ? { tuttiManagedCredentials: options.tuttiManagedCredentials }
         : {}),
       ...(settingsService ? { settingsService } : {}),
     });
@@ -392,7 +392,7 @@ export async function listAgentModels(options: {
   env: ServerEnv;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
-  nextopManagedCredentials?: NextopManagedCredentialService;
+  tuttiManagedCredentials?: TuttiManagedCredentialService;
   settingsService?: SettingsService;
 }) {
   const localAgentModelDiscovery =
@@ -488,8 +488,8 @@ export async function listAgentModels(options: {
       );
     }
   }
-  if (options.nextopManagedCredentials) {
-    models.push(...(await options.nextopManagedCredentials.listModels()));
+  if (options.tuttiManagedCredentials) {
+    models.push(...(await options.tuttiManagedCredentials.listModels()));
   }
   return models;
 }

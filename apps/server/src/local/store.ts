@@ -25,9 +25,9 @@ import type {
   ChatMessageCreateRequest,
   ChatSessionSummary,
   ImageGenerationPayload,
-  NextopManagedConnection,
-  NextopManagedModel,
-  NextopManagedProviderId,
+  TuttiManagedConnection,
+  TuttiManagedModel,
+  TuttiManagedProviderId,
   ProjectCreateRequest,
   ProjectSummary,
   ProjectUpdateRequest,
@@ -77,7 +77,7 @@ const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   volcesApiKey: "",
   volcesBaseUrl: "",
 };
-const EMPTY_NEXTOP_MANAGED_CONNECTION: NextopManagedConnection = {
+const EMPTY_TUTTI_MANAGED_CONNECTION: TuttiManagedConnection = {
   connected: false,
   providers: [],
   models: [],
@@ -101,41 +101,41 @@ function normalizeAgentModelSourceForStore(
   source: string | undefined,
 ): WorkspaceSettings["defaultModelSource"] | undefined {
   return source === "local-agent" ||
-    source === "nextop-managed" ||
+    source === "tutti-managed" ||
     source === "api-provider"
     ? source
     : undefined;
 }
 
-function normalizeNextopManagedProviders(
+function normalizeTuttiManagedProviders(
   providers: readonly string[] | undefined,
-): NextopManagedProviderId[] {
+): TuttiManagedProviderId[] {
   const supported = new Set(["agnes", "openai", "anthropic"]);
   const seen = new Set<string>();
-  const normalized: NextopManagedProviderId[] = [];
+  const normalized: TuttiManagedProviderId[] = [];
 
   for (const provider of providers ?? []) {
     const value = provider.trim();
     if (!supported.has(value) || seen.has(value)) continue;
     seen.add(value);
-    normalized.push(value as NextopManagedProviderId);
+    normalized.push(value as TuttiManagedProviderId);
   }
 
   return normalized;
 }
 
-function normalizeNextopManagedModels(
-  models: readonly NextopManagedModel[] | undefined,
-): NextopManagedModel[] {
+function normalizeTuttiManagedModels(
+  models: readonly TuttiManagedModel[] | undefined,
+): TuttiManagedModel[] {
   const seen = new Set<string>();
-  const normalized: NextopManagedModel[] = [];
+  const normalized: TuttiManagedModel[] = [];
 
   for (const model of models ?? []) {
     const provider = model.provider.trim();
     const id = model.id.trim();
     const name = model.name.trim() || id;
     if (!id) continue;
-    const [normalizedProvider] = normalizeNextopManagedProviders([provider]);
+    const [normalizedProvider] = normalizeTuttiManagedProviders([provider]);
     if (!normalizedProvider) continue;
     const modelId = id.includes(":") ? id : `${normalizedProvider}:${id}`;
     if (seen.has(modelId)) continue;
@@ -150,15 +150,15 @@ function normalizeNextopManagedModels(
   return normalized;
 }
 
-function normalizeNextopManagedConnection(
-  connection: NextopManagedConnection,
-): NextopManagedConnection {
+function normalizeTuttiManagedConnection(
+  connection: TuttiManagedConnection,
+): TuttiManagedConnection {
   if (!connection.connected || !connection.grantRef?.trim()) {
-    return { ...EMPTY_NEXTOP_MANAGED_CONNECTION };
+    return { ...EMPTY_TUTTI_MANAGED_CONNECTION };
   }
 
-  const models = normalizeNextopManagedModels(connection.models);
-  const providers = normalizeNextopManagedProviders(
+  const models = normalizeTuttiManagedModels(connection.models);
+  const providers = normalizeTuttiManagedProviders(
     connection.providers.length > 0
       ? connection.providers
       : models.map((model) => model.provider),
@@ -333,7 +333,7 @@ export function createLocalStore(options: {
       volces_api_key TEXT NOT NULL DEFAULT '',
       volces_base_url TEXT NOT NULL DEFAULT ''
     );
-    CREATE TABLE IF NOT EXISTS nextop_managed_model_connection (
+    CREATE TABLE IF NOT EXISTS tutti_managed_model_connection (
       workspace_id TEXT PRIMARY KEY,
       grant_ref TEXT NOT NULL,
       expires_at TEXT,
@@ -1097,12 +1097,12 @@ export function createLocalStore(options: {
     return getWorkspaceSettings();
   }
 
-  function getNextopManagedConnection(): NextopManagedConnection {
+  function getTuttiManagedConnection(): TuttiManagedConnection {
     const row = db
       .prepare(
         `
           SELECT grant_ref, expires_at, providers_json, models_json
-          FROM nextop_managed_model_connection
+          FROM tutti_managed_model_connection
           WHERE workspace_id = ?
         `,
       )
@@ -1116,33 +1116,33 @@ export function createLocalStore(options: {
       | undefined;
 
     if (!row) {
-      return { ...EMPTY_NEXTOP_MANAGED_CONNECTION };
+      return { ...EMPTY_TUTTI_MANAGED_CONNECTION };
     }
 
-    return normalizeNextopManagedConnection({
+    return normalizeTuttiManagedConnection({
       connected: true,
       grantRef: row.grant_ref,
       ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
-      providers: parseJson<NextopManagedProviderId[]>(
+      providers: parseJson<TuttiManagedProviderId[]>(
         row.providers_json,
         [],
       ),
-      models: parseJson<NextopManagedModel[]>(row.models_json, []),
+      models: parseJson<TuttiManagedModel[]>(row.models_json, []),
     });
   }
 
-  function updateNextopManagedConnection(
-    connection: NextopManagedConnection,
-  ): NextopManagedConnection {
-    const normalized = normalizeNextopManagedConnection(connection);
+  function updateTuttiManagedConnection(
+    connection: TuttiManagedConnection,
+  ): TuttiManagedConnection {
+    const normalized = normalizeTuttiManagedConnection(connection);
     if (!normalized.connected || !normalized.grantRef) {
-      clearNextopManagedConnection();
-      return { ...EMPTY_NEXTOP_MANAGED_CONNECTION };
+      clearTuttiManagedConnection();
+      return { ...EMPTY_TUTTI_MANAGED_CONNECTION };
     }
 
     db.prepare(
       `
-        INSERT INTO nextop_managed_model_connection (
+        INSERT INTO tutti_managed_model_connection (
           workspace_id,
           grant_ref,
           expires_at,
@@ -1166,13 +1166,13 @@ export function createLocalStore(options: {
       new Date().toISOString(),
     );
 
-    return getNextopManagedConnection();
+    return getTuttiManagedConnection();
   }
 
-  function clearNextopManagedConnection() {
+  function clearTuttiManagedConnection() {
     db.prepare(
       `
-        DELETE FROM nextop_managed_model_connection
+        DELETE FROM tutti_managed_model_connection
         WHERE workspace_id = ?
       `,
     ).run(LOCAL_WORKSPACE_ID);
@@ -3577,9 +3577,9 @@ export function createLocalStore(options: {
     updateProfile,
     getWorkspaceSettings,
     updateWorkspaceSettings,
-    getNextopManagedConnection,
-    updateNextopManagedConnection,
-    clearNextopManagedConnection,
+    getTuttiManagedConnection,
+    updateTuttiManagedConnection,
+    clearTuttiManagedConnection,
     listProjects,
     createProject,
     getProject,

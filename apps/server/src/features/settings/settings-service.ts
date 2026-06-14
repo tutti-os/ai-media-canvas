@@ -2,7 +2,7 @@ import type { AgentRuntimeProvider, WorkspaceSettings } from "@aimc/shared";
 import {
   type LocalAgentRuntime,
   createLocalAgentRuntime,
-} from "@nextop-os/agent-acp-kit";
+} from "@tutti-os/agent-acp-kit";
 
 import {
   type LocalAgentModelDiscovery,
@@ -104,7 +104,7 @@ export function normalizeWorkspaceSettings(
   const defaultModelSource =
     defaultModel &&
     (input.defaultModelSource === "local-agent" ||
-      input.defaultModelSource === "nextop-managed" ||
+      input.defaultModelSource === "tutti-managed" ||
       input.defaultModelSource === "api-provider")
       ? input.defaultModelSource
       : undefined;

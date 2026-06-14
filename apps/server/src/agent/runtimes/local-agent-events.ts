@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@nextop-os/agent-acp-kit";
+import type { AgentEvent } from "@tutti-os/agent-acp-kit";
 import {
   imageArtifactSchema,
   type StreamEvent,

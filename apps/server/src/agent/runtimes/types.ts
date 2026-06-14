@@ -14,7 +14,7 @@ import type {
   AgentEvent,
   LocalAgentProviderPlugin,
   LocalAgentRuntime,
-} from "@nextop-os/agent-acp-kit";
+} from "@tutti-os/agent-acp-kit";
 
 import type { UserDataClient } from "../../auth/request.js";
 import type { ServerEnv } from "../../config/env.js";

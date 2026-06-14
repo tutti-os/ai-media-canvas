@@ -42,9 +42,9 @@ import {
 } from "./features/chat/chat-service.js";
 import { createJobService } from "./features/jobs/job-service.js";
 import {
-  createNextopManagedCredentialService,
+  createTuttiManagedCredentialService,
   isManagedModelId,
-} from "./features/nextop-managed/credential-service.js";
+} from "./features/tutti-managed/credential-service.js";
 import {
   type ProjectService,
   ProjectServiceError,
@@ -73,8 +73,8 @@ import { registerImageModelRoutes } from "./http/image-models.js";
 import { createJobOperations } from "./http/job-operations.js";
 import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
-import { registerNextopCliRoutes } from "./http/nextop-cli.js";
-import { registerNextopManagedModelConnectionRoutes } from "./http/nextop-managed-model-connection.js";
+import { registerTuttiCliRoutes } from "./http/tutti-cli.js";
+import { registerTuttiManagedModelConnectionRoutes } from "./http/tutti-managed-model-connection.js";
 import { createProjectOperations } from "./http/project-operations.js";
 import { registerProjectRoutes } from "./http/projects.js";
 import { registerSettingsRoutes } from "./http/settings.js";
@@ -745,7 +745,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const skillService = buildSkillService(store);
   const jobService = createJobService(store);
   const settingsService = createSettingsService(store, env);
-  const nextopManagedCredentials = createNextopManagedCredentialService({
+  const tuttiManagedCredentials = createTuttiManagedCredentialService({
     env,
     store,
   });
@@ -961,7 +961,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       }
       throw error;
     }
-    const runtimeEnv = await nextopManagedCredentials.resolveEnvForModel(
+    const runtimeEnv = await tuttiManagedCredentials.resolveEnvForModel(
       baseRuntimeEnv,
       resolvedModel ?? baseRuntimeEnv.agentModel,
       payload.model
@@ -1093,11 +1093,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     uploadService,
   });
   void registerSettingsRoutes(app, { localUser, settingsService });
-  void registerNextopManagedModelConnectionRoutes(app, {
-    nextopManagedCredentials,
+  void registerTuttiManagedModelConnectionRoutes(app, {
+    tuttiManagedCredentials,
   });
   void registerModelRoutes(app, env, settingsService, {
-    nextopManagedCredentials,
+    tuttiManagedCredentials,
   });
   void registerImageModelRoutes(app, env, settingsService);
   void registerVideoModelRoutes(app, env, settingsService);
@@ -1109,7 +1109,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     settingsService,
     uploadService,
   });
-  void registerNextopCliRoutes(app, {
+  void registerTuttiCliRoutes(app, {
     agentOperations: {
       cancelRun: cancelLocalAgentRun,
       listRunEvents: listLocalAgentRunEvents,
@@ -1119,7 +1119,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     chatOperations,
     env,
     jobOperations,
-    nextopManagedCredentials,
+    tuttiManagedCredentials,
     projectOperations,
     settingsService,
     skillOperations,
@@ -1128,7 +1128,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     await wsApp.register(websocket);
     await registerWsRoute(wsApp, {
       agentRuns,
-      nextopManagedCredentials,
+      tuttiManagedCredentials,
       agentRunOrchestrator,
       agentRunPersistence: {
         appendEvent: store.appendAgentRunEvent,

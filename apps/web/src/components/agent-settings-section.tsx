@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   InstallableAgentProviderId,
   ModelInfo,
-  NextopManagedConnection,
+  TuttiManagedConnection,
   WorkspaceSettings,
 } from "@aimc/shared";
 
@@ -27,15 +27,15 @@ import {
   isLocalCliProvider,
 } from "@/lib/agent-model-groups";
 import {
-  hasNextopManagedCredentialBridge,
-  openNextopManagedModelSettings,
-  requestNextopManagedGrant,
-} from "@/lib/nextop-managed-credentials";
+  hasTuttiManagedCredentialBridge,
+  openTuttiManagedModelSettings,
+  requestTuttiManagedGrant,
+} from "@/lib/tutti-managed-credentials";
 import {
-  connectNextopManagedModels,
-  disconnectNextopManagedModels,
+  connectTuttiManagedModels,
+  disconnectTuttiManagedModels,
   fetchModels,
-  fetchNextopManagedConnection,
+  fetchTuttiManagedConnection,
   installAgentProvider,
 } from "@/lib/server-api";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
@@ -886,14 +886,14 @@ export function AgentSettingsSection({
     normalizeAgentSettings(initialSettings),
   );
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [nextopManagedConnection, setNextopManagedConnection] =
-    useState<NextopManagedConnection>({
+  const [tuttiManagedConnection, setTuttiManagedConnection] =
+    useState<TuttiManagedConnection>({
       connected: false,
       providers: [],
       models: [],
     });
-  const [connectingNextopManaged, setConnectingNextopManaged] = useState(false);
-  const [nextopBridgeAvailable, setNextopBridgeAvailable] = useState(false);
+  const [connectingTuttiManaged, setConnectingTuttiManaged] = useState(false);
+  const [tuttiBridgeAvailable, setTuttiBridgeAvailable] = useState(false);
   const [activeProtocol, setActiveProtocol] = useState<AgentProtocolId>(() =>
     getInitialProtocol(initialSettings),
   );
@@ -927,10 +927,10 @@ export function AgentSettingsSection({
     try {
       const [response, connectionResponse] = await Promise.all([
         fetchModels(),
-        fetchNextopManagedConnection(),
+        fetchTuttiManagedConnection(),
       ]);
       setAvailableModels(response.models);
-      setNextopManagedConnection(connectionResponse.connection);
+      setTuttiManagedConnection(connectionResponse.connection);
     } catch {
       setAvailableModels([]);
     }
@@ -941,7 +941,7 @@ export function AgentSettingsSection({
   }, [refreshAvailableModels]);
 
   useEffect(() => {
-    setNextopBridgeAvailable(hasNextopManagedCredentialBridge());
+    setTuttiBridgeAvailable(hasTuttiManagedCredentialBridge());
   }, []);
 
   useEffect(() => {
@@ -964,10 +964,10 @@ export function AgentSettingsSection({
       ),
     [availableModels],
   );
-  const nextopManagedModels = useMemo(
+  const tuttiManagedModels = useMemo(
     () =>
       availableModels.filter(
-        (model) => getModelSourceTab(model) === "nextop-managed",
+        (model) => getModelSourceTab(model) === "tutti-managed",
       ),
     [availableModels],
   );
@@ -1023,14 +1023,14 @@ export function AgentSettingsSection({
         : "",
     [availableModels, settings],
   );
-  const selectedNextopManagedModelName = useMemo(
+  const selectedTuttiManagedModelName = useMemo(
     () =>
-      inferDefaultModelSource(settings) === "nextop-managed"
-        ? (nextopManagedModels.find(
+      inferDefaultModelSource(settings) === "tutti-managed"
+        ? (tuttiManagedModels.find(
             (model) => model.id === settings.defaultModel,
           )?.name ?? "")
         : "",
-    [nextopManagedModels, settings],
+    [tuttiManagedModels, settings],
   );
   const selectedOpenAIPreset = getSelectedApiProviderPreset(settings, "openai");
   const selectedAnthropicPreset = getSelectedApiProviderPreset(
@@ -1081,18 +1081,18 @@ export function AgentSettingsSection({
     }
   }
 
-  async function handleConnectNextopManaged() {
+  async function handleConnectTuttiManaged() {
     setFeedback(null);
-    setConnectingNextopManaged(true);
+    setConnectingTuttiManaged(true);
     try {
-      const grant = await requestNextopManagedGrant();
-      const response = await connectNextopManagedModels(grant);
-      setNextopManagedConnection(response.connection);
+      const grant = await requestTuttiManagedGrant();
+      const response = await connectTuttiManagedModels(grant);
+      setTuttiManagedConnection(response.connection);
       await refreshAvailableModels();
-      setActiveSourceTab("nextop-managed");
+      setActiveSourceTab("tutti-managed");
       setFeedback({
         type: "success",
-        message: t("agentSettings.nextopManaged.feedback.connected"),
+        message: t("agentSettings.tuttiManaged.feedback.connected"),
       });
     } catch (error) {
       setFeedback({
@@ -1100,29 +1100,29 @@ export function AgentSettingsSection({
         message:
           error instanceof Error
             ? error.message
-            : t("agentSettings.nextopManaged.feedback.connectFailed"),
+            : t("agentSettings.tuttiManaged.feedback.connectFailed"),
       });
     } finally {
-      setConnectingNextopManaged(false);
+      setConnectingTuttiManaged(false);
     }
   }
 
-  async function handleDisconnectNextopManaged() {
+  async function handleDisconnectTuttiManaged() {
     setFeedback(null);
-    setConnectingNextopManaged(true);
+    setConnectingTuttiManaged(true);
     try {
-      const response = await disconnectNextopManagedModels();
-      setNextopManagedConnection(response.connection);
+      const response = await disconnectTuttiManagedModels();
+      setTuttiManagedConnection(response.connection);
       await refreshAvailableModels();
       if (
-        nextopManagedModels.some((model) => model.id === settings.defaultModel)
+        tuttiManagedModels.some((model) => model.id === settings.defaultModel)
       ) {
         updateField("defaultModel", "");
         updateField("defaultModelSource", undefined);
       }
       setFeedback({
         type: "success",
-        message: t("agentSettings.nextopManaged.feedback.disconnected"),
+        message: t("agentSettings.tuttiManaged.feedback.disconnected"),
       });
     } catch (error) {
       setFeedback({
@@ -1130,23 +1130,23 @@ export function AgentSettingsSection({
         message:
           error instanceof Error
             ? error.message
-            : t("agentSettings.nextopManaged.feedback.disconnectFailed"),
+            : t("agentSettings.tuttiManaged.feedback.disconnectFailed"),
       });
     } finally {
-      setConnectingNextopManaged(false);
+      setConnectingTuttiManaged(false);
     }
   }
 
-  async function handleOpenNextopManagedSettings() {
+  async function handleOpenTuttiManagedSettings() {
     try {
-      await openNextopManagedModelSettings();
+      await openTuttiManagedModelSettings();
     } catch (error) {
       setFeedback({
         type: "error",
         message:
           error instanceof Error
             ? error.message
-            : t("agentSettings.nextopManaged.feedback.openSettingsFailed"),
+            : t("agentSettings.tuttiManaged.feedback.openSettingsFailed"),
       });
     }
   }
@@ -1208,11 +1208,11 @@ export function AgentSettingsSection({
                 icon: Terminal,
               },
               {
-                id: "nextop-managed" as const,
-                label: t("agentSettings.source.nextopManaged"),
-                description: nextopManagedConnection.connected
-                  ? t("agentSettings.nextopManaged.connected")
-                  : t("agentSettings.nextopManaged.notConnected"),
+                id: "tutti-managed" as const,
+                label: t("agentSettings.source.tuttiManaged"),
+                description: tuttiManagedConnection.connected
+                  ? t("agentSettings.tuttiManaged.connected")
+                  : t("agentSettings.tuttiManaged.notConnected"),
                 icon: Cloud,
               },
               {
@@ -1261,79 +1261,79 @@ export function AgentSettingsSection({
             />
           ) : null}
 
-          {activeSourceTab === "nextop-managed" ? (
+          {activeSourceTab === "tutti-managed" ? (
             <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="text-base font-semibold">
-                    {t("agentSettings.nextopManaged.title")}
+                    {t("agentSettings.tuttiManaged.title")}
                   </h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {t("agentSettings.nextopManaged.description")}
+                    {t("agentSettings.tuttiManaged.description")}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={handleOpenNextopManagedSettings}
+                    onClick={handleOpenTuttiManagedSettings}
                   >
-                    {t("agentSettings.nextopManaged.manageInNextop")}
+                    {t("agentSettings.tuttiManaged.manageInTutti")}
                   </Button>
-                  {nextopManagedConnection.connected ? (
+                  {tuttiManagedConnection.connected ? (
                     <Button
                       type="button"
                       variant="outline"
-                      disabled={connectingNextopManaged}
-                      onClick={handleDisconnectNextopManaged}
+                      disabled={connectingTuttiManaged}
+                      onClick={handleDisconnectTuttiManaged}
                     >
-                      {t("agentSettings.nextopManaged.disconnect")}
+                      {t("agentSettings.tuttiManaged.disconnect")}
                     </Button>
                   ) : null}
                   <Button
                     type="button"
-                    disabled={connectingNextopManaged || !nextopBridgeAvailable}
-                    onClick={handleConnectNextopManaged}
+                    disabled={connectingTuttiManaged || !tuttiBridgeAvailable}
+                    onClick={handleConnectTuttiManaged}
                   >
-                    {connectingNextopManaged ? (
+                    {connectingTuttiManaged ? (
                       <Loader2 className="size-4 animate-spin" />
                     ) : null}
-                    {nextopManagedConnection.connected
-                      ? t("agentSettings.nextopManaged.reauthorize")
-                      : t("agentSettings.nextopManaged.connect")}
+                    {tuttiManagedConnection.connected
+                      ? t("agentSettings.tuttiManaged.reauthorize")
+                      : t("agentSettings.tuttiManaged.connect")}
                   </Button>
                 </div>
               </div>
 
-              {!nextopBridgeAvailable ? (
+              {!tuttiBridgeAvailable ? (
                 <div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
-                  {t("agentSettings.nextopManaged.bridgeUnavailable")}
+                  {t("agentSettings.tuttiManaged.bridgeUnavailable")}
                 </div>
               ) : null}
 
               <div className="rounded-xl border bg-muted/20 p-4">
                 <p className="text-sm font-medium text-foreground">
-                  {t("agentSettings.nextopManaged.defaultModel")}
+                  {t("agentSettings.tuttiManaged.defaultModel")}
                 </p>
                 <p className="mt-2 truncate text-sm text-foreground">
-                  {selectedNextopManagedModelName ||
-                    t("agentSettings.nextopManaged.noModelSelected")}
+                  {selectedTuttiManagedModelName ||
+                    t("agentSettings.tuttiManaged.noModelSelected")}
                 </p>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {selectedNextopManagedModelName
+                  {selectedTuttiManagedModelName
                     ? settings.defaultModel
-                    : t("agentSettings.nextopManaged.chooseModel")}
+                    : t("agentSettings.tuttiManaged.chooseModel")}
                 </p>
               </div>
 
-              {nextopManagedModels.length > 0 ? (
+              {tuttiManagedModels.length > 0 ? (
                 <div className="space-y-2">
-                  {nextopManagedModels.map((model) => (
+                  {tuttiManagedModels.map((model) => (
                     <button
                       key={model.id}
                       type="button"
                       onClick={() =>
-                        selectDefaultModel(model.id, "nextop-managed")
+                        selectDefaultModel(model.id, "tutti-managed")
                       }
                       className={`flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
                         settings.defaultModel === model.id
@@ -1357,9 +1357,9 @@ export function AgentSettingsSection({
                 </div>
               ) : (
                 <div className="rounded-xl border bg-muted/20 p-5 text-sm text-muted-foreground">
-                  {nextopManagedConnection.connected
-                    ? t("agentSettings.nextopManaged.emptyModels")
-                    : t("agentSettings.nextopManaged.connectFirst")}
+                  {tuttiManagedConnection.connected
+                    ? t("agentSettings.tuttiManaged.emptyModels")
+                    : t("agentSettings.tuttiManaged.connectFirst")}
                 </div>
               )}
             </section>

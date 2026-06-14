@@ -6,7 +6,7 @@ import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 import type {
   AgentEvent,
   LocalAgentProviderPlugin,
-} from "@nextop-os/agent-acp-kit";
+} from "@tutti-os/agent-acp-kit";
 
 import { createAimcToolsMcpServerConfig } from "../local-agent-host/mcp-config.js";
 import {

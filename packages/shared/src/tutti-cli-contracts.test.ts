@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { cliCommandOutputSchema } from "./nextop-cli-contracts.js";
+import { cliCommandOutputSchema } from "./tutti-cli-contracts.js";
 
-describe("nextop CLI output contracts", () => {
+describe("tutti CLI output contracts", () => {
   it("accepts json outputs", () => {
     expect(
       cliCommandOutputSchema.parse({

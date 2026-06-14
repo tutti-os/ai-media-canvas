@@ -39,24 +39,24 @@ type AppTranslation = {
   t: (key: string, options?: TranslationOptions) => string;
 };
 type ResourceTree = Record<string, unknown>;
-type NextopAppContextValue = {
+type TuttiAppContextValue = {
   locale?: unknown;
   language?: unknown;
 };
-type NextopAppContext = NextopAppContextValue & {
+type TuttiAppContext = TuttiAppContextValue & {
   get?: () =>
-    | Promise<NextopAppContextValue | null>
-    | NextopAppContextValue
+    | Promise<TuttiAppContextValue | null>
+    | TuttiAppContextValue
     | null;
   subscribe?: (
-    listener: (context: NextopAppContextValue | null) => void,
+    listener: (context: TuttiAppContextValue | null) => void,
   ) => (() => void) | undefined;
 };
-type NextopWindow = Window & {
+type TuttiWindow = Window & {
   tutti?: {
-    appContext?: NextopAppContext;
+    appContext?: TuttiAppContext;
   };
-  tuttiAppContext?: NextopAppContext;
+  tuttiAppContext?: TuttiAppContext;
 };
 
 const useUntypedTranslation = useTranslation as unknown as (
@@ -144,7 +144,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     let isCurrent = true;
     const appContext = getHostAppContext();
 
-    function applyHostLocale(context: NextopAppContextValue | null) {
+    function applyHostLocale(context: TuttiAppContextValue | null) {
       const locale = readHostLocale(context);
       if (locale && isCurrent && i18n.language !== locale) {
         void i18n.changeLanguage(locale);
@@ -286,11 +286,11 @@ function getNestedValue(tree: ResourceTree, keyPath: string) {
 }
 
 function getHostAppContext() {
-  const hostWindow = window as NextopWindow;
+  const hostWindow = window as TuttiWindow;
   return hostWindow.tutti?.appContext || hostWindow.tuttiAppContext || null;
 }
 
-function readHostLocale(context: NextopAppContextValue | null | undefined) {
+function readHostLocale(context: TuttiAppContextValue | null | undefined) {
   if (typeof context?.locale === "string" && context.locale.trim()) {
     return normalizeLocale(context.locale);
   }

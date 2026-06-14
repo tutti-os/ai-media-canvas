@@ -2,11 +2,11 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import type {
   AgentModelSource,
-  NextopManagedConnectChallenge,
-  NextopManagedConnection,
-  NextopManagedGrantRequest,
-  NextopManagedModel,
-  NextopManagedProviderId,
+  TuttiManagedConnectChallenge,
+  TuttiManagedConnection,
+  TuttiManagedGrantRequest,
+  TuttiManagedModel,
+  TuttiManagedProviderId,
 } from "@aimc/shared";
 
 import type { ServerEnv } from "../../config/env.js";
@@ -16,61 +16,60 @@ const PROVIDER_CREDENTIAL_TTL_MS = 5 * 60 * 60 * 1000;
 const PROVIDER_CREDENTIAL_REFRESH_WINDOW_MS = 10 * 60 * 1000;
 const CONNECT_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const MANAGED_MODEL_ID_PREFIX = "tutti";
-const LEGACY_MANAGED_MODEL_ID_PREFIX = "nextop";
 
-export type NextopManagedProviderCredential = {
-  provider: NextopManagedProviderId;
+export type TuttiManagedProviderCredential = {
+  provider: TuttiManagedProviderId;
   apiKey: string;
   baseUrl?: string;
-  models?: NextopManagedModel[];
+  models?: TuttiManagedModel[];
 };
 
-export type NextopManagedExchangeResult = {
+export type TuttiManagedExchangeResult = {
   expiresAt?: string;
   grantRef: string;
-  providers: NextopManagedProviderId[];
-  models?: NextopManagedModel[];
+  providers: TuttiManagedProviderId[];
+  models?: TuttiManagedModel[];
 };
 
-export type NextopManagedModelCatalogResult = {
+export type TuttiManagedModelCatalogResult = {
   expiresAt?: string;
-  models: NextopManagedModel[];
+  models: TuttiManagedModel[];
 };
 
-export type NextopManagedProviderCredentialResult = {
-  credential: NextopManagedProviderCredential;
+export type TuttiManagedProviderCredentialResult = {
+  credential: TuttiManagedProviderCredential;
   expiresAt?: string;
-  models?: NextopManagedModel[];
+  models?: TuttiManagedModel[];
 };
 
-export type NextopManagedExchangeClient = (input: {
+export type TuttiManagedExchangeClient = (input: {
   contextToken: string;
   env: ServerEnv;
   grantCode: string;
   nonce: string;
   state: string;
-}) => Promise<NextopManagedExchangeResult>;
+}) => Promise<TuttiManagedExchangeResult>;
 
-export type NextopManagedModelCatalogClient = (input: {
+export type TuttiManagedModelCatalogClient = (input: {
   env: ServerEnv;
   grantRef: string;
-}) => Promise<NextopManagedModelCatalogResult>;
+}) => Promise<TuttiManagedModelCatalogResult>;
 
-export type NextopManagedProviderCredentialClient = (input: {
+export type TuttiManagedProviderCredentialClient = (input: {
   capability: string;
   env: ServerEnv;
   grantRef: string;
   model: string;
-  provider: NextopManagedProviderId;
-}) => Promise<NextopManagedProviderCredentialResult>;
+  provider: TuttiManagedProviderId;
+}) => Promise<TuttiManagedProviderCredentialResult>;
 
-export type NextopManagedRevokeClient = (input: {
+export type TuttiManagedRevokeClient = (input: {
   env: ServerEnv;
   grantRef: string;
 }) => Promise<void>;
 
 type CachedCredential = {
-  credential: NextopManagedProviderCredential;
+  credential: TuttiManagedProviderCredential;
   expiresAtMs: number;
 };
 
@@ -81,21 +80,21 @@ type StoredChallenge = {
 
 type StoreAccess = Pick<
   LocalStore,
-  | "clearNextopManagedConnection"
-  | "getNextopManagedConnection"
-  | "updateNextopManagedConnection"
+  | "clearTuttiManagedConnection"
+  | "getTuttiManagedConnection"
+  | "updateTuttiManagedConnection"
 >;
 
-export type NextopManagedCredentialService = ReturnType<
-  typeof createNextopManagedCredentialService
+export type TuttiManagedCredentialService = ReturnType<
+  typeof createTuttiManagedCredentialService
 >;
 
-export function createNextopManagedCredentialService(options: {
+export function createTuttiManagedCredentialService(options: {
   env: ServerEnv;
-  exchangeClient?: NextopManagedExchangeClient;
-  modelCatalogClient?: NextopManagedModelCatalogClient;
-  providerCredentialClient?: NextopManagedProviderCredentialClient;
-  revokeClient?: NextopManagedRevokeClient;
+  exchangeClient?: TuttiManagedExchangeClient;
+  modelCatalogClient?: TuttiManagedModelCatalogClient;
+  providerCredentialClient?: TuttiManagedProviderCredentialClient;
+  revokeClient?: TuttiManagedRevokeClient;
   store: StoreAccess;
   now?: () => number;
 }) {
@@ -103,28 +102,28 @@ export function createNextopManagedCredentialService(options: {
   const challenges = new Map<string, StoredChallenge>();
   const now = options.now ?? (() => Date.now());
   const exchangeClient =
-    options.exchangeClient ?? createDefaultNextopManagedExchangeClient();
+    options.exchangeClient ?? createDefaultTuttiManagedExchangeClient();
   const modelCatalogClient =
     options.modelCatalogClient ??
-    createDefaultNextopManagedModelCatalogClient();
+    createDefaultTuttiManagedModelCatalogClient();
   const providerCredentialClient =
     options.providerCredentialClient ??
-    createDefaultNextopManagedProviderCredentialClient();
+    createDefaultTuttiManagedProviderCredentialClient();
   const revokeClient =
-    options.revokeClient ?? createDefaultNextopManagedRevokeClient();
+    options.revokeClient ?? createDefaultTuttiManagedRevokeClient();
 
   function getConnection() {
-    if (!isNextopManagedRuntimeConfigured(options.env)) {
+    if (!isTuttiManagedRuntimeConfigured(options.env)) {
       return {
         connected: false,
         providers: [],
         models: [],
       };
     }
-    return options.store.getNextopManagedConnection();
+    return options.store.getTuttiManagedConnection();
   }
 
-  function createConnectChallenge(): NextopManagedConnectChallenge {
+  function createConnectChallenge(): TuttiManagedConnectChallenge {
     pruneChallenges();
     const state = randomToken();
     const nonce = randomToken();
@@ -138,19 +137,19 @@ export function createNextopManagedCredentialService(options: {
   }
 
   async function clearConnection() {
-    const connection = options.store.getNextopManagedConnection();
-    if (connection.grantRef && isNextopManagedRuntimeConfigured(options.env)) {
+    const connection = options.store.getTuttiManagedConnection();
+    if (connection.grantRef && isTuttiManagedRuntimeConfigured(options.env)) {
       clearGrantCache(connection.grantRef);
       await revokeClient({
         env: options.env,
         grantRef: connection.grantRef,
       }).catch(() => undefined);
     }
-    options.store.clearNextopManagedConnection();
-    return options.store.getNextopManagedConnection();
+    options.store.clearTuttiManagedConnection();
+    return options.store.getTuttiManagedConnection();
   }
 
-  async function connect(input: NextopManagedGrantRequest) {
+  async function connect(input: TuttiManagedGrantRequest) {
     consumeConnectChallenge(input.state, input.nonce);
     verifyContextToken(options.env, input.contextToken);
     const exchange = await exchangeClient({
@@ -168,7 +167,7 @@ export function createNextopManagedCredentialService(options: {
       input.providers?.length ? input.providers : exchange.providers,
     );
 
-    return options.store.updateNextopManagedConnection({
+    return options.store.updateTuttiManagedConnection({
       connected: true,
       grantRef: exchange.grantRef,
       expiresAt,
@@ -186,7 +185,7 @@ export function createNextopManagedCredentialService(options: {
         grantRef: connection.grantRef,
       });
       const models = normalizeModels(catalog.models);
-      options.store.updateNextopManagedConnection({
+      options.store.updateTuttiManagedConnection({
         ...connection,
         expiresAt: catalog.expiresAt
           ? normalizeCredentialExpiry(catalog.expiresAt, now())
@@ -195,12 +194,12 @@ export function createNextopManagedCredentialService(options: {
       });
       return models.map((model) => ({
         ...model,
-        source: "nextop-managed" as const,
+        source: "tutti-managed" as const,
       }));
     } catch {
       return connection.models.map((model) => ({
         ...model,
-        source: "nextop-managed" as const,
+        source: "tutti-managed" as const,
       }));
     }
   }
@@ -248,13 +247,13 @@ export function createNextopManagedCredentialService(options: {
   }
 
   async function getFreshCredential(
-    connection: NextopManagedConnection,
-    provider: NextopManagedProviderId,
+    connection: TuttiManagedConnection,
+    provider: TuttiManagedProviderId,
     model: string,
     capability: string,
   ) {
     if (!connection.grantRef) {
-      throw new Error("Nextop Managed connection is missing grantRef.");
+      throw new Error("Tutti Managed connection is missing grantRef.");
     }
     const cacheKey = credentialCacheKey({
       capability,
@@ -283,7 +282,7 @@ export function createNextopManagedCredentialService(options: {
       credential,
       expiresAtMs: Date.parse(expiresAt),
     });
-    options.store.updateNextopManagedConnection({
+    options.store.updateTuttiManagedConnection({
       ...connection,
       expiresAt,
       ...(result.models?.length
@@ -320,7 +319,7 @@ export function createNextopManagedCredentialService(options: {
       challenge.nonce !== nonce ||
       challenge.expiresAtMs <= now()
     ) {
-      throw new Error("Invalid Nextop Managed connect challenge.");
+      throw new Error("Invalid Tutti Managed connect challenge.");
     }
   }
 
@@ -334,16 +333,16 @@ export function createNextopManagedCredentialService(options: {
   }
 }
 
-function createDefaultNextopManagedExchangeClient(): NextopManagedExchangeClient {
+function createDefaultTuttiManagedExchangeClient(): TuttiManagedExchangeClient {
   return async ({ contextToken, env, grantCode, nonce, state }) => {
-    const { token, url } = createNextopManagedGrantCollectionUrl(env);
+    const { token, url } = createTuttiManagedGrantCollectionUrl(env);
     url.pathname = `${url.pathname}/exchange`;
     const response = await fetch(url, {
       body: JSON.stringify({
         contextToken,
         grantCode,
-        ...(env.nextopAppInstallationId
-          ? { installationId: env.nextopAppInstallationId }
+        ...(env.tuttiAppInstallationId
+          ? { installationId: env.tuttiAppInstallationId }
           : {}),
         nonce,
         state,
@@ -356,16 +355,16 @@ function createDefaultNextopManagedExchangeClient(): NextopManagedExchangeClient
     });
 
     if (!response.ok) {
-      throw new Error(`Nextop Managed exchange failed: ${response.status}`);
+      throw new Error(`Tutti Managed exchange failed: ${response.status}`);
     }
 
     return normalizeExchangePayload(await response.json());
   };
 }
 
-function createDefaultNextopManagedModelCatalogClient(): NextopManagedModelCatalogClient {
+function createDefaultTuttiManagedModelCatalogClient(): TuttiManagedModelCatalogClient {
   return async ({ env, grantRef }) => {
-    const { token, url } = createNextopManagedGrantUrl(env, grantRef);
+    const { token, url } = createTuttiManagedGrantUrl(env, grantRef);
     url.pathname = `${url.pathname}/models`;
     const response = await fetch(url, {
       headers: {
@@ -375,16 +374,16 @@ function createDefaultNextopManagedModelCatalogClient(): NextopManagedModelCatal
     });
 
     if (!response.ok) {
-      throw new Error(`Nextop Managed models failed: ${response.status}`);
+      throw new Error(`Tutti Managed models failed: ${response.status}`);
     }
 
     return normalizeModelCatalogPayload(await response.json());
   };
 }
 
-function createDefaultNextopManagedProviderCredentialClient(): NextopManagedProviderCredentialClient {
+function createDefaultTuttiManagedProviderCredentialClient(): TuttiManagedProviderCredentialClient {
   return async ({ capability, env, grantRef, model, provider }) => {
-    const { token, url } = createNextopManagedGrantUrl(env, grantRef);
+    const { token, url } = createTuttiManagedGrantUrl(env, grantRef);
     url.pathname = `${url.pathname}/credentials`;
     const response = await fetch(url, {
       body: JSON.stringify({
@@ -400,16 +399,16 @@ function createDefaultNextopManagedProviderCredentialClient(): NextopManagedProv
     });
 
     if (!response.ok) {
-      throw new Error(`Nextop Managed credential failed: ${response.status}`);
+      throw new Error(`Tutti Managed credential failed: ${response.status}`);
     }
 
     return normalizeCredentialPayload(await response.json());
   };
 }
 
-function createDefaultNextopManagedRevokeClient(): NextopManagedRevokeClient {
+function createDefaultTuttiManagedRevokeClient(): TuttiManagedRevokeClient {
   return async ({ env, grantRef }) => {
-    const { token, url } = createNextopManagedGrantUrl(env, grantRef);
+    const { token, url } = createTuttiManagedGrantUrl(env, grantRef);
     const response = await fetch(url, {
       headers: {
         authorization: `Bearer ${token}`,
@@ -418,67 +417,67 @@ function createDefaultNextopManagedRevokeClient(): NextopManagedRevokeClient {
     });
 
     if (!response.ok && response.status !== 404) {
-      throw new Error(`Nextop Managed revoke failed: ${response.status}`);
+      throw new Error(`Tutti Managed revoke failed: ${response.status}`);
     }
   };
 }
 
-function createNextopManagedGrantCollectionUrl(env: ServerEnv) {
-  if (!isNextopManagedRuntimeConfigured(env)) {
-    throw new Error("Nextop Managed runtime environment is not configured.");
+function createTuttiManagedGrantCollectionUrl(env: ServerEnv) {
+  if (!isTuttiManagedRuntimeConfigured(env)) {
+    throw new Error("Tutti Managed runtime environment is not configured.");
   }
 
   return {
-    token: env.nextopAppServerToken,
+    token: env.tuttiAppServerToken,
     url: new URL(
       `/v1/workspaces/${encodeURIComponent(
-        env.nextopWorkspaceId,
-      )}/apps/${encodeURIComponent(env.nextopAppId)}/managed-model-grants`,
-      env.nextopApiBaseUrl,
+        env.tuttiWorkspaceId,
+      )}/apps/${encodeURIComponent(env.tuttiAppId)}/managed-model-grants`,
+      env.tuttiApiBaseUrl,
     ),
   };
 }
 
-function isNextopManagedRuntimeConfigured(
+function isTuttiManagedRuntimeConfigured(
   env: ServerEnv,
 ): env is ServerEnv &
   Required<
     Pick<
       ServerEnv,
-      | "nextopApiBaseUrl"
-      | "nextopAppId"
-      | "nextopAppServerToken"
-      | "nextopWorkspaceId"
+      | "tuttiApiBaseUrl"
+      | "tuttiAppId"
+      | "tuttiAppServerToken"
+      | "tuttiWorkspaceId"
     >
   > {
   return Boolean(
-    env.nextopApiBaseUrl &&
-      env.nextopWorkspaceId &&
-      env.nextopAppId &&
-      env.nextopAppServerToken,
+    env.tuttiApiBaseUrl &&
+      env.tuttiWorkspaceId &&
+      env.tuttiAppId &&
+      env.tuttiAppServerToken,
   );
 }
 
-function createNextopManagedGrantUrl(env: ServerEnv, grantRef: string) {
-  const { token, url } = createNextopManagedGrantCollectionUrl(env);
+function createTuttiManagedGrantUrl(env: ServerEnv, grantRef: string) {
+  const { token, url } = createTuttiManagedGrantCollectionUrl(env);
   url.pathname = `${url.pathname}/${encodeURIComponent(grantRef)}`;
   return { token, url };
 }
 
 function normalizeExchangePayload(
   payload: unknown,
-): NextopManagedExchangeResult {
+): TuttiManagedExchangeResult {
   const result = normalizeResultRecord(payload);
   const grantRef = String(result.grantRef ?? result.grant_ref ?? "").trim();
   if (!grantRef) {
-    throw new Error("Nextop Managed exchange response is missing grantRef.");
+    throw new Error("Tutti Managed exchange response is missing grantRef.");
   }
   const expiresAt = readExpiresAt(result);
   return {
     ...(expiresAt ? { expiresAt } : {}),
     grantRef,
     models: Array.isArray(result.models)
-      ? normalizeModels(result.models as NextopManagedModel[])
+      ? normalizeModels(result.models as TuttiManagedModel[])
       : [],
     providers: normalizeProviderIds(
       Array.isArray(result.providers)
@@ -490,20 +489,20 @@ function normalizeExchangePayload(
 
 function normalizeModelCatalogPayload(
   payload: unknown,
-): NextopManagedModelCatalogResult {
+): TuttiManagedModelCatalogResult {
   const result = normalizeResultRecord(payload);
   const expiresAt = readExpiresAt(result);
   return {
     ...(expiresAt ? { expiresAt } : {}),
     models: Array.isArray(result.models)
-      ? normalizeModels(result.models as NextopManagedModel[])
+      ? normalizeModels(result.models as TuttiManagedModel[])
       : [],
   };
 }
 
 function normalizeCredentialPayload(
   payload: unknown,
-): NextopManagedProviderCredentialResult {
+): TuttiManagedProviderCredentialResult {
   const result = normalizeResultRecord(payload);
   const rawCredential =
     result.credential && typeof result.credential === "object"
@@ -511,11 +510,11 @@ function normalizeCredentialPayload(
       : result;
   const expiresAt = readExpiresAt(result);
   const models = Array.isArray(result.models)
-    ? normalizeModels(result.models as NextopManagedModel[])
+    ? normalizeModels(result.models as TuttiManagedModel[])
     : undefined;
   return {
     credential: normalizeCredential({
-      provider: String(rawCredential.provider ?? "") as NextopManagedProviderId,
+      provider: String(rawCredential.provider ?? "") as TuttiManagedProviderId,
       apiKey: String(rawCredential.apiKey ?? rawCredential.api_key ?? ""),
       ...(typeof rawCredential.baseUrl === "string"
         ? { baseUrl: rawCredential.baseUrl }
@@ -525,7 +524,7 @@ function normalizeCredentialPayload(
       ...(Array.isArray(rawCredential.models)
         ? {
             models: normalizeModels(
-              rawCredential.models as NextopManagedModel[],
+              rawCredential.models as TuttiManagedModel[],
             ),
           }
         : {}),
@@ -568,22 +567,22 @@ function normalizeCredentialExpiry(
 
 function normalizeProviderIds(
   providers: readonly string[],
-): NextopManagedProviderId[] {
+): TuttiManagedProviderId[] {
   const supported = new Set(["agnes", "openai", "anthropic"]);
   const seen = new Set<string>();
-  const normalized: NextopManagedProviderId[] = [];
+  const normalized: TuttiManagedProviderId[] = [];
   for (const provider of providers) {
     const value = provider === "openai-compatible" ? "openai" : provider.trim();
     if (!supported.has(value) || seen.has(value)) continue;
     seen.add(value);
-    normalized.push(value as NextopManagedProviderId);
+    normalized.push(value as TuttiManagedProviderId);
   }
   return normalized;
 }
 
-function normalizeModels(models: readonly NextopManagedModel[]) {
+function normalizeModels(models: readonly TuttiManagedModel[]) {
   const seen = new Set<string>();
-  const normalized: NextopManagedModel[] = [];
+  const normalized: TuttiManagedModel[] = [];
   for (const model of models) {
     const [provider] = normalizeProviderIds([model.provider]);
     if (!provider) continue;
@@ -603,11 +602,11 @@ function normalizeModels(models: readonly NextopManagedModel[]) {
 }
 
 function normalizeCredential(
-  credential: NextopManagedProviderCredential,
-): NextopManagedProviderCredential {
+  credential: TuttiManagedProviderCredential,
+): TuttiManagedProviderCredential {
   const [provider] = normalizeProviderIds([credential.provider]);
   if (!provider || !credential.apiKey.trim()) {
-    throw new Error("Invalid Nextop Managed provider credential.");
+    throw new Error("Invalid Tutti Managed provider credential.");
   }
   return {
     provider,
@@ -653,10 +652,7 @@ function normalizeManagedModelId(modelId: string) {
 }
 
 function isManagedModelPrefix(prefix: string) {
-  return (
-    prefix === MANAGED_MODEL_ID_PREFIX ||
-    prefix === LEGACY_MANAGED_MODEL_ID_PREFIX
-  );
+  return prefix === MANAGED_MODEL_ID_PREFIX;
 }
 
 function stripManagedPrefix(value: string) {
@@ -673,7 +669,7 @@ function stripProviderPrefix(provider: string, value: string) {
 
 function applyProviderCredential(
   env: ServerEnv,
-  credential: NextopManagedProviderCredential,
+  credential: TuttiManagedProviderCredential,
   runtimeModelId: string,
 ): ServerEnv {
   if (credential.provider === "agnes") {
@@ -704,7 +700,7 @@ function credentialCacheKey(input: {
   capability: string;
   grantRef: string;
   model: string;
-  provider: NextopManagedProviderId;
+  provider: TuttiManagedProviderId;
 }) {
   return [input.grantRef, input.provider, input.model, input.capability].join(
     "\u0000",
@@ -712,42 +708,42 @@ function credentialCacheKey(input: {
 }
 
 function verifyContextToken(env: ServerEnv, token: string) {
-  if (!env.nextopAppServerToken) {
-    throw new Error("Nextop Managed app server token is not configured.");
+  if (!env.tuttiAppServerToken) {
+    throw new Error("Tutti Managed app server token is not configured.");
   }
   const [encodedPayload, signature] = token.split(".");
   if (!encodedPayload || !signature) {
-    throw new Error("Invalid Nextop context token.");
+    throw new Error("Invalid Tutti context token.");
   }
-  const expectedSignature = createHmac("sha256", env.nextopAppServerToken)
+  const expectedSignature = createHmac("sha256", env.tuttiAppServerToken)
     .update(encodedPayload)
     .digest("base64url");
   if (!timingSafeEqualString(signature, expectedSignature)) {
-    throw new Error("Invalid Nextop context token signature.");
+    throw new Error("Invalid Tutti context token signature.");
   }
   const payload = JSON.parse(
     Buffer.from(encodedPayload, "base64url").toString("utf8"),
   ) as Record<string, unknown>;
   const nowSeconds = Math.floor(Date.now() / 1000);
   if (typeof payload.exp !== "number" || payload.exp <= nowSeconds) {
-    throw new Error("Nextop context token is expired.");
+    throw new Error("Tutti context token is expired.");
   }
-  if (payload.appId !== env.nextopAppId || payload.aud !== env.nextopAppId) {
-    throw new Error("Nextop context token app mismatch.");
+  if (payload.appId !== env.tuttiAppId || payload.aud !== env.tuttiAppId) {
+    throw new Error("Tutti context token app mismatch.");
   }
-  if (payload.workspaceId !== env.nextopWorkspaceId) {
-    throw new Error("Nextop context token workspace mismatch.");
+  if (payload.workspaceId !== env.tuttiWorkspaceId) {
+    throw new Error("Tutti context token workspace mismatch.");
   }
   if (
-    env.nextopAppInstallationId &&
-    payload.installationId !== env.nextopAppInstallationId
+    env.tuttiAppInstallationId &&
+    payload.installationId !== env.tuttiAppInstallationId
   ) {
-    throw new Error("Nextop context token installation mismatch.");
+    throw new Error("Tutti context token installation mismatch.");
   }
-  if (env.nextopApiBaseUrl && typeof payload.iss === "string") {
-    const expectedIssuer = new URL(env.nextopApiBaseUrl).origin;
+  if (env.tuttiApiBaseUrl && typeof payload.iss === "string") {
+    const expectedIssuer = new URL(env.tuttiApiBaseUrl).origin;
     if (payload.iss !== expectedIssuer) {
-      throw new Error("Nextop context token issuer mismatch.");
+      throw new Error("Tutti context token issuer mismatch.");
     }
   }
 }

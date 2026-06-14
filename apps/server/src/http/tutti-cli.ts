@@ -16,7 +16,7 @@ import type { ServerEnv } from "../config/env.js";
 import { CanvasServiceError } from "../features/canvas/canvas-service.js";
 import { ChatServiceError } from "../features/chat/chat-service.js";
 import { JobServiceError } from "../features/jobs/job-service.js";
-import type { NextopManagedCredentialService } from "../features/nextop-managed/credential-service.js";
+import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 import { ProjectServiceError } from "../features/projects/project-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { SkillServiceError } from "../features/skills/skill-service.js";
@@ -25,7 +25,7 @@ import type { ChatOperations } from "./chat-operations.js";
 import { listImageModels } from "./image-models.js";
 import type { JobOperations } from "./job-operations.js";
 import { listAgentModels } from "./models.js";
-import { isZodError, sendCliError, sendCliJson } from "./nextop-cli-output.js";
+import { isZodError, sendCliError, sendCliJson } from "./tutti-cli-output.js";
 import type { ProjectOperations } from "./project-operations.js";
 import type { SkillOperations } from "./skill-operations.js";
 import { listVideoModels } from "./video-models.js";
@@ -103,7 +103,7 @@ const skillEnableCliBodySchema = z.object({
   enabled: z.boolean(),
 });
 
-export async function registerNextopCliRoutes(
+export async function registerTuttiCliRoutes(
   app: FastifyInstance,
   options: {
     agentOperations: AgentCliOperations;
@@ -111,7 +111,7 @@ export async function registerNextopCliRoutes(
     chatOperations: ChatOperations;
     env: ServerEnv;
     jobOperations: JobOperations;
-    nextopManagedCredentials?: NextopManagedCredentialService;
+    tuttiManagedCredentials?: TuttiManagedCredentialService;
     projectOperations: ProjectOperations;
     settingsService?: SettingsService;
     skillOperations: SkillOperations;
@@ -132,9 +132,6 @@ export async function registerNextopCliRoutes(
         }
       });
     register(path);
-    if (path.startsWith("/tutti/cli/")) {
-      register(path.replace("/tutti/cli/", "/nextop/cli/"));
-    }
   };
 
   route("/tutti/cli/status", async (body) => {
@@ -343,8 +340,8 @@ export async function registerNextopCliRoutes(
     models: await listAgentModels({
       env: options.env,
       logger: app.log,
-      ...(options.nextopManagedCredentials
-        ? { nextopManagedCredentials: options.nextopManagedCredentials }
+      ...(options.tuttiManagedCredentials
+        ? { tuttiManagedCredentials: options.tuttiManagedCredentials }
         : {}),
       ...(options.settingsService
         ? { settingsService: options.settingsService }
@@ -379,8 +376,6 @@ export async function registerNextopCliRoutes(
     );
   });
 }
-
-export const registerTuttiCliRoutes = registerNextopCliRoutes;
 
 function parseRequiredString(body: unknown, key: string) {
   const payload = z.record(z.string(), z.unknown()).parse(body);

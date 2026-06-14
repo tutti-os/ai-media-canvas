@@ -1998,7 +1998,7 @@ describe("createAgentRunService", () => {
         env: {
           agentBackendMode: "state",
           agentModel: "agnes:agnes-2.0-flash",
-          agnesApiKey: "nextop-managed-agnes-key",
+          agnesApiKey: "tutti-managed-agnes-key",
           port: 3001,
           version: "0.0.0",
           webOrigin: "http://localhost:3000",
@@ -2015,7 +2015,7 @@ describe("createAgentRunService", () => {
     expect(capturedAgentOptions).toMatchObject({
       env: expect.objectContaining({
         agentModel: "agnes:agnes-2.0-flash",
-        agnesApiKey: "nextop-managed-agnes-key",
+        agnesApiKey: "tutti-managed-agnes-key",
       }),
       model: "agnes:agnes-2.0-flash",
     });

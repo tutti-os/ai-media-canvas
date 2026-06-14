@@ -4,7 +4,7 @@ import {
   type RawAgentEvent,
   type RawAgentStream,
   createDefaultLocalAgentProviderPlugins,
-} from "@nextop-os/agent-acp-kit";
+} from "@tutti-os/agent-acp-kit";
 
 type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   "local-agent",

@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { loadServerEnv } from "../config/env.js";
-import { registerTuttiCliRoutes } from "./nextop-cli.js";
+import { registerTuttiCliRoutes } from "./tutti-cli.js";
 
 const apps: Array<ReturnType<typeof Fastify>> = [];
 
