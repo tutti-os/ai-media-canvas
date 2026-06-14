@@ -9,9 +9,9 @@ import type {
   MessageCreateResponse,
   MessageListResponse,
   ModelListResponse,
-  NextopManagedConnectionResponse,
-  NextopManagedGrantCreateRequest,
-  NextopManagedGrantResponse,
+  TuttiManagedConnectionResponse,
+  TuttiManagedGrantCreateRequest,
+  TuttiManagedGrantResponse,
   ProfileUpdateResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
@@ -196,20 +196,20 @@ export async function fetchModels(): Promise<ModelListResponse> {
   return (await response.json()) as ModelListResponse;
 }
 
-export async function fetchNextopManagedConnection(): Promise<NextopManagedConnectionResponse> {
+export async function fetchTuttiManagedConnection(): Promise<TuttiManagedConnectionResponse> {
   const response = await fetch(
-    `${getServerBaseUrl()}/api/nextop/managed-model-connection`,
+    `${getServerBaseUrl()}/api/tutti/managed-model-connection`,
     { cache: "no-store" },
   );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as NextopManagedConnectionResponse;
+  return (await response.json()) as TuttiManagedConnectionResponse;
 }
 
-export async function connectNextopManagedModels(
-  data: NextopManagedGrantCreateRequest,
-): Promise<NextopManagedGrantResponse> {
+export async function connectTuttiManagedModels(
+  data: TuttiManagedGrantCreateRequest,
+): Promise<TuttiManagedGrantResponse> {
   const response = await fetch(
-    `${getServerBaseUrl()}/api/nextop/managed-model-connection/grant`,
+    `${getServerBaseUrl()}/api/tutti/managed-model-connection/grant`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -217,16 +217,16 @@ export async function connectNextopManagedModels(
     },
   );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as NextopManagedGrantResponse;
+  return (await response.json()) as TuttiManagedGrantResponse;
 }
 
-export async function disconnectNextopManagedModels(): Promise<NextopManagedConnectionResponse> {
+export async function disconnectTuttiManagedModels(): Promise<TuttiManagedConnectionResponse> {
   const response = await fetch(
-    `${getServerBaseUrl()}/api/nextop/managed-model-connection`,
+    `${getServerBaseUrl()}/api/tutti/managed-model-connection`,
     { method: "DELETE" },
   );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as NextopManagedConnectionResponse;
+  return (await response.json()) as TuttiManagedConnectionResponse;
 }
 
 export async function installAgentProvider(

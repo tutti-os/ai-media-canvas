@@ -14,17 +14,17 @@ import {
 } from "../src/i18n";
 
 const {
-  connectNextopManagedModelsMock,
-  disconnectNextopManagedModelsMock,
-  fetchNextopManagedConnectionMock,
+  connectTuttiManagedModelsMock,
+  disconnectTuttiManagedModelsMock,
+  fetchTuttiManagedConnectionMock,
   fetchWorkspaceSettingsMock,
   fetchModelsMock,
   installAgentProviderMock,
   updateWorkspaceSettingsMock,
 } = vi.hoisted(() => ({
-  connectNextopManagedModelsMock: vi.fn(),
-  disconnectNextopManagedModelsMock: vi.fn(),
-  fetchNextopManagedConnectionMock: vi.fn(),
+  connectTuttiManagedModelsMock: vi.fn(),
+  disconnectTuttiManagedModelsMock: vi.fn(),
+  fetchTuttiManagedConnectionMock: vi.fn(),
   fetchWorkspaceSettingsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
   installAgentProviderMock: vi.fn(),
@@ -36,10 +36,10 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("../src/lib/server-api", () => ({
-  connectNextopManagedModels: connectNextopManagedModelsMock,
-  disconnectNextopManagedModels: disconnectNextopManagedModelsMock,
+  connectTuttiManagedModels: connectTuttiManagedModelsMock,
+  disconnectTuttiManagedModels: disconnectTuttiManagedModelsMock,
   fetchModels: fetchModelsMock,
-  fetchNextopManagedConnection: fetchNextopManagedConnectionMock,
+  fetchTuttiManagedConnection: fetchTuttiManagedConnectionMock,
   fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
   installAgentProvider: installAgentProviderMock,
   updateWorkspaceSettings: updateWorkspaceSettingsMock,
@@ -61,13 +61,13 @@ describe("SettingsPage", () => {
     void i18n.changeLanguage("en");
     fetchWorkspaceSettingsMock.mockReset();
     fetchModelsMock.mockReset();
-    fetchNextopManagedConnectionMock.mockReset();
-    connectNextopManagedModelsMock.mockReset();
-    disconnectNextopManagedModelsMock.mockReset();
+    fetchTuttiManagedConnectionMock.mockReset();
+    connectTuttiManagedModelsMock.mockReset();
+    disconnectTuttiManagedModelsMock.mockReset();
     installAgentProviderMock.mockReset();
     updateWorkspaceSettingsMock.mockReset();
     fetchModelsMock.mockResolvedValue({ models: [] });
-    fetchNextopManagedConnectionMock.mockResolvedValue({
+    fetchTuttiManagedConnectionMock.mockResolvedValue({
       connection: {
         connected: false,
         models: [],

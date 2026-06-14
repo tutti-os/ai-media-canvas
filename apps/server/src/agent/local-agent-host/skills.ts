@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 
-import type { SkillMaterializationRecord } from "@nextop-os/agent-acp-kit";
+import type { SkillMaterializationRecord } from "@tutti-os/agent-acp-kit";
 
 import type { UserDataClient } from "../../auth/request.js";
 import {

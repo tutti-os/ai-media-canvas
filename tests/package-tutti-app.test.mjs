@@ -248,21 +248,21 @@ test("renderBootstrap maps Tutti runtime env into AI Media Canvas env", () => {
   assert.match(bootstrap, /^#!\/bin\/sh\n/);
   assert.match(
     bootstrap,
-    /package_dir="\$\{TUTTI_APP_PACKAGE_DIR:-\$\{NEXTOP_APP_PACKAGE_DIR:-\$script_dir\}\}"/,
+    /package_dir="\$\{TUTTI_APP_PACKAGE_DIR:-\$script_dir\}"/,
   );
   assert.match(
     bootstrap,
-    /export HOST="\$\{TUTTI_APP_HOST:-\$\{NEXTOP_APP_HOST:-127\.0\.0\.1\}\}"/,
+    /export HOST="\$\{TUTTI_APP_HOST:-127\.0\.0\.1\}"/,
   );
   assert.match(
     bootstrap,
-    /export AIMC_SERVER_PORT="\$\{TUTTI_APP_PORT:-\$\{NEXTOP_APP_PORT:-3001\}\}"/,
+    /export AIMC_SERVER_PORT="\$\{TUTTI_APP_PORT:-3001\}"/,
   );
   assert.match(bootstrap, /export AIMC_APP_VERSION="1\.2\.3"/);
   assert.match(bootstrap, /export AIMC_WEB_DIST="\$package_dir\/dist"/);
   assert.match(
     bootstrap,
-    /export AIMC_DATA_ROOT="\$\{TUTTI_APP_DATA_DIR:-\$\{NEXTOP_APP_DATA_DIR:-\$package_dir\/\.data\}\}"/,
+    /export AIMC_DATA_ROOT="\$\{TUTTI_APP_DATA_DIR:-\$package_dir\/\.data\}"/,
   );
   assert.match(bootstrap, /export AIMC_SKILLS_ROOT="\$package_dir\/skills"/);
   assert.match(
@@ -271,20 +271,21 @@ test("renderBootstrap maps Tutti runtime env into AI Media Canvas env", () => {
   );
   assert.match(
     bootstrap,
-    /export AIMC_AGENT_FILES_ROOT="\$\{TUTTI_WORKSPACE_ROOT:-\$\{NEXTOP_WORKSPACE_ROOT:-\$AIMC_DATA_ROOT\}\}"/,
+    /export AIMC_AGENT_FILES_ROOT="\$\{TUTTI_WORKSPACE_ROOT:-\$AIMC_DATA_ROOT\}"/,
   );
   assert.match(
     bootstrap,
-    /base_url="\$\{TUTTI_APP_BASE_URL:-\$\{NEXTOP_APP_BASE_URL:-http:\/\/\$HOST:\$AIMC_SERVER_PORT\}\}"/,
+    /base_url="\$\{TUTTI_APP_BASE_URL:-http:\/\/\$HOST:\$AIMC_SERVER_PORT\}"/,
   );
   assert.match(
     bootstrap,
-    /node_bin="\$\{TUTTI_APP_NODE:-\$\{NEXTOP_APP_NODE:-node\}\}"/,
+    /node_bin="\$\{TUTTI_APP_NODE:-node\}"/,
   );
   assert.match(
     bootstrap,
-    /runtime_dir="\$\{TUTTI_APP_RUNTIME_DIR:-\$\{NEXTOP_APP_RUNTIME_DIR:-\$AIMC_DATA_ROOT\/\.runtime\}\}"/,
+    /runtime_dir="\$\{TUTTI_APP_RUNTIME_DIR:-\$AIMC_DATA_ROOT\/\.runtime\}"/,
   );
+  assert.doesNotMatch(bootstrap, new RegExp("NEXT" + "OP"));
   assert.match(
     bootstrap,
     /run_child "\$package_dir\/server\/worker.js" "\$worker_status_file" &/,
@@ -312,7 +313,7 @@ test("renderAgentsGuide is non-empty and documents package layout", () => {
 
 test("Tutti icon asset is a generated PNG with a contrast-safe tile", async () => {
   const iconPath = path.resolve(
-    "apps/web/public/brand/aimc-nextop-app-icon.png",
+    "apps/web/public/brand/aimc-tutti-app-icon.png",
   );
   const icon = await readFile(iconPath);
   const iconStat = await stat(iconPath);

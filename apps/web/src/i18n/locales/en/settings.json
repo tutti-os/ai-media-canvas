@@ -52,7 +52,13 @@
       "selectCliFirst": "Select a CLI first...",
       "selectModel": "Select a model..."
     },
-    "nextopManaged": {
+    "source": {
+      "apiProvider": "API provider",
+      "detected": "{{cliCount}} detected",
+      "localAgent": "Local agent",
+      "tuttiManaged": "Tutti Managed"
+    },
+    "tuttiManaged": {
       "bridgeUnavailable": "Open AI Media Canvas inside Tutti to authorize managed models.",
       "chooseModel": "Choose a Tutti Managed model below.",
       "connect": "Connect",
@@ -69,17 +75,11 @@
         "disconnectFailed": "Unable to disconnect Tutti Managed models.",
         "openSettingsFailed": "Unable to open Tutti settings."
       },
-      "manageInNextop": "Manage in Tutti",
+      "manageInTutti": "Manage in Tutti",
       "noModelSelected": "No Tutti Managed model selected",
       "notConnected": "Not connected",
       "reauthorize": "Reauthorize",
       "title": "Tutti Managed"
-    },
-    "source": {
-      "apiProvider": "API provider",
-      "detected": "{{cliCount}} detected",
-      "localAgent": "Local agent",
-      "nextopManaged": "Tutti Managed"
     }
   },
   "dialogTitle": "Settings",

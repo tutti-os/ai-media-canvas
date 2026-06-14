@@ -33,11 +33,11 @@ jobs:
       release_version: ${{ inputs.release_version || '' }}
       runner: macos-latest
       pnpm_version: 10.26.2
-      aws_region: ${{ vars.TUTTI_APP_RELEASES_STAGING_AWS_REGION || vars.NEXTOP_APP_RELEASES_STAGING_AWS_REGION || vars.TUTTI_APP_RELEASES_AWS_REGION || vars.NEXTOP_APP_RELEASES_AWS_REGION }}
-      aws_role_arn: ${{ vars.TUTTI_APP_RELEASES_STAGING_AWS_ROLE_ARN || vars.NEXTOP_APP_RELEASES_STAGING_AWS_ROLE_ARN || vars.TUTTI_APP_RELEASES_AWS_ROLE_ARN || vars.NEXTOP_APP_RELEASES_AWS_ROLE_ARN }}
-      s3_bucket: ${{ vars.TUTTI_APP_RELEASES_STAGING_S3_BUCKET || vars.NEXTOP_APP_RELEASES_STAGING_S3_BUCKET || vars.TUTTI_APP_RELEASES_S3_BUCKET || vars.NEXTOP_APP_RELEASES_S3_BUCKET }}
-      s3_prefix: ${{ vars.TUTTI_APP_RELEASES_STAGING_S3_PREFIX || vars.NEXTOP_APP_RELEASES_STAGING_S3_PREFIX || 'tutti-app-releases-staging' }}
-      release_assets_base_url: ${{ vars.TUTTI_APP_RELEASES_STAGING_BASE_URL || vars.NEXTOP_APP_RELEASES_STAGING_BASE_URL || 'https://d1x7gb6wqsqmnm.cloudfront.net/tutti-app-releases-staging' }}
+      aws_region: ${{ vars.TUTTI_APP_RELEASES_STAGING_AWS_REGION || vars.TUTTI_APP_RELEASES_AWS_REGION }}
+      aws_role_arn: ${{ vars.TUTTI_APP_RELEASES_STAGING_AWS_ROLE_ARN || vars.TUTTI_APP_RELEASES_AWS_ROLE_ARN }}
+      s3_bucket: ${{ vars.TUTTI_APP_RELEASES_STAGING_S3_BUCKET || vars.TUTTI_APP_RELEASES_S3_BUCKET }}
+      s3_prefix: ${{ vars.TUTTI_APP_RELEASES_STAGING_S3_PREFIX || 'tutti-app-releases-staging' }}
+      release_assets_base_url: ${{ vars.TUTTI_APP_RELEASES_STAGING_BASE_URL || 'https://d1x7gb6wqsqmnm.cloudfront.net/tutti-app-releases-staging' }}
       publish_catalog: ${{ inputs.publish_catalog }}
       catalog_only: ${{ inputs.catalog_only }}
-      catalog_cloudfront_distribution_id: ${{ vars.TUTTI_APP_RELEASES_STAGING_CLOUDFRONT_DISTRIBUTION_ID || vars.NEXTOP_APP_RELEASES_STAGING_CLOUDFRONT_DISTRIBUTION_ID || vars.TUTTI_APP_RELEASES_CLOUDFRONT_DISTRIBUTION_ID || vars.NEXTOP_APP_RELEASES_CLOUDFRONT_DISTRIBUTION_ID || '' }}
+      catalog_cloudfront_distribution_id: ${{ vars.TUTTI_APP_RELEASES_STAGING_CLOUDFRONT_DISTRIBUTION_ID || vars.TUTTI_APP_RELEASES_CLOUDFRONT_DISTRIBUTION_ID || '' }}

@@ -1,28 +1,28 @@
 import type {
-  NextopManagedGrantCreateRequest,
-  NextopManagedModel,
-  NextopManagedProviderId,
+  TuttiManagedGrantCreateRequest,
+  TuttiManagedModel,
+  TuttiManagedProviderId,
 } from "@aimc/shared";
 
-import { fetchNextopManagedConnection } from "./server-api";
+import { fetchTuttiManagedConnection } from "./server-api";
 
-type NextopManagedGrantResult = {
+type TuttiManagedGrantResult = {
   grantCode: string;
   expiresAt?: string;
-  providers?: NextopManagedProviderId[];
-  models?: NextopManagedModel[];
+  providers?: TuttiManagedProviderId[];
+  models?: TuttiManagedModel[];
 };
 
-type NextopAppContext = {
+type TuttiAppContext = {
   appId?: string;
   contextToken?: string;
   installationId?: string;
   workspaceId?: string;
 };
 
-type NextopBridge = {
+type TuttiBridge = {
   appContext?: {
-    get?: () => Promise<NextopAppContext>;
+    get?: () => Promise<TuttiAppContext>;
   };
   managedCredentials?: {
     requestGrant?: (input: {
@@ -30,24 +30,24 @@ type NextopBridge = {
       contextToken: string;
       installationId?: string;
       nonce: string;
-      providers: NextopManagedProviderId[];
+      providers: TuttiManagedProviderId[];
       scopes: string[];
       state: string;
       workspaceId?: string;
-    }) => Promise<NextopManagedGrantResult>;
+    }) => Promise<TuttiManagedGrantResult>;
   };
   workspace?: {
     openSettings?: (input: {
       section: "apps";
       pane: "managed-models";
-      provider?: NextopManagedProviderId;
+      provider?: TuttiManagedProviderId;
     }) => Promise<void>;
   };
 };
 
 declare global {
   interface Window {
-    tutti?: NextopBridge;
+    tutti?: TuttiBridge;
   }
 }
 
@@ -56,7 +56,7 @@ function getManagedCredentialBridge() {
   return window.tutti;
 }
 
-export function hasNextopManagedCredentialBridge() {
+export function hasTuttiManagedCredentialBridge() {
   const bridge = getManagedCredentialBridge();
   return (
     typeof bridge?.appContext?.get === "function" &&
@@ -64,7 +64,7 @@ export function hasNextopManagedCredentialBridge() {
   );
 }
 
-export async function requestNextopManagedGrant(): Promise<NextopManagedGrantCreateRequest> {
+export async function requestTuttiManagedGrant(): Promise<TuttiManagedGrantCreateRequest> {
   const bridge = getManagedCredentialBridge();
   const requestGrant = bridge?.managedCredentials?.requestGrant;
   if (typeof requestGrant !== "function") {
@@ -74,7 +74,7 @@ export async function requestNextopManagedGrant(): Promise<NextopManagedGrantCre
   if (!context?.contextToken) {
     throw new Error("Tutti app context is unavailable.");
   }
-  const connection = await fetchNextopManagedConnection();
+  const connection = await fetchTuttiManagedConnection();
   if (!connection.connectChallenge) {
     throw new Error("Tutti Managed connect challenge is unavailable.");
   }
@@ -104,8 +104,8 @@ export async function requestNextopManagedGrant(): Promise<NextopManagedGrantCre
   };
 }
 
-export async function openNextopManagedModelSettings(
-  provider?: NextopManagedProviderId,
+export async function openTuttiManagedModelSettings(
+  provider?: TuttiManagedProviderId,
 ) {
   const openSettings = getManagedCredentialBridge()?.workspace?.openSettings;
   if (typeof openSettings !== "function") {

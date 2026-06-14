@@ -5,7 +5,7 @@ import type {
   StreamEvent,
   ToolBlock,
 } from "@aimc/shared";
-import { DEFAULT_LOCAL_AGENT_PROVIDER_IDS } from "@nextop-os/agent-acp-kit";
+import { DEFAULT_LOCAL_AGENT_PROVIDER_IDS } from "@tutti-os/agent-acp-kit";
 import type {
   AgentRuntimeCapabilities,
   AgentRuntimeMode,
@@ -16,11 +16,11 @@ import type {
   RuntimeLease as PackageRuntimeLease,
   RuntimeProvider as PackageRuntimeProvider,
   RuntimeTarget as PackageRuntimeTarget,
-} from "@nextop-os/agent-acp-kit";
+} from "@tutti-os/agent-acp-kit";
 import {
   createRuntimeControlPlane as createPackageRuntimeControlPlane,
   inferRuntimeKind as inferPackageRuntimeKind,
-} from "@nextop-os/agent-acp-kit/runtime-control-plane";
+} from "@tutti-os/agent-acp-kit/runtime-control-plane";
 
 export type { AgentRuntimeCapabilities, AgentRuntimeMode, AgentRuntimeStatus };
 

@@ -1,6 +1,6 @@
 export type AgentModelSourceTab =
   | "local-agent"
-  | "nextop-managed"
+  | "tutti-managed"
   | "api-provider";
 
 const API_PROVIDER_IDS = new Set([
@@ -10,7 +10,7 @@ const API_PROVIDER_IDS = new Set([
   "google",
   "vertex",
 ]);
-const MANAGED_MODEL_PREFIXES = ["tutti", "nextop"];
+const MANAGED_MODEL_PREFIXES = ["tutti"];
 
 export const SUPPORTED_LOCAL_CLI_PROVIDERS = ["codex", "claude"];
 
@@ -53,7 +53,7 @@ export function isSupportedLocalCliProvider(provider: string) {
 export function getAgentModelSourceTab(modelId: string | null | undefined) {
   const provider = modelId?.split(":")[0] ?? "";
   if (MANAGED_MODEL_PREFIXES.includes(provider)) {
-    return "nextop-managed";
+    return "tutti-managed";
   }
   return provider && isApiProvider(provider) ? "api-provider" : "local-agent";
 }

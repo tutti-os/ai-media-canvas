@@ -6,14 +6,14 @@ describe("loadServerEnv", () => {
   it("loads Tutti package runtime data root and package version overrides", () => {
     const env = loadServerEnv({}, {
       AIMC_APP_VERSION: "1.2.3",
-      AIMC_DATA_ROOT: "/tmp/aimc-nextop-data",
+      AIMC_DATA_ROOT: "/tmp/aimc-tutti-data",
     });
 
-    expect(env.dataRoot).toBe("/tmp/aimc-nextop-data");
+    expect(env.dataRoot).toBe("/tmp/aimc-tutti-data");
     expect(env.version).toBe("1.2.3");
   });
 
-  it("prefers Tutti managed app env over legacy Nextop env", () => {
+  it("loads Tutti managed app env", () => {
     const env = loadServerEnv(
       {},
       {
@@ -22,19 +22,14 @@ describe("loadServerEnv", () => {
         TUTTI_APP_INSTALLATION_ID: "tutti-installation",
         TUTTI_APP_SERVER_TOKEN: "tutti-token",
         TUTTI_WORKSPACE_ID: "tutti-workspace",
-        NEXTOP_API_BASE_URL: "https://nextop.example/api",
-        NEXTOP_APP_ID: "nextop-app",
-        NEXTOP_APP_INSTALLATION_ID: "nextop-installation",
-        NEXTOP_APP_SERVER_TOKEN: "nextop-token",
-        NEXTOP_WORKSPACE_ID: "nextop-workspace",
       },
     );
 
-    expect(env.nextopApiBaseUrl).toBe("https://tutti.example/api");
-    expect(env.nextopAppId).toBe("tutti-app");
-    expect(env.nextopAppInstallationId).toBe("tutti-installation");
-    expect(env.nextopAppServerToken).toBe("tutti-token");
-    expect(env.nextopWorkspaceId).toBe("tutti-workspace");
+    expect(env.tuttiApiBaseUrl).toBe("https://tutti.example/api");
+    expect(env.tuttiAppId).toBe("tutti-app");
+    expect(env.tuttiAppInstallationId).toBe("tutti-installation");
+    expect(env.tuttiAppServerToken).toBe("tutti-token");
+    expect(env.tuttiWorkspaceId).toBe("tutti-workspace");
   });
 
   it("loads Kie provider credentials and endpoint overrides", () => {

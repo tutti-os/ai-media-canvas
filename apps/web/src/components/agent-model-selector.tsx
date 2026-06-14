@@ -458,8 +458,8 @@ export function AgentModelSelector({
                   icon: Terminal,
                 },
                 {
-                  id: "nextop-managed" as const,
-                  label: t("agentModelSelector.nextopManaged"),
+                  id: "tutti-managed" as const,
+                  label: t("agentModelSelector.tuttiManaged"),
                   icon: Cloud,
                 },
                 {
@@ -583,21 +583,21 @@ export function AgentModelSelector({
                 <p>
                   {activeModelTab === "local-agent"
                     ? t("agentModelSelector.noLocalCliModels")
-                    : activeModelTab === "nextop-managed"
-                      ? t("agentModelSelector.noNextopManagedModels")
+                    : activeModelTab === "tutti-managed"
+                      ? t("agentModelSelector.noTuttiManagedModels")
                       : t("agentModelSelector.noApiProviderModels")}
                 </p>
-                {activeModelTab === "nextop-managed" ? (
+                {activeModelTab === "tutti-managed" ? (
                   <button
                     type="button"
                     onClick={() => {
                       setOpen(false);
-                      setSettingsInitialSourceTab("nextop-managed");
+                      setSettingsInitialSourceTab("tutti-managed");
                       setSettingsOpen(true);
                     }}
                     className="mt-3 inline-flex h-8 items-center rounded-full border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted"
                   >
-                    {t("agentModelSelector.connectNextopManaged")}
+                    {t("agentModelSelector.connectTuttiManaged")}
                   </button>
                 ) : null}
               </div>

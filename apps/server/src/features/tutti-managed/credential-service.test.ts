@@ -2,29 +2,29 @@ import { createHmac } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import type { NextopManagedConnection } from "@aimc/shared";
+import type { TuttiManagedConnection } from "@aimc/shared";
 
 import type { ServerEnv } from "../../config/env.js";
-import { createNextopManagedCredentialService } from "./credential-service.js";
+import { createTuttiManagedCredentialService } from "./credential-service.js";
 
 function createStore() {
-  let connection: NextopManagedConnection = {
+  let connection: TuttiManagedConnection = {
     connected: false,
     providers: [],
     models: [],
   };
   return {
-    clearNextopManagedConnection() {
+    clearTuttiManagedConnection() {
       connection = {
         connected: false,
         providers: [],
         models: [],
       };
     },
-    getNextopManagedConnection() {
+    getTuttiManagedConnection() {
       return connection;
     },
-    updateNextopManagedConnection(next: NextopManagedConnection) {
+    updateTuttiManagedConnection(next: TuttiManagedConnection) {
       connection = next;
       return connection;
     },
@@ -36,11 +36,11 @@ function createEnv(): ServerEnv {
     agentBackendMode: "state",
     agentModel: "openai:gpt-5.1",
     openAIApiKey: "api-provider-key",
-    nextopApiBaseUrl: "http://127.0.0.1:3009",
-    nextopAppId: "ai-media-canvas",
-    nextopAppInstallationId: "workspace-1:ai-media-canvas",
-    nextopAppServerToken: "nextop-app-token",
-    nextopWorkspaceId: "workspace-1",
+    tuttiApiBaseUrl: "http://127.0.0.1:3009",
+    tuttiAppId: "ai-media-canvas",
+    tuttiAppInstallationId: "workspace-1:ai-media-canvas",
+    tuttiAppServerToken: "tutti-app-token",
+    tuttiWorkspaceId: "workspace-1",
     port: 3001,
     version: "test",
     webOrigin: "http://localhost:3000",
@@ -49,25 +49,25 @@ function createEnv(): ServerEnv {
 
 function createContextToken(env: ServerEnv) {
   const payload = {
-    appId: env.nextopAppId,
-    aud: env.nextopAppId,
+    appId: env.tuttiAppId,
+    aud: env.tuttiAppId,
     exp: Math.floor(Date.now() / 1000) + 300,
     iat: Math.floor(Date.now() / 1000),
-    installationId: env.nextopAppInstallationId,
-    iss: new URL(env.nextopApiBaseUrl ?? "").origin,
-    workspaceId: env.nextopWorkspaceId,
+    installationId: env.tuttiAppInstallationId,
+    iss: new URL(env.tuttiApiBaseUrl ?? "").origin,
+    workspaceId: env.tuttiWorkspaceId,
   };
   const encodedPayload = Buffer.from(JSON.stringify(payload)).toString(
     "base64url",
   );
-  const signature = createHmac("sha256", env.nextopAppServerToken ?? "")
+  const signature = createHmac("sha256", env.tuttiAppServerToken ?? "")
     .update(encodedPayload)
     .digest("base64url");
   return `${encodedPayload}.${signature}`;
 }
 
 async function connectService(
-  service: ReturnType<typeof createNextopManagedCredentialService>,
+  service: ReturnType<typeof createTuttiManagedCredentialService>,
   env: ServerEnv,
 ) {
   const challenge = service.createConnectChallenge();
@@ -79,10 +79,10 @@ async function connectService(
   });
 }
 
-describe("createNextopManagedCredentialService", () => {
-  it("does not resolve API Provider selections through Nextop Managed credentials", async () => {
+describe("createTuttiManagedCredentialService", () => {
+  it("does not resolve API Provider selections through Tutti Managed credentials", async () => {
     const env = createEnv();
-    const service = createNextopManagedCredentialService({
+    const service = createTuttiManagedCredentialService({
       env,
       exchangeClient: async () => ({
         expiresAt: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
@@ -99,7 +99,7 @@ describe("createNextopManagedCredentialService", () => {
       providerCredentialClient: async () => ({
         credential: {
           provider: "openai",
-          apiKey: "nextop-managed-key",
+          apiKey: "tutti-managed-key",
         },
         expiresAt: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
       }),
@@ -120,23 +120,23 @@ describe("createNextopManagedCredentialService", () => {
         id: "tutti:openai:gpt-5.1",
         name: "GPT-5.1",
         provider: "openai",
-        source: "nextop-managed",
+        source: "tutti-managed",
       },
     ]);
 
-    const nextopManagedEnv = await service.resolveEnvForModel(
+    const tuttiManagedEnv = await service.resolveEnvForModel(
       createEnv(),
       "tutti:openai:gpt-5.1",
-      "nextop-managed",
+      "tutti-managed",
     );
-    expect(nextopManagedEnv.openAIApiKey).toBe("nextop-managed-key");
-    expect(nextopManagedEnv.agentModel).toBe("openai:gpt-5.1");
+    expect(tuttiManagedEnv.openAIApiKey).toBe("tutti-managed-key");
+    expect(tuttiManagedEnv.agentModel).toBe("openai:gpt-5.1");
   });
 
   it("resolves Tutti-prefixed models even when the stored source is stale", async () => {
     const env = createEnv();
     const requestedModels: string[] = [];
-    const service = createNextopManagedCredentialService({
+    const service = createTuttiManagedCredentialService({
       env,
       exchangeClient: async () => ({
         expiresAt: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
@@ -155,7 +155,7 @@ describe("createNextopManagedCredentialService", () => {
         return {
           credential: {
             provider: "agnes",
-            apiKey: "nextop-managed-agnes-key",
+            apiKey: "tutti-managed-agnes-key",
             baseUrl: "https://managed.agnes.example/v1",
           },
           expiresAt: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
@@ -173,15 +173,15 @@ describe("createNextopManagedCredentialService", () => {
     );
 
     expect(resolvedEnv.agentModel).toBe("agnes:agnes-2.0-flash");
-    expect(resolvedEnv.agnesApiKey).toBe("nextop-managed-agnes-key");
+    expect(resolvedEnv.agnesApiKey).toBe("tutti-managed-agnes-key");
     expect(resolvedEnv.agnesBaseUrl).toBe("https://managed.agnes.example/v1");
     expect(requestedModels).toEqual(["agnes-2.0-flash"]);
   });
 
-  it("revokes the Nextop grant when clearing a connection", async () => {
+  it("revokes the Tutti grant when clearing a connection", async () => {
     const env = createEnv();
     const revokedGrantRefs: string[] = [];
-    const service = createNextopManagedCredentialService({
+    const service = createTuttiManagedCredentialService({
       env,
       exchangeClient: async () => ({
         expiresAt: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
@@ -210,7 +210,7 @@ describe("createNextopManagedCredentialService", () => {
 
   it("rejects grant exchange when the connect challenge is missing", async () => {
     const env = createEnv();
-    const service = createNextopManagedCredentialService({
+    const service = createTuttiManagedCredentialService({
       env,
       exchangeClient: async () => ({
         grantRef: "grant-ref",
@@ -226,13 +226,13 @@ describe("createNextopManagedCredentialService", () => {
         nonce: "missing-nonce-value",
         state: "missing-state-value",
       }),
-    ).rejects.toThrow("Invalid Nextop Managed connect challenge.");
+    ).rejects.toThrow("Invalid Tutti Managed connect challenge.");
   });
 
   it("caches provider credentials by provider and model", async () => {
     const env = createEnv();
     const requestedModels: string[] = [];
-    const service = createNextopManagedCredentialService({
+    const service = createTuttiManagedCredentialService({
       env,
       exchangeClient: async () => ({
         grantRef: "grant-ref",
@@ -267,17 +267,17 @@ describe("createNextopManagedCredentialService", () => {
     const modelAEnv = await service.resolveEnvForModel(
       createEnv(),
       "tutti:agnes:model-a",
-      "nextop-managed",
+      "tutti-managed",
     );
     const modelBEnv = await service.resolveEnvForModel(
       createEnv(),
       "tutti:agnes:model-b",
-      "nextop-managed",
+      "tutti-managed",
     );
     const modelAEnvAgain = await service.resolveEnvForModel(
       createEnv(),
       "tutti:agnes:model-a",
-      "nextop-managed",
+      "tutti-managed",
     );
 
     expect(modelAEnv.agnesApiKey).toBe("key-for-model-a");
@@ -286,9 +286,9 @@ describe("createNextopManagedCredentialService", () => {
     expect(requestedModels).toEqual(["model-a", "model-b"]);
   });
 
-  it("treats stored grants as disconnected when Nextop runtime env is not configured", async () => {
+  it("treats stored grants as disconnected when Tutti runtime env is not configured", async () => {
     const store = createStore();
-    store.updateNextopManagedConnection({
+    store.updateTuttiManagedConnection({
       connected: true,
       grantRef: "stale-grant-ref",
       providers: ["openai"],
@@ -301,7 +301,7 @@ describe("createNextopManagedCredentialService", () => {
       ],
     });
     const requestedModels: string[] = [];
-    const service = createNextopManagedCredentialService({
+    const service = createTuttiManagedCredentialService({
       env: {
         agentBackendMode: "state",
         agentModel: "openai:gpt-5.1",
@@ -315,7 +315,7 @@ describe("createNextopManagedCredentialService", () => {
         return {
           credential: {
             provider: "openai",
-            apiKey: "nextop-managed-key",
+            apiKey: "tutti-managed-key",
           },
         };
       },
@@ -327,12 +327,12 @@ describe("createNextopManagedCredentialService", () => {
     const env = await service.resolveEnvForModel(
       createEnv(),
       "tutti:openai:gpt-5.1",
-      "nextop-managed",
+      "tutti-managed",
     );
     expect(env.openAIApiKey).toBe("api-provider-key");
     expect(requestedModels).toEqual([]);
 
     await service.clearConnection();
-    expect(store.getNextopManagedConnection().connected).toBe(false);
+    expect(store.getTuttiManagedConnection().connected).toBe(false);
   });
 });

@@ -56,19 +56,17 @@ test("production Tutti app workflow publishes ai-media-canvas on main", async ()
   assert.equal(publishPush.with.release_version, "");
   assert.equal(
     publishPush.with.publish_catalog,
-    "${{ (vars.TUTTI_APP_RELEASES_PRODUCTION_PUBLISH_CATALOG || vars.NEXTOP_APP_RELEASES_PRODUCTION_PUBLISH_CATALOG) == 'true' }}",
+    "${{ vars.TUTTI_APP_RELEASES_PRODUCTION_PUBLISH_CATALOG == 'true' }}",
   );
   assert.equal(publishPush.with.catalog_only, false);
   assert.equal(publishDispatch.with.release_version, "${{ inputs.release_version || '' }}");
   assert.equal(publishDispatch.with.publish_catalog, "${{ inputs.publish_catalog }}");
   assert.equal(publishDispatch.with.catalog_only, "${{ inputs.catalog_only }}");
-  assert.match(source, /NEXTOP_APP_RELEASES_PRODUCTION_PUBLISH_CATALOG/);
   assert.match(source, /TUTTI_APP_RELEASES_PRODUCTION_PUBLISH_CATALOG/);
   assert.match(source, /catalog_cloudfront_distribution_id/);
   assert.match(source, /TUTTI_APP_RELEASES_PRODUCTION_AWS_REGION/);
-  assert.match(source, /NEXTOP_APP_RELEASES_PRODUCTION_AWS_REGION/);
   assert.match(source, /TUTTI_APP_RELEASES_AWS_ROLE_ARN/);
-  assert.match(source, /NEXTOP_APP_RELEASES_AWS_ROLE_ARN/);
+  assert.doesNotMatch(source, new RegExp("NEXT" + "OP"));
 });
 
 test("staging Tutti app workflow publishes ai-media-canvas manually", async () => {
@@ -97,6 +95,6 @@ test("staging Tutti app workflow publishes ai-media-canvas manually", async () =
   assert.equal(publish.with.catalog_only, "${{ inputs.catalog_only }}");
   assert.match(source, /catalog_cloudfront_distribution_id/);
   assert.match(source, /TUTTI_APP_RELEASES_STAGING_AWS_REGION/);
-  assert.match(source, /NEXTOP_APP_RELEASES_STAGING_AWS_REGION/);
   assert.match(source, /tutti-app-releases-staging/);
+  assert.doesNotMatch(source, new RegExp("NEXT" + "OP"));
 });

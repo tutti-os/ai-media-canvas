@@ -28,9 +28,9 @@ import type { ViewerService } from "../features/bootstrap/ensure-user-foundation
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
 import {
-  type NextopManagedCredentialService,
+  type TuttiManagedCredentialService,
   isManagedModelId,
-} from "../features/nextop-managed/credential-service.js";
+} from "../features/tutti-managed/credential-service.js";
 import {
   LOCAL_WORKSPACE_ID,
   type SettingsService,
@@ -73,7 +73,7 @@ type RegisterWsOptions = {
   chatService?: ChatService;
   connectionManager: ConnectionManager;
   eventBuffer?: CanvasEventBuffer;
-  nextopManagedCredentials?: NextopManagedCredentialService;
+  tuttiManagedCredentials?: TuttiManagedCredentialService;
   settingsService?: SettingsService;
   threadService?: ThreadService;
   viewerService?: ViewerService;
@@ -423,8 +423,8 @@ async function handleRunCommand(
     throw error;
   }
   const runtimeEnv =
-    effectiveEnv && resolvedModel && services.nextopManagedCredentials
-      ? await services.nextopManagedCredentials.resolveEnvForModel(
+    effectiveEnv && resolvedModel && services.tuttiManagedCredentials
+      ? await services.tuttiManagedCredentials.resolveEnvForModel(
           effectiveEnv,
           resolvedModel,
           payload.model

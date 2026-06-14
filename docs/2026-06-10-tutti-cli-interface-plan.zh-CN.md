@@ -1,10 +1,10 @@
-# Nextop CLI Interface Implementation Plan
+# Tutti CLI Interface Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Expose AI Media Canvas capabilities to the Nextop app CLI through `nextop.cli.json` and `/nextop/cli/*` HTTP handlers.
+**Goal:** Expose AI Media Canvas capabilities to the Tutti app CLI through `tutti.cli.json` and `/tutti/cli/*` HTTP handlers.
 
-**Architecture:** The packaged app manifest will declare a CLI manifest, the package script will generate `nextop.cli.json` plus command help docs, and the Fastify server will register a small CLI adapter layer. CLI routes must not duplicate existing HTTP route business logic; shared operations should live in service/use-case helpers that are called by both normal `/api/*` routes and `/nextop/cli/*` routes.
+**Architecture:** The packaged app manifest will declare a CLI manifest, the package script will generate `tutti.cli.json` plus command help docs, and the Fastify server will register a small CLI adapter layer. CLI routes must not duplicate existing HTTP route business logic; shared operations should live in service/use-case helpers that are called by both normal `/api/*` routes and `/tutti/cli/*` routes.
 
 **Tech Stack:** TypeScript, Fastify, Zod shared contracts, pnpm/turbo, Node test runner, Vitest.
 
@@ -14,37 +14,37 @@
 
 Reference spec read from:
 
-- `/Users/wwcome/work/nextop-os/nextop/services/nextopd/service/workspace/app_factory_reference/references/manifest-contract.md`
-- `/Users/wwcome/work/nextop-os/nextop/services/nextopd/service/workspace/app_factory_reference/references/cli-manifest-contract.md`
-- `/Users/wwcome/work/nextop-os/nextop/services/nextopd/service/workspace/app_factory_reference/references/nextop-cli-commands.md`
-- `/Users/wwcome/work/nextop-os/nextop/services/nextopd/service/workspace/app_factory_reference/references/runtime-env.md`
-- `/Users/wwcome/work/nextop-os/nextop/services/nextopd/service/workspace/app_factory_reference/references/validation-checklist.md`
+- `/Users/wwcome/work/tutti-os/tutti/services/tuttid/service/workspace/app_factory_reference/references/manifest-contract.md`
+- `/Users/wwcome/work/tutti-os/tutti/services/tuttid/service/workspace/app_factory_reference/references/cli-manifest-contract.md`
+- `/Users/wwcome/work/tutti-os/tutti/services/tuttid/service/workspace/app_factory_reference/references/tutti-cli-commands.md`
+- `/Users/wwcome/work/tutti-os/tutti/services/tuttid/service/workspace/app_factory_reference/references/runtime-env.md`
+- `/Users/wwcome/work/tutti-os/tutti/services/tuttid/service/workspace/app_factory_reference/references/validation-checklist.md`
 
 Current AIMC surfaces already available:
 
-- Package generation: `scripts/package-nextop-app.mjs`
-- Package tests: `tests/package-nextop-app.test.mjs`
+- Package generation: `scripts/package-tutti-app.mjs`
+- Package tests: `tests/package-tutti-app.test.mjs`
 - Server composition: `apps/server/src/app.ts`
 - Existing HTTP modules: `apps/server/src/http/*.ts`
 - Shared schemas: `packages/shared/src/contracts.ts`, `packages/shared/src/http.ts`, `packages/shared/src/job-contracts.ts`, `packages/shared/src/skill-contracts.ts`
 
-## Constraints From Nextop CLI Contract
+## Constraints From Tutti CLI Contract
 
-- `nextop.app.json` must include:
+- `tutti.app.json` must include:
 
 ```json
 {
   "cli": {
-    "manifest": "nextop.cli.json"
+    "manifest": "tutti.cli.json"
   }
 }
 ```
 
-- `nextop.cli.json` must use `schemaVersion: "nextop.app.cli.v1"`.
+- `tutti.cli.json` must use `schemaVersion: "tutti.app.cli.v1"`.
 - `scope` and every command path segment must be lowercase letters, numbers, and hyphen only.
 - Command `path` must not repeat the scope.
 - Every handler must be HTTP `POST`.
-- Every handler path must start with `/nextop/cli/`.
+- Every handler path must start with `/tutti/cli/`.
 - Handler responses must be `CliCommandOutput`, for example:
 
 ```json
@@ -60,49 +60,49 @@ Current AIMC surfaces already available:
 
 ## Agent Discovery Contract
 
-Nextop currently injects a generated CLI command guide into local agent runtimes. The injected guide is built from CLI capabilities, especially command `path`, `summary`, `description`, and required input fields. `COMMANDS.md` is registered as `documentation.file` and appears in CLI help as a documentation path, but its full contents are not automatically injected into model context.
+Tutti currently injects a generated CLI command guide into local agent runtimes. The injected guide is built from CLI capabilities, especially command `path`, `summary`, `description`, and required input fields. `COMMANDS.md` is registered as `documentation.file` and appears in CLI help as a documentation path, but its full contents are not automatically injected into model context.
 
 Because of that, this plan should make every command's `summary`, `description`, and required input schema self-contained enough for an agent to choose and call the command from the injected guide. `COMMANDS.md` remains useful for human help and manual inspection, but it must not be the only place that explains required sequencing or command intent.
 
-Do not add a separate `aimc workflows` command group. Agents should discover available AIMC operations through the normal Nextop command guide and `--help` surfaces, then compose the resource commands directly.
+Do not add a separate `aimc workflows` command group. Agents should discover available AIMC operations through the normal Tutti command guide and `--help` surfaces, then compose the resource commands directly.
 
 ## Capability Boundary
 
 ### P0 Commands To Expose
 
-Use `scope: "aimc"` in `nextop.cli.json`.
+Use `scope: "aimc"` in `tutti.cli.json`.
 
 | CLI command | Handler | Purpose |
 | --- | --- | --- |
-| `aimc status` | `/nextop/cli/status` | Return server health, app version, default runtime metadata. |
-| `aimc projects list` | `/nextop/cli/projects/list` | List projects. |
-| `aimc projects get --project-id <id>` | `/nextop/cli/projects/get` | Return one project. |
-| `aimc projects create --name <name> [--description <text>]` | `/nextop/cli/projects/create` | Create a project. |
-| `aimc canvases get --canvas-id <id>` | `/nextop/cli/canvases/get` | Return canvas content. |
-| `aimc canvases save --canvas-id <id> --content-json <json>` | `/nextop/cli/canvases/save` | Save canvas content from a JSON string. |
-| `aimc sessions list --canvas-id <id>` | `/nextop/cli/sessions/list` | List chat sessions for a canvas. |
-| `aimc sessions create --canvas-id <id> [--title <title>]` | `/nextop/cli/sessions/create` | Create a chat session. |
-| `aimc messages list --session-id <id>` | `/nextop/cli/messages/list` | List messages for a session. |
-| `aimc messages create --session-id <id> --role <role> --content <text>` | `/nextop/cli/messages/create` | Append a text-only chat message. |
-| `aimc agent run --session-id <id> --conversation-id <id> --prompt <text> [...]` | `/nextop/cli/agent/run` | Start an agent run. |
-| `aimc agent events --run-id <id> [--cursor <n>]` | `/nextop/cli/agent/events` | Poll persisted run events. |
-| `aimc agent cancel --run-id <id>` | `/nextop/cli/agent/cancel` | Cancel a run. |
-| `aimc generation image --prompt <text> [...]` | `/nextop/cli/generation/image` | Queue image generation. |
-| `aimc generation video --prompt <text> [...]` | `/nextop/cli/generation/video` | Queue video generation. |
-| `aimc jobs list [--status <status>] [--job-type <type>]` | `/nextop/cli/jobs/list` | List background jobs. |
-| `aimc jobs get --job-id <id>` | `/nextop/cli/jobs/get` | Return one job. |
-| `aimc jobs cancel --job-id <id>` | `/nextop/cli/jobs/cancel` | Cancel one job. |
-| `aimc models list` | `/nextop/cli/models/list` | List agent models. |
-| `aimc models image` | `/nextop/cli/models/image` | List image models. |
-| `aimc models video` | `/nextop/cli/models/video` | List video models. |
-| `aimc skills list` | `/nextop/cli/skills/list` | List installed skills. |
-| `aimc skills get --skill-id <id>` | `/nextop/cli/skills/get` | Return skill detail. |
-| `aimc skills enable --skill-id <id> --enabled <bool>` | `/nextop/cli/skills/enable` | Enable or disable a skill. |
-| `aimc skills install --skill-id <id>` | `/nextop/cli/skills/install` | Install a bundled catalog skill. |
+| `aimc status` | `/tutti/cli/status` | Return server health, app version, default runtime metadata. |
+| `aimc projects list` | `/tutti/cli/projects/list` | List projects. |
+| `aimc projects get --project-id <id>` | `/tutti/cli/projects/get` | Return one project. |
+| `aimc projects create --name <name> [--description <text>]` | `/tutti/cli/projects/create` | Create a project. |
+| `aimc canvases get --canvas-id <id>` | `/tutti/cli/canvases/get` | Return canvas content. |
+| `aimc canvases save --canvas-id <id> --content-json <json>` | `/tutti/cli/canvases/save` | Save canvas content from a JSON string. |
+| `aimc sessions list --canvas-id <id>` | `/tutti/cli/sessions/list` | List chat sessions for a canvas. |
+| `aimc sessions create --canvas-id <id> [--title <title>]` | `/tutti/cli/sessions/create` | Create a chat session. |
+| `aimc messages list --session-id <id>` | `/tutti/cli/messages/list` | List messages for a session. |
+| `aimc messages create --session-id <id> --role <role> --content <text>` | `/tutti/cli/messages/create` | Append a text-only chat message. |
+| `aimc agent run --session-id <id> --conversation-id <id> --prompt <text> [...]` | `/tutti/cli/agent/run` | Start an agent run. |
+| `aimc agent events --run-id <id> [--cursor <n>]` | `/tutti/cli/agent/events` | Poll persisted run events. |
+| `aimc agent cancel --run-id <id>` | `/tutti/cli/agent/cancel` | Cancel a run. |
+| `aimc generation image --prompt <text> [...]` | `/tutti/cli/generation/image` | Queue image generation. |
+| `aimc generation video --prompt <text> [...]` | `/tutti/cli/generation/video` | Queue video generation. |
+| `aimc jobs list [--status <status>] [--job-type <type>]` | `/tutti/cli/jobs/list` | List background jobs. |
+| `aimc jobs get --job-id <id>` | `/tutti/cli/jobs/get` | Return one job. |
+| `aimc jobs cancel --job-id <id>` | `/tutti/cli/jobs/cancel` | Cancel one job. |
+| `aimc models list` | `/tutti/cli/models/list` | List agent models. |
+| `aimc models image` | `/tutti/cli/models/image` | List image models. |
+| `aimc models video` | `/tutti/cli/models/video` | List video models. |
+| `aimc skills list` | `/tutti/cli/skills/list` | List installed skills. |
+| `aimc skills get --skill-id <id>` | `/tutti/cli/skills/get` | Return skill detail. |
+| `aimc skills enable --skill-id <id> --enabled <bool>` | `/tutti/cli/skills/enable` | Enable or disable a skill. |
+| `aimc skills install --skill-id <id>` | `/tutti/cli/skills/install` | Install a bundled catalog skill. |
 
 ### Not P0
 
-- File upload commands: current upload routes are multipart and the Nextop CLI manifest input subset does not model file inputs.
+- File upload commands: current upload routes are multipart and the Tutti CLI manifest input subset does not model file inputs.
 - WebSocket streaming: CLI should use `agent run` plus `agent events` polling, not direct `WS /api/ws`.
 - Provider secret writes: settings can include API keys; exposing write commands would need a separate security review.
 - Direct synchronous video generation: long-running provider calls should stay queued through job commands.
@@ -112,41 +112,41 @@ Use `scope: "aimc"` in `nextop.cli.json`.
 
 ## File Structure
 
-- Create `packages/shared/src/nextop-cli-contracts.ts`
+- Create `packages/shared/src/tutti-cli-contracts.ts`
   - Defines `CliCommandOutput`, `cliJsonOutputSchema`, `cliErrorOutputSchema`, `cliTableOutputSchema`, and helpers for parseable command responses.
 - Modify `packages/shared/src/index.ts`
   - Re-export CLI contracts.
-- Test `packages/shared/src/nextop-cli-contracts.test.ts`
+- Test `packages/shared/src/tutti-cli-contracts.test.ts`
   - Verifies the output schemas accept valid JSON/table/error responses and reject invalid shapes.
-- Create `apps/server/src/http/nextop-cli-output.ts`
+- Create `apps/server/src/http/tutti-cli-output.ts`
   - Owns only CLI response wrapping: `sendCliJson`, `sendCliError`, and `isZodError`.
 - Create focused route-independent helpers only where current HTTP modules contain route-local logic that CLI also needs. Start with `apps/server/src/http/project-operations.ts` and `apps/server/src/http/canvas-operations.ts`; add job/chat/skill/model operation helpers in later tasks only when needed.
-  - Existing `/api/*` routes and new `/nextop/cli/*` routes must call these helpers instead of maintaining two copies of service mapping, validation, and response shaping.
+  - Existing `/api/*` routes and new `/tutti/cli/*` routes must call these helpers instead of maintaining two copies of service mapping, validation, and response shaping.
 - Modify existing route modules when an operation helper is introduced, for example `apps/server/src/http/projects.ts` and `apps/server/src/http/canvases.ts`.
   - Keep their public HTTP response contracts unchanged.
-- Create `apps/server/src/http/nextop-cli.ts`
-  - Registers `/nextop/cli/*` Fastify POST handlers.
-  - Converts Nextop CLI input bodies into existing shared operation/helper calls.
+- Create `apps/server/src/http/tutti-cli.ts`
+  - Registers `/tutti/cli/*` Fastify POST handlers.
+  - Converts Tutti CLI input bodies into existing shared operation/helper calls.
   - Wraps every success and failure in `CliCommandOutput`.
-- Test `apps/server/src/http/nextop-cli.test.ts`
+- Test `apps/server/src/http/tutti-cli.test.ts`
   - Uses Fastify injection with stub services to verify handler behavior without starting the full app.
 - Modify `apps/server/src/app.ts`
-  - Registers `registerNextopCliRoutes` after all services are constructed.
-- Modify `scripts/package-nextop-app.mjs`
+  - Registers `registerTuttiCliRoutes` after all services are constructed.
+- Modify `scripts/package-tutti-app.mjs`
   - Adds `cli.manifest` to `createManifest`.
-  - Adds generated `nextop.cli.json`.
+  - Adds generated `tutti.cli.json`.
   - Adds generated `COMMANDS.md`.
   - Adds package validation for CLI manifest shape, command handler paths, and docs file existence.
-- Modify `tests/package-nextop-app.test.mjs`
+- Modify `tests/package-tutti-app.test.mjs`
   - Tests manifest CLI declaration, generated CLI manifest, generated command docs, and validation errors.
 
 ## Existing API Compatibility And No-Duplication Rule
 
-The `/nextop/cli/*` routes are a second presentation surface, not a second implementation of AIMC behavior.
+The `/tutti/cli/*` routes are a second presentation surface, not a second implementation of AIMC behavior.
 
-- Do not copy route-local business logic from `apps/server/src/http/*.ts` into `nextop-cli.ts`.
+- Do not copy route-local business logic from `apps/server/src/http/*.ts` into `tutti-cli.ts`.
 - If an existing HTTP route already has the needed behavior behind a service method, the CLI route may call that service method directly.
-- If an existing HTTP route has meaningful route-local mapping, validation, polling, defaulting, or response shaping that the CLI needs too, extract that behavior into a route-independent helper first, update the existing `/api/*` route to call the helper, then call the same helper from `/nextop/cli/*`.
+- If an existing HTTP route has meaningful route-local mapping, validation, polling, defaulting, or response shaping that the CLI needs too, extract that behavior into a route-independent helper first, update the existing `/api/*` route to call the helper, then call the same helper from `/tutti/cli/*`.
 - Keep HTTP-specific concerns in the HTTP route layer: Fastify `reply`, status codes, multipart parsing, and browser-facing response schemas.
 - Keep CLI-specific concerns in the CLI layer: hyphenated flag body parsing, JSON-string parsing for values such as `content-json`, and wrapping outputs as `CliCommandOutput`.
 - Add tests that prove existing `/api/*` behavior is unchanged when a helper is extracted.
@@ -197,7 +197,7 @@ The package script should generate a manifest with this top-level shape:
 
 ```json
 {
-  "schemaVersion": "nextop.app.cli.v1",
+  "schemaVersion": "tutti.app.cli.v1",
   "scope": "aimc",
   "description": "Control AI Media Canvas projects, canvases, generation jobs, agent runs, and skills.",
   "documentation": {
@@ -225,7 +225,7 @@ Every command entry should use:
   "handler": {
     "kind": "http",
     "method": "POST",
-    "path": "/nextop/cli/projects/list",
+    "path": "/tutti/cli/projects/list",
     "timeoutMs": 30000
   }
 }
@@ -239,20 +239,20 @@ Use JSON output for all P0 commands. Table rendering can be added later without 
 
 **Files:**
 
-- Create: `packages/shared/src/nextop-cli-contracts.ts`
-- Create: `packages/shared/src/nextop-cli-contracts.test.ts`
+- Create: `packages/shared/src/tutti-cli-contracts.ts`
+- Create: `packages/shared/src/tutti-cli-contracts.test.ts`
 - Modify: `packages/shared/src/index.ts`
 
 - [ ] **Step 1: Write the failing schema tests**
 
-Create `packages/shared/src/nextop-cli-contracts.test.ts`:
+Create `packages/shared/src/tutti-cli-contracts.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
 
-import { cliCommandOutputSchema } from "./nextop-cli-contracts.js";
+import { cliCommandOutputSchema } from "./tutti-cli-contracts.js";
 
-describe("nextop CLI output contracts", () => {
+describe("tutti CLI output contracts", () => {
   it("accepts json outputs", () => {
     expect(
       cliCommandOutputSchema.parse({
@@ -315,18 +315,18 @@ Run:
 pnpm --filter @aimc/shared test
 ```
 
-Expected: FAIL because `packages/shared/src/nextop-cli-contracts.ts` does not exist.
+Expected: FAIL because `packages/shared/src/tutti-cli-contracts.ts` does not exist.
 
 - [ ] **Step 3: Add the minimal shared contract**
 
-Create `packages/shared/src/nextop-cli-contracts.ts` using the code from `Shared Command Output Contract`.
+Create `packages/shared/src/tutti-cli-contracts.ts` using the code from `Shared Command Output Contract`.
 
 - [ ] **Step 4: Export the contract**
 
 Append this export to `packages/shared/src/index.ts`:
 
 ```ts
-export * from "./nextop-cli-contracts.js";
+export * from "./tutti-cli-contracts.js";
 ```
 
 - [ ] **Step 5: Run the shared package tests**
@@ -339,16 +339,16 @@ pnpm --filter @aimc/shared test
 
 Expected: PASS.
 
-### Task 2: Generate CLI Manifest And Command Docs In The Nextop Package
+### Task 2: Generate CLI Manifest And Command Docs In The Tutti Package
 
 **Files:**
 
-- Modify: `scripts/package-nextop-app.mjs`
-- Modify: `tests/package-nextop-app.test.mjs`
+- Modify: `scripts/package-tutti-app.mjs`
+- Modify: `tests/package-tutti-app.test.mjs`
 
 - [ ] **Step 1: Add failing package tests**
 
-Extend `tests/package-nextop-app.test.mjs` imports:
+Extend `tests/package-tutti-app.test.mjs` imports:
 
 ```js
 import {
@@ -360,24 +360,24 @@ import {
   createWebBuildEnv,
   assertNoSymlinks,
   validatePackageRoot,
-} from "../scripts/package-nextop-app.mjs";
+} from "../scripts/package-tutti-app.mjs";
 ```
 
-Update the expected manifest in `createManifest returns the Nextop package manifest contract` with:
+Update the expected manifest in `createManifest returns the Tutti package manifest contract` with:
 
 ```js
     cli: {
-      manifest: "nextop.cli.json",
+      manifest: "tutti.cli.json",
     },
 ```
 
 Add tests:
 
 ```js
-test("createCliManifest returns the Nextop CLI manifest contract", () => {
+test("createCliManifest returns the Tutti CLI manifest contract", () => {
   const manifest = createCliManifest();
 
-  assert.equal(manifest.schemaVersion, "nextop.app.cli.v1");
+  assert.equal(manifest.schemaVersion, "tutti.app.cli.v1");
   assert.equal(manifest.scope, "aimc");
   assert.deepEqual(manifest.documentation, { file: "COMMANDS.md" });
   assert.ok(manifest.commands.length >= 20);
@@ -390,8 +390,8 @@ test("createCliManifest returns the Nextop CLI manifest contract", () => {
     }
     assert.equal(command.handler.kind, "http");
     assert.equal(command.handler.method, "POST");
-    assert.match(command.handler.path, /^\/nextop\/cli\//);
-    assert.equal(command.handler.path, `/nextop/cli/${command.path.join("/")}`);
+    assert.match(command.handler.path, /^\/tutti\/cli\//);
+    assert.equal(command.handler.path, `/tutti/cli/${command.path.join("/")}`);
     assert.equal(command.output.defaultMode, "json");
     assert.equal(command.output.json, true);
   }
@@ -451,16 +451,16 @@ test("renderCommandsGuide documents the public CLI commands", () => {
 });
 ```
 
-In `validatePackageRoot requires the files Nextop imports`, after writing `nextop.app.json`, `AGENTS.md`, and `bootstrap.sh`, add:
+In `validatePackageRoot requires the files Tutti imports`, after writing `tutti.app.json`, `AGENTS.md`, and `bootstrap.sh`, add:
 
 ```js
   await assert.rejects(
     validatePackageRoot(packageRoot),
-    /Missing required package file: nextop\.cli\.json/,
+    /Missing required package file: tutti\.cli\.json/,
   );
 
   await writeFile(
-    path.join(packageRoot, "nextop.cli.json"),
+    path.join(packageRoot, "tutti.cli.json"),
     `${JSON.stringify(createCliManifest())}\n`,
   );
 
@@ -484,12 +484,12 @@ Expected: FAIL because `createCliManifest` and `renderCommandsGuide` do not exis
 
 - [ ] **Step 3: Add CLI package generation**
 
-In `scripts/package-nextop-app.mjs`, add `nextop.cli.json` and `COMMANDS.md` to `REQUIRED_PACKAGE_FILES`:
+In `scripts/package-tutti-app.mjs`, add `tutti.cli.json` and `COMMANDS.md` to `REQUIRED_PACKAGE_FILES`:
 
 ```js
 const REQUIRED_PACKAGE_FILES = [
-  "nextop.app.json",
-  "nextop.cli.json",
+  "tutti.app.json",
+  "tutti.cli.json",
   "COMMANDS.md",
   "AGENTS.md",
   "bootstrap.sh",
@@ -503,7 +503,7 @@ Add `cli` to `createManifest`:
 
 ```js
     cli: {
-      manifest: "nextop.cli.json",
+      manifest: "tutti.cli.json",
     },
 ```
 
@@ -511,7 +511,7 @@ Add a command helper:
 
 ```js
 function createJsonCommand({ path, summary, description, properties = {}, required = [], timeoutMs = 30000 }) {
-  const route = `/nextop/cli/${path.join("/")}`;
+  const route = `/tutti/cli/${path.join("/")}`;
   return {
     path,
     summary,
@@ -551,7 +551,7 @@ Add `renderCommandsGuide()`:
 export function renderCommandsGuide() {
   return `# AI Media Canvas CLI Commands
 
-The app exposes the \`aimc\` scope through Nextop's workspace app CLI.
+The app exposes the \`aimc\` scope through Tutti's workspace app CLI.
 All commands return JSON.
 
 ## Common
@@ -601,7 +601,7 @@ In `writePackageFiles(version)`, write the new files:
 
 ```js
   await writeFile(
-    path.join(packageRoot, "nextop.cli.json"),
+    path.join(packageRoot, "tutti.cli.json"),
     `${JSON.stringify(createCliManifest(), null, 2)}\n`,
   );
   await writeFile(path.join(packageRoot, "COMMANDS.md"), renderCommandsGuide());
@@ -620,11 +620,11 @@ In `validatePackageRoot(root)`, after parsing `manifest`, add:
     } catch {
       throw new Error(`Missing or invalid CLI manifest file: ${manifest.cli.manifest}`);
     }
-    if (cliManifest.schemaVersion !== "nextop.app.cli.v1") {
-      throw new Error("nextop.cli.json must use schemaVersion nextop.app.cli.v1.");
+    if (cliManifest.schemaVersion !== "tutti.app.cli.v1") {
+      throw new Error("tutti.cli.json must use schemaVersion tutti.app.cli.v1.");
     }
     if (!/^[a-z0-9-]+$/.test(cliManifest.scope ?? "")) {
-      throw new Error("nextop.cli.json scope must be lowercase letters, numbers, and hyphen.");
+      throw new Error("tutti.cli.json scope must be lowercase letters, numbers, and hyphen.");
     }
     if (cliManifest.documentation?.file) {
       try {
@@ -645,10 +645,10 @@ In `validatePackageRoot(root)`, after parsing `manifest`, add:
       if (command.handler?.method !== "POST") {
         throw new Error("CLI command handlers must use method=POST.");
       }
-      if (!String(command.handler?.path ?? "").startsWith("/nextop/cli/")) {
-        throw new Error("CLI command handler paths must start with /nextop/cli/.");
+      if (!String(command.handler?.path ?? "").startsWith("/tutti/cli/")) {
+        throw new Error("CLI command handler paths must start with /tutti/cli/.");
       }
-      const expectedHandlerPath = `/nextop/cli/${(command.path ?? []).join("/")}`;
+      const expectedHandlerPath = `/tutti/cli/${(command.path ?? []).join("/")}`;
       if (command.handler.path !== expectedHandlerPath) {
         throw new Error(
           `CLI command handler path ${command.handler.path} must match command path ${expectedHandlerPath}.`,
@@ -672,24 +672,24 @@ Expected: PASS.
 
 **Files:**
 
-- Create: `apps/server/src/http/nextop-cli-output.ts`
+- Create: `apps/server/src/http/tutti-cli-output.ts`
 - Create: `apps/server/src/http/project-operations.ts`
 - Create: `apps/server/src/http/canvas-operations.ts`
 - Modify: `apps/server/src/http/projects.ts`
 - Modify: `apps/server/src/http/canvases.ts`
-- Create: `apps/server/src/http/nextop-cli.ts`
-- Create: `apps/server/src/http/nextop-cli.test.ts`
+- Create: `apps/server/src/http/tutti-cli.ts`
+- Create: `apps/server/src/http/tutti-cli.test.ts`
 - Test existing project/canvas route tests if present; otherwise keep the existing server test suite as the compatibility guard.
 
 - [ ] **Step 1: Write route tests for shared operation reuse**
 
-Create `apps/server/src/http/nextop-cli.test.ts`:
+Create `apps/server/src/http/tutti-cli.test.ts`:
 
 ```ts
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
-import { registerNextopCliRoutes } from "./nextop-cli.js";
+import { registerTuttiCliRoutes } from "./tutti-cli.js";
 import type { ProjectOperations } from "./project-operations.js";
 
 function createOptions() {
@@ -739,14 +739,14 @@ function createOptions() {
   };
 }
 
-describe("registerNextopCliRoutes", () => {
+describe("registerTuttiCliRoutes", () => {
   it("wraps status output in CliCommandOutput", async () => {
     const app = Fastify();
-    await registerNextopCliRoutes(app, createOptions() as never);
+    await registerTuttiCliRoutes(app, createOptions() as never);
 
     const response = await app.inject({
       method: "POST",
-      url: "/nextop/cli/status",
+      url: "/tutti/cli/status",
       payload: {},
     });
 
@@ -764,11 +764,11 @@ describe("registerNextopCliRoutes", () => {
   it("creates a project through the project service", async () => {
     const options = createOptions();
     const app = Fastify();
-    await registerNextopCliRoutes(app, options as never);
+    await registerTuttiCliRoutes(app, options as never);
 
     const response = await app.inject({
       method: "POST",
-      url: "/nextop/cli/projects/create",
+      url: "/tutti/cli/projects/create",
       payload: { name: "New", description: "Plan" },
     });
 
@@ -787,11 +787,11 @@ describe("registerNextopCliRoutes", () => {
     const options = createOptions();
     options.projectOperations.getProject.mockRejectedValueOnce(new Error("boom"));
     const app = Fastify();
-    await registerNextopCliRoutes(app, options as never);
+    await registerTuttiCliRoutes(app, options as never);
 
     const response = await app.inject({
       method: "POST",
-      url: "/nextop/cli/projects/get",
+      url: "/tutti/cli/projects/get",
       payload: { "project-id": "missing" },
     });
 
@@ -812,14 +812,14 @@ describe("registerNextopCliRoutes", () => {
 Run:
 
 ```bash
-pnpm --filter @aimc/server test -- src/http/nextop-cli.test.ts
+pnpm --filter @aimc/server test -- src/http/tutti-cli.test.ts
 ```
 
-Expected: FAIL because `apps/server/src/http/nextop-cli.ts` does not exist.
+Expected: FAIL because `apps/server/src/http/tutti-cli.ts` does not exist.
 
 - [ ] **Step 3: Add CLI response helpers**
 
-Create `apps/server/src/http/nextop-cli-output.ts`:
+Create `apps/server/src/http/tutti-cli-output.ts`:
 
 ```ts
 import type { FastifyReply } from "fastify";
@@ -955,7 +955,7 @@ Modify `apps/server/src/http/canvases.ts` so GET and PUT routes call `createCanv
 
 - [ ] **Step 6: Implement the initial CLI adapter using shared operations**
 
-Create `apps/server/src/http/nextop-cli.ts` with:
+Create `apps/server/src/http/tutti-cli.ts` with:
 
 ```ts
 import type { FastifyInstance } from "fastify";
@@ -965,7 +965,7 @@ import { canvasContentSchema } from "@aimc/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { CanvasOperations } from "./canvas-operations.js";
-import { isZodError, sendCliError, sendCliJson } from "./nextop-cli-output.js";
+import { isZodError, sendCliError, sendCliJson } from "./tutti-cli-output.js";
 import type { ProjectOperations } from "./project-operations.js";
 
 type CliOptions = {
@@ -1011,8 +1011,8 @@ function parseJsonString(input: string) {
   }
 }
 
-export async function registerNextopCliRoutes(app: FastifyInstance, options: CliOptions) {
-  app.post("/nextop/cli/status", async (_request, reply) => {
+export async function registerTuttiCliRoutes(app: FastifyInstance, options: CliOptions) {
+  app.post("/tutti/cli/status", async (_request, reply) => {
     return sendCliJson(reply, {
       ok: true,
       service: "ai-media-canvas-server",
@@ -1020,7 +1020,7 @@ export async function registerNextopCliRoutes(app: FastifyInstance, options: Cli
     });
   });
 
-  app.post("/nextop/cli/projects/list", async (_request, reply) => {
+  app.post("/tutti/cli/projects/list", async (_request, reply) => {
     try {
       const result = await options.projectOperations.listProjects(options.localUser);
       return sendCliJson(reply, result);
@@ -1029,7 +1029,7 @@ export async function registerNextopCliRoutes(app: FastifyInstance, options: Cli
     }
   });
 
-  app.post("/nextop/cli/projects/get", async (request, reply) => {
+  app.post("/tutti/cli/projects/get", async (request, reply) => {
     try {
       const body = projectIdBodySchema.parse(request.body);
       const result = await options.projectOperations.getProject(
@@ -1042,7 +1042,7 @@ export async function registerNextopCliRoutes(app: FastifyInstance, options: Cli
     }
   });
 
-  app.post("/nextop/cli/projects/create", async (request, reply) => {
+  app.post("/tutti/cli/projects/create", async (request, reply) => {
     try {
       const result = await options.projectOperations.createProject(options.localUser, request.body);
       return sendCliJson(reply, result);
@@ -1051,7 +1051,7 @@ export async function registerNextopCliRoutes(app: FastifyInstance, options: Cli
     }
   });
 
-  app.post("/nextop/cli/canvases/get", async (request, reply) => {
+  app.post("/tutti/cli/canvases/get", async (request, reply) => {
     try {
       const body = canvasGetBodySchema.parse(request.body);
       const result = await options.canvasOperations.getCanvas(
@@ -1064,7 +1064,7 @@ export async function registerNextopCliRoutes(app: FastifyInstance, options: Cli
     }
   });
 
-  app.post("/nextop/cli/canvases/save", async (request, reply) => {
+  app.post("/tutti/cli/canvases/save", async (request, reply) => {
     try {
       const body = canvasSaveBodySchema.parse(request.body);
       const content = canvasContentSchema.parse(parseJsonString(body["content-json"]));
@@ -1088,7 +1088,7 @@ This step intentionally implements only the first route slice. Later tasks exten
 Run:
 
 ```bash
-pnpm --filter @aimc/server test -- src/http/nextop-cli.test.ts
+pnpm --filter @aimc/server test -- src/http/tutti-cli.test.ts
 pnpm --filter @aimc/server test -- src/http/models.test.ts
 ```
 
@@ -1098,22 +1098,22 @@ Expected: PASS for the initial route slice and unchanged existing HTTP behavior 
 
 **Files:**
 
-- Modify: `apps/server/src/http/nextop-cli.ts`
-- Modify: `apps/server/src/http/nextop-cli.test.ts`
+- Modify: `apps/server/src/http/tutti-cli.ts`
+- Modify: `apps/server/src/http/tutti-cli.test.ts`
 
 - [ ] **Step 1: Add tests for job, agent, skill, and model commands**
 
-Add tests in `apps/server/src/http/nextop-cli.test.ts`:
+Add tests in `apps/server/src/http/tutti-cli.test.ts`:
 
 ```ts
 it("queues image generation jobs", async () => {
   const options = createOptions();
   const app = Fastify();
-  await registerNextopCliRoutes(app, options as never);
+  await registerTuttiCliRoutes(app, options as never);
 
   const response = await app.inject({
     method: "POST",
-    url: "/nextop/cli/generation/image",
+    url: "/tutti/cli/generation/image",
     payload: { prompt: "A product poster", model: "test-model", "project-id": "project_1" },
   });
 
@@ -1128,11 +1128,11 @@ it("queues image generation jobs", async () => {
 it("starts agent runs", async () => {
   const options = createOptions();
   const app = Fastify();
-  await registerNextopCliRoutes(app, options as never);
+  await registerTuttiCliRoutes(app, options as never);
 
   const response = await app.inject({
     method: "POST",
-    url: "/nextop/cli/agent/run",
+    url: "/tutti/cli/agent/run",
     payload: {
       "session-id": "session_1",
       "conversation-id": "conversation_1",
@@ -1160,11 +1160,11 @@ it("starts agent runs", async () => {
 it("lists installed skills", async () => {
   const options = createOptions();
   const app = Fastify();
-  await registerNextopCliRoutes(app, options as never);
+  await registerTuttiCliRoutes(app, options as never);
 
   const response = await app.inject({
     method: "POST",
-    url: "/nextop/cli/skills/list",
+    url: "/tutti/cli/skills/list",
     payload: {},
   });
 
@@ -1182,14 +1182,14 @@ it("lists installed skills", async () => {
 Run:
 
 ```bash
-pnpm --filter @aimc/server test -- src/http/nextop-cli.test.ts
+pnpm --filter @aimc/server test -- src/http/tutti-cli.test.ts
 ```
 
 Expected: FAIL because the new routes are not implemented.
 
 - [ ] **Step 3: Extend `CliOptions` to real service method shapes**
 
-Replace broad `Record<string, unknown>` service types with the methods used by the P0 command list. Keep the types local in `nextop-cli.ts` unless they are reused elsewhere.
+Replace broad `Record<string, unknown>` service types with the methods used by the P0 command list. Keep the types local in `tutti-cli.ts` unless they are reused elsewhere.
 
 - [ ] **Step 4: Add body schemas for every P0 command**
 
@@ -1223,21 +1223,21 @@ const optionalIntegerSchema = z.number().int().optional();
 
 Implement:
 
-- `/nextop/cli/generation/image`
-- `/nextop/cli/generation/video`
-- `/nextop/cli/jobs/list`
-- `/nextop/cli/jobs/get`
-- `/nextop/cli/jobs/cancel`
+- `/tutti/cli/generation/image`
+- `/tutti/cli/generation/video`
+- `/tutti/cli/jobs/list`
+- `/tutti/cli/jobs/get`
+- `/tutti/cli/jobs/cancel`
 
-If the current job HTTP route has route-local payload mapping that the CLI needs, extract a small `apps/server/src/http/job-operations.ts` helper first. Update `apps/server/src/http/jobs.ts` to call that helper, then call the same helper from `nextop-cli.ts`. The CLI route may still own hyphenated flag parsing such as `project-id` to `project_id`, but job creation defaults, filters, and response parsing must not be duplicated from the existing HTTP route.
+If the current job HTTP route has route-local payload mapping that the CLI needs, extract a small `apps/server/src/http/job-operations.ts` helper first. Update `apps/server/src/http/jobs.ts` to call that helper, then call the same helper from `tutti-cli.ts`. The CLI route may still own hyphenated flag parsing such as `project-id` to `project_id`, but job creation defaults, filters, and response parsing must not be duplicated from the existing HTTP route.
 
 - [ ] **Step 6: Add agent operation helpers and handlers**
 
 Implement:
 
-- `/nextop/cli/agent/run`
-- `/nextop/cli/agent/events`
-- `/nextop/cli/agent/cancel`
+- `/tutti/cli/agent/run`
+- `/tutti/cli/agent/events`
+- `/tutti/cli/agent/cancel`
 
 If run creation or event polling logic is currently embedded in `apps/server/src/app.ts`, extract a route-independent helper before adding CLI handlers. The CLI handler should only map hyphenated CLI body keys into the shared run input, then delegate. Map CLI body keys into `runCreateRequestSchema` fields:
 
@@ -1260,7 +1260,7 @@ Return `{ run }` for run creation, `{ done, events, nextCursor }` for polling, a
 Implement routes listed in `P0 Commands To Expose`. Keep each handler as a thin adapter over existing services or newly extracted operation helpers. Do not copy route-local logic out of existing `/api/*` modules. If a handler needs the same mapping or defaulting as an existing route, extract it first and update both surfaces.
 
 ```ts
-app.post("/nextop/cli/skills/list", async (_request, reply) => {
+app.post("/tutti/cli/skills/list", async (_request, reply) => {
   try {
     const skills = await options.skillService.listInstalledSkills(options.localUser);
     return sendCliJson(reply, { skills });
@@ -1275,7 +1275,7 @@ app.post("/nextop/cli/skills/list", async (_request, reply) => {
 Run:
 
 ```bash
-pnpm --filter @aimc/server test -- src/http/nextop-cli.test.ts
+pnpm --filter @aimc/server test -- src/http/tutti-cli.test.ts
 ```
 
 Expected: PASS.
@@ -1285,7 +1285,7 @@ Expected: PASS.
 **Files:**
 
 - Modify: `apps/server/src/app.ts`
-- Modify: `apps/server/src/http/nextop-cli.test.ts`
+- Modify: `apps/server/src/http/tutti-cli.test.ts`
 
 - [ ] **Step 1: Add an app-level smoke test**
 
@@ -1296,7 +1296,7 @@ Add this assertion to an existing app construction test or a new lightweight tes
 ```ts
 const response = await app.inject({
   method: "POST",
-  url: "/nextop/cli/status",
+  url: "/tutti/cli/status",
   payload: {},
 });
 expect(response.statusCode).toBe(200);
@@ -1308,7 +1308,7 @@ expect(response.json().kind).toBe("json");
 In `apps/server/src/app.ts`, add:
 
 ```ts
-import { registerNextopCliRoutes } from "./http/nextop-cli.js";
+import { registerTuttiCliRoutes } from "./http/tutti-cli.js";
 import { createCanvasOperations } from "./http/canvas-operations.js";
 import { createProjectOperations } from "./http/project-operations.js";
 ```
@@ -1318,7 +1318,7 @@ import { createProjectOperations } from "./http/project-operations.js";
 After existing API route registration, add:
 
 ```ts
-  void registerNextopCliRoutes(app, {
+  void registerTuttiCliRoutes(app, {
     env,
     localUser,
     projectOperations: createProjectOperations({ localUser, projectService }),
@@ -1381,8 +1381,8 @@ Expected: PASS.
 - Modify: `apps/server/src/http/models.ts`
 - Modify: `apps/server/src/http/image-models.ts`
 - Modify: `apps/server/src/http/video-models.ts`
-- Modify: `apps/server/src/http/nextop-cli.ts`
-- Modify: related tests in `apps/server/src/http/models.test.ts` and `apps/server/src/http/nextop-cli.test.ts`
+- Modify: `apps/server/src/http/tutti-cli.ts`
+- Modify: related tests in `apps/server/src/http/models.test.ts` and `apps/server/src/http/tutti-cli.test.ts`
 
 - [ ] **Step 1: Locate current list logic**
 
@@ -1408,7 +1408,7 @@ export async function listAgentModelsForHttp(env: ServerEnv, settingsService?: S
 }
 ```
 
-Use the actual internal model resolver names present in the file; do not duplicate registry rules in `nextop-cli.ts`.
+Use the actual internal model resolver names present in the file; do not duplicate registry rules in `tutti-cli.ts`.
 
 - [ ] **Step 3: Use extracted functions in CLI routes**
 
@@ -1427,7 +1427,7 @@ modelLists: {
 Run:
 
 ```bash
-pnpm --filter @aimc/server test -- src/http/models.test.ts src/http/nextop-cli.test.ts
+pnpm --filter @aimc/server test -- src/http/models.test.ts src/http/tutti-cli.test.ts
 ```
 
 Expected: PASS.
@@ -1468,28 +1468,28 @@ pnpm run lint
 
 Expected: PASS. This change should not add web UI copy, but `lint` includes `check:i18n`, so it remains the safe final check.
 
-- [ ] **Step 4: Build the Nextop package**
+- [ ] **Step 4: Build the Tutti package**
 
 Run:
 
 ```bash
-pnpm run package:nextop
+pnpm run package:tutti
 ```
 
-Expected: PASS and prints a zip path under `build/nextop-app/`.
+Expected: PASS and prints a zip path under `build/tutti-app/`.
 
 - [ ] **Step 5: Inspect generated package files**
 
 Run:
 
 ```bash
-node -e 'const fs=require("fs"); const app=JSON.parse(fs.readFileSync("build/nextop-app/package/nextop.app.json","utf8")); const cli=JSON.parse(fs.readFileSync("build/nextop-app/package/nextop.cli.json","utf8")); console.log(app.cli); console.log(cli.scope, cli.commands.length);'
+node -e 'const fs=require("fs"); const app=JSON.parse(fs.readFileSync("build/tutti-app/package/tutti.app.json","utf8")); const cli=JSON.parse(fs.readFileSync("build/tutti-app/package/tutti.cli.json","utf8")); console.log(app.cli); console.log(cli.scope, cli.commands.length);'
 ```
 
 Expected output:
 
 ```text
-{ manifest: 'nextop.cli.json' }
+{ manifest: 'tutti.cli.json' }
 aimc 25
 ```
 
@@ -1498,22 +1498,22 @@ The command count can be higher if additional P0 commands are added, but it must
 ## Success Criteria
 
 - A new worktree branch contains the implementation.
-- `nextop.app.json` declares `cli.manifest`.
-- `nextop.cli.json` exists in generated packages and passes validation.
+- `tutti.app.json` declares `cli.manifest`.
+- `tutti.cli.json` exists in generated packages and passes validation.
 - `COMMANDS.md` exists in generated packages and documents every P0 command.
-- Command summaries, descriptions, and required input schemas carry enough context for Nextop's injected agent command guide; `COMMANDS.md` is not required for the model to understand the command list.
-- Every manifest command maps to a `POST /nextop/cli/*` server route.
+- Command summaries, descriptions, and required input schemas carry enough context for Tutti's injected agent command guide; `COMMANDS.md` is not required for the model to understand the command list.
+- Every manifest command maps to a `POST /tutti/cli/*` server route.
 - Every route returns a `CliCommandOutput` shape for success and failure.
 - CLI route handlers do not copy route-local `/api/*` business logic; shared behavior is either called through existing services or extracted into route-independent helpers used by both surfaces.
 - Existing `/api/*` route behavior remains unchanged after helper extraction, with focused compatibility tests run for every touched HTTP module.
 - No P0 command depends on WebSocket, multipart file upload, or app-runtime-only tool tokens.
 - No P0 command introduces a workflow helper surface such as `aimc workflows`.
-- `pnpm test`, `pnpm run typecheck`, `pnpm run lint`, and `pnpm run package:nextop` pass.
+- `pnpm test`, `pnpm run typecheck`, `pnpm run lint`, and `pnpm run package:tutti` pass.
 
 ## Open Decisions Before Implementation
 
 - Whether `aimc project-delete` should be included in P0. It is supported by the app, but destructive commands may deserve a later confirmation strategy.
-- Whether `aimc canvases save --content-json` is ergonomic enough, or whether Nextop CLI should first support file inputs before this command is exposed.
+- Whether `aimc canvases save --content-json` is ergonomic enough, or whether Tutti CLI should first support file inputs before this command is exposed.
 - Whether CLI errors should always return HTTP 200 with `kind: "error"` or preserve HTTP status codes. This plan preserves HTTP status codes while still wrapping the body.
 - Whether command output should eventually use table mode for list commands. This plan keeps JSON-only output for predictable composition.
 

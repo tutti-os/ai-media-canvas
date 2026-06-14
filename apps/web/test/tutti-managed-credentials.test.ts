@@ -3,14 +3,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  hasNextopManagedCredentialBridge,
-  openNextopManagedModelSettings,
-  requestNextopManagedGrant,
-} from "../src/lib/nextop-managed-credentials";
-import { fetchNextopManagedConnection } from "../src/lib/server-api";
+  hasTuttiManagedCredentialBridge,
+  openTuttiManagedModelSettings,
+  requestTuttiManagedGrant,
+} from "../src/lib/tutti-managed-credentials";
+import { fetchTuttiManagedConnection } from "../src/lib/server-api";
 
 vi.mock("../src/lib/server-api", () => ({
-  fetchNextopManagedConnection: vi.fn(),
+  fetchTuttiManagedConnection: vi.fn(),
 }));
 
 type HostBridge = {
@@ -62,7 +62,7 @@ describe("Tutti managed credential bridge", () => {
       },
       managedCredentials: { requestGrant },
     });
-    vi.mocked(fetchNextopManagedConnection).mockResolvedValue({
+    vi.mocked(fetchTuttiManagedConnection).mockResolvedValue({
       connection: {
         connected: false,
         providers: [],
@@ -74,9 +74,9 @@ describe("Tutti managed credential bridge", () => {
       },
     });
 
-    expect(hasNextopManagedCredentialBridge()).toBe(true);
+    expect(hasTuttiManagedCredentialBridge()).toBe(true);
 
-    await expect(requestNextopManagedGrant()).resolves.toMatchObject({
+    await expect(requestTuttiManagedGrant()).resolves.toMatchObject({
       contextToken: "context-token",
       grantCode: "grant-code",
       nonce: "nonce-1",
@@ -98,7 +98,7 @@ describe("Tutti managed credential bridge", () => {
       workspace: { openSettings },
     });
 
-    await openNextopManagedModelSettings("openai");
+    await openTuttiManagedModelSettings("openai");
 
     expect(openSettings).toHaveBeenCalledWith({
       section: "apps",

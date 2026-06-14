@@ -28,11 +28,11 @@ export type ServerEnv = {
   kieUploadBaseUrl?: string;
   openAIApiBase?: string;
   openAIApiKey?: string;
-  nextopApiBaseUrl?: string;
-  nextopAppId?: string;
-  nextopAppInstallationId?: string;
-  nextopAppServerToken?: string;
-  nextopWorkspaceId?: string;
+  tuttiApiBaseUrl?: string;
+  tuttiAppId?: string;
+  tuttiAppInstallationId?: string;
+  tuttiAppServerToken?: string;
+  tuttiWorkspaceId?: string;
   port: number;
   replicateApiToken?: string;
   skillsRoot?: string;
@@ -107,39 +107,21 @@ export function loadServerEnv(
   const openAIApiKey =
     overrides.openAIApiKey ??
     normalizeOptionalString(source.AIMC_OPENAI_API_KEY ?? source.OPENAI_API_KEY);
-  const nextopApiBaseUrl =
-    overrides.nextopApiBaseUrl ??
-    normalizeOptionalString(
-      source.TUTTI_API_BASE_URL ??
-        source.NEXTOP_API_BASE_URL ??
-        source.AIMC_NEXTOP_API_BASE_URL,
-    );
-  const nextopAppId =
-    overrides.nextopAppId ??
-    normalizeOptionalString(
-      source.TUTTI_APP_ID ?? source.NEXTOP_APP_ID ?? source.AIMC_NEXTOP_APP_ID,
-    );
-  const nextopAppInstallationId =
-    overrides.nextopAppInstallationId ??
-    normalizeOptionalString(
-      source.TUTTI_APP_INSTALLATION_ID ??
-        source.NEXTOP_APP_INSTALLATION_ID ??
-        source.AIMC_NEXTOP_APP_INSTALLATION_ID,
-    );
-  const nextopAppServerToken =
-    overrides.nextopAppServerToken ??
-    normalizeOptionalString(
-      source.TUTTI_APP_SERVER_TOKEN ??
-        source.NEXTOP_APP_SERVER_TOKEN ??
-        source.AIMC_NEXTOP_APP_SERVER_TOKEN,
-    );
-  const nextopWorkspaceId =
-    overrides.nextopWorkspaceId ??
-    normalizeOptionalString(
-      source.TUTTI_WORKSPACE_ID ??
-        source.NEXTOP_WORKSPACE_ID ??
-        source.AIMC_NEXTOP_WORKSPACE_ID,
-    );
+  const tuttiApiBaseUrl =
+    overrides.tuttiApiBaseUrl ??
+    normalizeOptionalString(source.TUTTI_API_BASE_URL);
+  const tuttiAppId =
+    overrides.tuttiAppId ??
+    normalizeOptionalString(source.TUTTI_APP_ID);
+  const tuttiAppInstallationId =
+    overrides.tuttiAppInstallationId ??
+    normalizeOptionalString(source.TUTTI_APP_INSTALLATION_ID);
+  const tuttiAppServerToken =
+    overrides.tuttiAppServerToken ??
+    normalizeOptionalString(source.TUTTI_APP_SERVER_TOKEN);
+  const tuttiWorkspaceId =
+    overrides.tuttiWorkspaceId ??
+    normalizeOptionalString(source.TUTTI_WORKSPACE_ID);
   const googleApiKey =
     overrides.googleApiKey ??
     normalizeOptionalString(source.AIMC_GOOGLE_API_KEY ?? source.GOOGLE_API_KEY);
@@ -228,11 +210,11 @@ export function loadServerEnv(
     ...(anthropicBaseUrl ? { anthropicBaseUrl } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
     ...(openAIApiKey ? { openAIApiKey } : {}),
-    ...(nextopApiBaseUrl ? { nextopApiBaseUrl } : {}),
-    ...(nextopAppId ? { nextopAppId } : {}),
-    ...(nextopAppInstallationId ? { nextopAppInstallationId } : {}),
-    ...(nextopAppServerToken ? { nextopAppServerToken } : {}),
-    ...(nextopWorkspaceId ? { nextopWorkspaceId } : {}),
+    ...(tuttiApiBaseUrl ? { tuttiApiBaseUrl } : {}),
+    ...(tuttiAppId ? { tuttiAppId } : {}),
+    ...(tuttiAppInstallationId ? { tuttiAppInstallationId } : {}),
+    ...(tuttiAppServerToken ? { tuttiAppServerToken } : {}),
+    ...(tuttiWorkspaceId ? { tuttiWorkspaceId } : {}),
     ...(googleApiKey ? { googleApiKey } : {}),
     ...(googleApplicationCredentials ? { googleApplicationCredentials } : {}),
     ...(googleVertexProject ? { googleVertexProject } : {}),

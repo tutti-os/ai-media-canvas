@@ -1084,7 +1084,7 @@ export function ChatSidebar({
       );
       if (
         modelSourceRaw === "local-agent" ||
-        modelSourceRaw === "nextop-managed" ||
+        modelSourceRaw === "tutti-managed" ||
         modelSourceRaw === "api-provider"
       ) {
         storedAgentModelSource = modelSourceRaw;

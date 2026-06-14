@@ -6,6 +6,6 @@ export * from "./http.js";
 export * from "./generation-model-schema.js";
 export * from "./job-contracts.js";
 export * from "./brand-kit-contracts.js";
-export * from "./nextop-cli-contracts.js";
+export * from "./tutti-cli-contracts.js";
 export * from "./skill-contracts.js";
 export * from "./ws-protocol.js";

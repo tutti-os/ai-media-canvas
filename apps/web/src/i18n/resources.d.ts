@@ -167,17 +167,17 @@ export default interface Resources {
     "agentModelSelector": {
       "apiProvider": "API provider",
       "assistantMode": "助手模式",
-      "connectNextopManaged": "去设置连接",
+      "connectTuttiManaged": "去设置连接",
       "customModelId": "自定义模型 ID",
       "localAgent": "本地 Agent",
       "localAssistant": "本地助手",
-      "nextopManaged": "Tutti Managed",
       "noApiProviderModels": "未配置 API provider 模型。",
       "noLocalCliModels": "未检测到本地 CLI 模型。",
-      "noNextopManagedModels": "未连接 Tutti Managed 模型。",
+      "noTuttiManagedModels": "未连接 Tutti Managed 模型。",
       "openSettings": "打开 Agent 设置",
       "settings": "设置",
       "tooltip": "选择 Agent 模型",
+      "tuttiManaged": "Tutti Managed",
       "useCustomModel": "使用自定义模型",
       "usesConfiguredDefaultRoute": "使用你配置的默认路由",
       "usesDefaultModel": "使用默认模型：{{model}}"
@@ -559,7 +559,13 @@ export default interface Resources {
         "selectCliFirst": "请先选择 CLI...",
         "selectModel": "选择模型..."
       },
-      "nextopManaged": {
+      "source": {
+        "apiProvider": "API provider",
+        "detected": "已检测 {{cliCount}} 个",
+        "localAgent": "本地 Agent",
+        "tuttiManaged": "Tutti Managed"
+      },
+      "tuttiManaged": {
         "bridgeUnavailable": "请在 Tutti 中打开 AI Media Canvas 后授权托管模型。",
         "chooseModel": "请在下方选择 Tutti Managed 模型。",
         "connect": "连接",
@@ -576,17 +582,11 @@ export default interface Resources {
           "disconnected": "Tutti Managed 模型已断开。",
           "openSettingsFailed": "无法打开 Tutti 设置。"
         },
-        "manageInNextop": "在 Tutti 中管理",
+        "manageInTutti": "在 Tutti 中管理",
         "noModelSelected": "未选择 Tutti Managed 模型",
         "notConnected": "未连接",
         "reauthorize": "重新授权",
         "title": "Tutti Managed"
-      },
-      "source": {
-        "apiProvider": "API provider",
-        "detected": "已检测 {{cliCount}} 个",
-        "localAgent": "本地 Agent",
-        "nextopManaged": "Tutti Managed"
       }
     },
     "dialogTitle": "设置",

@@ -207,7 +207,7 @@
 
 - Bug 链接: https://ccn53rwonxso.feishu.cn/record/XKJbrJLe6eve2ecEpCjcIM1bnYf
 - 真实 record id: `recvmdrieXsrCP`
-- Bug 原因: 附件截图显示“搜索项目”工具卡失败；日志包 `/tmp/nextop-lark/recvmdrieXsrCP/nextop-logs-20260611-145507.zip` 在 AI Media Canvas runtime 中显示新会话工具流实际被 schema 异常打断：`manipulate_canvas` 收到 `add_text` 操作时携带 `element_id: null`，被 `z.string().optional()` 拒绝；随后 `generate_image` 在缺少 `prompt/title` 时也被必填 schema 拒绝。这类模型生成的 null/缺省字段会变成工具调用异常，UI 上表现为工具卡失败。
+- Bug 原因: 附件截图显示“搜索项目”工具卡失败；日志包 `/tmp/tutti-lark/recvmdrieXsrCP/tutti-logs-20260611-145507.zip` 在 AI Media Canvas runtime 中显示新会话工具流实际被 schema 异常打断：`manipulate_canvas` 收到 `add_text` 操作时携带 `element_id: null`，被 `z.string().optional()` 拒绝；随后 `generate_image` 在缺少 `prompt/title` 时也被必填 schema 拒绝。这类模型生成的 null/缺省字段会变成工具调用异常，UI 上表现为工具卡失败。
 - 修复方案: `manipulate_canvas.element_id` 允许 `null`，由具体 action 逻辑继续决定是否需要目标元素；`generate_image` 的 `title/prompt` 允许缺省或 `null`，运行时先从 `prompt/title` 互相兜底归一化，若仍没有 prompt，则返回可读的结构化 `missing_prompt` 错误，而不是抛 zod schema 异常打断整轮 agent。
 - 验证方式和结果: 扩展 `apps/server/src/agent/tools/manipulate-canvas.test.ts`，覆盖经过 `inspect_canvas` 后 `add_text` 携带 `element_id: null` 仍可正常应用；扩展 `apps/server/src/agent/local-agent-host/tool-gateway.test.ts`，覆盖 `generate_image` 缺 prompt 时返回 `isError: true` 和可读 `missing_prompt` 摘要而不是抛异常；`pnpm --filter @aimc/server exec vitest run src/agent/tools/manipulate-canvas.test.ts src/agent/local-agent-host/tool-gateway.test.ts` 通过（9 个测试）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm exec biome check apps/server/src/agent/tools/image-generate.ts apps/server/src/agent/tools/manipulate-canvas.test.ts apps/server/src/agent/local-agent-host/tool-gateway.test.ts` 通过。对 `manipulate-canvas.ts` 全文件执行 Biome 时仍会命中该文件既有非空断言/模板字符串 lint 债，未纳入本次范围。
 - 是否已修复完: 是
@@ -237,7 +237,7 @@
 
 - Bug 链接: https://ccn53rwonxso.feishu.cn/record/PYtzr9AjbezqrdcSD4ScR5Ctnpd
 - 真实 record id: `recvmdxv7Zs08T`
-- Bug 原因: 附件截图显示缩小/切出后重进，右侧会话仍有记录但画布为空；日志包 `/tmp/nextop-lark/recvmdxv7Zs08T/nextop-logs-20260611-151834.zip` 显示多个画布在运行/重进后先有数 MB `canvas.save OK`，随后出现同一 canvas `bodyBytes: 176` 的保存，说明空 scene 被前端 autosave 覆盖。日志中还出现 `Store is required but not available in runtime` 和本地 Codex skill frontmatter 警告，前者已由此前 BYOK/workspace skill route 修复覆盖，后者来自用户本机无效 skill 文件；本条直接导致画布为空和会话读取中断感的根因是空 scene 覆盖保存。
+- Bug 原因: 附件截图显示缩小/切出后重进，右侧会话仍有记录但画布为空；日志包 `/tmp/tutti-lark/recvmdxv7Zs08T/tutti-logs-20260611-151834.zip` 显示多个画布在运行/重进后先有数 MB `canvas.save OK`，随后出现同一 canvas `bodyBytes: 176` 的保存，说明空 scene 被前端 autosave 覆盖。日志中还出现 `Store is required but not available in runtime` 和本地 Codex skill frontmatter 警告，前者已由此前 BYOK/workspace skill route 修复覆盖，后者来自用户本机无效 skill 文件；本条直接导致画布为空和会话读取中断感的根因是空 scene 覆盖保存。
 - 修复方案: 复用第 23 条代码修复：`CanvasEditor` 按 canvasId remount，切换 canvas 时取消旧 fallback polling；debounced autosave 增加“初始有元素但当前 live elements 为 0 则跳过保存”的保护，防止窗口缩小/切出/重进期间 Excalidraw 短暂空 scene 覆盖服务端画布内容。
 - 验证方式和结果: 复用第 23 条回归测试和验证命令：`pnpm --filter @aimc/web exec vitest run test/canvas-editor-i18n.test.tsx` 通过（3 个测试），其中新增用例模拟水合后空 `onChange` 并断言不调用 `saveCanvas`；`pnpm --filter @aimc/web typecheck` 通过；`pnpm exec biome check --write apps/web/src/app/canvas/page.tsx apps/web/src/components/canvas-editor.tsx apps/web/test/canvas-editor-i18n.test.tsx` 通过。
 - 是否已修复完: 是
@@ -261,7 +261,7 @@
 - 真实 record id: `recvme1Plq3qZG`
 - Bug 原因: 附件截图显示 `persist_sandbox_file` 已成功上传生成文件，但聊天区“下载链接”位置只出现空白预览。根因是 local-agent 事件适配和 MCP tool gateway 只把 `generate_image` / `screenshot_canvas` 结果映射为 image artifact，`persist_sandbox_file` 返回的 `url` 没有进入 artifact；前端主聊天卡片也只对 `generate_image` 显示图片预览，导致持久化文件工具即使带有 artifact 也会落到普通工具卡片。
 - 修复方案: 在 `local-agent-events` 与 `tool-gateway` 中把 `persist_sandbox_file` 的 `url` 归一为 image artifact；前端 `ToolBlockView` 对 `persist_sandbox_file` / `screenshot_canvas` 的图片 artifact 使用与生图一致的预览卡片展示，保留详情面板可查看原始输出。
-- 验证方式和结果: 扩展 `apps/server/src/agent/runtime.test.ts`，覆盖 local-agent `persist_sandbox_file` tool result 会产出 image artifact；`pnpm --filter @aimc/server test -- src/agent/runtime.test.ts -t "workspace skills|persisted sandbox files"` 通过（实际运行 27 个 server 测试文件、137 个测试，全部通过）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm check:i18n` 通过。真实打开 `http://127.0.0.1:3000/canvas?id=e5ba507b-e343-4b73-b9a9-e30347a97e47&session=e9e2e4ab-60b2-4983-a881-1ff86236eb81`，通过本地 session API 写入一条带 `persist_sandbox_file` image artifact 的 assistant 消息，刷新页面后 DOM 显示 `AIMC persist artifact verification` 图片，`naturalWidth: 1`、`complete: true`，截图保存到 `/tmp/nextop-lark/aimc-persist-artifact-browser-verify-fixed.png`。
+- 验证方式和结果: 扩展 `apps/server/src/agent/runtime.test.ts`，覆盖 local-agent `persist_sandbox_file` tool result 会产出 image artifact；`pnpm --filter @aimc/server test -- src/agent/runtime.test.ts -t "workspace skills|persisted sandbox files"` 通过（实际运行 27 个 server 测试文件、137 个测试，全部通过）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm --filter @aimc/web typecheck` 通过；`pnpm check:i18n` 通过。真实打开 `http://127.0.0.1:3000/canvas?id=e5ba507b-e343-4b73-b9a9-e30347a97e47&session=e9e2e4ab-60b2-4983-a881-1ff86236eb81`，通过本地 session API 写入一条带 `persist_sandbox_file` image artifact 的 assistant 消息，刷新页面后 DOM 显示 `AIMC persist artifact verification` 图片，`naturalWidth: 1`、`complete: true`，截图保存到 `/tmp/tutti-lark/aimc-persist-artifact-browser-verify-fixed.png`。
 - 是否已修复完: 是
 - commit hash: `25412a0`
 
@@ -363,7 +363,7 @@
 
 - Bug 链接: https://ccn53rwonxso.feishu.cn/record/HeiorbBqPeV9MXc0K8icB2BZnac
 - 真实 record id: `recvmkIMkqbxiV`
-- Bug 原因: 附件截图中多次出现 `timed out awaiting tools/call after 120s` 和 Agnes 503；日志包 `/tmp/feishu-bug-runner/recvmkIMkqbxiV/nextop-logs-20260612-205834.zip` 显示 local-agent 触发 `generate_image` 后，图片生成请求耗时超过本地 MCP tool call 的 120s 上限，慢请求在工具层超时前没有把后台 `jobId` 返回给前端，导致用户看到稳定生图失败，后续 provider 503/422 也只能表现为失败卡片。
+- Bug 原因: 附件截图中多次出现 `timed out awaiting tools/call after 120s` 和 Agnes 503；日志包 `/tmp/feishu-bug-runner/recvmkIMkqbxiV/tutti-logs-20260612-205834.zip` 显示 local-agent 触发 `generate_image` 后，图片生成请求耗时超过本地 MCP tool call 的 120s 上限，慢请求在工具层超时前没有把后台 `jobId` 返回给前端，导致用户看到稳定生图失败，后续 provider 503/422 也只能表现为失败卡片。
 - 修复方案: 图片工具提交后台 job 后，服务端先在画布写入带 `jobId` 的 `image-generator` loading 节点并推送 `canvas.sync`，随后阻塞等待该 job 完成；成功后服务端用同一个 `jobId` / `elementId` 原位把 loading 节点写成真实 image 元素并再次推送 `canvas.sync`，工具结果返回真实 `imageUrl` / `assetId`，保证对话流和画布都拿到同一张完成图。视频工具仍在创建 job 后返回 `{ jobId, elementId, status: "generating" }`，由前端画布恢复 hook 轮询并扭转状态；全链路不再使用 `placeholderElementId` 替换协议。
 - 验证方式和结果: 新增/扩展 `apps/server/src/agent/runtime.test.ts`、`apps/server/src/features/canvas/canvas-element-writer.test.ts`、`apps/web/test/canvas-generation-job-recovery.test.tsx` 回归用例，验证图片 job pending 阶段保留带 `jobId` 的 loading 节点、成功后服务端原位完成为 image 元素，视频 job 创建后返回生成中节点，且画布级恢复 hook 会对同步出现的生成节点启动轮询；`pnpm --filter @aimc/server exec vitest run src/features/canvas/canvas-element-writer.test.ts src/agent/runtime.test.ts` 通过（30 个测试）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm exec biome check apps/server/src/features/canvas/canvas-element-writer.ts apps/server/src/features/canvas/canvas-element-writer.test.ts apps/server/src/agent/runtime.ts apps/server/src/agent/runtime.test.ts` 通过。
 - 是否已修复完: 是

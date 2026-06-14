@@ -7,10 +7,10 @@ import {
   chatMessageSchema,
   chatSessionSummarySchema,
   modelInfoSchema,
-  nextopManagedConnectChallengeSchema,
-  nextopManagedConnectionSchema,
-  nextopManagedGrantRequestSchema,
-  nextopManagedPublicConnectionSchema,
+  tuttiManagedConnectChallengeSchema,
+  tuttiManagedConnectionSchema,
+  tuttiManagedGrantRequestSchema,
+  tuttiManagedPublicConnectionSchema,
   projectSummarySchema,
   runIdSchema,
   viewerProfileSchema,
@@ -154,16 +154,16 @@ export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),
 });
 
-export const nextopManagedConnectionResponseSchema = z.object({
-  connectChallenge: nextopManagedConnectChallengeSchema.optional(),
-  connection: nextopManagedPublicConnectionSchema,
+export const tuttiManagedConnectionResponseSchema = z.object({
+  connectChallenge: tuttiManagedConnectChallengeSchema.optional(),
+  connection: tuttiManagedPublicConnectionSchema,
 });
 
-export const nextopManagedGrantResponseSchema =
-  nextopManagedConnectionResponseSchema;
+export const tuttiManagedGrantResponseSchema =
+  tuttiManagedConnectionResponseSchema;
 
-export const nextopManagedGrantCreateRequestSchema =
-  nextopManagedGrantRequestSchema;
+export const tuttiManagedGrantCreateRequestSchema =
+  tuttiManagedGrantRequestSchema;
 
 export const installableAgentProviderIdSchema = z.enum(["codex", "claude"]);
 
@@ -206,14 +206,14 @@ export type WorkspaceSettingsUpdateRequest = z.infer<
   typeof workspaceSettingsUpdateRequestSchema
 >;
 export type ModelListResponse = z.infer<typeof modelListResponseSchema>;
-export type NextopManagedConnectionResponse = z.infer<
-  typeof nextopManagedConnectionResponseSchema
+export type TuttiManagedConnectionResponse = z.infer<
+  typeof tuttiManagedConnectionResponseSchema
 >;
-export type NextopManagedGrantCreateRequest = z.infer<
-  typeof nextopManagedGrantCreateRequestSchema
+export type TuttiManagedGrantCreateRequest = z.infer<
+  typeof tuttiManagedGrantCreateRequestSchema
 >;
-export type NextopManagedGrantResponse = z.infer<
-  typeof nextopManagedGrantResponseSchema
+export type TuttiManagedGrantResponse = z.infer<
+  typeof tuttiManagedGrantResponseSchema
 >;
 export type InstallableAgentProviderId = z.infer<
   typeof installableAgentProviderIdSchema
