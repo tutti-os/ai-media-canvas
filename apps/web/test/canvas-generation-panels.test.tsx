@@ -510,8 +510,145 @@ describe("canvas generation panels", () => {
     expect(screen.getAllByText("Agnes Video")).toHaveLength(1);
   });
 
+  it("uses a bottom video mode menu without exposing text as a mode", async () => {
+    fetchVideoModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "kie/seedance-2",
+          displayName: "Seedance 2.0",
+          description: "Kie Seedance route",
+          provider: "kie-video",
+          capabilities: {
+            textToVideo: true,
+            imageToVideo: true,
+            videoToVideo: false,
+            audio: false,
+          },
+          limits: {
+            maxDuration: 5,
+            maxResolution: "720p",
+            maxInputImages: 8,
+          },
+          schema: {
+            type: "object",
+            properties: {},
+            "x-aimc-ui": {
+              inputModes: [
+                {
+                  id: "text",
+                  labelKey: "tools.schema.inputModes.text",
+                  maxImages: 0,
+                },
+                {
+                  id: "keyframes",
+                  labelKey: "tools.schema.inputModes.keyframes",
+                  videoMode: "keyframes",
+                  minImages: 1,
+                  maxImages: 2,
+                  slots: ["firstFrame", "lastFrame"],
+                },
+                {
+                  id: "reference",
+                  labelKey: "tools.schema.inputModes.reference",
+                  videoMode: "reference",
+                  minImages: 1,
+                  maxImages: 8,
+                  slots: ["referenceImages"],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "",
+            model: "kie/seedance-2",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "首尾帧" }),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "文本" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "参考图/视频" }));
+    expect(screen.getByRole("button", { name: "参考图" })).toBeInTheDocument();
+  });
+
+  it("keeps text-to-video submission when no video mode assets are uploaded", async () => {
+    generateVideoDirectMock.mockResolvedValue({
+      url: "https://example.com/generated.mp4",
+      assetId: "asset-video-1",
+      mimeType: "video/mp4",
+      durationSeconds: 5,
+    });
+    const excalidrawApi = createExcalidrawApiStub([
+      {
+        id: "el-video",
+        isDeleted: false,
+        customData: { type: "video-generator" },
+      },
+    ]);
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "生成一段跳舞视频",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={excalidrawApi}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "生成视频" }),
+    );
+
+    expect(generateVideoDirectMock).toHaveBeenCalledWith(
+      "生成一段跳舞视频",
+      expect.not.objectContaining({
+        inputImages: expect.anything(),
+        videoMode: expect.anything(),
+      }),
+    );
+  });
+
   it("uses the selected video model limits for duration and resolution controls", async () => {
-    fetchVideoModelsMock.mockResolvedValueOnce({
+    fetchVideoModelsMock.mockResolvedValue({
       models: [
         {
           id: "kie/grok-imagine",

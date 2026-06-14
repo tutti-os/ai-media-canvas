@@ -45,7 +45,10 @@ import {
   getVideoGeneratorData,
   isVideoGeneratorElement,
 } from "../lib/canvas-video-generator";
-import { isExcalidrawContextMenuTarget } from "../lib/excalidraw-context-menu";
+import {
+  isExcalidrawCanvasTarget,
+  isExcalidrawContextMenuTarget,
+} from "../lib/excalidraw-context-menu";
 import { toRuntimeAssetUrl } from "../lib/local-assets";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
@@ -165,8 +168,10 @@ type CanvasToolElement = Record<string, unknown> & {
 
 type CanvasToolAppState = {
   activeTool?: { type?: string };
+  isResizing?: boolean;
   scrollX?: number;
   scrollY?: number;
+  selectedElementsAreBeingDragged?: boolean;
   selectedElementIds?: Record<string, boolean>;
   zoom?: { value?: number };
 };
@@ -294,6 +299,12 @@ function getElementBounds(element: CanvasToolElement) {
     width: element.width ?? 0,
     height: element.height ?? 0,
   };
+}
+
+function isSelectedElementTransforming(appState: CanvasToolAppState) {
+  return Boolean(
+    appState.selectedElementsAreBeingDragged || appState.isResizing,
+  );
 }
 
 /** Memoized shimmer overlay for a single generating element */
@@ -564,6 +575,7 @@ export function CanvasToolMenu({
     width: number;
     height: number;
   } | null>(null);
+  const [videoGenPanelHidden, setVideoGenPanelHidden] = useState(false);
 
   const [canvasScrollZoom, setCanvasScrollZoom] = useState({
     scrollX: 0,
@@ -599,6 +611,7 @@ export function CanvasToolMenu({
     setActiveVideoGenId(null);
     setVideoGenData(null);
     setVideoGenBounds(null);
+    setVideoGenPanelHidden(false);
   }, []);
 
   useEffect(() => {
@@ -696,6 +709,8 @@ export function CanvasToolMenu({
 
       const currentId = activeGeneratorIdRef.current;
       const currentVideoId = activeVideoGenIdRef.current;
+      const selectedElementTransforming =
+        isSelectedElementTransforming(appState);
       if (selectedElements.length === 1) {
         const sel = selectedElements[0];
         if (!sel) return;
@@ -728,15 +743,22 @@ export function CanvasToolMenu({
             }
           }
           setVideoGenBounds(selectedBounds);
+          setVideoGenPanelHidden((prev) =>
+            prev === selectedElementTransforming
+              ? prev
+              : selectedElementTransforming,
+          );
         } else {
           if (currentId || currentVideoId) {
             closeAllPanels();
           }
+          setVideoGenPanelHidden(false);
         }
       } else {
         if (currentId || currentVideoId) {
           closeAllPanels();
         }
+        setVideoGenPanelHidden(false);
       }
 
       // --- Generator status overlays ---
@@ -876,6 +898,7 @@ export function CanvasToolMenu({
       appState: { selectedElementIds: { [elementId]: true } },
     });
     setActiveVideoGenId(elementId);
+    setVideoGenPanelHidden(false);
     const elements = excalidrawApi.getSceneElements();
     const el = elements.find((item) => item.id === elementId);
     if (el) {
@@ -894,6 +917,7 @@ export function CanvasToolMenu({
     setActiveVideoGenId(null);
     setVideoGenData(null);
     setVideoGenBounds(null);
+    setVideoGenPanelHidden(false);
   }, [clearSelectionForElement]);
 
   useEffect(() => {
@@ -905,6 +929,7 @@ export function CanvasToolMenu({
       if (isExcalidrawContextMenuTarget(target)) return;
       const panel = document.querySelector("[data-aimc-generator-panel]");
       if (panel?.contains(target)) return;
+      if (isExcalidrawCanvasTarget(target)) return;
 
       if (activeGeneratorIdRef.current) handleCloseGenerator();
       if (activeVideoGenIdRef.current) handleCloseVideoGenerator();
@@ -1004,6 +1029,7 @@ export function CanvasToolMenu({
           excalidrawApi={excalidrawApi}
           projectId={projectId}
           canvasScrollZoom={canvasScrollZoom}
+          hidden={videoGenPanelHidden}
           onClose={handleCloseVideoGenerator}
         />
       )}

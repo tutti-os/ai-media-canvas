@@ -1,7 +1,7 @@
 "use client";
 
 import type { AimcInputMode } from "@aimc/shared";
-import { ChevronDown, ImageIcon, Loader2, X, Zap } from "lucide-react";
+import { Check, ChevronDown, ImageIcon, Loader2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -14,7 +14,10 @@ import {
   resizeVideoGeneratorElement,
   updateVideoGeneratorElement,
 } from "../../lib/canvas-video-generator";
-import { isExcalidrawContextMenuTarget } from "../../lib/excalidraw-context-menu";
+import {
+  isExcalidrawCanvasTarget,
+  isExcalidrawContextMenuTarget,
+} from "../../lib/excalidraw-context-menu";
 import { normalizeLocalAssetStorageUrl } from "../../lib/local-assets";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { VideoModelInfo } from "../../lib/server-api";
@@ -28,6 +31,7 @@ type VideoGeneratorPanelProps = {
   excalidrawApi: VideoGeneratorExcalidrawApi;
   projectId: string;
   canvasScrollZoom: { scrollX: number; scrollY: number; zoom: number };
+  hidden?: boolean;
   onClose: () => void;
 };
 
@@ -53,6 +57,12 @@ type VideoInputModeId =
   | "reference"
   | "multivideo"
   | "video";
+const videoInputModeMemory = new Map<string, VideoInputModeId>();
+type VideoModeOption = {
+  id: "keyframes" | "reference";
+  labelKey: string;
+  mode: AimcInputMode;
+};
 
 function getDurationOptions(model?: VideoModelInfo): number[] {
   const schemaDurations = getSchemaEnum<number>(model, "duration");
@@ -183,6 +193,63 @@ function getDefaultInputMode(
   return (modes[0]?.id as VideoInputModeId | undefined) ?? "text";
 }
 
+function getModeById(modes: readonly AimcInputMode[], id: string) {
+  return modes.find((item) => item.id === id);
+}
+
+function getKeyframeMode(modes: readonly AimcInputMode[]) {
+  return (
+    getModeById(modes, "keyframes") ??
+    getModeById(modes, "image") ??
+    getModeById(modes, "multivideo")
+  );
+}
+
+function getVideoModeOptions(
+  modes: readonly AimcInputMode[],
+): VideoModeOption[] {
+  const keyframeMode = getKeyframeMode(modes);
+  const referenceMode = getModeById(modes, "reference");
+  return [
+    ...(keyframeMode
+      ? [
+          {
+            id: "keyframes" as const,
+            labelKey: "tools.schema.inputModes.keyframes",
+            mode: keyframeMode,
+          },
+        ]
+      : []),
+    ...(referenceMode
+      ? [
+          {
+            id: "reference" as const,
+            labelKey: "tools.schema.inputModes.reference",
+            mode: referenceMode,
+          },
+        ]
+      : []),
+  ];
+}
+
+function getModeMaxImages(mode?: AimcInputMode) {
+  return mode?.maxImages ?? 0;
+}
+
+function normalizeStoredInputMode(mode: VideoGeneratorData["inputMode"]) {
+  if (
+    mode === "text" ||
+    mode === "image" ||
+    mode === "keyframes" ||
+    mode === "reference" ||
+    mode === "multivideo" ||
+    mode === "video"
+  ) {
+    return mode;
+  }
+  return "text";
+}
+
 function normalizeDuration(duration: number, options: number[]) {
   return options.includes(duration) ? duration : (options[0] ?? duration);
 }
@@ -281,6 +348,7 @@ export function VideoGeneratorPanel({
   excalidrawApi,
   projectId,
   canvasScrollZoom,
+  hidden = false,
   onClose,
 }: VideoGeneratorPanelProps) {
   const { t } = useAppTranslation("canvas");
@@ -292,9 +360,14 @@ export function VideoGeneratorPanel({
   const [loading, setLoading] = useState(data.status === "generating");
   const [error, setError] = useState<string | null>(data.errorMessage ?? null);
   const [models, setModels] = useState<VideoModelInfo[]>([]);
+  const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showParamsPopover, setShowParamsPopover] = useState(false);
-  const [inputMode, setInputMode] = useState<VideoInputModeId>("text");
+  const [inputMode, setInputMode] = useState<VideoInputModeId>(
+    () =>
+      videoInputModeMemory.get(elementId) ??
+      normalizeStoredInputMode(data.inputMode),
+  );
   const [firstFrame, setFirstFrame] = useState<FrameData | null>(null);
   const [lastFrame, setLastFrame] = useState<FrameData | null>(null);
   const [referenceFrame, setReferenceFrame] = useState<FrameData | null>(null);
@@ -343,8 +416,10 @@ export function VideoGeneratorPanel({
     const handleClickOutside = (e: MouseEvent) => {
       if (isExcalidrawContextMenuTarget(e.target)) return;
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setShowModeDropdown(false);
         setShowModelDropdown(false);
         setShowParamsPopover(false);
+        if (isExcalidrawCanvasTarget(e.target)) return;
         onClose();
       }
     };
@@ -357,6 +432,13 @@ export function VideoGeneratorPanel({
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    setInputMode(
+      videoInputModeMemory.get(elementId) ??
+        normalizeStoredInputMode(data.inputMode),
+    );
+  }, [data.inputMode, elementId]);
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -373,7 +455,14 @@ export function VideoGeneratorPanel({
 
   const currentModel = models.find((item) => item.id === model);
   const inputModes = useMemo(() => getInputModes(currentModel), [currentModel]);
-  const currentInputMode = inputModes.find((item) => item.id === inputMode);
+  const modeOptions = useMemo(
+    () => getVideoModeOptions(inputModes),
+    [inputModes],
+  );
+  const selectedModeOption =
+    modeOptions.find((option) => option.mode.id === inputMode) ??
+    modeOptions[0];
+  const selectedMode = selectedModeOption?.mode;
   const aspectRatioOptions = useMemo(
     () => getAspectRatioOptions(currentModel),
     [currentModel],
@@ -426,19 +515,30 @@ export function VideoGeneratorPanel({
   ]);
 
   useEffect(() => {
-    if (!currentModel?.schema && inputMode === "text") {
-      const defaultMode = getDefaultInputMode(inputModes);
-      if (defaultMode !== "text") {
-        setInputMode(defaultMode);
-        return;
-      }
+    if (modeOptions.length > 0) {
+      if (modeOptions.some((option) => option.mode.id === inputMode)) return;
+      const nextMode = modeOptions[0]?.mode.id as VideoInputModeId;
+      videoInputModeMemory.set(elementId, nextMode);
+      setInputMode(nextMode);
+      updateVideoGeneratorElement(excalidrawApi, elementId, {
+        inputMode: nextMode,
+      });
+      setFirstFrame(null);
+      setLastFrame(null);
+      setReferenceFrame(null);
+      return;
     }
     if (isInputModeSupported(inputModes, inputMode)) return;
-    setInputMode(getDefaultInputMode(inputModes));
+    const nextMode = getDefaultInputMode(inputModes);
+    videoInputModeMemory.set(elementId, nextMode);
+    setInputMode(nextMode);
+    updateVideoGeneratorElement(excalidrawApi, elementId, {
+      inputMode: nextMode,
+    });
     setFirstFrame(null);
     setLastFrame(null);
     setReferenceFrame(null);
-  }, [currentModel, inputModes, inputMode]);
+  }, [excalidrawApi, elementId, inputModes, inputMode, modeOptions]);
 
   const handleAspectRatioChange = useCallback(
     (ratio: string) => {
@@ -465,6 +565,7 @@ export function VideoGeneratorPanel({
     (nextModel: string) => {
       setModel(nextModel);
       setShowModelDropdown(false);
+      setShowModeDropdown(false);
       updateVideoGeneratorElement(excalidrawApi, elementId, {
         model: nextModel,
       });
@@ -472,12 +573,20 @@ export function VideoGeneratorPanel({
     [excalidrawApi, elementId],
   );
 
-  const handleInputModeChange = useCallback((nextMode: VideoInputModeId) => {
-    setInputMode(nextMode);
-    if (nextMode !== "keyframes") setLastFrame(null);
-    if (nextMode !== "reference") setReferenceFrame(null);
-    if (nextMode === "text" || nextMode === "reference") setFirstFrame(null);
-  }, []);
+  const handleInputModeChange = useCallback(
+    (nextMode: VideoInputModeId) => {
+      videoInputModeMemory.set(elementId, nextMode);
+      setInputMode(nextMode);
+      setShowModeDropdown(false);
+      updateVideoGeneratorElement(excalidrawApi, elementId, {
+        inputMode: nextMode,
+      });
+      if (nextMode !== "keyframes") setLastFrame(null);
+      if (nextMode !== "reference") setReferenceFrame(null);
+      if (nextMode === "text" || nextMode === "reference") setFirstFrame(null);
+    },
+    [excalidrawApi, elementId],
+  );
 
   const handleFrameUpload = useCallback(
     (
@@ -524,16 +633,16 @@ export function VideoGeneratorPanel({
 
     try {
       const inputImages: string[] = [];
-      if (inputMode === "keyframes") {
+      const selectedOption = selectedModeOption;
+      if (selectedOption?.id === "keyframes") {
         if (firstFrame) inputImages.push(firstFrame.dataUrl);
         if (lastFrame) inputImages.push(lastFrame.dataUrl);
-      } else if (inputMode === "reference") {
+      } else if (selectedOption?.id === "reference") {
         if (referenceFrame) inputImages.push(referenceFrame.dataUrl);
-      } else if (inputMode === "image" || inputMode === "multivideo") {
-        if (firstFrame) inputImages.push(firstFrame.dataUrl);
-        if (lastFrame) inputImages.push(lastFrame.dataUrl);
       }
-      const videoMode = currentInputMode?.videoMode;
+      const videoMode = inputImages.length
+        ? selectedOption?.mode.videoMode
+        : undefined;
 
       const result = await generateVideoDirect(prompt.trim(), {
         model,
@@ -635,8 +744,7 @@ export function VideoGeneratorPanel({
     firstFrame,
     lastFrame,
     referenceFrame,
-    inputMode,
-    currentInputMode,
+    selectedModeOption,
     projectId,
     canvasId,
     excalidrawApi,
@@ -648,50 +756,27 @@ export function VideoGeneratorPanel({
   ]);
 
   const paramsLabel = `${aspectRatio} · ${duration}s`;
-  const showModePicker = inputModes.length > 1;
-  const showFirstFrame =
-    inputMode === "image" ||
-    inputMode === "keyframes" ||
-    inputMode === "multivideo";
-  const showLastFrame = inputMode === "keyframes" || inputMode === "multivideo";
-  const showReferenceFrame = inputMode === "reference";
+  const showModePicker = modeOptions.length > 1;
+  const keyframeMaxImages =
+    selectedModeOption?.id === "keyframes" ? getModeMaxImages(selectedMode) : 0;
+  const showFirstFrame = selectedModeOption?.id === "keyframes";
+  const showLastFrame = showFirstFrame && keyframeMaxImages > 1;
+  const showReferenceFrame = selectedModeOption?.id === "reference";
 
   return createPortal(
     <div
       ref={panelRef}
       data-aimc-generator-panel="video"
       style={{ left: panelPosition.left, top: panelPosition.top }}
-      className="fixed z-[100] w-[520px] rounded-[24px] border border-border bg-card/95 shadow-card backdrop-blur-lg"
+      className={`fixed z-[100] w-[520px] rounded-[24px] border border-border bg-card/95 shadow-card backdrop-blur-lg transition-opacity duration-150 ${
+        hidden ? "pointer-events-none opacity-0" : "opacity-100"
+      }`}
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
       <div className="px-5 pb-3 pt-4">
-        {(showModePicker ||
-          showFirstFrame ||
-          showLastFrame ||
-          showReferenceFrame) && (
+        {(showFirstFrame || showLastFrame || showReferenceFrame) && (
           <div className="mb-4 space-y-3">
-            {showModePicker && (
-              <div className="flex flex-wrap gap-1.5">
-                {inputModes.map((mode) => (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    disabled={loading}
-                    onClick={() =>
-                      handleInputModeChange(mode.id as VideoInputModeId)
-                    }
-                    className={`cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                      inputMode === mode.id
-                        ? "bg-foreground text-background"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
-                    }`}
-                  >
-                    {t(mode.labelKey)}
-                  </button>
-                ))}
-              </div>
-            )}
             <div className="flex items-center gap-2.5">
               {showFirstFrame && (
                 <FrameUploadTile
@@ -766,10 +851,61 @@ export function VideoGeneratorPanel({
 
         <div className="mt-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
+            {selectedModeOption && (
+              <div className="relative">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    setShowModeDropdown((value) => !value);
+                    setShowModelDropdown(false);
+                    setShowParamsPopover(false);
+                  }}
+                  className="flex h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="truncate max-w-[120px]">
+                    {t(selectedModeOption.labelKey)}
+                  </span>
+                  {showModePicker && (
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                </button>
+                {showModeDropdown && showModePicker && (
+                  <div className="absolute bottom-full left-0 z-50 mb-2 w-[200px] overflow-hidden rounded-2xl border border-border bg-popover shadow-card">
+                    <div className="py-1">
+                      {modeOptions.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() =>
+                            handleInputModeChange(
+                              option.mode.id as VideoInputModeId,
+                            )
+                          }
+                          className="flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
+                        >
+                          <span className="flex h-5 w-5 items-center justify-center text-muted-foreground">
+                            {selectedModeOption.id === option.id && (
+                              <Check className="h-4 w-4" />
+                            )}
+                          </span>
+                          <span>{t(option.labelKey)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="relative">
               <button
                 type="button"
-                onClick={() => setShowModelDropdown((value) => !value)}
+                onClick={() => {
+                  setShowModelDropdown((value) => !value);
+                  setShowModeDropdown(false);
+                  setShowParamsPopover(false);
+                }}
                 className="flex h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60"
               >
                 <span className="truncate max-w-[180px]">
@@ -812,7 +948,11 @@ export function VideoGeneratorPanel({
             <div className="relative">
               <button
                 type="button"
-                onClick={() => setShowParamsPopover((value) => !value)}
+                onClick={() => {
+                  setShowParamsPopover((value) => !value);
+                  setShowModeDropdown(false);
+                  setShowModelDropdown(false);
+                }}
                 className="flex h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60"
               >
                 <Zap className="h-3.5 w-3.5 text-muted-foreground" />

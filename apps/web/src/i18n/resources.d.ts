@@ -114,7 +114,7 @@ export default interface Resources {
           "image": "首帧",
           "keyframes": "首尾帧",
           "multivideo": "多图",
-          "reference": "参考图",
+          "reference": "参考图/视频",
           "text": "文本",
           "video": "视频"
         }
