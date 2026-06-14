@@ -3,6 +3,7 @@ import type {
   AssetSignedUrlResponse,
   CanvasDetail,
   ChatMessageCreateRequest,
+  GenerationModelSchema,
   InstallableAgentProviderId,
   JobResponse,
   MessageCreateResponse,
@@ -477,6 +478,7 @@ export type ImageModelInfo = {
   creditCost?: number;
   accessible?: boolean;
   minTier?: string;
+  schema?: GenerationModelSchema;
 };
 
 export async function fetchImageModels(): Promise<{
@@ -508,6 +510,7 @@ export type VideoModelInfo = {
     maxResolution: "480p" | "720p" | "1080p" | "2160p";
     maxInputImages: number;
   };
+  schema?: GenerationModelSchema;
 };
 
 export async function fetchVideoModels(): Promise<{
@@ -535,19 +538,23 @@ export async function generateImageDirect(
     signal?: AbortSignal;
   },
 ): Promise<GenerateImageResponse> {
-  const { job } = await createGenerationJob("/api/jobs/image-generation", {
-    prompt,
-    ...(options?.model ? { model: options.model } : {}),
-    ...(options?.aspectRatio ? { aspect_ratio: options.aspectRatio } : {}),
-    ...(options?.quality ? { quality: options.quality } : {}),
-    ...(options?.inputImages?.length
-      ? { input_images: options.inputImages }
-      : {}),
-    ...(options?.size ? { size: options.size } : {}),
-    ...(options?.seed !== undefined ? { seed: options.seed } : {}),
-    ...(options?.projectId ? { project_id: options.projectId } : {}),
-    ...(options?.canvasId ? { canvas_id: options.canvasId } : {}),
-  }, options?.signal);
+  const { job } = await createGenerationJob(
+    "/api/jobs/image-generation",
+    {
+      prompt,
+      ...(options?.model ? { model: options.model } : {}),
+      ...(options?.aspectRatio ? { aspect_ratio: options.aspectRatio } : {}),
+      ...(options?.quality ? { quality: options.quality } : {}),
+      ...(options?.inputImages?.length
+        ? { input_images: options.inputImages }
+        : {}),
+      ...(options?.size ? { size: options.size } : {}),
+      ...(options?.seed !== undefined ? { seed: options.seed } : {}),
+      ...(options?.projectId ? { project_id: options.projectId } : {}),
+      ...(options?.canvasId ? { canvas_id: options.canvasId } : {}),
+    },
+    options?.signal,
+  );
   options?.onJobCreated?.(job.id);
   const result = await generationJobService.watch(job.id, {
     jobType: "image_generation",
@@ -581,7 +588,8 @@ export async function generateVideoDirect(
     resolution?: string;
     aspectRatio?: string;
     inputImages?: string[];
-    videoMode?: "multivideo" | "keyframes";
+    videoMode?: "multivideo" | "keyframes" | "reference";
+    enableAudio?: boolean;
     seed?: number;
     negativePrompt?: string;
     frameRate?: number;
@@ -592,25 +600,36 @@ export async function generateVideoDirect(
     signal?: AbortSignal;
   },
 ): Promise<GenerateVideoResponse> {
-  const { job } = await createGenerationJob("/api/jobs/video-generation", {
-    prompt,
-    ...(options?.model ? { model: options.model } : {}),
-    ...(options?.duration != null ? { duration: options.duration } : {}),
-    ...(options?.resolution ? { resolution: options.resolution } : {}),
-    ...(options?.aspectRatio ? { aspect_ratio: options.aspectRatio } : {}),
-    ...(options?.inputImages?.length
-      ? { input_images: options.inputImages }
-      : {}),
-    ...(options?.videoMode ? { video_mode: options.videoMode } : {}),
-    ...(options?.seed !== undefined ? { seed: options.seed } : {}),
-    ...(options?.negativePrompt
-      ? { negative_prompt: options.negativePrompt }
-      : {}),
-    ...(options?.frameRate !== undefined ? { frame_rate: options.frameRate } : {}),
-    ...(options?.numFrames !== undefined ? { num_frames: options.numFrames } : {}),
-    ...(options?.projectId ? { project_id: options.projectId } : {}),
-    ...(options?.canvasId ? { canvas_id: options.canvasId } : {}),
-  }, options?.signal);
+  const { job } = await createGenerationJob(
+    "/api/jobs/video-generation",
+    {
+      prompt,
+      ...(options?.model ? { model: options.model } : {}),
+      ...(options?.duration != null ? { duration: options.duration } : {}),
+      ...(options?.resolution ? { resolution: options.resolution } : {}),
+      ...(options?.aspectRatio ? { aspect_ratio: options.aspectRatio } : {}),
+      ...(options?.inputImages?.length
+        ? { input_images: options.inputImages }
+        : {}),
+      ...(options?.videoMode ? { video_mode: options.videoMode } : {}),
+      ...(options?.enableAudio !== undefined
+        ? { enable_audio: options.enableAudio }
+        : {}),
+      ...(options?.seed !== undefined ? { seed: options.seed } : {}),
+      ...(options?.negativePrompt
+        ? { negative_prompt: options.negativePrompt }
+        : {}),
+      ...(options?.frameRate !== undefined
+        ? { frame_rate: options.frameRate }
+        : {}),
+      ...(options?.numFrames !== undefined
+        ? { num_frames: options.numFrames }
+        : {}),
+      ...(options?.projectId ? { project_id: options.projectId } : {}),
+      ...(options?.canvasId ? { canvas_id: options.canvasId } : {}),
+    },
+    options?.signal,
+  );
   options?.onJobCreated?.(job.id);
   const result = await generationJobService.watch(job.id, {
     jobType: "video_generation",

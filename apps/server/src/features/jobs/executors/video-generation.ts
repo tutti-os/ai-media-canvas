@@ -2,6 +2,7 @@ import type { BackgroundJob, VideoGenerationPayload } from "@aimc/shared";
 
 import type { ServerEnv } from "../../../config/env.js";
 import { loadGeneratedAsset } from "../../../generation/generated-asset.js";
+import { validateVideoGenerationParams } from "../../../generation/model-schemas.js";
 import {
   getVideoProvider,
   resolveVideoProviderName,
@@ -30,7 +31,14 @@ export async function executeVideoGenerationJob(
     model,
     ...(payload.duration ? { duration: payload.duration } : {}),
     ...(payload.resolution
-      ? { resolution: payload.resolution as "480p" | "720p" | "1080p" }
+      ? {
+          resolution: payload.resolution as
+            | "480p"
+            | "720p"
+            | "1080p"
+            | "4k"
+            | "2160p",
+        }
       : {}),
     ...(payload.aspect_ratio ? { aspectRatio: payload.aspect_ratio } : {}),
     ...(payload.input_images ? { inputImages: payload.input_images } : {}),
@@ -91,6 +99,7 @@ export async function executeVideoGenerationJob(
       },
     },
   };
+  validateVideoGenerationParams(videoParams);
   const generated =
     job.remote_task_id && videoProvider.resume
       ? await videoProvider.resume(job.remote_task_id, videoParams)

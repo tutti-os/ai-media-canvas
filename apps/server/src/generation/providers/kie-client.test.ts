@@ -50,6 +50,46 @@ describe("KieClient", () => {
     );
   });
 
+  it("uploads data URL files and returns the download URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          code: 200,
+          msg: "success",
+          data: {
+            downloadUrl: "https://tempfile.example/aimc/input.png",
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new KieClient("test-key");
+    await expect(
+      client.uploadBase64File({
+        base64Data: "data:image/png;base64,AAAA",
+        fileName: "input.png",
+      }),
+    ).resolves.toBe("https://tempfile.example/aimc/input.png");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://kieai.redpandaai.co/api/file-base64-upload",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer test-key",
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify({
+          base64Data: "data:image/png;base64,AAAA",
+          uploadPath: "aimc/kie-inputs",
+          fileName: "input.png",
+        }),
+      }),
+    );
+  });
+
   it("throws a GenerationError for Kie API failures", async () => {
     vi.stubGlobal(
       "fetch",

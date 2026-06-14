@@ -37,5 +37,6 @@ export async function listVideoModels(
     accessible: true,
     capabilities: model.capabilities,
     limits: model.limits,
+    schema: model.schema,
   }));
 }

@@ -4,7 +4,7 @@ import type {
   VideoModelInfo,
   VideoProvider,
 } from "../types.js";
-import { GenerationError } from "../utils.js";
+import { GenerationError, fetchAsBase64 } from "../utils.js";
 import {
   KieClient,
   type KieMarketTaskRecord,
@@ -225,7 +225,12 @@ export function resolveKieVideoRequest(
   }
 
   if (model === "kie/veo-3.1") {
-    const imageUrls = requireAtMostInputImages("veo-3.1", inputImages, 2);
+    const referenceMode = params.videoMode === "reference";
+    const imageUrls = requireAtMostInputImages(
+      "veo-3.1",
+      inputImages,
+      referenceMode ? 1 : 2,
+    );
     return {
       kind: "veo",
       payload: {
@@ -238,7 +243,9 @@ export function resolveKieVideoRequest(
         generationType:
           imageUrls.length === 0
             ? "TEXT_2_VIDEO"
-            : "FIRST_AND_LAST_FRAMES_2_VIDEO",
+            : referenceMode
+              ? "REFERENCE_2_VIDEO"
+              : "FIRST_AND_LAST_FRAMES_2_VIDEO",
       },
       durationSeconds,
       ...dimensions,
@@ -312,13 +319,22 @@ export function resolveKieVideoRequest(
   }
 
   if (model === "kie/seedance-2") {
-    const images = requireAtMostInputImages("seedance-2", inputImages, 2);
+    const referenceMode = params.videoMode === "reference";
+    const images = requireAtMostInputImages(
+      "seedance-2",
+      inputImages,
+      referenceMode ? 8 : 2,
+    );
     return marketVideoRequest(
       "bytedance/seedance-2",
       {
         prompt: params.prompt,
-        ...(images[0] ? { first_frame_url: images[0] } : {}),
-        ...(images[1] ? { last_frame_url: images[1] } : {}),
+        ...(referenceMode
+          ? { reference_image_urls: images }
+          : {
+              ...(images[0] ? { first_frame_url: images[0] } : {}),
+              ...(images[1] ? { last_frame_url: images[1] } : {}),
+            }),
         generate_audio: params.enableAudio === true,
         resolution,
         aspect_ratio: aspectRatio,
@@ -330,20 +346,25 @@ export function resolveKieVideoRequest(
     );
   }
 
+  const happyHorseReferenceMode = params.videoMode === "reference";
   const happyHorseImages = requireAtMostInputImages(
     "happyhorse-1",
     inputImages,
-    1,
+    happyHorseReferenceMode ? 4 : 1,
   );
   return marketVideoRequest(
-    happyHorseImages.length === 0
-      ? "happyhorse/text-to-video"
-      : "happyhorse/image-to-video",
+    happyHorseReferenceMode
+      ? "happyhorse/reference-to-video"
+      : happyHorseImages.length === 0
+        ? "happyhorse/text-to-video"
+        : "happyhorse/image-to-video",
     {
       prompt: params.prompt,
-      ...(happyHorseImages.length > 0
-        ? { image_urls: happyHorseImages }
-        : { aspect_ratio: aspectRatio }),
+      ...(happyHorseReferenceMode
+        ? { reference_image: happyHorseImages }
+        : happyHorseImages.length > 0
+          ? { image_urls: happyHorseImages }
+          : { aspect_ratio: aspectRatio }),
       resolution,
       duration: durationSeconds,
       ...(params.seed !== undefined ? { seed: params.seed } : {}),
@@ -375,7 +396,14 @@ export class KieVideoProvider implements VideoProvider {
   }
 
   async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {
-    const request = resolveKieVideoRequest(params);
+    const inputImages = await prepareKieInputImages(
+      this.client,
+      params.inputImages,
+    );
+    const request = resolveKieVideoRequest({
+      ...params,
+      ...(inputImages ? { inputImages } : {}),
+    });
     const metadata = getKieVideoRemoteMetadata(params);
 
     try {
@@ -665,6 +693,38 @@ function videoResult(url: string, request: KieVideoRequest): GeneratedVideo {
     height: request.height,
     durationSeconds: request.durationSeconds,
   };
+}
+
+async function prepareKieInputImages(
+  client: KieClient,
+  inputImages: string[] | undefined,
+) {
+  if (!inputImages?.length) return inputImages;
+  return Promise.all(
+    inputImages.map(async (image, index) => {
+      if (isKieReachableUrl(image)) return image;
+      const { data, mimeType } = await fetchAsBase64("kie-video", image);
+      const extension = mimeType.includes("jpeg")
+        ? "jpg"
+        : (mimeType.split("/")[1] ?? "png");
+      return client.uploadBase64File({
+        base64Data: `data:${mimeType};base64,${data}`,
+        fileName: `aimc-kie-video-${Date.now()}-${index}.${extension}`,
+      });
+    }),
+  );
+}
+
+function isKieReachableUrl(value: string) {
+  if (!value.startsWith("http://") && !value.startsWith("https://")) {
+    return false;
+  }
+  try {
+    const url = new URL(value);
+    return !["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+  } catch {
+    return false;
+  }
 }
 
 function delay(ms: number) {

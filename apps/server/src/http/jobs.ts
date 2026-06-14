@@ -13,6 +13,7 @@ import {
   type JobService,
   JobServiceError,
 } from "../features/jobs/job-service.js";
+import { GenerationError } from "../generation/utils.js";
 import { type JobOperations, createJobOperations } from "./job-operations.js";
 
 export async function registerJobRoutes(
@@ -36,6 +37,9 @@ export async function registerJobRoutes(
       return reply.code(201).send(await jobOperations.createImageJob(payload));
     } catch (error) {
       if (isZodError(error)) return sendValidationError(reply);
+      if (isGenerationValidationError(error)) {
+        return sendGenerationValidationError(reply, error);
+      }
       return sendJobError(error, reply, "job_create_failed");
     }
   });
@@ -46,6 +50,9 @@ export async function registerJobRoutes(
       return reply.code(201).send(await jobOperations.createVideoJob(payload));
     } catch (error) {
       if (isZodError(error)) return sendValidationError(reply);
+      if (isGenerationValidationError(error)) {
+        return sendGenerationValidationError(reply, error);
+      }
       return sendJobError(error, reply, "job_create_failed");
     }
   });
@@ -82,6 +89,20 @@ export async function registerJobRoutes(
       return sendJobError(error, reply, "job_cancel_failed");
     }
   });
+}
+
+function sendGenerationValidationError(
+  reply: FastifyReply,
+  error: GenerationError,
+) {
+  return reply.code(400).send(
+    applicationErrorResponseSchema.parse({
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    }),
+  );
 }
 
 function sendValidationError(reply: FastifyReply) {
@@ -137,4 +158,8 @@ function isZodError(
     "issues" in error &&
     Array.isArray(error.issues)
   );
+}
+
+function isGenerationValidationError(error: unknown): error is GenerationError {
+  return error instanceof GenerationError && error.code === "invalid_input";
 }

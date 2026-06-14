@@ -1,6 +1,7 @@
 "use client";
 
-import { ImageIcon, Loader2, X, Zap } from "lucide-react";
+import type { AimcInputMode } from "@aimc/shared";
+import { ChevronDown, ImageIcon, Loader2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -24,7 +25,7 @@ type VideoGeneratorPanelProps = {
   elementBounds: { x: number; y: number; width: number; height: number };
   canvasId: string;
   data: VideoGeneratorData;
-  excalidrawApi: any;
+  excalidrawApi: VideoGeneratorExcalidrawApi;
   projectId: string;
   canvasScrollZoom: { scrollX: number; scrollY: number; zoom: number };
   onClose: () => void;
@@ -32,13 +33,31 @@ type VideoGeneratorPanelProps = {
 
 const ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const FALLBACK_DURATION_OPTIONS = [4, 5, 6, 8, 10, 15, 18] as const;
-const RESOLUTION_OPTIONS = ["480p", "720p", "1080p"] as const;
+const RESOLUTION_OPTIONS = ["480p", "720p", "1080p", "4k", "2160p"] as const;
 const PANEL_WIDTH = 520;
 type FrameSlot = "first" | "last";
 type FrameData = { dataUrl: string; file: File };
 type VideoResolution = (typeof RESOLUTION_OPTIONS)[number];
+type CanvasElement = Record<string, unknown> & {
+  id?: string;
+  isDeleted?: boolean;
+};
+type VideoGeneratorExcalidrawApi = {
+  getSceneElements(): readonly CanvasElement[];
+  updateScene(scene: Record<string, unknown>): void;
+};
+type VideoInputModeId =
+  | "text"
+  | "image"
+  | "keyframes"
+  | "reference"
+  | "multivideo"
+  | "video";
 
 function getDurationOptions(model?: VideoModelInfo): number[] {
+  const schemaDurations = getSchemaEnum<number>(model, "duration");
+  if (schemaDurations.length) return schemaDurations.sort((a, b) => a - b);
+
   const allowedDurations = model?.limits?.allowedDurations;
   if (allowedDurations?.length) {
     return [...allowedDurations].sort((a, b) => a - b);
@@ -54,11 +73,114 @@ function getDurationOptions(model?: VideoModelInfo): number[] {
 }
 
 function getResolutionOptions(model?: VideoModelInfo): VideoResolution[] {
+  const schemaResolutions = getSchemaEnum<string>(model, "resolution").filter(
+    (value): value is VideoResolution =>
+      RESOLUTION_OPTIONS.includes(value as VideoResolution),
+  );
+  if (schemaResolutions.length) return schemaResolutions;
+
   const maxResolution = model?.limits?.maxResolution;
   if (!maxResolution) return ["720p", "1080p"];
-  const maxIndex = RESOLUTION_OPTIONS.indexOf(maxResolution as VideoResolution);
+  const normalizedMax = maxResolution === "2160p" ? "4k" : maxResolution;
+  const maxIndex = RESOLUTION_OPTIONS.indexOf(normalizedMax as VideoResolution);
   if (maxIndex < 0) return [...RESOLUTION_OPTIONS];
   return RESOLUTION_OPTIONS.slice(0, maxIndex + 1);
+}
+
+function getAspectRatioOptions(model?: VideoModelInfo): string[] {
+  const schemaRatios = getSchemaEnum<string>(model, "aspectRatio");
+  return schemaRatios.length ? schemaRatios : [...ASPECT_RATIOS];
+}
+
+function getSchemaEnum<T extends string | number>(
+  model: VideoModelInfo | undefined,
+  property: string,
+): T[] {
+  const values = model?.schema?.properties?.[property]?.enum;
+  return Array.isArray(values)
+    ? values.filter(
+        (value): value is T =>
+          typeof value === "string" || typeof value === "number",
+      )
+    : [];
+}
+
+function getInputModes(model?: VideoModelInfo): AimcInputMode[] {
+  const modes = model?.schema?.["x-aimc-ui"]?.inputModes ?? [];
+  if (modes.length) return modes;
+  if (!model) {
+    return [
+      {
+        id: "keyframes",
+        labelKey: "tools.schema.inputModes.keyframes",
+        videoMode: "keyframes",
+        minImages: 1,
+        maxImages: 2,
+        slots: ["firstFrame", "lastFrame"],
+      },
+      {
+        id: "text",
+        labelKey: "tools.schema.inputModes.text",
+        maxImages: 0,
+      },
+    ];
+  }
+  if (
+    model?.capabilities?.imageToVideo &&
+    (model.limits?.maxInputImages ?? 0) > 1
+  ) {
+    return [
+      {
+        id: "keyframes",
+        labelKey: "tools.schema.inputModes.keyframes",
+        videoMode: "keyframes",
+        minImages: 1,
+        maxImages: model.limits?.maxInputImages ?? 2,
+        slots: ["firstFrame", "lastFrame"],
+      },
+      {
+        id: "text",
+        labelKey: "tools.schema.inputModes.text",
+        maxImages: 0,
+      },
+    ];
+  }
+  if (model?.capabilities?.imageToVideo) {
+    return [
+      {
+        id: "image",
+        labelKey: "tools.schema.inputModes.image",
+        minImages: 1,
+        maxImages: 1,
+        slots: ["firstFrame"],
+      },
+      {
+        id: "text",
+        labelKey: "tools.schema.inputModes.text",
+        maxImages: 0,
+      },
+    ];
+  }
+  return [
+    {
+      id: "text",
+      labelKey: "tools.schema.inputModes.text",
+      maxImages: 0,
+    },
+  ];
+}
+
+function isInputModeSupported(
+  modes: readonly { id: string }[],
+  mode: VideoInputModeId,
+) {
+  return modes.some((item) => item.id === mode);
+}
+
+function getDefaultInputMode(
+  modes: readonly { id: string }[],
+): VideoInputModeId {
+  return (modes[0]?.id as VideoInputModeId | undefined) ?? "text";
 }
 
 function normalizeDuration(duration: number, options: number[]) {
@@ -74,6 +196,9 @@ function normalizeResolution(resolution: string, options: VideoResolution[]) {
 function FrameUploadTile({
   label,
   inputLabel,
+  previewLabel,
+  uploadingLabel,
+  removeLabel,
   frame,
   loading,
   disabled,
@@ -83,6 +208,9 @@ function FrameUploadTile({
 }: {
   label: string;
   inputLabel: string;
+  previewLabel: string;
+  uploadingLabel: string;
+  removeLabel: string;
   frame: FrameData | null;
   loading: boolean;
   disabled: boolean;
@@ -111,7 +239,7 @@ function FrameUploadTile({
           <>
             <img
               src={frame.dataUrl}
-              alt={`${label}预览`}
+              alt={previewLabel}
               className="absolute inset-0 h-full w-full object-cover"
             />
             <div className="absolute inset-x-0 bottom-0 bg-background/80 px-1.5 py-1 text-center text-[11px] font-medium text-foreground backdrop-blur">
@@ -121,7 +249,7 @@ function FrameUploadTile({
         ) : loading ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/70" />
-            <span className="whitespace-nowrap">{label}上传中</span>
+            <span className="whitespace-nowrap">{uploadingLabel}</span>
           </>
         ) : (
           <>
@@ -133,7 +261,8 @@ function FrameUploadTile({
       {frame && !disabled && (
         <button
           type="button"
-          aria-label={`移除${label}`}
+          aria-label={removeLabel}
+          title={removeLabel}
           onClick={onClear}
           className="absolute right-1 top-1 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-background/85 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition-opacity hover:text-foreground group-hover:opacity-100"
         >
@@ -165,8 +294,10 @@ export function VideoGeneratorPanel({
   const [models, setModels] = useState<VideoModelInfo[]>([]);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showParamsPopover, setShowParamsPopover] = useState(false);
+  const [inputMode, setInputMode] = useState<VideoInputModeId>("text");
   const [firstFrame, setFirstFrame] = useState<FrameData | null>(null);
   const [lastFrame, setLastFrame] = useState<FrameData | null>(null);
+  const [referenceFrame, setReferenceFrame] = useState<FrameData | null>(null);
   const [frameLoading, setFrameLoading] = useState<Record<FrameSlot, boolean>>({
     first: false,
     last: false,
@@ -193,7 +324,7 @@ export function VideoGeneratorPanel({
     return () => {
       cancelled = true;
     };
-  }, [excalidrawApi, elementId]);
+  }, []);
 
   useEffect(() => {
     if (models.length === 0) return;
@@ -232,7 +363,7 @@ export function VideoGeneratorPanel({
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
-  }, [prompt]);
+  });
 
   const panelPosition = calculateCenteredGeneratorPanelPosition({
     elementBounds,
@@ -241,6 +372,12 @@ export function VideoGeneratorPanel({
   });
 
   const currentModel = models.find((item) => item.id === model);
+  const inputModes = useMemo(() => getInputModes(currentModel), [currentModel]);
+  const currentInputMode = inputModes.find((item) => item.id === inputMode);
+  const aspectRatioOptions = useMemo(
+    () => getAspectRatioOptions(currentModel),
+    [currentModel],
+  );
   const durationOptions = useMemo(
     () => getDurationOptions(currentModel),
     [currentModel],
@@ -254,16 +391,31 @@ export function VideoGeneratorPanel({
     if (!currentModel) return;
     const nextDuration = normalizeDuration(duration, durationOptions);
     const nextResolution = normalizeResolution(resolution, resolutionOptions);
-    if (nextDuration === duration && nextResolution === resolution) return;
+    const nextAspectRatio = aspectRatioOptions.includes(aspectRatio)
+      ? aspectRatio
+      : (aspectRatioOptions[0] ?? aspectRatio);
+    if (
+      nextDuration === duration &&
+      nextResolution === resolution &&
+      nextAspectRatio === aspectRatio
+    ) {
+      return;
+    }
 
     if (nextDuration !== duration) setDuration(nextDuration);
     if (nextResolution !== resolution) setResolution(nextResolution);
+    if (nextAspectRatio !== aspectRatio) setAspectRatio(nextAspectRatio);
 
     updateVideoGeneratorElement(excalidrawApi, elementId, {
       ...(nextDuration !== duration ? { duration: nextDuration } : {}),
       ...(nextResolution !== resolution ? { resolution: nextResolution } : {}),
+      ...(nextAspectRatio !== aspectRatio
+        ? { aspectRatio: nextAspectRatio }
+        : {}),
     });
   }, [
+    aspectRatio,
+    aspectRatioOptions,
     currentModel,
     duration,
     durationOptions,
@@ -272,6 +424,21 @@ export function VideoGeneratorPanel({
     resolution,
     resolutionOptions,
   ]);
+
+  useEffect(() => {
+    if (!currentModel?.schema && inputMode === "text") {
+      const defaultMode = getDefaultInputMode(inputModes);
+      if (defaultMode !== "text") {
+        setInputMode(defaultMode);
+        return;
+      }
+    }
+    if (isInputModeSupported(inputModes, inputMode)) return;
+    setInputMode(getDefaultInputMode(inputModes));
+    setFirstFrame(null);
+    setLastFrame(null);
+    setReferenceFrame(null);
+  }, [currentModel, inputModes, inputMode]);
 
   const handleAspectRatioChange = useCallback(
     (ratio: string) => {
@@ -305,6 +472,13 @@ export function VideoGeneratorPanel({
     [excalidrawApi, elementId],
   );
 
+  const handleInputModeChange = useCallback((nextMode: VideoInputModeId) => {
+    setInputMode(nextMode);
+    if (nextMode !== "keyframes") setLastFrame(null);
+    if (nextMode !== "reference") setReferenceFrame(null);
+    if (nextMode === "text" || nextMode === "reference") setFirstFrame(null);
+  }, []);
+
   const handleFrameUpload = useCallback(
     (
       type: FrameSlot,
@@ -321,13 +495,13 @@ export function VideoGeneratorPanel({
         };
         reader.onerror = () => {
           setFrameLoading((current) => ({ ...current, [type]: false }));
-          setError("图片上传失败，请重新选择。");
+          setError(t("tools.videoPanel.imageUploadFailed"));
         };
         reader.readAsDataURL(file);
         e.target.value = "";
       };
     },
-    [],
+    [t],
   );
 
   const handleGenerate = useCallback(async () => {
@@ -350,10 +524,16 @@ export function VideoGeneratorPanel({
 
     try {
       const inputImages: string[] = [];
-      if (firstFrame) inputImages.push(firstFrame.dataUrl);
-      if (lastFrame) inputImages.push(lastFrame.dataUrl);
-      const videoMode =
-        firstFrame && lastFrame ? ("keyframes" as const) : undefined;
+      if (inputMode === "keyframes") {
+        if (firstFrame) inputImages.push(firstFrame.dataUrl);
+        if (lastFrame) inputImages.push(lastFrame.dataUrl);
+      } else if (inputMode === "reference") {
+        if (referenceFrame) inputImages.push(referenceFrame.dataUrl);
+      } else if (inputMode === "image" || inputMode === "multivideo") {
+        if (firstFrame) inputImages.push(firstFrame.dataUrl);
+        if (lastFrame) inputImages.push(lastFrame.dataUrl);
+      }
+      const videoMode = currentInputMode?.videoMode;
 
       const result = await generateVideoDirect(prompt.trim(), {
         model,
@@ -362,6 +542,7 @@ export function VideoGeneratorPanel({
         aspectRatio,
         ...(inputImages.length ? { inputImages } : {}),
         ...(videoMode ? { videoMode } : {}),
+        enableAudio: false,
         projectId,
         canvasId,
         onJobCreated: (jobId) => {
@@ -377,7 +558,7 @@ export function VideoGeneratorPanel({
 
       const currentElements = excalidrawApi.getSceneElements();
       const generatorElement = currentElements.find(
-        (el: any) => el.id === elementId,
+        (el) => el.id === elementId,
       );
       if (!generatorElement || generatorElement.isDeleted) return;
 
@@ -388,34 +569,35 @@ export function VideoGeneratorPanel({
 
       const videoUrl =
         normalizeLocalAssetStorageUrl(result.url, result.assetId) ?? result.url;
-      const newElements = convertToExcalidrawElements([
-        {
-          type: "rectangle",
-          link: null,
-          x: elementBounds.x,
-          y: elementBounds.y,
-          width: elementBounds.width,
-          height: elementBounds.height,
-          strokeColor: "#111827",
-          backgroundColor: "#000000",
-          fillStyle: "solid",
-          roughness: 0,
-          customData: {
-            isVideo: true,
-            assetId: result.assetId,
-            mimeType: result.mimeType,
-            durationSeconds: result.durationSeconds,
-            title: prompt.trim().slice(0, 60),
-            prompt: prompt.trim(),
-            videoUrl,
-            model,
-            aspectRatio,
-            resolution,
-          },
-        } as any,
-      ]);
+      const videoElement = {
+        type: "rectangle",
+        link: null,
+        x: elementBounds.x,
+        y: elementBounds.y,
+        width: elementBounds.width,
+        height: elementBounds.height,
+        strokeColor: "#111827",
+        backgroundColor: "#000000",
+        fillStyle: "solid",
+        roughness: 0,
+        customData: {
+          isVideo: true,
+          assetId: result.assetId,
+          mimeType: result.mimeType,
+          durationSeconds: result.durationSeconds,
+          title: prompt.trim().slice(0, 60),
+          prompt: prompt.trim(),
+          videoUrl,
+          model,
+          aspectRatio,
+          resolution,
+        },
+      } as unknown as NonNullable<
+        Parameters<typeof convertToExcalidrawElements>[0]
+      >[number];
+      const newElements = convertToExcalidrawElements([videoElement]);
 
-      const elements = currentElements.map((el: any) =>
+      const elements = currentElements.map((el) =>
         el.id === elementId ? { ...el, isDeleted: true } : el,
       );
       excalidrawApi.updateScene({
@@ -433,14 +615,14 @@ export function VideoGeneratorPanel({
       console.error("[video-gen] Generation error:", err);
       const handled = handleGenerationError(err);
       if (!handled && mountedRef.current) {
-        setError("视频生成失败，请重试或更换模型。");
+        setError(t("tools.videoPanel.generationFailed"));
       }
       if (mountedRef.current) {
         setLoading(false);
       }
       updateVideoGeneratorElement(excalidrawApi, elementId, {
         status: "error",
-        errorMessage: "生成失败",
+        errorMessage: t("tools.generateFailed"),
       });
     }
   }, [
@@ -452,14 +634,27 @@ export function VideoGeneratorPanel({
     resolution,
     firstFrame,
     lastFrame,
+    referenceFrame,
+    inputMode,
+    currentInputMode,
+    projectId,
+    canvasId,
     excalidrawApi,
     elementId,
     elementBounds,
     onClose,
     handleGenerationError,
+    t,
   ]);
 
   const paramsLabel = `${aspectRatio} · ${duration}s`;
+  const showModePicker = inputModes.length > 1;
+  const showFirstFrame =
+    inputMode === "image" ||
+    inputMode === "keyframes" ||
+    inputMode === "multivideo";
+  const showLastFrame = inputMode === "keyframes" || inputMode === "multivideo";
+  const showReferenceFrame = inputMode === "reference";
 
   return createPortal(
     <div
@@ -471,28 +666,81 @@ export function VideoGeneratorPanel({
       onWheel={(e) => e.stopPropagation()}
     >
       <div className="px-5 pb-3 pt-4">
-        <div className="mb-4 flex items-center gap-2.5">
-          <FrameUploadTile
-            label="首帧"
-            inputLabel="上传首帧"
-            frame={firstFrame}
-            loading={frameLoading.first}
-            disabled={loading}
-            inputRef={firstFrameInputRef}
-            onUpload={handleFrameUpload("first", setFirstFrame)}
-            onClear={() => setFirstFrame(null)}
-          />
-          <FrameUploadTile
-            label="尾帧"
-            inputLabel="上传尾帧"
-            frame={lastFrame}
-            loading={frameLoading.last}
-            disabled={loading}
-            inputRef={lastFrameInputRef}
-            onUpload={handleFrameUpload("last", setLastFrame)}
-            onClear={() => setLastFrame(null)}
-          />
-        </div>
+        {(showModePicker ||
+          showFirstFrame ||
+          showLastFrame ||
+          showReferenceFrame) && (
+          <div className="mb-4 space-y-3">
+            {showModePicker && (
+              <div className="flex flex-wrap gap-1.5">
+                {inputModes.map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    disabled={loading}
+                    onClick={() =>
+                      handleInputModeChange(mode.id as VideoInputModeId)
+                    }
+                    className={`cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                      inputMode === mode.id
+                        ? "bg-foreground text-background"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                  >
+                    {t(mode.labelKey)}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-2.5">
+              {showFirstFrame && (
+                <FrameUploadTile
+                  label={t("tools.videoPanel.firstFrame")}
+                  inputLabel={t("tools.videoPanel.uploadFirstFrame")}
+                  previewLabel={t("tools.videoPanel.firstFramePreview")}
+                  uploadingLabel={t("tools.videoPanel.firstFrameUploading")}
+                  removeLabel={t("tools.videoPanel.removeFrame")}
+                  frame={firstFrame}
+                  loading={frameLoading.first}
+                  disabled={loading}
+                  inputRef={firstFrameInputRef}
+                  onUpload={handleFrameUpload("first", setFirstFrame)}
+                  onClear={() => setFirstFrame(null)}
+                />
+              )}
+              {showLastFrame && (
+                <FrameUploadTile
+                  label={t("tools.videoPanel.lastFrame")}
+                  inputLabel={t("tools.videoPanel.uploadLastFrame")}
+                  previewLabel={t("tools.videoPanel.lastFramePreview")}
+                  uploadingLabel={t("tools.videoPanel.lastFrameUploading")}
+                  removeLabel={t("tools.videoPanel.removeFrame")}
+                  frame={lastFrame}
+                  loading={frameLoading.last}
+                  disabled={loading}
+                  inputRef={lastFrameInputRef}
+                  onUpload={handleFrameUpload("last", setLastFrame)}
+                  onClear={() => setLastFrame(null)}
+                />
+              )}
+              {showReferenceFrame && (
+                <FrameUploadTile
+                  label={t("tools.videoPanel.referenceImage")}
+                  inputLabel={t("tools.videoPanel.uploadReferenceImage")}
+                  previewLabel={t("tools.videoPanel.referenceImagePreview")}
+                  uploadingLabel={t("tools.videoPanel.referenceImageUploading")}
+                  removeLabel={t("tools.videoPanel.removeFrame")}
+                  frame={referenceFrame}
+                  loading={frameLoading.first}
+                  disabled={loading}
+                  inputRef={firstFrameInputRef}
+                  onUpload={handleFrameUpload("first", setReferenceFrame)}
+                  onClear={() => setReferenceFrame(null)}
+                />
+              )}
+            </div>
+          </div>
+        )}
 
         <textarea
           ref={textareaRef}
@@ -504,7 +752,7 @@ export function VideoGeneratorPanel({
               void handleGenerate();
             }
           }}
-          placeholder="描述你想要的视频镜头、动作、节奏与画面氛围"
+          placeholder={t("tools.videoPanel.placeholder")}
           disabled={loading}
           style={{ scrollbarWidth: "none" }}
           className="min-h-[88px] max-h-[140px] w-full resize-none border-none bg-transparent p-0 text-[15px] leading-6 text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-scrollbar]:hidden"
@@ -529,13 +777,7 @@ export function VideoGeneratorPanel({
                     ? `${currentModel.displayName} · ${formatProviderLabel(currentModel.provider)}`
                     : model}
                 </span>
-                <svg
-                  className="h-3.5 w-3.5 text-muted-foreground"
-                  viewBox="0 0 12 24"
-                  fill="currentColor"
-                >
-                  <path d="M8.546 10.33a.4.4 0 0 1 .566 0l.424.424a.4.4 0 0 1 0 .566l-3.041 3.041a.7.7 0 0 1-.99 0l-3.04-3.04a.4.4 0 0 1 0-.567l.423-.424a.4.4 0 0 1 .567 0L6 12.876z" />
-                </svg>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
               {showModelDropdown && (
                 <div className="absolute bottom-full left-0 z-50 mb-2 w-[280px] overflow-hidden rounded-2xl border border-border bg-popover shadow-card">
@@ -581,10 +823,10 @@ export function VideoGeneratorPanel({
                   <div className="space-y-3">
                     <div>
                       <div className="mb-2 text-xs font-medium text-muted-foreground">
-                        比例
+                        {t("tools.videoPanel.aspectRatio")}
                       </div>
                       <div className="flex gap-2">
-                        {ASPECT_RATIOS.map((ratio) => (
+                        {aspectRatioOptions.map((ratio) => (
                           <button
                             key={ratio}
                             type="button"
@@ -603,7 +845,7 @@ export function VideoGeneratorPanel({
 
                     <div>
                       <div className="mb-2 text-xs font-medium text-muted-foreground">
-                        时长
+                        {t("tools.videoPanel.duration")}
                       </div>
                       <div className="flex gap-2">
                         {durationOptions.map((value) => (
@@ -625,7 +867,7 @@ export function VideoGeneratorPanel({
 
                     <div>
                       <div className="mb-2 text-xs font-medium text-muted-foreground">
-                        分辨率
+                        {t("tools.videoPanel.resolution")}
                       </div>
                       <div className="flex gap-2">
                         {resolutionOptions.map((value) => (
@@ -665,7 +907,7 @@ export function VideoGeneratorPanel({
             disabled={loading || !prompt.trim()}
             className="inline-flex h-10 cursor-pointer items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? "生成中..." : "生成视频"}
+            {loading ? t("tools.generating") : t("tools.videoPanel.generate")}
           </button>
         </div>
       </div>

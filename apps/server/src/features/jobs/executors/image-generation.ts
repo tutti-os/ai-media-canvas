@@ -4,6 +4,7 @@ import type { ServerEnv } from "../../../config/env.js";
 import { FALLBACK_IMAGE_MODEL } from "../../../generation/default-models.js";
 import { loadGeneratedAsset } from "../../../generation/generated-asset.js";
 import { generateImage } from "../../../generation/image-generation.js";
+import { validateImageGenerationParams } from "../../../generation/model-schemas.js";
 import { resolveImageProviderName } from "../../../generation/providers/registry.js";
 import { GenerationError } from "../../../generation/utils.js";
 import type { LocalStore } from "../../../local/store.js";
@@ -19,6 +20,15 @@ export async function executeImageGenerationJob(
   }
   const payload = job.payload as ImageGenerationPayload;
   const model = payload.model ?? FALLBACK_IMAGE_MODEL;
+  validateImageGenerationParams({
+    prompt: payload.prompt,
+    model,
+    ...(payload.aspect_ratio ? { aspectRatio: payload.aspect_ratio } : {}),
+    ...(payload.quality ? { quality: payload.quality } : {}),
+    ...(payload.input_images ? { inputImages: payload.input_images } : {}),
+    ...(payload.size ? { size: payload.size } : {}),
+    ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
+  });
   const provider = resolveImageProviderName(model);
   const generated = await generateImage(provider, {
     prompt: payload.prompt,

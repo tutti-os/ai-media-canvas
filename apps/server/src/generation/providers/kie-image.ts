@@ -5,7 +5,11 @@ import type {
   ModelInfo,
   OutputFormat,
 } from "../types.js";
-import { GenerationError, aspectRatioToDimensions } from "../utils.js";
+import {
+  GenerationError,
+  aspectRatioToDimensions,
+  fetchAsBase64,
+} from "../utils.js";
 import {
   KieClient,
   type KieMarketCreateTaskPayload,
@@ -212,7 +216,14 @@ export class KieImageProvider implements ImageProvider {
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
-    const request = resolveKieImageRequest(params);
+    const inputImages = await prepareKieInputImages(
+      this.client,
+      params.inputImages,
+    );
+    const request = resolveKieImageRequest({
+      ...params,
+      ...(inputImages ? { inputImages } : {}),
+    });
 
     try {
       const taskId = await this.client.createMarketTask({
@@ -318,6 +329,38 @@ function requireSingleInputImage(model: string, inputImages: string[]): string {
 
 function getMimeType(outputFormat: "png" | "jpg") {
   return outputFormat === "jpg" ? "image/jpeg" : "image/png";
+}
+
+async function prepareKieInputImages(
+  client: KieClient,
+  inputImages: string[] | undefined,
+) {
+  if (!inputImages?.length) return inputImages;
+  return Promise.all(
+    inputImages.map(async (image, index) => {
+      if (isKieReachableUrl(image)) return image;
+      const { data, mimeType } = await fetchAsBase64("kie-image", image);
+      const extension = mimeType.includes("jpeg")
+        ? "jpg"
+        : (mimeType.split("/")[1] ?? "png");
+      return client.uploadBase64File({
+        base64Data: `data:${mimeType};base64,${data}`,
+        fileName: `aimc-kie-image-${Date.now()}-${index}.${extension}`,
+      });
+    }),
+  );
+}
+
+function isKieReachableUrl(value: string) {
+  if (!value.startsWith("http://") && !value.startsWith("https://")) {
+    return false;
+  }
+  try {
+    const url = new URL(value);
+    return !["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+  } catch {
+    return false;
+  }
 }
 
 function delay(ms: number) {

@@ -55,6 +55,7 @@ const videoCases: SmokeCase[] = [
   videoCase("video-runway-i2v", "kie/runway", [VIDEO_REFERENCE_URL]),
   videoCase("video-grok-imagine-t2v", "kie/grok-imagine", [], {
     duration: 6,
+    resolution: "480p",
   }),
   videoCase(
     "video-grok-imagine-i2v",
@@ -62,10 +63,17 @@ const videoCases: SmokeCase[] = [
     [VIDEO_REFERENCE_URL],
     {
       duration: 6,
+      resolution: "480p",
     },
   ),
   videoCase("video-hailuo-t2v", "kie/hailuo"),
   videoCase("video-hailuo-i2v", "kie/hailuo", [VIDEO_REFERENCE_URL]),
+  videoCase(
+    "video-hailuo-keyframes",
+    "kie/hailuo",
+    [VIDEO_REFERENCE_URL, VIDEO_REFERENCE_URL],
+    { videoMode: "keyframes" },
+  ),
   videoCase("video-veo-3-1-t2v", "kie/veo-3.1", [], {
     duration: 8,
     resolution: "1080p",
@@ -78,6 +86,16 @@ const videoCases: SmokeCase[] = [
   videoCase("video-kling-2-6-i2v", "kie/kling-2.6", [VIDEO_REFERENCE_URL]),
   videoCase("video-seedance-2-t2v", "kie/seedance-2"),
   videoCase("video-seedance-2-i2v", "kie/seedance-2", [VIDEO_REFERENCE_URL]),
+  videoCase(
+    "video-seedance-2-reference",
+    "kie/seedance-2",
+    [VIDEO_REFERENCE_URL],
+    {
+      videoMode: "reference",
+      duration: 10,
+      resolution: "1080p",
+    },
+  ),
   videoCase("video-happyhorse-1-t2v", "kie/happyhorse-1"),
   videoCase("video-happyhorse-1-i2v", "kie/happyhorse-1", [
     VIDEO_REFERENCE_URL,

@@ -35,5 +35,6 @@ export async function listImageModels(
     iconUrl: model.iconUrl,
     provider: model.provider,
     accessible: true,
+    schema: model.schema,
   }));
 }

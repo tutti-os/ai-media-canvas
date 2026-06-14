@@ -1,6 +1,7 @@
 import { GenerationError } from "../utils.js";
 
 const DEFAULT_KIE_API_BASE = "https://api.kie.ai";
+const DEFAULT_KIE_UPLOAD_API_BASE = "https://kieai.redpandaai.co";
 
 export type KieClientOptions = {
   apiBase?: string;
@@ -53,6 +54,7 @@ type KieApiResponse<T> = {
 
 export class KieClient {
   private readonly apiBase: string;
+  private readonly uploadApiBase: string;
 
   constructor(
     private readonly apiKey: string,
@@ -62,6 +64,10 @@ export class KieClient {
       /\/+$/,
       "",
     );
+    this.uploadApiBase =
+      this.apiBase === DEFAULT_KIE_API_BASE
+        ? DEFAULT_KIE_UPLOAD_API_BASE
+        : this.apiBase;
   }
 
   async createMarketTask(payload: KieMarketCreateTaskPayload): Promise<string> {
@@ -121,13 +127,43 @@ export class KieClient {
     );
   }
 
+  async uploadBase64File(input: {
+    base64Data: string;
+    fileName: string;
+    uploadPath?: string;
+  }): Promise<string> {
+    const data = await this.requestJson<{
+      downloadUrl?: string;
+      url?: string;
+    }>(
+      "/api/file-base64-upload",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          base64Data: input.base64Data,
+          uploadPath: input.uploadPath ?? "aimc/kie-inputs",
+          fileName: input.fileName,
+        }),
+      },
+      this.uploadApiBase,
+    );
+    const url = data?.downloadUrl ?? data?.url;
+    if (typeof url === "string" && url.trim()) return url;
+    throw new GenerationError(
+      "kie",
+      "api_error",
+      "Kie file upload returned no downloadUrl.",
+    );
+  }
+
   private async requestJson<T>(
     path: string,
     init: RequestInit = {},
+    apiBase = this.apiBase,
   ): Promise<T> {
     let response: Response;
     try {
-      response = await fetch(`${this.apiBase}${path}`, {
+      response = await fetch(`${apiBase}${path}`, {
         ...init,
         headers: {
           Accept: "application/json",

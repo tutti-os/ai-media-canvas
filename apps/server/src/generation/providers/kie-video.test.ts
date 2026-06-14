@@ -312,6 +312,65 @@ describe("KieVideoProvider", () => {
     ).toEqual(expect.objectContaining(expected));
   });
 
+  it.each([
+    [
+      "kie/veo-3.1",
+      {
+        kind: "veo",
+        payload: {
+          prompt: "city flythrough",
+          imageUrls: ["https://example.com/ref.png"],
+          model: "veo3_fast",
+          aspect_ratio: "16:9",
+          enableFallback: false,
+          enableTranslation: true,
+          generationType: "REFERENCE_2_VIDEO",
+        },
+      },
+    ],
+    [
+      "kie/seedance-2",
+      {
+        kind: "market",
+        model: "bytedance/seedance-2",
+        input: {
+          prompt: "city flythrough",
+          reference_image_urls: ["https://example.com/ref.png"],
+          generate_audio: false,
+          resolution: "720p",
+          aspect_ratio: "16:9",
+          duration: 6,
+          web_search: false,
+        },
+      },
+    ],
+    [
+      "kie/happyhorse-1",
+      {
+        kind: "market",
+        model: "happyhorse/reference-to-video",
+        input: {
+          prompt: "city flythrough",
+          reference_image: ["https://example.com/ref.png"],
+          resolution: "720p",
+          duration: 6,
+        },
+      },
+    ],
+  ])("maps %s reference image mode", (model, expected) => {
+    expect(
+      resolveKieVideoRequest({
+        model,
+        prompt: "city flythrough",
+        inputImages: ["https://example.com/ref.png"],
+        videoMode: "reference",
+        aspectRatio: "16:9",
+        duration: 6,
+        resolution: "720p",
+      }),
+    ).toEqual(expect.objectContaining(expected));
+  });
+
   it("rejects invalid Runway 10s 1080p requests", () => {
     expect(() =>
       resolveKieVideoRequest({

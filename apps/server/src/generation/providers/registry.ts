@@ -1,3 +1,7 @@
+import {
+  getImageGenerationModelSchema,
+  getVideoGenerationModelSchema,
+} from "../model-schema-catalog.js";
 import type {
   ImageProvider,
   ModelInfo,
@@ -20,7 +24,11 @@ export function registerVideoProvider(provider: VideoProvider): void {
 export function getImageProvider(name: string): ImageProvider {
   const provider = imageProviders.get(name);
   if (!provider) {
-    throw new GenerationError(name, "provider_not_found", `No image provider registered: ${name}`);
+    throw new GenerationError(
+      name,
+      "provider_not_found",
+      `No image provider registered: ${name}`,
+    );
   }
   return provider;
 }
@@ -28,7 +36,11 @@ export function getImageProvider(name: string): ImageProvider {
 export function getVideoProvider(name: string): VideoProvider {
   const provider = videoProviders.get(name);
   if (!provider) {
-    throw new GenerationError(name, "provider_not_found", `No video provider registered: ${name}`);
+    throw new GenerationError(
+      name,
+      "provider_not_found",
+      `No video provider registered: ${name}`,
+    );
   }
   return provider;
 }
@@ -45,14 +57,22 @@ export interface AvailableVideoModel extends VideoModelInfo {
 /** Returns all image models from all registered providers. */
 export function getAvailableImageModels(): AvailableModel[] {
   return [...imageProviders.values()].flatMap((p) =>
-    p.models.map((m) => ({ ...m, provider: p.name })),
+    p.models.map((m) => ({
+      ...m,
+      provider: p.name,
+      schema: m.schema ?? getImageGenerationModelSchema(m),
+    })),
   );
 }
 
 /** Returns all video models from all registered providers. */
 export function getAvailableVideoModels(): AvailableVideoModel[] {
   return [...videoProviders.values()].flatMap((p) =>
-    p.models.map((m) => ({ ...m, provider: p.name })),
+    p.models.map((m) => ({
+      ...m,
+      provider: p.name,
+      schema: m.schema ?? getVideoGenerationModelSchema(m),
+    })),
   );
 }
 

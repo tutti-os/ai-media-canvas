@@ -33,7 +33,6 @@ import {
   isVideoUrl,
   normalizeVideoCanvasElements,
 } from "../lib/canvas-elements";
-import { toRuntimeAssetUrl } from "../lib/local-assets";
 import {
   type ImageGeneratorData,
   createImageGeneratorElement,
@@ -47,6 +46,7 @@ import {
   isVideoGeneratorElement,
 } from "../lib/canvas-video-generator";
 import { isExcalidrawContextMenuTarget } from "../lib/excalidraw-context-menu";
+import { toRuntimeAssetUrl } from "../lib/local-assets";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
@@ -172,6 +172,7 @@ type CanvasToolAppState = {
 };
 
 type CanvasToolExcalidrawApi = {
+  addFiles(files: Record<string, unknown>[]): void;
   getAppState(): CanvasToolAppState;
   getSceneElements(): readonly CanvasToolElement[];
   onChange(
@@ -980,18 +981,21 @@ export function CanvasToolMenu({
       </div>
 
       {/* Image Generator Panel -- floats below the selected generator node */}
-      {activeGeneratorId && generatorData && generatorBounds && (
-        <ImageGeneratorPanel
-          elementId={activeGeneratorId}
-          elementBounds={generatorBounds}
-          data={generatorData}
-          excalidrawApi={excalidrawApi}
-          canvasScrollZoom={canvasScrollZoom}
-          onClose={handleCloseGenerator}
-        />
-      )}
+      {activeGeneratorId &&
+        generatorData &&
+        generatorBounds &&
+        excalidrawApi && (
+          <ImageGeneratorPanel
+            elementId={activeGeneratorId}
+            elementBounds={generatorBounds}
+            data={generatorData}
+            excalidrawApi={excalidrawApi}
+            canvasScrollZoom={canvasScrollZoom}
+            onClose={handleCloseGenerator}
+          />
+        )}
 
-      {activeVideoGenId && videoGenData && videoGenBounds && (
+      {activeVideoGenId && videoGenData && videoGenBounds && excalidrawApi && (
         <VideoGeneratorPanel
           elementId={activeVideoGenId}
           elementBounds={videoGenBounds}
