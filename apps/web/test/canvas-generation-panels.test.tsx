@@ -401,7 +401,7 @@ describe("canvas generation panels", () => {
     expect(excalidrawApi.updateScene).not.toHaveBeenCalled();
   });
 
-  it("deletes an image generator card from the panel", async () => {
+  it("does not show a delete button in the image generator panel", async () => {
     const onClose = vi.fn();
     const excalidrawApi = createExcalidrawApiStub([
       {
@@ -431,22 +431,23 @@ describe("canvas generation panels", () => {
       </ToastProvider>,
     );
 
-    await userEvent.click(
-      await screen.findByRole("button", {
+    await screen.findByPlaceholderText("今天我们要创作什么");
+    expect(
+      screen.queryByRole("button", {
         name: "删除图片生成器卡片",
       }),
+    ).not.toBeInTheDocument();
+    expect(excalidrawApi.updateScene).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        elements: [
+          expect.objectContaining({
+            id: "el-image",
+            isDeleted: true,
+          }),
+        ],
+      }),
     );
-
-    expect(excalidrawApi.updateScene).toHaveBeenCalledWith({
-      elements: [
-        expect.objectContaining({
-          id: "el-image",
-          isDeleted: true,
-        }),
-      ],
-      captureUpdate: "IMMEDIATELY",
-    });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("omits the hard-coded storage copy in the video generator", async () => {

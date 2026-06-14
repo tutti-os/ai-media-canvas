@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  ChevronDown,
-  ImageIcon,
-  Loader2,
-  Sparkles,
-  Trash2,
-  X,
-} from "lucide-react";
+import { ChevronDown, ImageIcon, Loader2, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -20,7 +13,6 @@ import {
 import { calculateCenteredGeneratorPanelPosition } from "../../lib/canvas-generator-panel-position";
 import {
   type ImageGeneratorData,
-  deleteImageGeneratorElement,
   resizeImageGeneratorElement,
   updateImageGeneratorElement,
 } from "../../lib/canvas-image-generator";
@@ -254,12 +246,6 @@ export function ImageGeneratorPanel({
     },
     [excalidrawApi, elementId],
   );
-
-  const handleDelete = useCallback(() => {
-    abortRef.current?.abort();
-    deleteImageGeneratorElement(excalidrawApi, elementId);
-    onClose();
-  }, [excalidrawApi, elementId, onClose]);
 
   const handleReferenceUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -541,16 +527,6 @@ export function ImageGeneratorPanel({
         </div>
 
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            aria-label={t("tools.imagePanel.deleteCard")}
-            title={t("tools.imagePanel.deleteCard")}
-            onClick={handleDelete}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-
           <div className="relative">
             <button
               type="button"
