@@ -46,4 +46,19 @@ describe("loadServerEnv", () => {
     expect(env.kieBaseUrl).toBe("https://kie-api.example");
     expect(env.kieUploadBaseUrl).toBe("https://kie-upload.example");
   });
+
+  it("loads Codex Imagegen configuration", () => {
+    const env = loadServerEnv(
+      {},
+      {
+        AIMC_CODEX_IMAGEGEN_ENABLED: "true",
+        AIMC_CODEX_IMAGEGEN_TIMEOUT_MS: "450000",
+        AIMC_CODEX_HOME: "/tmp/codex-home",
+      },
+    );
+
+    expect(env.codexImagegenEnabled).toBe(true);
+    expect(env.codexImagegenTimeoutMs).toBe(450000);
+    expect(env.codexImagegenCodexHome).toBe("/tmp/codex-home");
+  });
 });

@@ -130,6 +130,14 @@ function getExplicitImageSchema(modelId: string) {
       outputFormats: ["png", "jpg"],
     });
   }
+  if (modelId === "codex/gpt-image-2") {
+    return imageSchema({
+      maxInputImages: 0,
+      outputFormats: ["png"],
+      seed: false,
+      size: false,
+    });
+  }
   return undefined;
 }
 

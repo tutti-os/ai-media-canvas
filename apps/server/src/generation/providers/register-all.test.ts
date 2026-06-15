@@ -72,4 +72,43 @@ describe("registerAllProviders", () => {
       }),
     );
   });
+
+  it("registers Codex Imagegen models only when enabled and ready", () => {
+    registerAllProviders(
+      loadServerEnv({ codexImagegenEnabled: true }, {}),
+      {
+        detectCodexImagegenCapability: () => ({
+          ready: true,
+          reasons: [],
+          checkedAt: "2026-06-15T00:00:00.000Z",
+        }),
+      },
+    );
+
+    expect(getAvailableImageModels()).toContainEqual(
+      expect.objectContaining({
+        id: "codex/gpt-image-2",
+        provider: "codex-imagegen",
+      }),
+    );
+  });
+
+  it("does not register Codex Imagegen when capability detection fails", () => {
+    registerAllProviders(
+      loadServerEnv({ codexImagegenEnabled: true }, {}),
+      {
+        detectCodexImagegenCapability: () => ({
+          ready: false,
+          reasons: ["codex_not_logged_in"],
+          checkedAt: "2026-06-15T00:00:00.000Z",
+        }),
+      },
+    );
+
+    expect(getAvailableImageModels()).not.toContainEqual(
+      expect.objectContaining({
+        id: "codex/gpt-image-2",
+      }),
+    );
+  });
 });

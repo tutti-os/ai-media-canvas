@@ -8,6 +8,11 @@
 import type { ServerEnv } from "../../config/env.js";
 import { AgnesImageProvider } from "./agnes-image.js";
 import { AgnesVideoProvider } from "./agnes-video.js";
+import { CodexImagegenProvider } from "./codex-imagegen.js";
+import {
+  detectCodexImagegenCapability,
+  type CodexImagegenCapability,
+} from "./codex-imagegen-capability.js";
 import { GoogleImageProvider } from "./google-image.js";
 import { GoogleVertexImageProvider } from "./google-vertex-image.js";
 import { GoogleVertexVideoProvider } from "./google-vertex-video.js";
@@ -30,7 +35,14 @@ import { VolcesImageProvider } from "./volces-image.js";
  * keeping the behaviour identical to the previous inline registration while
  * ensuring every process gets the full set.
  */
-export function registerAllProviders(env: ServerEnv): void {
+export function registerAllProviders(
+  env: ServerEnv,
+  options: {
+    detectCodexImagegenCapability?: (
+      env: ServerEnv,
+    ) => CodexImagegenCapability;
+  } = {},
+): void {
   if (env.agnesApiKey) {
     registerImageProvider(
       new AgnesImageProvider(env.agnesApiKey, env.agnesBaseUrl),
@@ -82,6 +94,32 @@ export function registerAllProviders(env: ServerEnv): void {
     registerImageProvider(
       new OpenAIImageProvider(env.openAIApiKey, env.openAIApiBase),
     );
+  }
+
+  if (env.codexImagegenEnabled) {
+    const capability = options.detectCodexImagegenCapability
+      ? options.detectCodexImagegenCapability(env)
+      : detectCodexImagegenCapability({
+          enabled: true,
+          ...(env.codexImagegenCodexHome
+            ? { codexHome: env.codexImagegenCodexHome }
+            : {}),
+          ...(env.codexImagegenTimeoutMs
+            ? { timeoutMs: env.codexImagegenTimeoutMs }
+            : {}),
+        });
+    if (capability.ready) {
+      registerImageProvider(
+        new CodexImagegenProvider({
+          ...(env.codexImagegenCodexHome
+            ? { codexHome: env.codexImagegenCodexHome }
+            : {}),
+          ...(env.codexImagegenTimeoutMs
+            ? { timeoutMs: env.codexImagegenTimeoutMs }
+            : {}),
+        }),
+      );
+    }
   }
 
   // Volces — image only
