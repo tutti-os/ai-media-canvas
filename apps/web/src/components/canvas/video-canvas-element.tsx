@@ -168,7 +168,6 @@ export function VideoCanvasElement({
       >
         <div
           className="pointer-events-auto absolute inset-0 flex cursor-pointer items-center justify-center overflow-hidden bg-black"
-          onPointerDown={stopCanvasPointerEvent}
           onMouseEnter={playPreview}
           onMouseLeave={pausePreview}
           onClick={togglePreview}
