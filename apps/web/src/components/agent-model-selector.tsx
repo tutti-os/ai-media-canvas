@@ -361,7 +361,7 @@ export function AgentModelSelector({
         />
         <PopoverContent
           align="start"
-          className="max-h-[min(28rem,calc(100vh-2rem))] w-[min(26rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-border bg-popover p-2 shadow-lg"
+          className="max-h-[min(28rem,calc(100vh-2rem))] w-[min(26rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border-[0.5px] border-border bg-popover p-2 shadow-lg"
           collisionAvoidance={{
             align: "shift",
             fallbackAxisSide: "none",
@@ -383,13 +383,13 @@ export function AgentModelSelector({
                 setSettingsInitialSourceTab(undefined);
                 setSettingsOpen(true);
               }}
-              className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="inline-flex items-center gap-1 rounded-full border-[0.5px] border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <Settings2 className="h-3 w-3" />
               {t("agentModelSelector.settings")}
             </button>
           </div>
-          <div className="mb-2 grid grid-cols-3 rounded-full border border-border bg-muted/30 p-0.5">
+          <div className="mb-2 grid grid-cols-3 rounded-full bg-muted p-0.5">
             {[
               {
                 id: "local-agent" as const,
