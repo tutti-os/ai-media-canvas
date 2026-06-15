@@ -13,7 +13,7 @@ import { GenerationError, aspectRatioToDimensions } from "../utils.js";
 import { resolveCodexImagegenAgentModel } from "../../agent/local-agent-models.js";
 
 const ICON_CODEX = "https://github.com/openai.png";
-const DEFAULT_CODEX_TIMEOUT_MS = 5 * 60_000;
+const DEFAULT_CODEX_TIMEOUT_MS = 10 * 60_000;
 const CODEX_IMAGEGEN_MODEL_ID = "codex/gpt-image-2";
 
 export const CODEX_IMAGEGEN_MODELS: readonly ModelInfo[] = [
