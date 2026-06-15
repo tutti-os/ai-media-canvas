@@ -110,7 +110,7 @@ export function ImageModelPreferencePopover({
         collisionAvoidance={{
           align: "shift",
           fallbackAxisSide: "none",
-          side: "shift",
+          side: "flip",
         }}
         collisionPadding={8}
         data-testid="image-model-preference-popover"

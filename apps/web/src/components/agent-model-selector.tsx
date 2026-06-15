@@ -349,7 +349,7 @@ export function AgentModelSelector({
           collisionAvoidance={{
             align: "shift",
             fallbackAxisSide: "none",
-            side: "none",
+            side: "flip",
           }}
           collisionPadding={8}
           side="bottom"

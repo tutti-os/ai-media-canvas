@@ -2,6 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChatInput } from "../src/components/chat-input";
@@ -50,7 +51,9 @@ vi.mock("../src/components/image-attachment-bar", () => ({
 }));
 
 vi.mock("../src/components/image-model-preference", () => ({
-  ImageModelPreferencePopover: () => null,
+  ImageModelPreferencePopover: ({ trigger }: { trigger?: ReactNode }) => (
+    <>{trigger}</>
+  ),
 }));
 
 vi.mock("../src/components/settings-dialog", () => ({
