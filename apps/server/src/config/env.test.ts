@@ -66,7 +66,8 @@ describe("loadServerEnv", () => {
 
   it("enables Codex Imagegen by default and allows explicit disable", () => {
     expect(loadServerEnv({}, {}).codexImagegenEnabled).toBe(true);
-    expect(loadServerEnv({}, {}).codexImagegenAgentModel).toBe("gpt-5.5");
+    expect(loadServerEnv({}, {}).codexImagegenAgentModel).toBeUndefined();
+    expect(loadServerEnv({}, {}).codexImagegenAgentModelConfigured).toBe(false);
     expect(
       loadServerEnv({}, { AIMC_CODEX_IMAGEGEN_ENABLED: "false" })
         .codexImagegenEnabled,

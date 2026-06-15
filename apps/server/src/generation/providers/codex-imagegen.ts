@@ -10,10 +10,10 @@ import type {
   ModelInfo,
 } from "../types.js";
 import { GenerationError, aspectRatioToDimensions } from "../utils.js";
+import { resolveCodexImagegenAgentModel } from "../../agent/local-agent-models.js";
 
 const ICON_CODEX = "https://github.com/openai.png";
 const DEFAULT_CODEX_TIMEOUT_MS = 5 * 60_000;
-const DEFAULT_CODEX_AGENT_MODEL = "gpt-5.5";
 const CODEX_IMAGEGEN_MODEL_ID = "codex/gpt-image-2";
 
 export const CODEX_IMAGEGEN_MODELS: readonly ModelInfo[] = [
@@ -39,6 +39,7 @@ export interface CodexImagegenProviderOptions {
   codexPath?: string;
   codexHome?: string;
   agentModel?: string;
+  resolveAgentModel?: () => Promise<string | undefined>;
   timeoutMs?: number;
   execCodex?: CodexImagegenExec;
 }
@@ -48,14 +49,18 @@ export class CodexImagegenProvider implements ImageProvider {
   readonly models = CODEX_IMAGEGEN_MODELS;
   private readonly codexPath: string;
   private readonly codexHome: string | undefined;
-  private readonly agentModel: string;
+  private readonly agentModel: string | undefined;
+  private readonly resolveAgentModel: () => Promise<string | undefined>;
   private readonly timeoutMs: number;
   private readonly execCodex: CodexImagegenExec;
 
   constructor(options: CodexImagegenProviderOptions = {}) {
     this.codexPath = options.codexPath ?? "codex";
     this.codexHome = options.codexHome;
-    this.agentModel = options.agentModel ?? DEFAULT_CODEX_AGENT_MODEL;
+    this.agentModel = options.agentModel;
+    this.resolveAgentModel =
+      options.resolveAgentModel ??
+      (() => resolveCodexImagegenAgentModel(this.agentModel));
     this.timeoutMs = options.timeoutMs ?? DEFAULT_CODEX_TIMEOUT_MS;
     this.execCodex = options.execCodex ?? defaultExecCodex(this.codexPath);
   }
@@ -89,6 +94,7 @@ export class CodexImagegenProvider implements ImageProvider {
         aspectRatio,
         outputPath,
       });
+      const agentModel = await this.resolveAgentModel();
       const env = {
         ...process.env,
         ...(this.codexHome ? { CODEX_HOME: this.codexHome } : {}),
@@ -97,8 +103,7 @@ export class CodexImagegenProvider implements ImageProvider {
         [
           "exec",
           "--ignore-user-config",
-          "-m",
-          this.agentModel,
+          ...(agentModel ? ["-m", agentModel] : []),
           "--full-auto",
           "--skip-git-repo-check",
           "-C",

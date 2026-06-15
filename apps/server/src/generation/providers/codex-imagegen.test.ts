@@ -60,6 +60,39 @@ describe("CodexImagegenProvider", () => {
     });
   });
 
+  it("uses a dynamically resolved Codex agent model", async () => {
+    const execCodex = vi.fn(async (args: readonly string[]) => {
+      const instruction = String(args.at(-1));
+      const outputPath = instruction.match(
+        /Save the final image exactly at: (.+)/,
+      )?.[1];
+      if (!outputPath) throw new Error("missing output path");
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, Buffer.from("png-bytes"));
+      return { stdout: `SAVED: ${outputPath}\n`, stderr: "" };
+    });
+    const provider = new CodexImagegenProvider({
+      execCodex,
+      resolveAgentModel: async () => "gpt-5.4-mini",
+    });
+
+    await provider.generate({
+      model: "codex/gpt-image-2",
+      prompt: "a red mug",
+    });
+
+    expect(execCodex).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        "exec",
+        "--ignore-user-config",
+        "-m",
+        "gpt-5.4-mini",
+        "--full-auto",
+      ]),
+      expect.any(Object),
+    );
+  });
+
   it("rejects image edit inputs for the text-to-image MVP", async () => {
     const provider = new CodexImagegenProvider({
       execCodex: vi.fn(),
@@ -78,6 +111,7 @@ describe("CodexImagegenProvider", () => {
 
   it("rejects saved paths outside the run directory", async () => {
     const provider = new CodexImagegenProvider({
+      resolveAgentModel: async () => "gpt-5.4-mini",
       execCodex: vi.fn(async () => ({
         stdout: "SAVED: /tmp/outside-codex-image.png\n",
         stderr: "",

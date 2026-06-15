@@ -1,14 +1,10 @@
-import type { AgentRuntimeProvider, WorkspaceSettings } from "@aimc/shared";
-import {
-  type LocalAgentRuntime,
-  createLocalAgentRuntime,
-} from "@tutti-os/agent-acp-kit";
+import type { WorkspaceSettings } from "@aimc/shared";
 
 import {
+  createDefaultLocalAgentModelDiscovery,
   type LocalAgentModelDiscovery,
   resolveLocalAgentDefaultModel,
 } from "../../agent/local-agent-models.js";
-import { createAimcLocalAgentProviderPlugins } from "../../agent/local-agent-providers.js";
 import type { AuthenticatedUser } from "../../auth/types.js";
 import {
   DEFAULT_AGNES_AGENT_MODEL,
@@ -52,12 +48,6 @@ export const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
 export type SettingsServiceOptions = {
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
 };
-
-function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
-  return createLocalAgentRuntime({
-    providers: createAimcLocalAgentProviderPlugins(),
-  });
-}
 
 function normalizeModelList(values: string[] | undefined): string[] {
   if (!Array.isArray(values)) return [];
