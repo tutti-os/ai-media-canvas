@@ -13,6 +13,7 @@ import {
   prepareCanvasImageFiles,
   serializeExcalidrawFiles,
 } from "../lib/canvas-file-serialization";
+import { prepareThumbnailExportScene } from "../lib/canvas-thumbnail-export";
 import {
   normalizeCanvasElementIndices,
   normalizeCanvasElements,
@@ -399,10 +400,15 @@ export function CanvasEditor({
             const sceneFiles = excalidrawApi.getFiles();
             if (!sceneElements.length) return;
 
+            const thumbnailScene = await prepareThumbnailExportScene({
+              elements: sceneElements,
+              files: sceneFiles,
+            });
+
             const blob = await exportToBlob({
-              elements: sceneElements as never,
+              elements: thumbnailScene.elements as never,
               appState: { exportBackground: true },
-              files: sceneFiles as never,
+              files: thumbnailScene.files as never,
               mimeType: "image/webp",
               quality: 0.8,
               maxWidthOrHeight: THUMBNAIL_MAX_SIZE,

@@ -463,6 +463,7 @@ export default interface Resources {
     "recentProjects": {
       "archive": "归档 {{name}}",
       "newProject": "新建项目",
+      "previewCover": "预览 {{name}} 的封面",
       "title": "最近项目",
       "untitled": "未命名",
       "updatedAt": "更新于 {{date}}",
@@ -501,6 +502,7 @@ export default interface Resources {
       "title": "新建项目"
     },
     "loadFailed": "本地项目加载失败，请重试。",
+    "previewCover": "预览 {{name}} 的封面",
     "title": "项目",
     "untitled": "未命名",
     "updatedAt": "更新于 {{date}}"

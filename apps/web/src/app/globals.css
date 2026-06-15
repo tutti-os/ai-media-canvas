@@ -24,6 +24,7 @@
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
     --color-success: var(--success);
     --color-success-foreground: var(--success-foreground);
     --color-warning: var(--warning);
@@ -79,6 +80,7 @@
     --aimc-notice-border: rgba(161, 184, 224, 0.2);
     --aimc-notice-shadow: 0 4px 20px rgba(17, 24, 39, 0.04);
     --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(0.985 0 0);
     --success: oklch(0.60 0.15 145);
     --success-foreground: oklch(0.985 0 0);
     --warning: oklch(0.75 0.15 85);
@@ -130,6 +132,7 @@
     --aimc-notice-border: rgba(147, 169, 205, 0.24);
     --aimc-notice-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
     --destructive: oklch(0.704 0.191 22.216);
+    --destructive-foreground: oklch(0.985 0 0);
     --success: oklch(0.65 0.15 145);
     --success-foreground: oklch(0.145 0 0);
     --warning: oklch(0.80 0.12 85);

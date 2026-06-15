@@ -3,9 +3,9 @@
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 
-import { Dialog, DialogContent } from "./ui/dialog";
-import { Button } from "./ui/button";
 import { useAppTranslation } from "@/i18n";
+import { Button } from "./ui/button";
+import { Dialog, DialogContent } from "./ui/dialog";
 
 interface DeleteProjectDialogProps {
   open: boolean;
@@ -50,7 +50,11 @@ export function DeleteProjectDialog({
             {deleting ? (
               <motion.span
                 animate={{ rotate: 360 }}
-                transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                transition={{
+                  duration: 0.8,
+                  repeat: Number.POSITIVE_INFINITY,
+                  ease: "linear",
+                }}
                 className="flex items-center justify-center"
               >
                 <Loader2 size={16} />

@@ -15,6 +15,7 @@
     "title": "New project"
   },
   "loadFailed": "Failed to load local projects. Please try again.",
+  "previewCover": "Preview {{name}} cover",
   "title": "Projects",
   "untitled": "Untitled",
   "updatedAt": "Updated {{date}}"
