@@ -8,6 +8,7 @@ export type MediaProviderSettings = Pick<
   | "googleVertexProject"
   | "googleVertexLocation"
   | "openAIApiKey"
+  | "openAIApiBase"
   | "volcesApiKey"
 >;
 
@@ -22,13 +23,28 @@ function hasVertexConfig(settings: MediaProviderSettings) {
   );
 }
 
+function hasOfficialOpenAIImageProvider(settings: MediaProviderSettings) {
+  if (!hasValue(settings.openAIApiKey)) return false;
+  if (!hasValue(settings.openAIApiBase)) return true;
+
+  try {
+    const url = new URL(settings.openAIApiBase);
+    const pathname = url.pathname.replace(/\/+$/, "");
+    return (
+      url.hostname === "api.openai.com" && (!pathname || pathname === "/v1")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function hasConfiguredImageProvider(settings: MediaProviderSettings) {
   return (
     hasValue(settings.agnesApiKey) ||
     hasValue(settings.replicateApiToken) ||
     hasValue(settings.googleApiKey) ||
     hasVertexConfig(settings) ||
-    hasValue(settings.openAIApiKey) ||
+    hasOfficialOpenAIImageProvider(settings) ||
     hasValue(settings.volcesApiKey)
   );
 }
@@ -59,7 +75,7 @@ export function isMediaProviderConfigured(
     case "google-vertex":
       return hasVertexConfig(settings);
     case "openai":
-      return mediaType === "image" && hasValue(settings.openAIApiKey);
+      return mediaType === "image" && hasOfficialOpenAIImageProvider(settings);
     case "volces":
       return mediaType === "image" && hasValue(settings.volcesApiKey);
     default:
