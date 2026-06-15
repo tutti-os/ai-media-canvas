@@ -161,7 +161,6 @@ export function AgentModelSelector({
   >(null);
   const [workspaceDefaultModelSource, setWorkspaceDefaultModelSource] =
     useState<AgentModelSourceTab | null>(null);
-  const [customModelDraft, setCustomModelDraft] = useState("");
   const [activeModelTab, setActiveModelTab] =
     useState<AgentModelSourceTab>("local-agent");
 
@@ -209,7 +208,6 @@ export function AgentModelSelector({
 
   useEffect(() => {
     if (!open) return;
-    setCustomModelDraft(model ?? workspaceDefaultModel ?? "");
     const selected = models.find((item) => item.id === model);
     setActiveModelTab(
       modelSource ??
@@ -219,14 +217,7 @@ export function AgentModelSelector({
             ? workspaceDefaultModelSource
             : getAgentModelSourceTab(model)),
     );
-  }, [
-    model,
-    modelSource,
-    models,
-    open,
-    workspaceDefaultModel,
-    workspaceDefaultModelSource,
-  ]);
+  }, [model, modelSource, models, open, workspaceDefaultModelSource]);
 
   const selectedModel = models.find((m) => m.id === model);
   const selectedModelSource =
@@ -280,7 +271,6 @@ export function AgentModelSelector({
   const defaultModelLabel = workspaceDefaultProviderIsUnsupportedLocal
     ? null
     : formatDefaultModelLabel(workspaceDefaultModel, models);
-  const trimmedCustomModelDraft = customModelDraft.trim();
 
   const visibleModels = models.filter(
     (item) => getModelSourceTab(item) === activeModelTab,
@@ -305,12 +295,6 @@ export function AgentModelSelector({
       );
     },
   );
-
-  function applyCustomModel() {
-    if (!trimmedCustomModelDraft) return;
-    setModel(trimmedCustomModelDraft, "api-provider");
-    setOpen(false);
-  }
 
   return (
     <>
@@ -540,38 +524,6 @@ export function AgentModelSelector({
                 </button>
               ) : null}
             </div>
-          ) : null}
-          {activeModelTab === "api-provider" ? (
-            <form
-              className="mt-3 border-t border-border pt-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                applyCustomModel();
-              }}
-            >
-              <label
-                htmlFor="customModelId"
-                className="px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60"
-              >
-                {t("agentModelSelector.customModelId")}
-              </label>
-              <div className="mt-2 space-y-2 px-2">
-                <input
-                  id="customModelId"
-                  value={customModelDraft}
-                  onChange={(event) => setCustomModelDraft(event.target.value)}
-                  placeholder="anthropic:minimax-m2.5"
-                  className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-accent"
-                />
-                <button
-                  type="submit"
-                  disabled={!trimmedCustomModelDraft}
-                  className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {t("agentModelSelector.useCustomModel")}
-                </button>
-              </div>
-            </form>
           ) : null}
         </PopoverContent>
       </Popover>
