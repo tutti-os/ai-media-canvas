@@ -1,6 +1,6 @@
 "use client";
 
-import { Expand, Info, X } from "lucide-react";
+import { Expand, Info, Play, X } from "lucide-react";
 import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
@@ -74,6 +74,9 @@ export function VideoCanvasElement({
   const topRightControlStyle: CSSProperties = {
     transform: `scale(${controlScale})`,
     transformOrigin: "top right",
+  };
+  const centerControlStyle: CSSProperties = {
+    transform: `translate(-50%, -50%) scale(${controlScale})`,
   };
 
   const stopCanvasEvent = useCallback((event: React.SyntheticEvent) => {
@@ -228,6 +231,15 @@ export function VideoCanvasElement({
             preload="metadata"
             className="h-full w-full object-cover"
           />
+
+          {!playing && (
+            <div
+              className="pointer-events-none absolute left-1/2 top-1/2 flex h-14 w-14 items-center justify-center rounded-full bg-black/45 text-white shadow-sm backdrop-blur-sm"
+              style={centerControlStyle}
+            >
+              <Play className="ml-1 h-7 w-7 fill-white" />
+            </div>
+          )}
 
           {durationLabel && (
             <div
