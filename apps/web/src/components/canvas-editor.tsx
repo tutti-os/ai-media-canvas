@@ -739,7 +739,7 @@ export function CanvasEditor({
     <ErrorBoundary
       onError={(err) => console.error("[canvas-editor] render crashed:", err)}
     >
-      <div className="h-full w-full relative">
+      <div className="h-full w-full relative @container/canvas">
         <Excalidraw
           theme={resolvedTheme === "dark" ? "dark" : "light"}
           langCode={excalidrawLangCode}

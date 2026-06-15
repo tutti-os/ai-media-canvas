@@ -87,6 +87,39 @@ describe("CanvasToolMenu panel dismissal", () => {
     vi.clearAllMocks();
   });
 
+  it("uses the canvas container width for the bottom toolbar breakpoint", () => {
+    const excalidrawApi = {
+      getSceneElements: () => [],
+      getAppState: () => ({
+        scrollX: 0,
+        scrollY: 0,
+        zoom: { value: 1 },
+        activeTool: { type: "selection" },
+        selectedElementIds: {},
+        width: 1200,
+        height: 800,
+      }),
+      updateScene: vi.fn(),
+      onChange: vi.fn(() => () => {}),
+      setActiveTool: vi.fn(),
+    };
+
+    const { container } = render(
+      <ToastProvider>
+        <CanvasToolMenu
+          canvasId="canvas-1"
+          projectId="project-1"
+          excalidrawApi={excalidrawApi}
+        />
+      </ToastProvider>,
+    );
+
+    const toolbar = container.querySelector(".bottom-\\[72px\\]");
+    expect(toolbar).not.toBeNull();
+    expect(toolbar?.className).toContain("@min-[900px]/canvas:bottom-5");
+    expect(toolbar?.className).not.toContain("min-[900px]:bottom-5");
+  });
+
   it("clears the selected generator when dismissing the image panel from the canvas", async () => {
     let elements: TestElement[] = [];
     let appState: TestAppState = {
