@@ -38,7 +38,7 @@ type VideoGeneratorPanelProps = {
 const ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const FALLBACK_DURATION_OPTIONS = [4, 5, 6, 8, 10, 15, 18] as const;
 const RESOLUTION_OPTIONS = ["480p", "720p", "1080p", "4k", "2160p"] as const;
-const PANEL_WIDTH = 520;
+const PANEL_WIDTH = 640;
 type FrameSlot = "first" | "last";
 type FrameData = { dataUrl: string; file: File };
 type VideoResolution = (typeof RESOLUTION_OPTIONS)[number];
@@ -768,7 +768,7 @@ export function VideoGeneratorPanel({
       ref={panelRef}
       data-aimc-generator-panel="video"
       style={{ left: panelPosition.left, top: panelPosition.top }}
-      className={`fixed z-[100] w-[520px] rounded-[24px] border border-border bg-card/95 shadow-card backdrop-blur-lg transition-opacity duration-150 ${
+      className={`fixed z-[100] w-[640px] max-w-[calc(100vw-32px)] rounded-[24px] border border-border bg-card/95 shadow-card backdrop-blur-lg transition-opacity duration-150 ${
         hidden ? "pointer-events-none opacity-0" : "opacity-100"
       }`}
       onKeyDown={(e) => e.stopPropagation()}
@@ -849,10 +849,13 @@ export function VideoGeneratorPanel({
           </div>
         )}
 
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+        <div
+          data-aimc-video-panel-bottom-row="true"
+          className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3"
+        >
+          <div className="flex min-w-0 flex-1 basis-[420px] items-center gap-2">
             {selectedModeOption && (
-              <div className="relative">
+              <div className="relative shrink-0">
                 <button
                   type="button"
                   disabled={loading}
@@ -898,7 +901,7 @@ export function VideoGeneratorPanel({
               </div>
             )}
 
-            <div className="relative">
+            <div className="relative min-w-[180px] flex-1">
               <button
                 type="button"
                 onClick={() => {
@@ -906,14 +909,14 @@ export function VideoGeneratorPanel({
                   setShowModeDropdown(false);
                   setShowParamsPopover(false);
                 }}
-                className="flex h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60"
+                className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60"
               >
-                <span className="truncate max-w-[180px]">
+                <span className="min-w-0 flex-1 truncate text-left">
                   {currentModel
                     ? `${currentModel.displayName} · ${formatProviderLabel(currentModel.provider)}`
                     : model}
                 </span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               </button>
               {showModelDropdown && (
                 <div className="absolute bottom-full left-0 z-50 mb-2 w-[280px] overflow-hidden rounded-2xl border border-border bg-popover shadow-card">
@@ -945,7 +948,7 @@ export function VideoGeneratorPanel({
               )}
             </div>
 
-            <div className="relative">
+            <div className="relative shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -1045,7 +1048,7 @@ export function VideoGeneratorPanel({
             type="button"
             onClick={() => void handleGenerate()}
             disabled={loading || !prompt.trim()}
-            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="ml-auto inline-flex h-10 shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-full bg-foreground px-5 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? t("tools.generating") : t("tools.videoPanel.generate")}
           </button>
