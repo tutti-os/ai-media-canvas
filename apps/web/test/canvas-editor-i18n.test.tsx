@@ -79,6 +79,20 @@ describe("CanvasEditor i18n", () => {
     expect(excalidrawPropsRef.current?.langCode).toBe("en");
   });
 
+  it("marks the canvas shell as a named container for toolbar layout", () => {
+    const { getByTestId } = render(
+      <CanvasEditor
+        canvasId="canvas-1"
+        projectId="project-1"
+        initialContent={initialContent}
+      />,
+    );
+
+    expect(getByTestId("mock-excalidraw").parentElement).toHaveClass(
+      "@container/canvas",
+    );
+  });
+
   it("does not save an empty scene over a hydrated canvas with existing elements", async () => {
     vi.useFakeTimers();
     const canvasApi = {
