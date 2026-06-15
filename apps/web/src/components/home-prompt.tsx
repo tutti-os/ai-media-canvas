@@ -138,7 +138,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       "agent" | "media"
     >("agent");
     const { t } = useAppTranslation("home");
-    const agentBtnRef = useRef<HTMLButtonElement>(null);
     const { preference } = useImageModelPreference();
     const { preference: videoPreference } = useVideoModelPreference();
     const agentRequirement = useAgentModelRequirement();
@@ -225,7 +224,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
           ? videoPreference
           : undefined,
         agentModel ?? undefined,
-        agentModel ? agentModelSource ?? undefined : undefined,
+        agentModel ? (agentModelSource ?? undefined) : undefined,
       );
       setValue("");
       if (textareaRef.current) {
@@ -402,22 +401,27 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
                 </>
               ) : null}
 
-              <button
-                ref={agentBtnRef}
-                type="button"
-                aria-label={t("prompt.modelPreference")}
-                onClick={() => setModelPopoverOpen((current) => !current)}
-                className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-              >
-                <svg
-                  aria-hidden="true"
-                  viewBox={toolbarButtons[1].viewBox}
-                  className="h-4 w-4 fill-current"
-                >
-                  <path d={toolbarButtons[1].path} />
-                </svg>
-                <PromptToolbarTooltip label={t("prompt.modelPreference")} />
-              </button>
+              <ImageModelPreferencePopover
+                open={modelPopoverOpen}
+                onOpenChange={setModelPopoverOpen}
+                onOpenSettings={handleOpenMediaSettings}
+                trigger={
+                  <button
+                    type="button"
+                    aria-label={t("prompt.modelPreference")}
+                    className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox={toolbarButtons[1].viewBox}
+                      className="h-4 w-4 fill-current"
+                    >
+                      <path d={toolbarButtons[1].path} />
+                    </svg>
+                    <PromptToolbarTooltip label={t("prompt.modelPreference")} />
+                  </button>
+                }
+              />
 
               <div className="ml-1">
                 <AgentModelSelector compact tooltipPlacement="bottom" />
@@ -441,12 +445,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             </button>
           </div>
 
-          <ImageModelPreferencePopover
-            open={modelPopoverOpen}
-            onClose={() => setModelPopoverOpen(false)}
-            anchorRef={agentBtnRef}
-            onOpenSettings={handleOpenMediaSettings}
-          />
           <SettingsDialog
             open={settingsOpen}
             onOpenChange={setSettingsOpen}

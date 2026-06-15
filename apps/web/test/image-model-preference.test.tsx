@@ -3,7 +3,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ImageModelPreferencePopover } from "../src/components/image-model-preference";
@@ -32,67 +31,21 @@ function OpenPopover({
   onClose?: () => void;
   onOpenSettings?: () => void;
 }) {
-  const anchorRef = useRef<HTMLButtonElement | null>(null);
   return (
-    <>
-      <button ref={anchorRef} type="button">
-        Anchor
-      </button>
-      <ImageModelPreferencePopover
-        anchorRef={anchorRef}
-        onClose={onClose}
-        onOpenSettings={onOpenSettings}
-        open
-      />
-    </>
-  );
-}
-
-function MovingAnchorPopover({
-  getRect,
-}: {
-  getRect: () => Pick<DOMRect, "bottom" | "left" | "right" | "top">;
-}) {
-  const anchorRef = useRef<HTMLButtonElement | null>(null);
-  return (
-    <>
-      <button
-        ref={(node) => {
-          anchorRef.current = node;
-          if (node) {
-            node.getBoundingClientRect = () =>
-              ({
-                ...getRect(),
-                height: getRect().bottom - getRect().top,
-                toJSON: () => ({}),
-                width: getRect().right - getRect().left,
-                x: getRect().left,
-                y: getRect().top,
-              }) as DOMRect;
-          }
-        }}
-        type="button"
-      >
-        Anchor
-      </button>
-      <ImageModelPreferencePopover
-        anchorRef={anchorRef}
-        onClose={() => {}}
-        open
-      />
-    </>
+    <ImageModelPreferencePopover
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+      onOpenSettings={onOpenSettings}
+      open
+      trigger={<button type="button">Anchor</button>}
+    />
   );
 }
 
 describe("ImageModelPreferencePopover", () => {
   beforeEach(async () => {
     await i18n.changeLanguage("zh-CN");
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
-      window.setTimeout(() => callback(performance.now()), 0),
-    );
-    vi.stubGlobal("cancelAnimationFrame", (handle: number) =>
-      window.clearTimeout(handle),
-    );
     fetchImageModelsMock.mockResolvedValue({
       models: [
         {
@@ -170,26 +123,5 @@ describe("ImageModelPreferencePopover", () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
-  });
-
-  it("repositions with its anchor when the page scrolls", async () => {
-    let top = 100;
-    let bottom = 132;
-    render(
-      <MovingAnchorPopover
-        getRect={() => ({ bottom, left: 300, right: 420, top })}
-      />,
-    );
-
-    const popover = screen.getByTestId("image-model-preference-popover");
-    expect(popover).toHaveStyle({ left: "40px", top: "140px" });
-
-    top = 40;
-    bottom = 72;
-    window.dispatchEvent(new Event("scroll"));
-
-    await waitFor(() =>
-      expect(popover).toHaveStyle({ left: "40px", top: "80px" }),
-    );
   });
 });

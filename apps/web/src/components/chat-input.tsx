@@ -10,8 +10,8 @@ import {
   useState,
 } from "react";
 
-import type { MessageMention } from "@aimc/shared";
 import { useAppTranslation } from "@/i18n";
+import type { MessageMention } from "@aimc/shared";
 import { useAgentModelRequirement } from "../hooks/use-agent-model-requirement";
 import type { ImageAttachmentState } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
@@ -88,7 +88,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       "agent" | "media"
     >("agent");
     const { t } = useAppTranslation("chat");
-    const modelBtnRef = useRef<HTMLButtonElement>(null);
     const isAgentModelConfigurationLoaded =
       agentRequirement.isAgentModelConfigurationLoaded ?? true;
     const missingModelConfiguration = useMemo(() => {
@@ -422,32 +421,33 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               <AgentModelSelector compact />
               {/* Model preference button */}
               <div className="relative">
-                <button
-                  ref={modelBtnRef}
-                  type="button"
-                  onClick={() => setModelPopoverOpen((prev) => !prev)}
-                  aria-label={t("input.modelPreference")}
-                  className={`group relative flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] transition-colors ${
-                    preference.mode === "manual"
-                      ? "border-accent bg-accent/20 text-accent-foreground"
-                      : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                >
-                  <svg
-                    aria-hidden="true"
-                    className="h-[14px] w-[14px]"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path d="M10.8 1.307a2.33 2.33 0 0 1 2.4 0l7.67 4.602A2.33 2.33 0 0 1 22 7.907v8.361a2.33 2.33 0 0 1-1.13 1.998l-7.67 4.602-.141.078a2.33 2.33 0 0 1-2.258-.078l-7.67-4.602A2.33 2.33 0 0 1 2 16.268V7.907a2.33 2.33 0 0 1 1.003-1.915l.128-.083z" />
-                  </svg>
-                  <PromptToolbarTooltip label={t("input.modelPreference")} />
-                </button>
                 <ImageModelPreferencePopover
                   open={modelPopoverOpen}
-                  onClose={() => setModelPopoverOpen(false)}
-                  anchorRef={modelBtnRef}
+                  onOpenChange={setModelPopoverOpen}
                   onOpenSettings={handleOpenMediaSettings}
+                  trigger={
+                    <button
+                      type="button"
+                      aria-label={t("input.modelPreference")}
+                      className={`group relative flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] transition-colors ${
+                        preference.mode === "manual"
+                          ? "border-accent bg-accent/20 text-accent-foreground"
+                          : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      <svg
+                        aria-hidden="true"
+                        className="h-[14px] w-[14px]"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M10.8 1.307a2.33 2.33 0 0 1 2.4 0l7.67 4.602A2.33 2.33 0 0 1 22 7.907v8.361a2.33 2.33 0 0 1-1.13 1.998l-7.67 4.602-.141.078a2.33 2.33 0 0 1-2.258-.078l-7.67-4.602A2.33 2.33 0 0 1 2 16.268V7.907a2.33 2.33 0 0 1 1.003-1.915l.128-.083z" />
+                      </svg>
+                      <PromptToolbarTooltip
+                        label={t("input.modelPreference")}
+                      />
+                    </button>
+                  }
                 />
               </div>
             </div>
