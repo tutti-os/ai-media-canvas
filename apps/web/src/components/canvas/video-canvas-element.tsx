@@ -3,6 +3,7 @@
 import { Expand, Info, X } from "lucide-react";
 import {
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useRef,
@@ -53,6 +54,8 @@ export function VideoCanvasElement({
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const infoDialogRef = useRef<HTMLDialogElement>(null);
+  const suppressClickAfterDragRef = useRef(false);
+  const removeDragPauseListenersRef = useRef<(() => void) | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [playerOpen, setPlayerOpen] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -98,6 +101,10 @@ export function VideoCanvasElement({
   const togglePreview = useCallback(
     (event: React.MouseEvent) => {
       stopCanvasEvent(event);
+      if (suppressClickAfterDragRef.current) {
+        suppressClickAfterDragRef.current = false;
+        return;
+      }
       if (playing) {
         pausePreview();
       } else {
@@ -105,6 +112,41 @@ export function VideoCanvasElement({
       }
     },
     [pausePreview, playPreview, playing, stopCanvasEvent],
+  );
+
+  const handleVideoPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      suppressClickAfterDragRef.current = false;
+      removeDragPauseListenersRef.current?.();
+
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let dragStarted = false;
+
+      const handlePointerMove = (pointerEvent: PointerEvent) => {
+        if (dragStarted) return;
+        const deltaX = pointerEvent.clientX - startX;
+        const deltaY = pointerEvent.clientY - startY;
+        if (Math.hypot(deltaX, deltaY) < 4) return;
+        dragStarted = true;
+        suppressClickAfterDragRef.current = true;
+        pausePreview();
+      };
+
+      const cleanup = () => {
+        document.removeEventListener("pointermove", handlePointerMove, true);
+        document.removeEventListener("pointerup", cleanup, true);
+        document.removeEventListener("pointercancel", cleanup, true);
+        removeDragPauseListenersRef.current = null;
+      };
+
+      document.addEventListener("pointermove", handlePointerMove, true);
+      document.addEventListener("pointerup", cleanup, true);
+      document.addEventListener("pointercancel", cleanup, true);
+      removeDragPauseListenersRef.current = cleanup;
+    },
+    [pausePreview],
   );
 
   const updateInfoPosition = useCallback(() => {
@@ -159,6 +201,10 @@ export function VideoCanvasElement({
     return () => document.removeEventListener("keydown", handler);
   }, [infoOpen, playerOpen]);
 
+  useEffect(() => {
+    return () => removeDragPauseListenersRef.current?.();
+  }, []);
+
   return (
     <>
       <div
@@ -168,6 +214,7 @@ export function VideoCanvasElement({
       >
         <div
           className="pointer-events-auto absolute inset-0 flex cursor-pointer items-center justify-center overflow-hidden bg-black"
+          onPointerDown={handleVideoPointerDown}
           onMouseEnter={playPreview}
           onMouseLeave={pausePreview}
           onClick={togglePreview}
