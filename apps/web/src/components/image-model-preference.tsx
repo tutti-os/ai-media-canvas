@@ -1,7 +1,13 @@
 "use client";
 
 import { Film, Settings2 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -46,6 +52,30 @@ export function ImageModelPreferencePopover({
     left: number;
     above: boolean;
   } | null>(null);
+  const updatePosition = useCallback(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) {
+      setPos(null);
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    const popoverHeight = 400;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openAbove = spaceBelow < popoverHeight && rect.top > spaceBelow;
+    const nextPos = {
+      top: openAbove ? rect.top - 8 : rect.bottom + 8,
+      left: Math.max(8, rect.right - 380),
+      above: openAbove,
+    };
+    setPos((current) =>
+      current &&
+      current.top === nextPos.top &&
+      current.left === nextPos.left &&
+      current.above === nextPos.above
+        ? current
+        : nextPos,
+    );
+  }, [anchorRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -93,18 +123,43 @@ export function ImageModelPreferencePopover({
 
   // Calculate position — auto-detect direction based on available space
   useLayoutEffect(() => {
-    if (!open || !anchorRef.current) return;
-    const rect = anchorRef.current.getBoundingClientRect();
-    const popoverHeight = 400; // approximate max height
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const openAbove = spaceBelow < popoverHeight && rect.top > spaceBelow;
+    if (!open) return;
+    updatePosition();
+  }, [open, updatePosition]);
 
-    setPos({
-      top: openAbove ? rect.top - 8 : rect.bottom + 8,
-      left: Math.max(8, rect.right - 380),
-      above: openAbove,
-    });
-  }, [open, anchorRef]);
+  useEffect(() => {
+    if (!open) return;
+
+    let frame = 0;
+    const scheduleUpdate = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        updatePosition();
+      });
+    };
+    const options = { capture: true, passive: true } as const;
+
+    window.addEventListener("scroll", scheduleUpdate, options);
+    window.addEventListener("resize", scheduleUpdate, options);
+    window.visualViewport?.addEventListener("scroll", scheduleUpdate, options);
+    window.visualViewport?.addEventListener("resize", scheduleUpdate, options);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", scheduleUpdate, options);
+      window.removeEventListener("resize", scheduleUpdate, options);
+      window.visualViewport?.removeEventListener(
+        "scroll",
+        scheduleUpdate,
+        options,
+      );
+      window.visualViewport?.removeEventListener(
+        "resize",
+        scheduleUpdate,
+        options,
+      );
+    };
+  }, [open, updatePosition]);
 
   // Close on outside click
   useEffect(() => {
@@ -149,6 +204,7 @@ export function ImageModelPreferencePopover({
   return createPortal(
     <div
       ref={popoverRef}
+      data-testid="image-model-preference-popover"
       style={{
         top: pos.above ? undefined : pos.top,
         bottom: pos.above ? window.innerHeight - pos.top : undefined,
