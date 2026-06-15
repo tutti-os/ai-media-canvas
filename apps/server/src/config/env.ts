@@ -102,7 +102,7 @@ export function loadServerEnv(
     );
   const codexImagegenEnabled =
     overrides.codexImagegenEnabled ??
-    parseOptionalBoolean(source.AIMC_CODEX_IMAGEGEN_ENABLED, false);
+    parseOptionalBoolean(source.AIMC_CODEX_IMAGEGEN_ENABLED, true);
   const codexImagegenTimeoutMs =
     overrides.codexImagegenTimeoutMs ??
     parseOptionalInt(source.AIMC_CODEX_IMAGEGEN_TIMEOUT_MS);

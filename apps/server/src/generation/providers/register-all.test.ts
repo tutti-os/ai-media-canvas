@@ -73,9 +73,9 @@ describe("registerAllProviders", () => {
     );
   });
 
-  it("registers Codex Imagegen models only when enabled and ready", () => {
+  it("registers Codex Imagegen models when default-enabled and ready", () => {
     registerAllProviders(
-      loadServerEnv({ codexImagegenEnabled: true }, {}),
+      loadServerEnv({}, {}),
       {
         detectCodexImagegenCapability: () => ({
           ready: true,
@@ -93,9 +93,26 @@ describe("registerAllProviders", () => {
     );
   });
 
+  it("does not register Codex Imagegen when explicitly disabled", () => {
+    registerAllProviders(
+      loadServerEnv({}, { AIMC_CODEX_IMAGEGEN_ENABLED: "false" }),
+      {
+        detectCodexImagegenCapability: () => {
+          throw new Error("capability detection should not run when disabled");
+        },
+      },
+    );
+
+    expect(getAvailableImageModels()).not.toContainEqual(
+      expect.objectContaining({
+        id: "codex/gpt-image-2",
+      }),
+    );
+  });
+
   it("does not register Codex Imagegen when capability detection fails", () => {
     registerAllProviders(
-      loadServerEnv({ codexImagegenEnabled: true }, {}),
+      loadServerEnv({}, {}),
       {
         detectCodexImagegenCapability: () => ({
           ready: false,

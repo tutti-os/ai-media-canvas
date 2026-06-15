@@ -125,7 +125,6 @@ describe("workspaceSettingsSchema", () => {
       googleVertexLocation: "",
       googleVertexVideoLocation: "",
       replicateApiToken: "",
-      codexImagegenEnabled: false,
       volcesApiKey: "",
       volcesBaseUrl: "",
       kieApiKey: "local-kie-key",

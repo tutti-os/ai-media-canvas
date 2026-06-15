@@ -43,7 +43,6 @@ export const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   googleVertexLocation: "",
   googleVertexVideoLocation: "",
   replicateApiToken: "",
-  codexImagegenEnabled: false,
   kieApiKey: "",
   kieBaseUrl: "",
   volcesApiKey: "",
@@ -127,7 +126,6 @@ export function normalizeWorkspaceSettings(
     googleVertexLocation: input.googleVertexLocation?.trim() ?? "",
     googleVertexVideoLocation: input.googleVertexVideoLocation?.trim() ?? "",
     replicateApiToken: input.replicateApiToken?.trim() ?? "",
-    codexImagegenEnabled: input.codexImagegenEnabled ?? false,
     kieApiKey: input.kieApiKey?.trim() ?? "",
     kieBaseUrl: input.kieBaseUrl?.trim() ?? "",
     volcesApiKey: input.volcesApiKey?.trim() ?? "",
@@ -164,8 +162,6 @@ export function resolveEffectiveServerEnv(
     settings.googleVertexVideoLocation || baseEnv.googleVertexVideoLocation;
   const replicateApiToken =
     settings.replicateApiToken || baseEnv.replicateApiToken;
-  const codexImagegenEnabled =
-    settings.codexImagegenEnabled || baseEnv.codexImagegenEnabled === true;
   const kieApiKey = settings.kieApiKey || baseEnv.kieApiKey;
   const kieBaseUrl = settings.kieBaseUrl || baseEnv.kieBaseUrl;
   const volcesApiKey = settings.volcesApiKey || baseEnv.volcesApiKey;
@@ -189,7 +185,6 @@ export function resolveEffectiveServerEnv(
     ...(googleVertexLocation ? { googleVertexLocation } : {}),
     ...(googleVertexVideoLocation ? { googleVertexVideoLocation } : {}),
     ...(replicateApiToken ? { replicateApiToken } : {}),
-    codexImagegenEnabled,
     ...(kieApiKey ? { kieApiKey } : {}),
     ...(kieBaseUrl ? { kieBaseUrl } : {}),
     ...(volcesApiKey ? { volcesApiKey } : {}),

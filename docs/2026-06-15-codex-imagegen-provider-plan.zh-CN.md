@@ -100,23 +100,22 @@ apps/server/src/features/settings/settings-service.ts
 apps/server/src/http/settings.ts
 ```
 
-MVP 使用环境变量启用，不在设置页新增 Codex Imagegen 开关。
+MVP 默认启用 Codex Imagegen 的 capability detection，不在设置页新增 Codex Imagegen 开关。只有显式设置 `AIMC_CODEX_IMAGEGEN_ENABLED=false` 时关闭。
 
 ## 实施步骤
 
-### 1. 增加环境变量与设置开关
+### 1. 增加环境变量
 
-目标：给 Codex Imagegen 一个显式启用入口，避免在用户不知情时消耗 Codex 侧额度。
+目标：让 Codex Imagegen 默认随本机 Codex 能力可用而出现，同时保留环境变量作为部署侧禁用入口。
 
 - [ ] 在 server env 中新增 `AIMC_CODEX_IMAGEGEN_ENABLED`、`AIMC_CODEX_IMAGEGEN_TIMEOUT_MS`、`AIMC_CODEX_HOME`。
-- [ ] 在 workspace settings contract 中新增 `codexImagegenEnabled?: boolean`。
-- [ ] 在 settings service 中合并 env 与 workspace setting。建议 env 作为默认值，workspace setting 控制最终开关。
-- [ ] 默认关闭。
+- [ ] `AIMC_CODEX_IMAGEGEN_ENABLED` 默认 true，显式 false/off/0/no 时关闭。
+- [ ] 不在 workspace settings contract 中新增 Codex Imagegen 开关。
 
 验证：
 
-- [ ] 单元测试覆盖默认关闭、env 开启、workspace setting 覆盖。
-- [ ] 未启用时 `getAvailableImageModels()` 不出现 `codex/gpt-image-2`。
+- [ ] 单元测试覆盖默认开启、env 显式关闭。
+- [ ] 显式关闭或 capability 不 ready 时 `getAvailableImageModels()` 不出现 `codex/gpt-image-2`。
 
 ### 2. 实现 Codex Imagegen 能力检测
 
@@ -203,7 +202,7 @@ codex exec --full-auto --skip-git-repo-check -C <runDir> -- <instruction>
 目标：确认 local agent 到画布的完整链路可用。
 
 - [ ] 本机执行 `codex login status`，确认登录。
-- [ ] 开启 `AIMC_CODEX_IMAGEGEN_ENABLED=true`。
+- [ ] 确认未设置 `AIMC_CODEX_IMAGEGEN_ENABLED=false`。
 - [ ] 打开 AIMC，检查 image model list 出现 `codex/gpt-image-2`。
 - [ ] 让 local agent 执行一次生成请求，并选择 Codex 模型。
 - [ ] 确认 `generate_image` 工具返回成功。
@@ -220,7 +219,7 @@ pnpm typecheck
 ## 风险与边界
 
 - Codex 内置 `image_gen` 不是稳定公开 API，CLI 输出格式也不是强契约。必须通过 prompt 强制 `SAVED:`，并把解析逻辑写得保守。
-- Codex 生图会消耗用户 Codex 侧额度。默认关闭，需要通过环境变量显式启用。
+- Codex 生图会消耗用户 Codex 侧额度。默认启用 capability detection；如果部署侧不希望暴露该能力，需要设置 `AIMC_CODEX_IMAGEGEN_ENABLED=false`。
 - 真实生图速度可能较慢，server provider timeout 默认建议 5 分钟。
 - Codex CLI 可能依赖当前用户登录态；服务进程运行用户必须与登录 Codex 的用户一致。
 - 如果未来 Codex CLI 提供正式可枚举 tool 或 MCP 接口，可以把 provider 内部实现替换掉，外部仍保持 `generate_image` 模型不变。

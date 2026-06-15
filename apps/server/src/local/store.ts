@@ -74,7 +74,6 @@ const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   googleVertexLocation: "",
   googleVertexVideoLocation: "",
   replicateApiToken: "",
-  codexImagegenEnabled: false,
   kieApiKey: "",
   kieBaseUrl: "",
   volcesApiKey: "",
@@ -560,12 +559,11 @@ export function createLocalStore(options: {
           google_vertex_location,
           google_vertex_video_location,
           replicate_api_token,
-          codex_imagegen_enabled,
           kie_api_key,
           kie_base_url,
           volces_api_key,
           volces_base_url
-        ) VALUES (?, '', NULL, '{}', '', '', '', '', '', '', '', '', '', '', '', '', 0, '', '', '', '')
+        ) VALUES (?, '', NULL, '{}', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '')
       `,
     ).run(LOCAL_WORKSPACE_ID);
   }
@@ -602,7 +600,6 @@ export function createLocalStore(options: {
       ["google_vertex_location", "TEXT NOT NULL DEFAULT ''"],
       ["google_vertex_video_location", "TEXT NOT NULL DEFAULT ''"],
       ["replicate_api_token", "TEXT NOT NULL DEFAULT ''"],
-      ["codex_imagegen_enabled", "INTEGER NOT NULL DEFAULT 0"],
       ["kie_api_key", "TEXT NOT NULL DEFAULT ''"],
       ["kie_base_url", "TEXT NOT NULL DEFAULT ''"],
       ["volces_api_key", "TEXT NOT NULL DEFAULT ''"],
@@ -879,7 +876,6 @@ export function createLocalStore(options: {
             google_vertex_location,
             google_vertex_video_location,
             replicate_api_token,
-            codex_imagegen_enabled,
             kie_api_key,
             kie_base_url,
             volces_api_key,
@@ -905,7 +901,6 @@ export function createLocalStore(options: {
           google_vertex_location: string;
           google_vertex_video_location: string;
           replicate_api_token: string;
-          codex_imagegen_enabled: number;
           kie_api_key: string;
           kie_base_url: string;
           volces_api_key: string;
@@ -963,7 +958,6 @@ export function createLocalStore(options: {
       googleVertexLocation: row.google_vertex_location ?? "",
       googleVertexVideoLocation: row.google_vertex_video_location ?? "",
       replicateApiToken: row.replicate_api_token ?? "",
-      codexImagegenEnabled: row.codex_imagegen_enabled === 1,
       kieApiKey: row.kie_api_key ?? "",
       kieBaseUrl: row.kie_base_url ?? "",
       volcesApiKey: row.volces_api_key ?? "",
@@ -1004,12 +998,11 @@ export function createLocalStore(options: {
             google_vertex_location,
             google_vertex_video_location,
             replicate_api_token,
-            codex_imagegen_enabled,
             kie_api_key,
             kie_base_url,
             volces_api_key,
             volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             workspace_id = excluded.workspace_id,
             default_model = excluded.default_model,
@@ -1027,7 +1020,6 @@ export function createLocalStore(options: {
             google_vertex_location = excluded.google_vertex_location,
             google_vertex_video_location = excluded.google_vertex_video_location,
             replicate_api_token = excluded.replicate_api_token,
-            codex_imagegen_enabled = excluded.codex_imagegen_enabled,
             kie_api_key = excluded.kie_api_key,
             kie_base_url = excluded.kie_base_url,
             volces_api_key = excluded.volces_api_key,
@@ -1051,7 +1043,6 @@ export function createLocalStore(options: {
         normalizedSettings.googleVertexLocation,
         normalizedSettings.googleVertexVideoLocation,
         normalizedSettings.replicateApiToken,
-        normalizedSettings.codexImagegenEnabled ? 1 : 0,
         normalizedSettings.kieApiKey,
         normalizedSettings.kieBaseUrl,
         normalizedSettings.volcesApiKey,
@@ -1077,12 +1068,11 @@ export function createLocalStore(options: {
             google_vertex_location,
             google_vertex_video_location,
             replicate_api_token,
-            codex_imagegen_enabled,
             kie_api_key,
             kie_base_url,
             volces_api_key,
             volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(workspace_id) DO UPDATE SET
             default_model = excluded.default_model,
             default_model_source = excluded.default_model_source,
@@ -1099,7 +1089,6 @@ export function createLocalStore(options: {
             google_vertex_location = excluded.google_vertex_location,
             google_vertex_video_location = excluded.google_vertex_video_location,
             replicate_api_token = excluded.replicate_api_token,
-            codex_imagegen_enabled = excluded.codex_imagegen_enabled,
             kie_api_key = excluded.kie_api_key,
             kie_base_url = excluded.kie_base_url,
             volces_api_key = excluded.volces_api_key,
@@ -1122,7 +1111,6 @@ export function createLocalStore(options: {
         normalizedSettings.googleVertexLocation,
         normalizedSettings.googleVertexVideoLocation,
         normalizedSettings.replicateApiToken,
-        normalizedSettings.codexImagegenEnabled ? 1 : 0,
         normalizedSettings.kieApiKey,
         normalizedSettings.kieBaseUrl,
         normalizedSettings.volcesApiKey,

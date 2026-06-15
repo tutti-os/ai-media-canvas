@@ -209,7 +209,6 @@ export const workspaceSettingsSchema = z.object({
   googleVertexLocation: z.string(),
   googleVertexVideoLocation: z.string(),
   replicateApiToken: z.string(),
-  codexImagegenEnabled: z.boolean().default(false),
   kieApiKey: z.string(),
   kieBaseUrl: z.string(),
   volcesApiKey: z.string(),

@@ -61,4 +61,12 @@ describe("loadServerEnv", () => {
     expect(env.codexImagegenTimeoutMs).toBe(450000);
     expect(env.codexImagegenCodexHome).toBe("/tmp/codex-home");
   });
+
+  it("enables Codex Imagegen by default and allows explicit disable", () => {
+    expect(loadServerEnv({}, {}).codexImagegenEnabled).toBe(true);
+    expect(
+      loadServerEnv({}, { AIMC_CODEX_IMAGEGEN_ENABLED: "false" })
+        .codexImagegenEnabled,
+    ).toBe(false);
+  });
 });
