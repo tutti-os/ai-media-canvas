@@ -117,6 +117,55 @@ describe("createLocalToolGatewayService", () => {
     );
   });
 
+  it("exposes image model schema limits in the generate_image tool manifest", () => {
+    registerImageProvider({
+      name: "agnes-image",
+      models: [
+        {
+          id: "agnes-image/agnes-image-2.1-flash",
+          displayName: "Agnes Image 2.1 Flash",
+          description:
+            "Agnes high-fidelity image generation and editing route.",
+        },
+      ],
+      async generate() {
+        throw new Error("not used");
+      },
+    });
+    const gateway = createLocalToolGatewayService({
+      createUserClient: vi.fn(),
+    });
+    const session = gateway.createSession({
+      runId: "run-1",
+      runtimeEnv: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+    });
+
+    const tool = gateway
+      .getManifest(session.token)
+      .find((item) => item.name === "generate_image");
+    expect(tool).toBeDefined();
+    const inputSchema = tool?.inputSchema as {
+      properties?: Record<string, { description?: string }>;
+    };
+    const modelDescription = inputSchema.properties?.model?.description ?? "";
+    const aspectRatioDescription =
+      inputSchema.properties?.aspectRatio?.description ?? "";
+
+    expect(modelDescription).toContain(
+      "aspectRatio: 1:1, 16:9, 9:16, 4:3, 3:4",
+    );
+    expect(modelDescription).toContain("inputImages: up to");
+    expect(modelDescription).toContain("seed, size");
+    expect(aspectRatioDescription).not.toContain("4:5");
+    expect(aspectRatioDescription).not.toContain("auto-normalizes");
+  });
+
   it("invokes project_search through the local-agent MCP gateway", async () => {
     const grepRaw = vi.fn(async () => [
       { path: "/workspace/brief.md", line: 2, text: "neon lemon robot" },

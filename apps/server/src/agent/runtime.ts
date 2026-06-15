@@ -41,7 +41,12 @@ import {
   TierGuardError,
 } from "../features/credits/tier-guard.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import { refreshGenerationProviders } from "../features/settings/settings-service.js";
 import { isManagedModelId } from "../features/tutti-managed/credential-service.js";
+import {
+  validateImageGenerationParams,
+  validateVideoGenerationParams,
+} from "../generation/model-schemas.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
@@ -873,6 +878,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               extra ? JSON.stringify(extra) : "",
             );
           };
+          refreshGenerationProviders(run.envOverride ?? options.env);
+          validateImageGenerationParams({
+            prompt: input.prompt,
+            model: input.model,
+            ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
+            ...(input.inputImages ? { inputImages: input.inputImages } : {}),
+            ...(input.quality
+              ? { quality: input.quality as ImageQualityLevel }
+              : {}),
+            ...(input.size ? { size: input.size } : {}),
+            ...(input.seed !== undefined ? { seed: input.seed } : {}),
+          });
           const reservedPlacement = await reserveImagePlacement(input);
 
           // Look up personal workspace directly — the viewer is already
@@ -1065,6 +1082,39 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               extra ? JSON.stringify(extra) : "",
             );
           };
+          refreshGenerationProviders(run.envOverride ?? options.env);
+          validateVideoGenerationParams({
+            prompt: input.prompt,
+            model: input.model,
+            ...(input.duration != null ? { duration: input.duration } : {}),
+            ...(input.resolution
+              ? {
+                  resolution: input.resolution as
+                    | "480p"
+                    | "720p"
+                    | "1080p"
+                    | "4k"
+                    | "2160p",
+                }
+              : {}),
+            ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
+            ...(input.inputImages ? { inputImages: input.inputImages } : {}),
+            ...(input.inputVideo ? { inputVideo: input.inputVideo } : {}),
+            ...(input.videoMode ? { videoMode: input.videoMode } : {}),
+            ...(input.seed !== undefined ? { seed: input.seed } : {}),
+            ...(input.negativePrompt
+              ? { negativePrompt: input.negativePrompt }
+              : {}),
+            ...(input.frameRate !== undefined
+              ? { frameRate: input.frameRate }
+              : {}),
+            ...(input.numFrames !== undefined
+              ? { numFrames: input.numFrames }
+              : {}),
+            ...(input.enableAudio != null
+              ? { enableAudio: input.enableAudio }
+              : {}),
+          });
 
           const client = createClient(accessToken) as UserDataClient;
           const { data: ws } = await client
