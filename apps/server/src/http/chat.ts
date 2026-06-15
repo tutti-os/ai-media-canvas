@@ -10,6 +10,7 @@ import {
   type ChatService,
   ChatServiceError,
 } from "../features/chat/chat-service.js";
+import { summarizeImageAttachments } from "../logging/attachments.js";
 import {
   type ChatOperations,
   createChatOperations,
@@ -146,13 +147,58 @@ export async function registerChatRoutes(
             sessionId: request.params.sessionId,
             role: input.role,
             messageId: response.message.id,
+            attachments: summarizeImageAttachments(
+              input.contentBlocks
+                ?.filter((block) => block.type === "image")
+                .map((block) => ({
+                  assetId: block.assetId,
+                  mimeType: block.mimeType,
+                  name: block.name,
+                  source: block.source,
+                  url: block.url,
+                })),
+            ),
           },
           "chat.createMessage OK",
         );
         return reply.code(201).send(response);
       } catch (error) {
         request.log.error(
-          { sessionId: request.params.sessionId, err: error },
+          {
+            sessionId: request.params.sessionId,
+            err: error,
+            attachments: summarizeImageAttachments(
+              request.body &&
+                typeof request.body === "object" &&
+                Array.isArray(
+                  (request.body as { contentBlocks?: unknown }).contentBlocks,
+                )
+                ? (request.body as { contentBlocks: unknown[] }).contentBlocks
+                    .filter(
+                      (
+                        block,
+                      ): block is {
+                        assetId?: string;
+                        mimeType?: string;
+                        name?: string;
+                        source?: string;
+                        type: "image";
+                        url?: string;
+                      } =>
+                        Boolean(block) &&
+                        typeof block === "object" &&
+                        (block as { type?: unknown }).type === "image",
+                    )
+                    .map((block) => ({
+                      assetId: block.assetId,
+                      mimeType: block.mimeType,
+                      name: block.name,
+                      source: block.source,
+                      url: block.url,
+                    }))
+                : undefined,
+            ),
+          },
           "chat.createMessage FAILED",
         );
         return sendChatError(error, reply);

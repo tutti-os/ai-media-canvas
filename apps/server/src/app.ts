@@ -42,10 +42,6 @@ import {
 } from "./features/chat/chat-service.js";
 import { createJobService } from "./features/jobs/job-service.js";
 import {
-  createTuttiManagedCredentialService,
-  isManagedModelId,
-} from "./features/tutti-managed/credential-service.js";
-import {
   type ProjectService,
   ProjectServiceError,
 } from "./features/projects/project-service.js";
@@ -57,6 +53,10 @@ import {
   type SkillService,
   SkillServiceError,
 } from "./features/skills/skill-service.js";
+import {
+  createTuttiManagedCredentialService,
+  isManagedModelId,
+} from "./features/tutti-managed/credential-service.js";
 import {
   type UploadService,
   UploadServiceError,
@@ -73,13 +73,13 @@ import { registerImageModelRoutes } from "./http/image-models.js";
 import { createJobOperations } from "./http/job-operations.js";
 import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
-import { registerTuttiCliRoutes } from "./http/tutti-cli.js";
-import { registerTuttiManagedModelConnectionRoutes } from "./http/tutti-managed-model-connection.js";
 import { createProjectOperations } from "./http/project-operations.js";
 import { registerProjectRoutes } from "./http/projects.js";
 import { registerSettingsRoutes } from "./http/settings.js";
 import { createSkillOperations } from "./http/skill-operations.js";
 import { registerSkillRoutes } from "./http/skills.js";
+import { registerTuttiCliRoutes } from "./http/tutti-cli.js";
+import { registerTuttiManagedModelConnectionRoutes } from "./http/tutti-managed-model-connection.js";
 import { registerUploadRoutes } from "./http/uploads.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
 import { type LocalStore, createLocalStore } from "./local/store.js";
@@ -87,6 +87,7 @@ import { createLocalUserClient } from "./local/user-client.js";
 import { ConnectionManager } from "./ws/connection-manager.js";
 import { CanvasEventBuffer } from "./ws/event-buffer.js";
 import { registerWsRoute } from "./ws/handler.js";
+import { createPipelineLogger } from "./ws/logger.js";
 
 export type BuildAppOptions = {
   env?: Partial<ServerEnv>;
@@ -743,8 +744,31 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify({
     logger: { level: "info" },
   });
+  const chatRequestLog = createPipelineLogger("chat.message");
   const connectionManager = new ConnectionManager();
   const eventBuffer = new CanvasEventBuffer();
+
+  app.addHook("onError", async (request, _reply, error) => {
+    if (
+      request.method === "POST" &&
+      request.url.startsWith("/api/sessions/") &&
+      request.url.endsWith("/messages")
+    ) {
+      chatRequestLog.error("request_failed", {
+        code:
+          typeof (error as { code?: unknown }).code === "string"
+            ? (error as { code: string }).code
+            : "unknown",
+        contentLength: request.headers["content-length"] ?? "unknown",
+        message: error.message,
+        statusCode:
+          typeof (error as { statusCode?: unknown }).statusCode === "number"
+            ? (error as { statusCode: number }).statusCode
+            : "unknown",
+        url: request.url,
+      });
+    }
+  });
 
   app.addHook("onRequest", async (request, reply) => {
     const requestOrigin = request.headers.origin;
