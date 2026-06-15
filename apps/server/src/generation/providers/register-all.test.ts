@@ -93,6 +93,26 @@ describe("registerAllProviders", () => {
     );
   });
 
+  it("orders Codex Imagegen before API-backed image models when ready", () => {
+    registerAllProviders(
+      loadServerEnv({ kieApiKey: "test-kie-key" }, {}),
+      {
+        detectCodexImagegenCapability: () => ({
+          ready: true,
+          reasons: [],
+          checkedAt: "2026-06-15T00:00:00.000Z",
+        }),
+      },
+    );
+
+    expect(getAvailableImageModels()[0]).toEqual(
+      expect.objectContaining({
+        id: "codex/gpt-image-2",
+        provider: "codex-imagegen",
+      }),
+    );
+  });
+
   it("does not register Codex Imagegen when explicitly disabled", () => {
     registerAllProviders(
       loadServerEnv({}, { AIMC_CODEX_IMAGEGEN_ENABLED: "false" }),

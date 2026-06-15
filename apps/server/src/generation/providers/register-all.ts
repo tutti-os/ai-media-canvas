@@ -43,6 +43,35 @@ export function registerAllProviders(
     ) => CodexImagegenCapability;
   } = {},
 ): void {
+  if (env.codexImagegenEnabled) {
+    const capability = options.detectCodexImagegenCapability
+      ? options.detectCodexImagegenCapability(env)
+      : detectCodexImagegenCapability({
+          enabled: true,
+          ...(env.codexImagegenCodexHome
+            ? { codexHome: env.codexImagegenCodexHome }
+            : {}),
+          ...(env.codexImagegenAgentModel
+            ? { agentModel: env.codexImagegenAgentModel }
+            : {}),
+          ...(env.codexImagegenTimeoutMs
+            ? { timeoutMs: env.codexImagegenTimeoutMs }
+            : {}),
+        });
+    if (capability.ready) {
+      registerImageProvider(
+        new CodexImagegenProvider({
+          ...(env.codexImagegenCodexHome
+            ? { codexHome: env.codexImagegenCodexHome }
+            : {}),
+          ...(env.codexImagegenTimeoutMs
+            ? { timeoutMs: env.codexImagegenTimeoutMs }
+            : {}),
+        }),
+      );
+    }
+  }
+
   if (env.agnesApiKey) {
     registerImageProvider(
       new AgnesImageProvider(env.agnesApiKey, env.agnesBaseUrl),
@@ -94,35 +123,6 @@ export function registerAllProviders(
     registerImageProvider(
       new OpenAIImageProvider(env.openAIApiKey, env.openAIApiBase),
     );
-  }
-
-  if (env.codexImagegenEnabled) {
-    const capability = options.detectCodexImagegenCapability
-      ? options.detectCodexImagegenCapability(env)
-      : detectCodexImagegenCapability({
-          enabled: true,
-          ...(env.codexImagegenCodexHome
-            ? { codexHome: env.codexImagegenCodexHome }
-            : {}),
-          ...(env.codexImagegenAgentModel
-            ? { agentModel: env.codexImagegenAgentModel }
-            : {}),
-          ...(env.codexImagegenTimeoutMs
-            ? { timeoutMs: env.codexImagegenTimeoutMs }
-            : {}),
-        });
-    if (capability.ready) {
-      registerImageProvider(
-        new CodexImagegenProvider({
-          ...(env.codexImagegenCodexHome
-            ? { codexHome: env.codexImagegenCodexHome }
-            : {}),
-          ...(env.codexImagegenTimeoutMs
-            ? { timeoutMs: env.codexImagegenTimeoutMs }
-            : {}),
-        }),
-      );
-    }
   }
 
   // Volces — image only
