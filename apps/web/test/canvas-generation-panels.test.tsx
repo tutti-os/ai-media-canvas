@@ -736,7 +736,7 @@ describe("canvas generation panels", () => {
     const panel = findPositionedPanel(
       screen.getByPlaceholderText("描述你想要的视频镜头、动作、节奏与画面氛围"),
     );
-    expect(panel.style.left).toBe("160px");
+    expect(panel.style.left).toBe("100px");
   });
 
   it("closes the video generator panel when the user clicks back on the canvas", async () => {

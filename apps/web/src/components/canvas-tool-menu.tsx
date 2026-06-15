@@ -18,6 +18,7 @@ import {
 import {
   type MouseEvent,
   type ReactNode,
+  type PointerEvent as ReactPointerEvent,
   memo,
   useCallback,
   useEffect,
@@ -106,6 +107,11 @@ type VideoOverlayItem = {
   resolution?: string;
   aspectRatio?: string;
   mimeType?: string;
+};
+
+type VideoOverlayFrameProps = {
+  excalidrawApi: CanvasToolExcalidrawApi;
+  item: VideoOverlayItem;
 };
 
 type CanvasOverlayElement = {
@@ -242,6 +248,7 @@ function getGeneratorOverlayRadius(width: number, height: number) {
   return Math.max(6, Math.min(32, Math.min(width, height) * 0.08));
 }
 const GENERATOR_OVERLAY_BLEED = 2;
+const VIDEO_OVERLAY_DRAG_THRESHOLD = 4;
 const GENERATOR_DEFAULT_STYLE = {
   backgroundColor: "#F3F4F6",
   strokeColor: "#D1D5DB",
@@ -538,6 +545,126 @@ function getVideoOverlayItems(
           : {}),
       };
     });
+}
+
+function VideoOverlayFrame({ excalidrawApi, item }: VideoOverlayFrameProps) {
+  const [dragging, setDragging] = useState(false);
+  const cleanupDragRef = useRef<(() => void) | null>(null);
+
+  const handlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button != null && event.button !== 0) return;
+      cleanupDragRef.current?.();
+      const startElement = excalidrawApi
+        .getSceneElements()
+        .find((el) => el.id === item.id && !el.isDeleted);
+      if (!startElement) return;
+
+      excalidrawApi.updateScene({
+        appState: { selectedElementIds: { [item.id]: true } },
+      });
+
+      const startClientX = event.clientX;
+      const startClientY = event.clientY;
+      const startX = startElement.x ?? 0;
+      const startY = startElement.y ?? 0;
+      const zoom = excalidrawApi.getAppState().zoom?.value ?? 1;
+      let didDrag = false;
+      const previousCursor = document.body.style.cursor;
+
+      const updateElementPosition = (clientX: number, clientY: number) => {
+        const nextX = startX + (clientX - startClientX) / zoom;
+        const nextY = startY + (clientY - startClientY) / zoom;
+        const elements = excalidrawApi.getSceneElements().map((el) => {
+          if (el.id !== item.id) return el;
+          return {
+            ...el,
+            x: nextX,
+            y: nextY,
+            version: ((el.version as number | undefined) ?? 1) + 1,
+            versionNonce: Math.floor(Math.random() * 2_000_000_000),
+            updated: Date.now(),
+          };
+        });
+        excalidrawApi.updateScene({
+          elements,
+          appState: { selectedElementIds: { [item.id]: true } },
+          captureUpdate: "IMMEDIATELY",
+        });
+      };
+
+      const handlePointerMove = (pointerEvent: PointerEvent) => {
+        const deltaX = pointerEvent.clientX - startClientX;
+        const deltaY = pointerEvent.clientY - startClientY;
+        if (!didDrag) {
+          if (Math.hypot(deltaX, deltaY) < VIDEO_OVERLAY_DRAG_THRESHOLD) {
+            return;
+          }
+          didDrag = true;
+          setDragging(true);
+          document.body.style.cursor = "grabbing";
+        }
+        pointerEvent.preventDefault();
+        updateElementPosition(pointerEvent.clientX, pointerEvent.clientY);
+      };
+
+      const removeListeners = () => {
+        document.removeEventListener("pointermove", handlePointerMove, true);
+        document.removeEventListener("pointerup", handlePointerUp, true);
+        document.removeEventListener("pointercancel", handlePointerUp, true);
+        document.body.style.cursor = previousCursor;
+        setDragging(false);
+        cleanupDragRef.current = null;
+      };
+
+      const handlePointerUp = (pointerEvent: PointerEvent) => {
+        if (didDrag) {
+          pointerEvent.preventDefault();
+          updateElementPosition(pointerEvent.clientX, pointerEvent.clientY);
+        }
+        removeListeners();
+      };
+
+      document.addEventListener("pointermove", handlePointerMove, true);
+      document.addEventListener("pointerup", handlePointerUp, true);
+      document.addEventListener("pointercancel", handlePointerUp, true);
+      cleanupDragRef.current = removeListeners;
+    },
+    [excalidrawApi, item.id],
+  );
+
+  useEffect(() => {
+    return () => cleanupDragRef.current?.();
+  }, []);
+
+  return (
+    <div
+      className="pointer-events-none fixed z-20"
+      style={{
+        left: item.screenX,
+        top: item.screenY,
+        width: item.screenW,
+        height: item.screenH,
+      }}
+      onPointerDown={handlePointerDown}
+    >
+      <VideoCanvasElement
+        src={toRuntimeAssetUrl(item.src, item.assetId)}
+        width={item.screenW}
+        height={item.screenH}
+        title={item.title}
+        prompt={item.prompt}
+        model={item.model}
+        durationSeconds={item.durationSeconds}
+        resolution={item.resolution}
+        aspectRatio={item.aspectRatio}
+        mimeType={item.mimeType}
+        zoom={item.zoom}
+        dragEnabled
+        dragging={dragging}
+      />
+    </div>
+  );
 }
 
 export function CanvasToolMenu({
@@ -1060,32 +1187,14 @@ export function CanvasToolMenu({
         )}
 
       {videoElements.length > 0 &&
+        excalidrawApi &&
         createPortal(
           videoElements.map((el) => (
-            <div
+            <VideoOverlayFrame
               key={el.id}
-              className="pointer-events-none fixed z-20"
-              style={{
-                left: el.screenX,
-                top: el.screenY,
-                width: el.screenW,
-                height: el.screenH,
-              }}
-            >
-              <VideoCanvasElement
-                src={toRuntimeAssetUrl(el.src, el.assetId)}
-                width={el.screenW}
-                height={el.screenH}
-                title={el.title}
-                prompt={el.prompt}
-                model={el.model}
-                durationSeconds={el.durationSeconds}
-                resolution={el.resolution}
-                aspectRatio={el.aspectRatio}
-                mimeType={el.mimeType}
-                zoom={el.zoom}
-              />
-            </div>
+              item={el}
+              excalidrawApi={excalidrawApi}
+            />
           )),
           document.body,
         )}

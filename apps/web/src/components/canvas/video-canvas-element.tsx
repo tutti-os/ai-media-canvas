@@ -25,6 +25,8 @@ type VideoCanvasElementProps = {
   aspectRatio?: string | undefined;
   mimeType?: string | undefined;
   zoom?: number | undefined;
+  dragEnabled?: boolean | undefined;
+  dragging?: boolean | undefined;
 };
 
 function formatDuration(seconds?: number): string | null {
@@ -49,6 +51,8 @@ export function VideoCanvasElement({
   aspectRatio,
   mimeType = "video/mp4",
   zoom = 1,
+  dragEnabled = false,
+  dragging = false,
 }: VideoCanvasElementProps) {
   const { t } = useAppTranslation("canvas");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -101,6 +105,14 @@ export function VideoCanvasElement({
     setPlaying(false);
   }, []);
 
+  const togglePreviewState = useCallback(() => {
+    if (playing) {
+      pausePreview();
+    } else {
+      playPreview();
+    }
+  }, [pausePreview, playPreview, playing]);
+
   const togglePreview = useCallback(
     (event: React.MouseEvent) => {
       stopCanvasEvent(event);
@@ -108,18 +120,14 @@ export function VideoCanvasElement({
         suppressClickAfterDragRef.current = false;
         return;
       }
-      if (playing) {
-        pausePreview();
-      } else {
-        playPreview();
-      }
+      togglePreviewState();
     },
-    [pausePreview, playPreview, playing, stopCanvasEvent],
+    [stopCanvasEvent, togglePreviewState],
   );
 
   const handleVideoPointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) return;
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (event.button != null && event.button !== 0) return;
       suppressClickAfterDragRef.current = false;
       removeDragPauseListenersRef.current?.();
 
@@ -180,10 +188,7 @@ export function VideoCanvasElement({
     if (!infoOpen) return;
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
-      if (
-        target instanceof Node &&
-        infoDialogRef.current?.contains(target)
-      ) {
+      if (target instanceof Node && infoDialogRef.current?.contains(target)) {
         return;
       }
       setInfoOpen(false);
@@ -208,6 +213,10 @@ export function VideoCanvasElement({
     return () => removeDragPauseListenersRef.current?.();
   }, []);
 
+  useEffect(() => {
+    if (dragging) pausePreview();
+  }, [dragging, pausePreview]);
+
   return (
     <>
       <div
@@ -215,8 +224,16 @@ export function VideoCanvasElement({
         style={{ width, height }}
         className="relative overflow-visible"
       >
-        <div
-          className="pointer-events-auto absolute inset-0 flex cursor-pointer items-center justify-center overflow-hidden bg-black"
+        <button
+          type="button"
+          aria-label={readableTitle}
+          className={`pointer-events-auto absolute inset-0 flex appearance-none items-center justify-center overflow-hidden border-0 bg-black p-0 ${
+            dragging
+              ? "cursor-grabbing"
+              : dragEnabled
+                ? "cursor-grab"
+                : "cursor-pointer"
+          }`}
           onPointerDown={handleVideoPointerDown}
           onMouseEnter={playPreview}
           onMouseLeave={pausePreview}
@@ -229,6 +246,7 @@ export function VideoCanvasElement({
             loop
             playsInline
             preload="metadata"
+            draggable={false}
             className="h-full w-full object-cover"
           />
 
@@ -249,7 +267,7 @@ export function VideoCanvasElement({
               {durationLabel}
             </div>
           )}
-        </div>
+        </button>
 
         <button
           type="button"
