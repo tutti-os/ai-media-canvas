@@ -82,6 +82,8 @@ describe("detectCodexImagegenCapability", () => {
       fileExists: (path) =>
         path === "/tmp/codex-home/auth.json" ||
         path === "/tmp/codex-home/skills/.system/imagegen/SKILL.md",
+      readFile: () =>
+        JSON.stringify({ tokens: { access_token: "access-token" } }),
     });
 
     expect(capability).toMatchObject({
@@ -90,6 +92,55 @@ describe("detectCodexImagegenCapability", () => {
       codexVersion: "0.124.0",
       codexHome: "/tmp/codex-home",
     });
+  });
+
+  it("accepts API key auth stored in Codex auth.json", () => {
+    const capability = detectCodexImagegenCapability({
+      enabled: true,
+      cacheTtlMs: 0,
+      codexHome: "/tmp/codex-home",
+      runCommand: (_command, args) =>
+        args.join(" ") === "--version" ? "codex 0.124.0" : "ok",
+      fileExists: () => true,
+      readFile: () => JSON.stringify({ OPENAI_API_KEY: "sk-test" }),
+    });
+
+    expect(capability.ready).toBe(true);
+    expect(capability.reasons).not.toContain("codex_not_logged_in");
+  });
+
+  it("accepts API key auth from process env", () => {
+    const capability = detectCodexImagegenCapability({
+      enabled: true,
+      cacheTtlMs: 0,
+      codexHome: "/tmp/codex-home",
+      env: { OPENAI_API_KEY: "sk-env-test" },
+      runCommand: (_command, args) =>
+        args.join(" ") === "--version" ? "codex 0.124.0" : "ok",
+      fileExists: (path) =>
+        path === "/tmp/codex-home/skills/.system/imagegen/SKILL.md",
+      readFile: () => {
+        throw new Error("auth.json should not be required when env key exists");
+      },
+    });
+
+    expect(capability.ready).toBe(true);
+    expect(capability.reasons).not.toContain("codex_not_logged_in");
+  });
+
+  it("rejects empty or malformed auth files", () => {
+    const capability = detectCodexImagegenCapability({
+      enabled: true,
+      cacheTtlMs: 0,
+      codexHome: "/tmp/codex-home",
+      runCommand: (_command, args) =>
+        args.join(" ") === "--version" ? "codex 0.124.0" : "ok",
+      fileExists: () => true,
+      readFile: () => JSON.stringify({ tokens: {} }),
+    });
+
+    expect(capability.ready).toBe(false);
+    expect(capability.reasons).toContain("codex_not_logged_in");
   });
 
   it("probes exec with user config ignored", () => {
@@ -103,6 +154,8 @@ describe("detectCodexImagegenCapability", () => {
         return args.join(" ") === "--version" ? "codex 0.124.0" : "ok";
       },
       fileExists: () => true,
+      readFile: () =>
+        JSON.stringify({ tokens: { access_token: "access-token" } }),
     });
 
     expect(capability.ready).toBe(true);

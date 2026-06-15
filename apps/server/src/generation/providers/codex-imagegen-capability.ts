@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -31,6 +31,7 @@ export type CodexImagegenCommandRunner = (
 ) => string;
 
 export type CodexImagegenFileExists = (path: string) => boolean;
+export type CodexImagegenFileReader = (path: string) => string;
 
 export interface CodexImagegenCapabilityOptions {
   enabled: boolean;
@@ -42,6 +43,7 @@ export interface CodexImagegenCapabilityOptions {
   now?: () => Date;
   runCommand?: CodexImagegenCommandRunner;
   fileExists?: CodexImagegenFileExists;
+  readFile?: CodexImagegenFileReader;
 }
 
 type CacheEntry = {
@@ -90,6 +92,7 @@ export function detectCodexImagegenCapability(
         env: { ...process.env, ...options.env, CODEX_HOME: codexHome },
         runCommand: options.runCommand ?? defaultRunCommand,
         fileExists: options.fileExists ?? existsSync,
+        readFile: options.readFile ?? defaultReadFile,
       })
     : {
         ready: false,
@@ -115,6 +118,7 @@ function probeCodexImagegenCapability(options: {
   env: NodeJS.ProcessEnv;
   runCommand: CodexImagegenCommandRunner;
   fileExists: CodexImagegenFileExists;
+  readFile: CodexImagegenFileReader;
 }): CodexImagegenCapability {
   const reasons: CodexImagegenUnavailableReason[] = [];
   let codexVersion: string | undefined;
@@ -136,7 +140,15 @@ function probeCodexImagegenCapability(options: {
   }
 
   if (!reasons.includes("codex_not_found")) {
-    if (!options.fileExists(join(options.codexHome, "auth.json"))) {
+    const authPath = join(options.codexHome, "auth.json");
+    if (
+      !hasUsableCodexAuth(
+        authPath,
+        options.env,
+        options.fileExists,
+        options.readFile,
+      )
+    ) {
       reasons.push("codex_not_logged_in");
     }
 
@@ -173,6 +185,42 @@ function probeCodexImagegenCapability(options: {
     codexHome: options.codexHome,
     checkedAt: options.checkedAt,
   };
+}
+
+function hasUsableCodexAuth(
+  authPath: string,
+  env: NodeJS.ProcessEnv,
+  fileExists: CodexImagegenFileExists,
+  readFile: CodexImagegenFileReader,
+) {
+  if (hasNonEmptyString(env.OPENAI_API_KEY)) return true;
+  if (!fileExists(authPath)) return false;
+
+  try {
+    const parsed = JSON.parse(readFile(authPath)) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return false;
+    }
+    const auth = parsed as {
+      OPENAI_API_KEY?: unknown;
+      tokens?: { access_token?: unknown; refresh_token?: unknown };
+    };
+    return (
+      hasNonEmptyString(auth.OPENAI_API_KEY) ||
+      hasNonEmptyString(auth.tokens?.access_token) ||
+      hasNonEmptyString(auth.tokens?.refresh_token)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function hasNonEmptyString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function defaultReadFile(path: string) {
+  return readFileSync(path, "utf8");
 }
 
 function defaultRunCommand(
