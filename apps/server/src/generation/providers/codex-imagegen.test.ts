@@ -2,7 +2,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { CodexImagegenProvider, parseSavedPath } from "./codex-imagegen.js";
+import {
+  CodexImagegenProvider,
+  parsePngDimensions,
+  parseSavedPath,
+} from "./codex-imagegen.js";
 
 describe("CodexImagegenProvider", () => {
   it("generates through codex exec and returns a data URI", async () => {
@@ -18,6 +22,7 @@ describe("CodexImagegenProvider", () => {
     });
     const provider = new CodexImagegenProvider({
       codexHome: "/tmp/codex-home",
+      agentModel: "gpt-5.4",
       timeoutMs: 1234,
       execCodex,
     });
@@ -33,6 +38,8 @@ describe("CodexImagegenProvider", () => {
       expect.arrayContaining([
         "exec",
         "--ignore-user-config",
+        "-m",
+        "gpt-5.4",
         "--full-auto",
         "--skip-git-repo-check",
         "-C",
@@ -94,5 +101,15 @@ describe("CodexImagegenProvider", () => {
     expect(parseSavedPath("SAVED: /tmp/one.png\nSAVED: /tmp/two.png")).toBe(
       "/tmp/two.png",
     );
+  });
+
+  it("reads dimensions from PNG headers", () => {
+    const png = Buffer.alloc(24);
+    Buffer.from("89504e470d0a1a0a", "hex").copy(png, 0);
+    png.writeUInt32BE(1254, 16);
+    png.writeUInt32BE(1254, 20);
+
+    expect(parsePngDimensions(png)).toEqual({ width: 1254, height: 1254 });
+    expect(parsePngDimensions(Buffer.from("not png"))).toBeUndefined();
   });
 });

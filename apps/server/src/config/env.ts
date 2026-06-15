@@ -6,6 +6,7 @@ export const DEFAULT_AGENT_MODEL = "openai:gpt-5.4-mini";
 export const DEFAULT_GOOGLE_AGENT_MODEL = "gemini-2.5-flash";
 export const DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
 export const DEFAULT_AGNES_AGENT_MODEL = "agnes:agnes-2.0-flash";
+export const DEFAULT_CODEX_IMAGEGEN_AGENT_MODEL = "gpt-5.5";
 
 export type ServerEnv = {
   agentBackendMode: "state" | "filesystem";
@@ -19,6 +20,7 @@ export type ServerEnv = {
   anthropicBaseUrl?: string;
   codexImagegenCodexHome?: string;
   codexImagegenEnabled?: boolean;
+  codexImagegenAgentModel?: string;
   codexImagegenTimeoutMs?: number;
   dataRoot?: string;
   googleApiKey?: string;
@@ -109,6 +111,10 @@ export function loadServerEnv(
   const codexImagegenCodexHome =
     overrides.codexImagegenCodexHome ??
     normalizeOptionalString(source.AIMC_CODEX_HOME ?? source.CODEX_HOME);
+  const codexImagegenAgentModel =
+    overrides.codexImagegenAgentModel ??
+    normalizeOptionalString(source.AIMC_CODEX_IMAGEGEN_AGENT_MODEL) ??
+    DEFAULT_CODEX_IMAGEGEN_AGENT_MODEL;
   const agentModel =
     configuredAgentModel ??
     agnesDefaultModel ??
@@ -221,6 +227,7 @@ export function loadServerEnv(
     ...(anthropicApiKey ? { anthropicApiKey } : {}),
     ...(anthropicBaseUrl ? { anthropicBaseUrl } : {}),
     codexImagegenEnabled,
+    codexImagegenAgentModel,
     ...(codexImagegenTimeoutMs ? { codexImagegenTimeoutMs } : {}),
     ...(codexImagegenCodexHome ? { codexImagegenCodexHome } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),

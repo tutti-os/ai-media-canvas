@@ -104,6 +104,9 @@ export function registerAllProviders(
           ...(env.codexImagegenCodexHome
             ? { codexHome: env.codexImagegenCodexHome }
             : {}),
+          ...(env.codexImagegenAgentModel
+            ? { agentModel: env.codexImagegenAgentModel }
+            : {}),
           ...(env.codexImagegenTimeoutMs
             ? { timeoutMs: env.codexImagegenTimeoutMs }
             : {}),

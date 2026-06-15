@@ -13,6 +13,7 @@ import { GenerationError, aspectRatioToDimensions } from "../utils.js";
 
 const ICON_CODEX = "https://github.com/openai.png";
 const DEFAULT_CODEX_TIMEOUT_MS = 5 * 60_000;
+const DEFAULT_CODEX_AGENT_MODEL = "gpt-5.5";
 const CODEX_IMAGEGEN_MODEL_ID = "codex/gpt-image-2";
 
 export const CODEX_IMAGEGEN_MODELS: readonly ModelInfo[] = [
@@ -37,6 +38,7 @@ export type CodexImagegenExec = (
 export interface CodexImagegenProviderOptions {
   codexPath?: string;
   codexHome?: string;
+  agentModel?: string;
   timeoutMs?: number;
   execCodex?: CodexImagegenExec;
 }
@@ -46,12 +48,14 @@ export class CodexImagegenProvider implements ImageProvider {
   readonly models = CODEX_IMAGEGEN_MODELS;
   private readonly codexPath: string;
   private readonly codexHome: string | undefined;
+  private readonly agentModel: string;
   private readonly timeoutMs: number;
   private readonly execCodex: CodexImagegenExec;
 
   constructor(options: CodexImagegenProviderOptions = {}) {
     this.codexPath = options.codexPath ?? "codex";
     this.codexHome = options.codexHome;
+    this.agentModel = options.agentModel ?? DEFAULT_CODEX_AGENT_MODEL;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_CODEX_TIMEOUT_MS;
     this.execCodex = options.execCodex ?? defaultExecCodex(this.codexPath);
   }
@@ -93,6 +97,8 @@ export class CodexImagegenProvider implements ImageProvider {
         [
           "exec",
           "--ignore-user-config",
+          "-m",
+          this.agentModel,
           "--full-auto",
           "--skip-git-repo-check",
           "-C",
@@ -116,11 +122,12 @@ export class CodexImagegenProvider implements ImageProvider {
         );
       }
       const imageBuffer = await readFile(resolvedPath);
+      const imageDimensions = parsePngDimensions(imageBuffer) ?? dimensions;
       return {
         url: `data:image/png;base64,${imageBuffer.toString("base64")}`,
         mimeType: "image/png",
-        width: dimensions.width,
-        height: dimensions.height,
+        width: imageDimensions.width,
+        height: imageDimensions.height,
       };
     } catch (error) {
       if (error instanceof GenerationError) throw error;
@@ -187,6 +194,20 @@ function dimensionsFromSize(size: string, fallbackAspectRatio: string) {
   return {
     width: Number.parseInt(match[1] ?? "1024", 10),
     height: Number.parseInt(match[2] ?? "1024", 10),
+  };
+}
+
+export function parsePngDimensions(buffer: Buffer) {
+  const pngSignature = "89504e470d0a1a0a";
+  if (
+    buffer.length < 24 ||
+    buffer.subarray(0, 8).toString("hex") !== pngSignature
+  ) {
+    return undefined;
+  }
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20),
   };
 }
 

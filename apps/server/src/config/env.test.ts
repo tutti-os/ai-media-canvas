@@ -52,18 +52,21 @@ describe("loadServerEnv", () => {
       {},
       {
         AIMC_CODEX_IMAGEGEN_ENABLED: "true",
+        AIMC_CODEX_IMAGEGEN_AGENT_MODEL: "gpt-5.4",
         AIMC_CODEX_IMAGEGEN_TIMEOUT_MS: "450000",
         AIMC_CODEX_HOME: "/tmp/codex-home",
       },
     );
 
     expect(env.codexImagegenEnabled).toBe(true);
+    expect(env.codexImagegenAgentModel).toBe("gpt-5.4");
     expect(env.codexImagegenTimeoutMs).toBe(450000);
     expect(env.codexImagegenCodexHome).toBe("/tmp/codex-home");
   });
 
   it("enables Codex Imagegen by default and allows explicit disable", () => {
     expect(loadServerEnv({}, {}).codexImagegenEnabled).toBe(true);
+    expect(loadServerEnv({}, {}).codexImagegenAgentModel).toBe("gpt-5.5");
     expect(
       loadServerEnv({}, { AIMC_CODEX_IMAGEGEN_ENABLED: "false" })
         .codexImagegenEnabled,
