@@ -532,7 +532,9 @@ const VideoArtifactCard = React.memo(function VideoArtifactCard({
       <div className="bg-black">
         <video
           src={url}
-          controls
+          muted
+          playsInline
+          preload="metadata"
           className="max-h-[280px] w-full object-contain"
         />
       </div>
@@ -696,7 +698,9 @@ function ToolDetailPanel({
                     <video
                       key={artifact.url}
                       src={toRuntimeAssetUrl(artifact.url, artifact.assetId)}
-                      controls
+                      muted
+                      playsInline
+                      preload="metadata"
                       className="max-w-[240px] rounded-lg border border-border bg-black"
                     />
                   ) : null,

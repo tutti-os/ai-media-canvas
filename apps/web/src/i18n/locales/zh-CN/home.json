@@ -137,6 +137,7 @@
   "recentProjects": {
     "archive": "归档 {{name}}",
     "newProject": "新建项目",
+    "previewCover": "预览 {{name}} 的封面",
     "title": "最近项目",
     "untitled": "未命名",
     "updatedAt": "更新于 {{date}}",

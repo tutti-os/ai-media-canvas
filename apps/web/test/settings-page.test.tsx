@@ -107,6 +107,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -144,6 +146,8 @@ describe("SettingsPage", () => {
           googleVertexLocation: "",
           googleVertexVideoLocation: "",
           replicateApiToken: "",
+          kieApiKey: "",
+          kieBaseUrl: "",
           volcesApiKey: "",
           volcesBaseUrl: "",
         },
@@ -180,6 +184,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -396,6 +402,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -428,6 +436,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -488,6 +498,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "global",
         googleVertexVideoLocation: "us-central1",
         replicateApiToken: "replicate-local-token",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -514,6 +526,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "global",
         googleVertexVideoLocation: "us-central1",
         replicateApiToken: "replicate-local-token",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -597,6 +611,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "global",
         googleVertexVideoLocation: "us-central1",
         replicateApiToken: "replicate-local-token",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       }),
@@ -623,6 +639,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -664,6 +682,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -718,6 +738,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -746,6 +768,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -882,6 +906,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -922,6 +948,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -967,6 +995,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "replicate-local-token",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "volces-local-key",
         volcesBaseUrl: "https://ark.cn-beijing.volces.com/api/v3",
       },
@@ -996,9 +1026,31 @@ describe("SettingsPage", () => {
       screen.getByDisplayValue("replicate-local-token"),
     ).toBeInTheDocument();
     expect(screen.getByDisplayValue("sk-local-agnes")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("https://api.kie.ai")).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue("http://127.0.0.1:4000/v1"),
+    ).toBeInTheDocument();
     expect(
       screen.getByDisplayValue("https://ark.cn-beijing.volces.com/api/v3"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Get Kie.ai API Key" }),
+    ).toHaveAttribute("href", "https://kie.ai/api-key");
+    expect(
+      screen.getByRole("link", { name: "Get Replicate API Key" }),
+    ).toHaveAttribute("href", "https://replicate.com/account/api-tokens");
+    expect(
+      screen.getByRole("link", { name: "Get Volces API Key" }),
+    ).toHaveAttribute(
+      "href",
+      "https://console.volcengine.com/ark/region:ark+cn-beijing/apikey",
+    );
+    expect(
+      screen.getByRole("link", { name: "Get Google API Key" }),
+    ).toHaveAttribute("href", "https://aistudio.google.com/app/apikey");
+    expect(
+      screen.getByRole("link", { name: "Get OpenAI API Key" }),
+    ).toHaveAttribute("href", "https://platform.openai.com/api-keys");
   });
 
   it("localizes Media settings copy in Chinese", async () => {
@@ -1019,6 +1071,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -1041,6 +1095,10 @@ describe("SettingsPage", () => {
     expect(
       screen.getByRole("link", { name: "获取 Agnes API Key" }),
     ).toHaveAttribute("href", "https://platform.agnes-ai.com/settings/apiKeys");
+    expect(
+      screen.getByRole("link", { name: "获取 Kie.ai API Key" }),
+    ).toHaveAttribute("href", "https://kie.ai/api-key");
+    expect(screen.getByDisplayValue("https://api.kie.ai")).toBeInTheDocument();
     expect(screen.queryByText("Media Providers")).not.toBeInTheDocument();
     expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
   });
@@ -1068,6 +1126,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -1137,6 +1197,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -1177,6 +1239,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -1208,6 +1272,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -1248,6 +1314,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -1287,6 +1355,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -1313,6 +1383,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -1346,6 +1418,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -1412,6 +1486,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },

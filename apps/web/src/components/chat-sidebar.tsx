@@ -38,6 +38,7 @@ import {
   type GenerationJobType,
   generationJobService,
 } from "../lib/generation-job-service";
+import { toRuntimeAssetUrl } from "../lib/local-assets";
 import {
   fetchImageModels,
   fetchRunEvents,
@@ -82,6 +83,108 @@ type DeferredMediaJob = {
   jobType: GenerationJobType;
   output: Record<string, unknown>;
 };
+
+type SendFailureStage = "save_message" | "agent_run_ack" | "stream";
+
+function summarizeReadyAttachments(attachments: ReadyAttachment[]) {
+  return attachments.map((attachment, index) => {
+    const url = attachment.url;
+    const dataUriMatch = /^data:([^;]+);base64,(.*)$/s.exec(url);
+    const base = {
+      assetId: attachment.assetId,
+      index: index + 1,
+      mimeType: attachment.mimeType,
+      name: attachment.name,
+      source: attachment.source,
+      urlBytes: byteLength(url),
+      urlKind: classifyAttachmentUrl(url),
+    };
+
+    if (dataUriMatch) {
+      return {
+        ...base,
+        dataMimeType: dataUriMatch[1] ?? "unknown",
+        estimatedDataBytes: estimateBase64Bytes(dataUriMatch[2] ?? ""),
+      };
+    }
+
+    try {
+      const parsed = new URL(url);
+      return {
+        ...base,
+        urlHost: parsed.host,
+        urlPath: parsed.pathname,
+      };
+    } catch {
+      return base;
+    }
+  });
+}
+
+function classifyAttachmentUrl(url: string) {
+  if (url.startsWith("data:")) return "data";
+  if (url.startsWith("blob:")) return "blob";
+  try {
+    return new URL(url).protocol.replace(/:$/, "") || "unknown";
+  } catch {
+    return "invalid";
+  }
+}
+
+function estimateBase64Bytes(base64: string) {
+  const normalized = base64.replace(/\s/g, "");
+  if (!normalized) return 0;
+  const padding = normalized.endsWith("==")
+    ? 2
+    : normalized.endsWith("=")
+      ? 1
+      : 0;
+  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+}
+
+function byteLength(value: string) {
+  return new TextEncoder().encode(value).length;
+}
+
+function isSchemaUrl(value: string) {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveSelectedCanvasImageUrl(element: CanvasSelectedElement) {
+  const storageUrl =
+    typeof element.storageUrl === "string" && element.storageUrl
+      ? toRuntimeAssetUrl(element.storageUrl)
+      : undefined;
+  if (storageUrl && isSchemaUrl(storageUrl)) return storageUrl;
+  return element.dataUrl;
+}
+
+function runtimeCanvasImageUrl(item: CanvasImageItem) {
+  return toRuntimeAssetUrl(item.url, item.assetId);
+}
+
+function runtimeArtifactUrl(artifact: ToolArtifact) {
+  return toRuntimeAssetUrl(artifact.url, artifact.assetId);
+}
+
+function summarizeClientError(error: unknown) {
+  if (error instanceof Error) {
+    const errorWithCode = error as Error & { code?: unknown };
+    return {
+      message: error.message,
+      name: error.name,
+      ...(typeof errorWithCode.code === "string"
+        ? { code: errorWithCode.code }
+        : {}),
+    };
+  }
+  return { message: String(error), name: typeof error };
+}
 
 function extractDeferredMediaJobFromOutput(
   output: Record<string, unknown> | undefined,
@@ -131,10 +234,21 @@ function buildGeneratedMediaArtifact(
 
   if (job.jobType === "video_generation") {
     const durationSeconds = result.duration_seconds;
+    const prompt = job.output.prompt;
+    const model = job.output.model;
+    const aspectRatio =
+      typeof job.output.aspectRatio === "string"
+        ? job.output.aspectRatio
+        : job.output.aspect_ratio;
+    const resolution = job.output.resolution;
     return {
       type: "video",
       ...(typeof assetId === "string" ? { assetId } : {}),
       ...(typeof title === "string" ? { title } : {}),
+      ...(typeof prompt === "string" ? { prompt } : {}),
+      ...(typeof model === "string" ? { model } : {}),
+      ...(typeof aspectRatio === "string" ? { aspectRatio } : {}),
+      ...(typeof resolution === "string" ? { resolution } : {}),
       url,
       mimeType,
       width,
@@ -281,7 +395,7 @@ export function ChatSidebar({
     (contentBlocks: ContentBlock[]) => {
       const canvasUrls = new Set(
         (onRequestCanvasImages ? onRequestCanvasImages() : [])
-          .map((item) => item.url)
+          .flatMap((item) => [item.url, runtimeCanvasImageUrl(item)])
           .filter(
             (url): url is string => typeof url === "string" && url.length > 0,
           ),
@@ -298,13 +412,14 @@ export function ChatSidebar({
         }
 
         for (const artifact of block.artifacts) {
-          const replayKey = artifactReplayKey(block.toolCallId, artifact.url);
+          const artifactUrl = runtimeArtifactUrl(artifact);
+          const replayKey = artifactReplayKey(block.toolCallId, artifactUrl);
           if (replayedArtifactKeysRef.current.has(replayKey)) continue;
           if (hasBackendInsertedElement(block)) {
             replayedArtifactKeysRef.current.add(replayKey);
             continue;
           }
-          if (canvasUrls.has(artifact.url)) {
+          if (canvasUrls.has(artifactUrl)) {
             replayedArtifactKeysRef.current.add(replayKey);
             continue;
           }
@@ -645,7 +760,7 @@ export function ChatSidebar({
         const selectionAttachments: ReadyAttachment[] = selectedImageEls
           .filter((el) => !existingIds.has(el.id))
           .flatMap((el) => {
-            const url = el.storageUrl ?? el.dataUrl;
+            const url = resolveSelectedCanvasImageUrl(el);
             if (!url) return [];
             return [
               {
@@ -723,15 +838,25 @@ export function ChatSidebar({
       };
       updateSessionMessages(currentSessionId, (prev) => [...prev, userMsg]);
 
-      const userMessageSave = saveMessage(currentSessionId, {
-        role: "user",
+      const userMessagePayload = {
+        role: "user" as const,
         content: text,
         contentBlocks: [
           { type: "text" as const, text },
           ...mentionBlocks,
           ...imageBlocks,
         ],
-      });
+      };
+      const userMessageSave = saveMessage(currentSessionId, userMessagePayload);
+      const sendDiagnostics = {
+        attachmentCount: currentAttachments.length,
+        attachments: summarizeReadyAttachments(currentAttachments),
+        canvasId,
+        messageBodyBytes: byteLength(JSON.stringify(userMessagePayload)),
+        promptChars: text.length,
+        selectedCanvasImageCount: selectedImageEls.length,
+        sessionId: currentSessionId,
+      };
 
       // Auto-title from first user message, falling back to attachment names
       // for image-only initial runs from the home prompt.
@@ -752,8 +877,10 @@ export function ChatSidebar({
       }
       abortRef.current = false;
 
+      let failureStage: SendFailureStage = "save_message";
       try {
         await userMessageSave;
+        failureStage = "agent_run_ack";
 
         const perf = {
           t0Send: performance.now(),
@@ -919,9 +1046,15 @@ export function ChatSidebar({
         clearAttachments();
         setMessageMentions([]);
 
+        failureStage = "stream";
         await streamDone;
         cleanup();
-      } catch {
+      } catch (error) {
+        console.warn("[chat] Failed to send agent message", {
+          ...sendDiagnostics,
+          error: summarizeClientError(error),
+          stage: failureStage,
+        });
         updateSessionMessages(currentSessionId, (prev) =>
           prev.map((m) => {
             if (m.id !== assistantIdRef.current) return m;
@@ -1179,7 +1312,10 @@ export function ChatSidebar({
           !backendInserted
         ) {
           for (const artifact of evt.artifacts) {
-            const replayKey = artifactReplayKey(evt.toolCallId, artifact.url);
+            const replayKey = artifactReplayKey(
+              evt.toolCallId,
+              runtimeArtifactUrl(artifact),
+            );
             if (replayedArtifactKeysRef.current.has(replayKey)) continue;
             replayedArtifactKeysRef.current.add(replayKey);
             onImageGenerated?.(artifact);

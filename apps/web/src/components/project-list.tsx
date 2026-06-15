@@ -4,11 +4,12 @@ import type { ProjectSummary } from "@aimc/shared";
 import { Trash2 } from "lucide-react";
 import Link from "next/link";
 
-import { DeleteProjectDialog } from "./delete-project-dialog";
 import { useDeleteProject } from "@/hooks/use-delete-project";
 import { useAppTranslation } from "@/i18n";
 import { formatProjectName } from "@/lib/project-display";
 import { formatDate } from "@/lib/utils";
+import { DeleteProjectDialog } from "./delete-project-dialog";
+import { ProjectThumbnailPreview } from "./project-thumbnail-preview";
 
 interface ProjectListProps {
   projects: ProjectSummary[];
@@ -76,13 +77,18 @@ export function ProjectList({
           const projectName = formatProjectName(project.name, t("untitled"));
 
           return (
-            <Link
+            <div
               key={project.id}
-              href={`/canvas?id=${project.primaryCanvas.id}`}
               className={`group relative block aspect-[286/208] rounded-lg bg-card p-2 cursor-pointer shadow-card transition-all duration-300 hover:shadow-md sm:p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1${
                 highlightId === project.id ? " ring-2 ring-border" : ""
               }`}
             >
+              <Link
+                href={`/canvas?id=${project.primaryCanvas.id}`}
+                aria-label={projectName}
+                className="absolute inset-0 z-20 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              />
+
               {/* Trash icon -- hover reveal on desktop */}
               <button
                 type="button"
@@ -92,26 +98,16 @@ export function ProjectList({
                   requestDelete(project.id);
                 }}
                 aria-label={t("archive", { name: projectName })}
-                className="absolute right-3 top-3 z-10 flex size-8 items-center justify-center rounded-[4px] bg-foreground/70 text-background opacity-0 transition-all duration-300 hover:bg-foreground/80 group-hover:opacity-100 sm:right-5 sm:top-5 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:opacity-100"
+                className="absolute right-3 top-3 z-30 flex size-8 items-center justify-center rounded-[4px] bg-foreground/70 text-background opacity-0 transition-all duration-300 hover:bg-foreground/80 group-hover:opacity-100 sm:right-5 sm:top-5 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:opacity-100"
               >
                 <Trash2 size={14} />
               </button>
 
-              {/* Thumbnail */}
-              <div className="aspect-[395/227] w-full overflow-hidden rounded-lg bg-muted">
-                {project.thumbnailUrl && (
-                  <img
-                    src={project.thumbnailUrl}
-                    alt={projectName}
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.display =
-                        "none";
-                    }}
-                  />
-                )}
-              </div>
+              <ProjectThumbnailPreview
+                src={project.thumbnailUrl}
+                alt={projectName}
+                previewLabel={t("previewCover", { name: projectName })}
+              />
               {/* Info */}
               <div className="mt-2 flex items-center justify-between sm:mt-3">
                 <div className="truncate text-xs text-foreground sm:text-sm">
@@ -121,7 +117,7 @@ export function ProjectList({
               <div className="mt-0.5 text-[10px] text-muted-foreground sm:text-[11px]">
                 {t("updatedAt", { date: formatDate(project.updatedAt) })}
               </div>
-            </Link>
+            </div>
           );
         })}
       </div>

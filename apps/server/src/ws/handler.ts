@@ -28,13 +28,14 @@ import type { ViewerService } from "../features/bootstrap/ensure-user-foundation
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
 import {
-  type TuttiManagedCredentialService,
-  isManagedModelId,
-} from "../features/tutti-managed/credential-service.js";
-import {
   LOCAL_WORKSPACE_ID,
   type SettingsService,
 } from "../features/settings/settings-service.js";
+import {
+  type TuttiManagedCredentialService,
+  isManagedModelId,
+} from "../features/tutti-managed/credential-service.js";
+import { summarizeImageAttachments } from "../logging/attachments.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";
 import { createPipelineLogger } from "./logger.js";
@@ -353,7 +354,11 @@ async function handleRunCommand(
     userId: authenticatedUser.id,
     sessionId: payload.sessionId,
   });
-  log.info("started", { prompt: payload.prompt.slice(0, 80) });
+  log.info("started", {
+    attachments: summarizeImageAttachments(payload.attachments),
+    attachmentCount: payload.attachments?.length ?? 0,
+    prompt: payload.prompt.slice(0, 80),
+  });
 
   // Resolve thread + model in parallel
   const [threadId, runtimeSettings] = await Promise.all([

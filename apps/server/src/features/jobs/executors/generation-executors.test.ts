@@ -142,6 +142,7 @@ describe("generation executors", () => {
         model: "test/video-model",
         duration: 6,
         aspect_ratio: "16:9",
+        resolution: "720p",
       },
     });
 
@@ -154,6 +155,10 @@ describe("generation executors", () => {
       width: 1280,
       height: 720,
       duration_seconds: 6,
+      prompt: "A cinematic flythrough",
+      model: "test/video-model",
+      aspect_ratio: "16:9",
+      resolution: "720p",
     });
 
     const asset = store.getAssetResponse(result.asset_id as string);

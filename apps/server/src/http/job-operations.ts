@@ -19,6 +19,10 @@ import {
   getDefaultImageModelId,
   getDefaultVideoModelId,
 } from "../generation/default-models.js";
+import {
+  validateImageGenerationParams,
+  validateVideoGenerationParams,
+} from "../generation/model-schemas.js";
 
 export type JobOperations = ReturnType<typeof createJobOperations>;
 
@@ -48,6 +52,15 @@ export function createJobOperations(options: {
   return {
     async createImageJob(payload: CreateImageJobRequest) {
       const model = payload.model ?? (await resolveDefaultModel("image"));
+      validateImageGenerationParams({
+        prompt: payload.prompt,
+        model,
+        ...(payload.aspect_ratio ? { aspectRatio: payload.aspect_ratio } : {}),
+        ...(payload.quality ? { quality: payload.quality } : {}),
+        ...(payload.input_images ? { inputImages: payload.input_images } : {}),
+        ...(payload.size ? { size: payload.size } : {}),
+        ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
+      });
       const job = await options.jobService.createJob(options.localUser, {
         workspaceId: LOCAL_WORKSPACE_ID,
         ...(payload.project_id ? { projectId: payload.project_id } : {}),
@@ -73,6 +86,38 @@ export function createJobOperations(options: {
     },
     async createVideoJob(payload: CreateVideoJobRequest) {
       const model = payload.model ?? (await resolveDefaultModel("video"));
+      validateVideoGenerationParams({
+        prompt: payload.prompt,
+        model,
+        ...(payload.duration ? { duration: payload.duration } : {}),
+        ...(payload.resolution
+          ? {
+              resolution: payload.resolution as
+                | "480p"
+                | "720p"
+                | "1080p"
+                | "4k"
+                | "2160p",
+            }
+          : {}),
+        ...(payload.aspect_ratio ? { aspectRatio: payload.aspect_ratio } : {}),
+        ...(payload.input_images ? { inputImages: payload.input_images } : {}),
+        ...(payload.input_video ? { inputVideo: payload.input_video } : {}),
+        ...(payload.video_mode ? { videoMode: payload.video_mode } : {}),
+        ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
+        ...(payload.negative_prompt
+          ? { negativePrompt: payload.negative_prompt }
+          : {}),
+        ...(payload.frame_rate !== undefined
+          ? { frameRate: payload.frame_rate }
+          : {}),
+        ...(payload.num_frames !== undefined
+          ? { numFrames: payload.num_frames }
+          : {}),
+        ...(payload.enable_audio !== undefined
+          ? { enableAudio: payload.enable_audio }
+          : {}),
+      });
       const job = await options.jobService.createJob(options.localUser, {
         workspaceId: LOCAL_WORKSPACE_ID,
         ...(payload.project_id ? { projectId: payload.project_id } : {}),

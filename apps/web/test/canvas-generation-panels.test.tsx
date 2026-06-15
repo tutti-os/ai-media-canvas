@@ -34,6 +34,14 @@ vi.mock("../src/lib/server-api", () => ({
   generateVideoDirect: generateVideoDirectMock,
 }));
 
+vi.mock("@excalidraw/excalidraw", () => ({
+  convertToExcalidrawElements: (elements: Array<Record<string, unknown>>) =>
+    elements.map((element, index) => ({
+      id: `converted-${index}`,
+      ...element,
+    })),
+}));
+
 function createExcalidrawApiStub(
   sceneElements: Array<Record<string, unknown>> = [],
 ) {
@@ -77,6 +85,17 @@ describe("canvas generation panels", () => {
           displayName: "Agnes Video v2.0",
           description: "Agnes video route",
           provider: "agnes-video",
+          capabilities: {
+            textToVideo: true,
+            imageToVideo: true,
+            videoToVideo: false,
+            audio: false,
+          },
+          limits: {
+            maxDuration: 18,
+            maxResolution: "1080p",
+            maxInputImages: 8,
+          },
         },
       ],
     });
@@ -382,7 +401,7 @@ describe("canvas generation panels", () => {
     expect(excalidrawApi.updateScene).not.toHaveBeenCalled();
   });
 
-  it("deletes an image generator card from the panel", async () => {
+  it("does not show a delete button in the image generator panel", async () => {
     const onClose = vi.fn();
     const excalidrawApi = createExcalidrawApiStub([
       {
@@ -412,22 +431,23 @@ describe("canvas generation panels", () => {
       </ToastProvider>,
     );
 
-    await userEvent.click(
-      await screen.findByRole("button", {
+    await screen.findByPlaceholderText("今天我们要创作什么");
+    expect(
+      screen.queryByRole("button", {
         name: "删除图片生成器卡片",
       }),
+    ).not.toBeInTheDocument();
+    expect(excalidrawApi.updateScene).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        elements: [
+          expect.objectContaining({
+            id: "el-image",
+            isDeleted: true,
+          }),
+        ],
+      }),
     );
-
-    expect(excalidrawApi.updateScene).toHaveBeenCalledWith({
-      elements: [
-        expect.objectContaining({
-          id: "el-image",
-          isDeleted: true,
-        }),
-      ],
-      captureUpdate: "IMMEDIATELY",
-    });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("omits the hard-coded storage copy in the video generator", async () => {
@@ -491,6 +511,204 @@ describe("canvas generation panels", () => {
     expect(screen.getAllByText("Agnes Video")).toHaveLength(1);
   });
 
+  it("uses a bottom video mode menu without exposing text as a mode", async () => {
+    fetchVideoModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "kie/seedance-2",
+          displayName: "Seedance 2.0",
+          description: "Kie Seedance route",
+          provider: "kie-video",
+          capabilities: {
+            textToVideo: true,
+            imageToVideo: true,
+            videoToVideo: false,
+            audio: false,
+          },
+          limits: {
+            maxDuration: 5,
+            maxResolution: "720p",
+            maxInputImages: 8,
+          },
+          schema: {
+            type: "object",
+            properties: {},
+            "x-aimc-ui": {
+              inputModes: [
+                {
+                  id: "text",
+                  labelKey: "tools.schema.inputModes.text",
+                  maxImages: 0,
+                },
+                {
+                  id: "keyframes",
+                  labelKey: "tools.schema.inputModes.keyframes",
+                  videoMode: "keyframes",
+                  minImages: 1,
+                  maxImages: 2,
+                  slots: ["firstFrame", "lastFrame"],
+                },
+                {
+                  id: "reference",
+                  labelKey: "tools.schema.inputModes.reference",
+                  videoMode: "reference",
+                  minImages: 1,
+                  maxImages: 8,
+                  slots: ["referenceImages"],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "",
+            model: "kie/seedance-2",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "首尾帧" }),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "文本" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "参考图/视频" }));
+    expect(screen.getByRole("button", { name: "参考图" })).toBeInTheDocument();
+  });
+
+  it("keeps text-to-video submission when no video mode assets are uploaded", async () => {
+    generateVideoDirectMock.mockResolvedValue({
+      url: "https://example.com/generated.mp4",
+      assetId: "asset-video-1",
+      mimeType: "video/mp4",
+      durationSeconds: 5,
+    });
+    const excalidrawApi = createExcalidrawApiStub([
+      {
+        id: "el-video",
+        isDeleted: false,
+        customData: { type: "video-generator" },
+      },
+    ]);
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "生成一段跳舞视频",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={excalidrawApi}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "生成视频" }),
+    );
+
+    expect(generateVideoDirectMock).toHaveBeenCalledWith(
+      "生成一段跳舞视频",
+      expect.not.objectContaining({
+        inputImages: expect.anything(),
+        videoMode: expect.anything(),
+      }),
+    );
+  });
+
+  it("uses the selected video model limits for duration and resolution controls", async () => {
+    fetchVideoModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "kie/grok-imagine",
+          displayName: "Grok Imagine",
+          description: "Kie Grok route",
+          provider: "kie-video",
+          capabilities: {
+            textToVideo: true,
+            imageToVideo: true,
+            videoToVideo: false,
+            audio: false,
+          },
+          limits: {
+            maxDuration: 6,
+            allowedDurations: [6],
+            maxResolution: "480p",
+            maxInputImages: 1,
+          },
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "",
+            model: "kie/grok-imagine",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "16:9 · 6s" }),
+    );
+
+    expect(screen.getByRole("button", { name: "6s" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "5s" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "480p" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "720p" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("centers the video generator panel below the selected generator", async () => {
     render(
       <ToastProvider>
@@ -518,7 +736,7 @@ describe("canvas generation panels", () => {
     const panel = findPositionedPanel(
       screen.getByPlaceholderText("描述你想要的视频镜头、动作、节奏与画面氛围"),
     );
-    expect(panel.style.left).toBe("160px");
+    expect(panel.style.left).toBe("100px");
   });
 
   it("closes the video generator panel when the user clicks back on the canvas", async () => {
@@ -800,7 +1018,70 @@ describe("canvas generation panels", () => {
     expect(excalidrawApi.updateScene).not.toHaveBeenCalled();
   });
 
-  it("deletes a video generator card from the panel", async () => {
+  it("stores generated video sources outside the Excalidraw link field", async () => {
+    generateVideoDirectMock.mockResolvedValue({
+      url: "https://example.com/generated.mp4",
+      assetId: "asset-video-1",
+      mimeType: "video/mp4",
+      durationSeconds: 5,
+    });
+    const excalidrawApi = createExcalidrawApiStub([
+      {
+        id: "el-video",
+        isDeleted: false,
+        customData: { type: "video-generator" },
+      },
+    ]);
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "生成一段跳舞视频",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={excalidrawApi}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "生成视频" }),
+    );
+
+    await waitFor(() => expect(excalidrawApi.updateScene).toHaveBeenCalled());
+    const finalScene =
+      excalidrawApi.updateScene.mock.calls[
+        excalidrawApi.updateScene.mock.calls.length - 1
+      ]?.[0];
+    const inserted = finalScene?.elements.find(
+      (element: Record<string, unknown>) =>
+        element.type === "rectangle" && element.id !== "el-video",
+    );
+
+    expect(inserted).toEqual(
+      expect.objectContaining({
+        link: null,
+        customData: expect.objectContaining({
+          isVideo: true,
+          videoUrl: "/local-assets/asset-video-1",
+        }),
+      }),
+    );
+  });
+
+  it("does not show a delete button in the video generator panel", async () => {
     const onClose = vi.fn();
     const excalidrawApi = createExcalidrawApiStub([
       {
@@ -833,21 +1114,12 @@ describe("canvas generation panels", () => {
       </ToastProvider>,
     );
 
-    await userEvent.click(
-      await screen.findByRole("button", {
-        name: "删除视频生成器卡片",
-      }),
+    await screen.findByPlaceholderText(
+      "描述你想要的视频镜头、动作、节奏与画面氛围",
     );
-
-    expect(excalidrawApi.updateScene).toHaveBeenCalledWith({
-      elements: [
-        expect.objectContaining({
-          id: "el-video",
-          isDeleted: true,
-        }),
-      ],
-      captureUpdate: "IMMEDIATELY",
-    });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("button", { name: "删除视频生成器卡片" }),
+    ).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

@@ -135,6 +135,8 @@ describe("local server API", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -164,6 +166,8 @@ describe("local server API", () => {
         googleVertexLocation: "global",
         googleVertexVideoLocation: "us-central1",
         replicateApiToken: "replicate-local-token",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -428,6 +432,9 @@ describe("local server API", () => {
       width: 1280,
       height: 720,
       durationSeconds: 5,
+      model: "agnes-video/agnes-video-v2.0",
+      aspectRatio: "16:9",
+      resolution: "720p",
     });
   });
 
@@ -493,6 +500,7 @@ describe("local server API", () => {
       width: 1280,
       height: 720,
       durationSeconds: 5,
+      model: "agnes-video/agnes-video-v2.0",
     });
     expect(mockFetch).toHaveBeenCalledTimes(3);
   });
@@ -615,6 +623,7 @@ describe("local server API", () => {
       width: 1280,
       height: 720,
       durationSeconds: 5,
+      model: "agnes-video/agnes-video-v2.0",
     });
   });
 });

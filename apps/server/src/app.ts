@@ -42,10 +42,6 @@ import {
 } from "./features/chat/chat-service.js";
 import { createJobService } from "./features/jobs/job-service.js";
 import {
-  createTuttiManagedCredentialService,
-  isManagedModelId,
-} from "./features/tutti-managed/credential-service.js";
-import {
   type ProjectService,
   ProjectServiceError,
 } from "./features/projects/project-service.js";
@@ -57,6 +53,10 @@ import {
   type SkillService,
   SkillServiceError,
 } from "./features/skills/skill-service.js";
+import {
+  createTuttiManagedCredentialService,
+  isManagedModelId,
+} from "./features/tutti-managed/credential-service.js";
 import {
   type UploadService,
   UploadServiceError,
@@ -73,13 +73,13 @@ import { registerImageModelRoutes } from "./http/image-models.js";
 import { createJobOperations } from "./http/job-operations.js";
 import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
-import { registerTuttiCliRoutes } from "./http/tutti-cli.js";
-import { registerTuttiManagedModelConnectionRoutes } from "./http/tutti-managed-model-connection.js";
 import { createProjectOperations } from "./http/project-operations.js";
 import { registerProjectRoutes } from "./http/projects.js";
 import { registerSettingsRoutes } from "./http/settings.js";
 import { createSkillOperations } from "./http/skill-operations.js";
 import { registerSkillRoutes } from "./http/skills.js";
+import { registerTuttiCliRoutes } from "./http/tutti-cli.js";
+import { registerTuttiManagedModelConnectionRoutes } from "./http/tutti-managed-model-connection.js";
 import { registerUploadRoutes } from "./http/uploads.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
 import { type LocalStore, createLocalStore } from "./local/store.js";
@@ -87,6 +87,7 @@ import { createLocalUserClient } from "./local/user-client.js";
 import { ConnectionManager } from "./ws/connection-manager.js";
 import { CanvasEventBuffer } from "./ws/event-buffer.js";
 import { registerWsRoute } from "./ws/handler.js";
+import { createPipelineLogger } from "./ws/logger.js";
 
 export type BuildAppOptions = {
   env?: Partial<ServerEnv>;
@@ -696,6 +697,39 @@ function createStandaloneAgentEnv(baseEnv: ServerEnv): ServerEnv {
   };
 }
 
+function parseByteRange(
+  rangeHeader: string | undefined,
+  fileSize: number,
+): { start: number; end: number } | null | false {
+  if (!rangeHeader) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match) return false;
+
+  const [, startRaw, endRaw] = match;
+  if (!startRaw && !endRaw) return false;
+
+  if (!startRaw) {
+    const suffixLength = Number(endRaw);
+    if (!Number.isInteger(suffixLength) || suffixLength <= 0) return false;
+    const start = Math.max(0, fileSize - suffixLength);
+    return { start, end: fileSize - 1 };
+  }
+
+  const start = Number(startRaw);
+  const end = endRaw ? Number(endRaw) : fileSize - 1;
+  if (
+    !Number.isInteger(start) ||
+    !Number.isInteger(end) ||
+    start < 0 ||
+    end < start ||
+    start >= fileSize
+  ) {
+    return false;
+  }
+
+  return { start, end: Math.min(end, fileSize - 1) };
+}
+
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const env = loadServerEnv(options.env);
   registerAllProviders(env);
@@ -710,8 +744,31 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify({
     logger: { level: "info" },
   });
+  const chatRequestLog = createPipelineLogger("chat.message");
   const connectionManager = new ConnectionManager();
   const eventBuffer = new CanvasEventBuffer();
+
+  app.addHook("onError", async (request, _reply, error) => {
+    if (
+      request.method === "POST" &&
+      request.url.startsWith("/api/sessions/") &&
+      request.url.endsWith("/messages")
+    ) {
+      chatRequestLog.error("request_failed", {
+        code:
+          typeof (error as { code?: unknown }).code === "string"
+            ? (error as { code: string }).code
+            : "unknown",
+        contentLength: request.headers["content-length"] ?? "unknown",
+        message: error.message,
+        statusCode:
+          typeof (error as { statusCode?: unknown }).statusCode === "number"
+            ? (error as { statusCode: number }).statusCode
+            : "unknown",
+        url: request.url,
+      });
+    }
+  });
 
   app.addHook("onRequest", async (request, reply) => {
     const requestOrigin = request.headers.origin;
@@ -721,7 +778,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         : env.webOrigin;
     reply.header("Access-Control-Allow-Origin", allowOrigin);
     reply.header("Vary", "Origin");
-    reply.header("Access-Control-Allow-Headers", "Content-Type");
+    reply.header("Access-Control-Allow-Headers", "Content-Type, Range");
+    reply.header(
+      "Access-Control-Expose-Headers",
+      "Accept-Ranges, Content-Range, Content-Length",
+    );
     reply.header(
       "Access-Control-Allow-Methods",
       "GET,POST,PUT,PATCH,DELETE,OPTIONS",
@@ -1389,24 +1450,55 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     }
   });
 
-  app.get("/local-assets/:assetId", async (request, reply) => {
-    const asset = store.getAssetResponse(
-      (request.params as { assetId: string }).assetId,
-    );
-    if (!asset) {
-      return reply.code(404).send(
-        applicationErrorResponseSchema.parse({
-          error: {
-            code: "asset_not_found",
-            message: "Asset not found.",
-          },
-        }),
+  app.route({
+    method: ["GET", "HEAD"],
+    url: "/local-assets/:assetId",
+    async handler(request, reply) {
+      const asset = store.getAssetResponse(
+        (request.params as { assetId: string }).assetId,
       );
-    }
+      if (!asset) {
+        return reply.code(404).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "asset_not_found",
+              message: "Asset not found.",
+            },
+          }),
+        );
+      }
 
-    const payload = await readFile(asset.filePath);
-    reply.header("content-type", asset.mimeType);
-    return reply.code(200).send(payload);
+      const fileStat = await stat(asset.filePath);
+      const fileSize = fileStat.size;
+      const range = parseByteRange(request.headers.range, fileSize);
+      if (range === false) {
+        reply.header("content-range", `bytes */${fileSize}`);
+        return reply.code(416).send();
+      }
+
+      reply.header("content-type", asset.mimeType);
+      reply.header("accept-ranges", "bytes");
+
+      if (range) {
+        const payload = await readFile(asset.filePath);
+        const chunk = payload.subarray(range.start, range.end + 1);
+        reply.header(
+          "content-range",
+          `bytes ${range.start}-${range.end}/${fileSize}`,
+        );
+        reply.header("content-length", String(chunk.length));
+        return reply
+          .code(206)
+          .send(request.method === "HEAD" ? undefined : chunk);
+      }
+
+      reply.header("content-length", String(fileSize));
+      if (request.method === "HEAD") {
+        return reply.code(200).send();
+      }
+      const payload = await readFile(asset.filePath);
+      return reply.code(200).send(payload);
+    },
   });
 
   app.route({

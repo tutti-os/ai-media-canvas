@@ -546,6 +546,58 @@ describe("ChatSidebar", () => {
     );
   });
 
+  it("sends selected local canvas images with runtime asset urls", async () => {
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+          selectedCanvasElements={[
+            {
+              id: "canvas-image-1",
+              type: "image",
+              x: 0,
+              y: 0,
+              width: 320,
+              height: 240,
+              fileId: "file-1",
+              storageUrl: "/local-assets/asset-1",
+            },
+          ]}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "describe this{Enter}");
+
+    await waitFor(() => expect(saveMessageMock).toHaveBeenCalledTimes(1));
+    expect(saveMessageMock).toHaveBeenCalledWith(
+      "session-real",
+      expect.objectContaining({
+        contentBlocks: expect.arrayContaining([
+          expect.objectContaining({
+            type: "image",
+            url: "http://localhost:3000/local-assets/asset-1",
+          }),
+        ]),
+      }),
+    );
+    expect(mockWs.startRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachments: [
+          expect.objectContaining({
+            url: "http://localhost:3000/local-assets/asset-1",
+          }),
+        ],
+      }),
+      expect.any(Function),
+    );
+  });
+
   it("ignores generated artifacts from a run after switching canvases", async () => {
     const imageGeneratedSpy = vi.fn();
     const listeners: Array<
@@ -1180,6 +1232,70 @@ describe("ChatSidebar", () => {
     await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
     await waitFor(() =>
       expect(screen.getByText("Backend inserted")).toBeInTheDocument(),
+    );
+    expect(imageGeneratedSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not reinsert persisted media when canvas has the matching persistent local asset url", async () => {
+    const imageGeneratedSpy = vi.fn();
+    fetchMessagesMock.mockResolvedValue({
+      messages: [
+        {
+          id: "assistant-saved",
+          role: "assistant",
+          content: "",
+          createdAt: "2026-03-24T00:00:00.000Z",
+          toolActivities: null,
+          contentBlocks: [
+            {
+              type: "tool",
+              toolCallId: "tool-local-asset",
+              toolName: "generate_image",
+              status: "completed",
+              artifacts: [
+                {
+                  type: "image",
+                  assetId: "asset-1",
+                  title: "Already on canvas",
+                  url: "http://localhost:3000/local-assets/asset-1",
+                  mimeType: "image/png",
+                  width: 1024,
+                  height: 1024,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          onImageGenerated={imageGeneratedSpy}
+          onRequestCanvasImages={() => [
+            {
+              kind: "canvas-image",
+              id: "canvas-image-1",
+              name: "Already on canvas",
+              thumbnailUrl: "data:image/png;base64,abc",
+              assetId: "asset-1",
+              url: "/local-assets/asset-1",
+              mimeType: "image/png",
+            },
+          ]}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByText("Already on canvas")).toBeInTheDocument(),
     );
     expect(imageGeneratedSpy).not.toHaveBeenCalled();
   });

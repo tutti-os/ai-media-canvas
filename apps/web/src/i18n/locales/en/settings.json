@@ -95,6 +95,7 @@
   },
   "media": {
     "actions": {
+      "getApiKey": "Get {{provider}} API Key",
       "save": "Save",
       "saving": "Saving..."
     },
@@ -115,6 +116,9 @@
       },
       "google": {
         "summary": "Google AI Studio / Developer API route. Best for Nano Banana and Google-official image/video families."
+      },
+      "kie": {
+        "summary": "Third-party aggregation route for Kie Market image and video models, including Seedream, Nano Banana, Runway, Veo, Kling, and Seedance."
       },
       "openai": {
         "summary": "OpenAI-compatible image route. Uses the same key/base URL pair as the OpenAI-compatible agent protocol."

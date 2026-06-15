@@ -2,7 +2,15 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { insertImageOnCanvas } from "../src/lib/canvas-elements";
+vi.mock("@excalidraw/excalidraw", () => ({
+  convertToExcalidrawElements: (elements: unknown[]) => elements,
+}));
+
+import {
+  insertImageOnCanvas,
+  insertVideoOnCanvas,
+  normalizeVideoCanvasElements,
+} from "../src/lib/canvas-elements";
 
 describe("insertImageOnCanvas", () => {
   it("places consecutive generated images into open space instead of stacking them on one slot", async () => {
@@ -73,5 +81,100 @@ describe("insertImageOnCanvas", () => {
     const generated = elements.filter((el) => el.customData?.source === "generated");
     expect(generated).toHaveLength(2);
     expect(generated[0].x).not.toBe(generated[1].x);
+  });
+});
+
+describe("normalizeVideoCanvasElements", () => {
+  it("moves legacy video embeddable links into customData", () => {
+    const elements = [
+      {
+        id: "video-1",
+        type: "embeddable",
+        link: "/local-assets/video-1.mp4",
+        x: 10,
+        y: 20,
+        width: 640,
+        height: 360,
+        customData: {
+          title: "video title",
+        },
+      },
+    ];
+
+    const normalized = normalizeVideoCanvasElements(elements);
+
+    expect(normalized?.[0]).toMatchObject({
+      id: "video-1",
+      type: "rectangle",
+      link: null,
+      strokeColor: "#111827",
+      backgroundColor: "#000000",
+      fillStyle: "solid",
+      roughness: 0,
+      customData: {
+        title: "video title",
+        isVideo: true,
+        videoUrl: "/local-assets/video-1.mp4",
+        mimeType: "video/mp4",
+      },
+    });
+  });
+
+  it("leaves non-video links alone", () => {
+    const elements = [
+      {
+        id: "link-1",
+        type: "rectangle",
+        link: "https://example.com",
+      },
+    ];
+
+    expect(normalizeVideoCanvasElements(elements)).toBeNull();
+  });
+});
+
+describe("insertVideoOnCanvas", () => {
+  it("keeps generation metadata on inserted video elements", async () => {
+    const updateScene = vi.fn();
+    let elements: any[] = [];
+    const api = {
+      getSceneElements: () => elements,
+      getAppState: () => ({
+        scrollX: 0,
+        scrollY: 0,
+        width: 1200,
+        height: 800,
+        zoom: { value: 1 },
+      }),
+      updateScene: ({ elements: next }: { elements: any[] }) => {
+        elements = next;
+        updateScene({ elements: next });
+      },
+    };
+
+    await insertVideoOnCanvas(api, {
+      type: "video",
+      url: "https://example.com/dance.mp4",
+      mimeType: "video/mp4",
+      width: 1280,
+      height: 720,
+      title: "生成小女孩跳舞的视频",
+      prompt: "生成小女孩跳舞的视频",
+      model: "kie:grok-imagine-v0.9",
+      aspectRatio: "16:9",
+      resolution: "720p",
+      durationSeconds: 5,
+    });
+
+    expect(elements[0]?.customData).toMatchObject({
+      isVideo: true,
+      videoUrl: "https://example.com/dance.mp4",
+      title: "生成小女孩跳舞的视频",
+      prompt: "生成小女孩跳舞的视频",
+      model: "kie:grok-imagine-v0.9",
+      aspectRatio: "16:9",
+      resolution: "720p",
+      durationSeconds: 5,
+    });
   });
 });

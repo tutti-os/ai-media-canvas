@@ -218,6 +218,13 @@ function CanvasPageContent() {
           }
           if (isVideo) {
             const durationSeconds = result.duration_seconds;
+            const prompt = result.prompt;
+            const model = result.model;
+            const aspectRatio =
+              typeof result.aspectRatio === "string"
+                ? result.aspectRatio
+                : result.aspect_ratio;
+            const resolution = result.resolution;
             handleImageGenerated({
               type: "video",
               ...(typeof assetId === "string" ? { assetId } : {}),
@@ -228,6 +235,10 @@ function CanvasPageContent() {
               ...(typeof durationSeconds === "number"
                 ? { durationSeconds }
                 : {}),
+              ...(typeof prompt === "string" ? { prompt } : {}),
+              ...(typeof model === "string" ? { model } : {}),
+              ...(typeof aspectRatio === "string" ? { aspectRatio } : {}),
+              ...(typeof resolution === "string" ? { resolution } : {}),
               jobId,
             });
           } else {

@@ -79,7 +79,7 @@ export type SubmitVideoJobFn = (input: {
   aspectRatio?: string;
   inputImages?: string[];
   inputVideo?: string;
-  videoMode?: "multivideo" | "keyframes";
+  videoMode?: "multivideo" | "keyframes" | "reference";
   seed?: number;
   negativePrompt?: string;
   frameRate?: number;
@@ -173,10 +173,10 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
         "Source video URL for video-to-video editing. Only for Kling O1.",
       ),
     videoMode: z
-      .enum(["multivideo", "keyframes"])
+      .enum(["multivideo", "keyframes", "reference"])
       .optional()
       .describe(
-        "When using multiple reference images, decide whether to blend them as multivideo or treat them as explicit keyframes.",
+        "When using input images, choose multivideo blending, explicit first/last keyframes, or reference image conditioning.",
       ),
     seed: z
       .number()

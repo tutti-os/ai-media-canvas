@@ -3,6 +3,7 @@ import type { WorkspaceSettings } from "@aimc/shared";
 export type MediaProviderSettings = Pick<
   WorkspaceSettings,
   | "agnesApiKey"
+  | "kieApiKey"
   | "replicateApiToken"
   | "googleApiKey"
   | "googleVertexProject"
@@ -41,6 +42,7 @@ function hasOfficialOpenAIImageProvider(settings: MediaProviderSettings) {
 export function hasConfiguredImageProvider(settings: MediaProviderSettings) {
   return (
     hasValue(settings.agnesApiKey) ||
+    hasValue(settings.kieApiKey) ||
     hasValue(settings.replicateApiToken) ||
     hasValue(settings.googleApiKey) ||
     hasVertexConfig(settings) ||
@@ -52,6 +54,7 @@ export function hasConfiguredImageProvider(settings: MediaProviderSettings) {
 export function hasConfiguredVideoProvider(settings: MediaProviderSettings) {
   return (
     hasValue(settings.agnesApiKey) ||
+    hasValue(settings.kieApiKey) ||
     hasValue(settings.replicateApiToken) ||
     hasValue(settings.googleApiKey) ||
     hasVertexConfig(settings)
@@ -68,6 +71,10 @@ export function isMediaProviderConfigured(
     case "agnes-image":
     case "agnes-video":
       return hasValue(settings.agnesApiKey);
+    case "kie":
+    case "kie-image":
+    case "kie-video":
+      return hasValue(settings.kieApiKey);
     case "replicate":
       return hasValue(settings.replicateApiToken);
     case "google":

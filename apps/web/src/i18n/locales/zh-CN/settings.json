@@ -95,6 +95,7 @@
   },
   "media": {
     "actions": {
+      "getApiKey": "获取 {{provider}} API Key",
       "save": "保存",
       "saving": "保存中..."
     },
@@ -115,6 +116,9 @@
       },
       "google": {
         "summary": "Google AI Studio / Developer API 路由，适合 Nano Banana 和 Google 官方图片/视频模型系列。"
+      },
+      "kie": {
+        "summary": "Kie Market 第三方聚合路由，用于 Seedream、Nano Banana、Runway、Veo、Kling、Seedance 等图片与视频模型。"
       },
       "openai": {
         "summary": "OpenAI 兼容图片路由，复用 OpenAI 兼容 Agent 协议的 key/base URL 配置。"

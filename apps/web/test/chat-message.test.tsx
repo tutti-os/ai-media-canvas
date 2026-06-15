@@ -93,6 +93,28 @@ describe("ChatMessage", () => {
     expect(screen.queryByText("图片生成失败")).not.toBeInTheDocument();
     expect(screen.getByText("图片生成中...")).toBeInTheDocument();
   });
+
+  it("renders local asset image pills with runtime asset urls", () => {
+    const blocks: ContentBlock[] = [
+      { type: "text", text: "看看这张图" },
+      {
+        type: "image",
+        assetId: "canvas-image-1",
+        url: "/local-assets/asset-1",
+        mimeType: "image/png",
+        source: "canvas-ref",
+        name: "Canvas selection",
+      },
+    ];
+
+    render(<ChatMessage contentBlocks={blocks} role={"user" as const} />);
+
+    const image = screen.getByAltText("Canvas selection");
+    expect(image).toHaveAttribute(
+      "src",
+      "http://localhost:3000/local-assets/asset-1",
+    );
+  });
 });
 
 function renderAssistantMessage(contentBlocks: ContentBlock[]) {

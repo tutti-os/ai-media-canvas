@@ -18,6 +18,7 @@ import {
 import {
   type MouseEvent,
   type ReactNode,
+  type PointerEvent as ReactPointerEvent,
   memo,
   useCallback,
   useEffect,
@@ -29,7 +30,10 @@ import { createPortal } from "react-dom";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import { useAppTranslation } from "../i18n";
-import { isVideoUrl } from "../lib/canvas-elements";
+import {
+  isVideoUrl,
+  normalizeVideoCanvasElements,
+} from "../lib/canvas-elements";
 import {
   type ImageGeneratorData,
   createImageGeneratorElement,
@@ -42,10 +46,14 @@ import {
   getVideoGeneratorData,
   isVideoGeneratorElement,
 } from "../lib/canvas-video-generator";
-import { isExcalidrawContextMenuTarget } from "../lib/excalidraw-context-menu";
+import {
+  isExcalidrawCanvasTarget,
+  isExcalidrawContextMenuTarget,
+} from "../lib/excalidraw-context-menu";
+import { toRuntimeAssetUrl } from "../lib/local-assets";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
+import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
-import { VideoPlayerPanel } from "./canvas/video-player-panel";
 
 type ToolType =
   | "hand"
@@ -81,6 +89,41 @@ type GeneratorOverlayItem = {
   zoom: number;
   model?: string;
   errorMessage?: string;
+};
+
+type VideoOverlayItem = {
+  id: string;
+  screenX: number;
+  screenY: number;
+  screenW: number;
+  screenH: number;
+  zoom: number;
+  src: string;
+  assetId?: string;
+  title?: string;
+  prompt?: string;
+  model?: string;
+  durationSeconds?: number;
+  resolution?: string;
+  aspectRatio?: string;
+  mimeType?: string;
+};
+
+type VideoOverlayFrameProps = {
+  excalidrawApi: CanvasToolExcalidrawApi;
+  item: VideoOverlayItem;
+};
+
+type CanvasOverlayElement = {
+  id?: string;
+  type?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  isDeleted?: boolean;
+  link?: unknown;
+  customData?: Record<string, unknown>;
 };
 
 const TOOL_ICONS: Record<
@@ -131,13 +174,16 @@ type CanvasToolElement = Record<string, unknown> & {
 
 type CanvasToolAppState = {
   activeTool?: { type?: string };
+  isResizing?: boolean;
   scrollX?: number;
   scrollY?: number;
+  selectedElementsAreBeingDragged?: boolean;
   selectedElementIds?: Record<string, boolean>;
   zoom?: { value?: number };
 };
 
 type CanvasToolExcalidrawApi = {
+  addFiles(files: Record<string, unknown>[]): void;
   getAppState(): CanvasToolAppState;
   getSceneElements(): readonly CanvasToolElement[];
   onChange(
@@ -202,6 +248,7 @@ function getGeneratorOverlayRadius(width: number, height: number) {
   return Math.max(6, Math.min(32, Math.min(width, height) * 0.08));
 }
 const GENERATOR_OVERLAY_BLEED = 2;
+const VIDEO_OVERLAY_DRAG_THRESHOLD = 4;
 const GENERATOR_DEFAULT_STYLE = {
   backgroundColor: "#F3F4F6",
   strokeColor: "#D1D5DB",
@@ -245,6 +292,13 @@ function normalizeGeneratorElementStyles(
   return changed ? normalized : null;
 }
 
+function normalizeCanvasToolElements(elements: readonly CanvasToolElement[]) {
+  return (
+    normalizeVideoCanvasElements(elements) ??
+    normalizeGeneratorElementStyles(elements)
+  );
+}
+
 function getElementBounds(element: CanvasToolElement) {
   return {
     x: element.x ?? 0,
@@ -252,6 +306,12 @@ function getElementBounds(element: CanvasToolElement) {
     width: element.width ?? 0,
     height: element.height ?? 0,
   };
+}
+
+function isSelectedElementTransforming(appState: CanvasToolAppState) {
+  return Boolean(
+    appState.selectedElementsAreBeingDragged || appState.isResizing,
+  );
 }
 
 /** Memoized shimmer overlay for a single generating element */
@@ -391,6 +451,222 @@ const GeneratorErrorOverlay = memo(function GeneratorErrorOverlay({
   );
 });
 
+function getVideoOverlayKey(
+  elements: readonly CanvasOverlayElement[],
+  scrollX: number,
+  scrollY: number,
+  zoom: number,
+) {
+  return `${elements
+    .map((el) => {
+      const customData = el.customData ?? {};
+      return [
+        el.id,
+        el.type,
+        el.x,
+        el.y,
+        el.width,
+        el.height,
+        customData.videoUrl,
+        el.link,
+        customData.assetId,
+        customData.title,
+        customData.prompt,
+        customData.model,
+        customData.durationSeconds,
+        customData.resolution,
+        customData.aspectRatio,
+        customData.mimeType,
+      ].join(":");
+    })
+    .join("|")}@${scrollX}:${scrollY}:${zoom}`;
+}
+
+function getVideoOverlayItems(
+  elements: readonly CanvasOverlayElement[],
+  scrollX: number,
+  scrollY: number,
+  zoom: number,
+): VideoOverlayItem[] {
+  return elements
+    .filter((el) => {
+      if (el.isDeleted || el.type === "embeddable") return false;
+      const customData = el.customData ?? {};
+      const videoUrl =
+        typeof customData.videoUrl === "string"
+          ? customData.videoUrl
+          : typeof el.link === "string"
+            ? el.link
+            : null;
+      return (
+        typeof el.id === "string" &&
+        typeof videoUrl === "string" &&
+        (customData.isVideo === true || isVideoUrl(videoUrl))
+      );
+    })
+    .map((el) => {
+      const customData = el.customData ?? {};
+      const id = typeof el.id === "string" ? el.id : "";
+      const videoUrl =
+        typeof customData.videoUrl === "string"
+          ? customData.videoUrl
+          : (el.link as string);
+      return {
+        id,
+        screenX: ((el.x ?? 0) + scrollX) * zoom,
+        screenY: ((el.y ?? 0) + scrollY) * zoom,
+        screenW: (el.width ?? 0) * zoom,
+        screenH: (el.height ?? 0) * zoom,
+        zoom,
+        src: videoUrl,
+        ...(typeof customData.assetId === "string"
+          ? { assetId: customData.assetId }
+          : {}),
+        ...(typeof customData.title === "string"
+          ? { title: customData.title }
+          : {}),
+        ...(typeof customData.prompt === "string"
+          ? { prompt: customData.prompt }
+          : {}),
+        ...(typeof customData.model === "string"
+          ? { model: customData.model }
+          : {}),
+        ...(typeof customData.durationSeconds === "number"
+          ? { durationSeconds: customData.durationSeconds }
+          : {}),
+        ...(typeof customData.resolution === "string"
+          ? { resolution: customData.resolution }
+          : {}),
+        ...(typeof customData.aspectRatio === "string"
+          ? { aspectRatio: customData.aspectRatio }
+          : {}),
+        ...(typeof customData.mimeType === "string"
+          ? { mimeType: customData.mimeType }
+          : {}),
+      };
+    });
+}
+
+function VideoOverlayFrame({ excalidrawApi, item }: VideoOverlayFrameProps) {
+  const [dragging, setDragging] = useState(false);
+  const cleanupDragRef = useRef<(() => void) | null>(null);
+
+  const handlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button != null && event.button !== 0) return;
+      cleanupDragRef.current?.();
+      const startElement = excalidrawApi
+        .getSceneElements()
+        .find((el) => el.id === item.id && !el.isDeleted);
+      if (!startElement) return;
+
+      excalidrawApi.updateScene({
+        appState: { selectedElementIds: { [item.id]: true } },
+      });
+
+      const startClientX = event.clientX;
+      const startClientY = event.clientY;
+      const startX = startElement.x ?? 0;
+      const startY = startElement.y ?? 0;
+      const zoom = excalidrawApi.getAppState().zoom?.value ?? 1;
+      let didDrag = false;
+      const previousCursor = document.body.style.cursor;
+
+      const updateElementPosition = (clientX: number, clientY: number) => {
+        const nextX = startX + (clientX - startClientX) / zoom;
+        const nextY = startY + (clientY - startClientY) / zoom;
+        const elements = excalidrawApi.getSceneElements().map((el) => {
+          if (el.id !== item.id) return el;
+          return {
+            ...el,
+            x: nextX,
+            y: nextY,
+            version: ((el.version as number | undefined) ?? 1) + 1,
+            versionNonce: Math.floor(Math.random() * 2_000_000_000),
+            updated: Date.now(),
+          };
+        });
+        excalidrawApi.updateScene({
+          elements,
+          appState: { selectedElementIds: { [item.id]: true } },
+          captureUpdate: "IMMEDIATELY",
+        });
+      };
+
+      const handlePointerMove = (pointerEvent: PointerEvent) => {
+        const deltaX = pointerEvent.clientX - startClientX;
+        const deltaY = pointerEvent.clientY - startClientY;
+        if (!didDrag) {
+          if (Math.hypot(deltaX, deltaY) < VIDEO_OVERLAY_DRAG_THRESHOLD) {
+            return;
+          }
+          didDrag = true;
+          setDragging(true);
+          document.body.style.cursor = "grabbing";
+        }
+        pointerEvent.preventDefault();
+        updateElementPosition(pointerEvent.clientX, pointerEvent.clientY);
+      };
+
+      const removeListeners = () => {
+        document.removeEventListener("pointermove", handlePointerMove, true);
+        document.removeEventListener("pointerup", handlePointerUp, true);
+        document.removeEventListener("pointercancel", handlePointerUp, true);
+        document.body.style.cursor = previousCursor;
+        setDragging(false);
+        cleanupDragRef.current = null;
+      };
+
+      const handlePointerUp = (pointerEvent: PointerEvent) => {
+        if (didDrag) {
+          pointerEvent.preventDefault();
+          updateElementPosition(pointerEvent.clientX, pointerEvent.clientY);
+        }
+        removeListeners();
+      };
+
+      document.addEventListener("pointermove", handlePointerMove, true);
+      document.addEventListener("pointerup", handlePointerUp, true);
+      document.addEventListener("pointercancel", handlePointerUp, true);
+      cleanupDragRef.current = removeListeners;
+    },
+    [excalidrawApi, item.id],
+  );
+
+  useEffect(() => {
+    return () => cleanupDragRef.current?.();
+  }, []);
+
+  return (
+    <div
+      className="pointer-events-none fixed z-20"
+      style={{
+        left: item.screenX,
+        top: item.screenY,
+        width: item.screenW,
+        height: item.screenH,
+      }}
+      onPointerDown={handlePointerDown}
+    >
+      <VideoCanvasElement
+        src={toRuntimeAssetUrl(item.src, item.assetId)}
+        width={item.screenW}
+        height={item.screenH}
+        title={item.title}
+        prompt={item.prompt}
+        model={item.model}
+        durationSeconds={item.durationSeconds}
+        resolution={item.resolution}
+        aspectRatio={item.aspectRatio}
+        mimeType={item.mimeType}
+        zoom={item.zoom}
+        dragEnabled
+        dragging={dragging}
+      />
+    </div>
+  );
+}
+
 export function CanvasToolMenu({
   canvasId,
   excalidrawApi,
@@ -426,22 +702,7 @@ export function CanvasToolMenu({
     width: number;
     height: number;
   } | null>(null);
-
-  const [activeVideoPlayerId, setActiveVideoPlayerId] = useState<string | null>(
-    null,
-  );
-  const [videoPlayerData, setVideoPlayerData] = useState<{
-    videoUrl: string;
-    mimeType: string;
-    durationSeconds?: number;
-    title?: string;
-  } | null>(null);
-  const [videoPlayerBounds, setVideoPlayerBounds] = useState<{
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  } | null>(null);
+  const [videoGenPanelHidden, setVideoGenPanelHidden] = useState(false);
 
   const [canvasScrollZoom, setCanvasScrollZoom] = useState({
     scrollX: 0,
@@ -456,20 +717,20 @@ export function CanvasToolMenu({
   const [errorElements, setErrorElements] = useState<GeneratorOverlayItem[]>(
     [],
   );
+  const [videoElements, setVideoElements] = useState<VideoOverlayItem[]>([]);
 
   // Keep activeGeneratorId accessible inside onChange without causing re-subscription
   const activeGeneratorIdRef = useRef(activeGeneratorId);
   activeGeneratorIdRef.current = activeGeneratorId;
   const activeVideoGenIdRef = useRef(activeVideoGenId);
   activeVideoGenIdRef.current = activeVideoGenId;
-  const activeVideoPlayerIdRef = useRef(activeVideoPlayerId);
-  activeVideoPlayerIdRef.current = activeVideoPlayerId;
 
   // Track previous generating element IDs to avoid re-renders when nothing changed
   const prevGeneratingKeyRef = useRef("");
   const prevErrorKeyRef = useRef("");
+  const prevVideoKeyRef = useRef("");
 
-  // Helper: close all generator / player panels
+  // Helper: close all generator panels
   const closeAllPanels = useCallback(() => {
     setActiveGeneratorId(null);
     setGeneratorData(null);
@@ -477,14 +738,12 @@ export function CanvasToolMenu({
     setActiveVideoGenId(null);
     setVideoGenData(null);
     setVideoGenBounds(null);
-    setActiveVideoPlayerId(null);
-    setVideoPlayerData(null);
-    setVideoPlayerBounds(null);
+    setVideoGenPanelHidden(false);
   }, []);
 
   useEffect(() => {
     if (!excalidrawApi) return;
-    const normalized = normalizeGeneratorElementStyles(
+    const normalized = normalizeCanvasToolElements(
       excalidrawApi.getSceneElements(),
     );
     if (normalized) {
@@ -524,6 +783,14 @@ export function CanvasToolMenu({
           : {}),
       })),
     );
+    const videoRaw = excalidrawApi.getSceneElements();
+    prevVideoKeyRef.current = getVideoOverlayKey(
+      videoRaw,
+      scrollX,
+      scrollY,
+      zoom,
+    );
+    setVideoElements(getVideoOverlayItems(videoRaw, scrollX, scrollY, zoom));
   }, [excalidrawApi]);
 
   // Subscribe to Excalidraw changes.
@@ -533,7 +800,7 @@ export function CanvasToolMenu({
     if (!excalidrawApi) return;
 
     const unsubscribe = excalidrawApi.onChange((elements, appState) => {
-      const normalized = normalizeGeneratorElementStyles(elements);
+      const normalized = normalizeCanvasToolElements(elements);
       if (normalized) {
         excalidrawApi.updateScene({
           elements: normalized,
@@ -569,6 +836,8 @@ export function CanvasToolMenu({
 
       const currentId = activeGeneratorIdRef.current;
       const currentVideoId = activeVideoGenIdRef.current;
+      const selectedElementTransforming =
+        isSelectedElementTransforming(appState);
       if (selectedElements.length === 1) {
         const sel = selectedElements[0];
         if (!sel) return;
@@ -586,11 +855,6 @@ export function CanvasToolMenu({
               setVideoGenData(null);
               setVideoGenBounds(null);
             }
-            if (activeVideoPlayerIdRef.current) {
-              setActiveVideoPlayerId(null);
-              setVideoPlayerData(null);
-              setVideoPlayerBounds(null);
-            }
           }
           // Always update bounds (element may have been moved/resized)
           setGeneratorBounds(selectedBounds);
@@ -604,52 +868,24 @@ export function CanvasToolMenu({
               setGeneratorData(null);
               setGeneratorBounds(null);
             }
-            if (activeVideoPlayerIdRef.current) {
-              setActiveVideoPlayerId(null);
-              setVideoPlayerData(null);
-              setVideoPlayerBounds(null);
-            }
           }
           setVideoGenBounds(selectedBounds);
-        } else if (
-          sel.type === "embeddable" &&
-          (isVideoUrl(sel.link as string) || sel.customData?.isVideo === true)
-        ) {
-          if (activeVideoPlayerIdRef.current !== selectedId) {
-            setActiveVideoPlayerId(selectedId);
-            setVideoPlayerData({
-              videoUrl: sel.link as string,
-              mimeType: (sel.customData?.mimeType as string) ?? "video/mp4",
-              ...(sel.customData?.durationSeconds != null
-                ? {
-                    durationSeconds: sel.customData.durationSeconds as number,
-                  }
-                : {}),
-              ...(sel.customData?.title != null
-                ? { title: sel.customData.title as string }
-                : {}),
-            });
-            if (currentId) {
-              setActiveGeneratorId(null);
-              setGeneratorData(null);
-              setGeneratorBounds(null);
-            }
-            if (currentVideoId) {
-              setActiveVideoGenId(null);
-              setVideoGenData(null);
-              setVideoGenBounds(null);
-            }
-          }
-          setVideoPlayerBounds(selectedBounds);
+          setVideoGenPanelHidden((prev) =>
+            prev === selectedElementTransforming
+              ? prev
+              : selectedElementTransforming,
+          );
         } else {
-          if (currentId || currentVideoId || activeVideoPlayerIdRef.current) {
+          if (currentId || currentVideoId) {
             closeAllPanels();
           }
+          setVideoGenPanelHidden(false);
         }
       } else {
-        if (currentId || currentVideoId || activeVideoPlayerIdRef.current) {
+        if (currentId || currentVideoId) {
           closeAllPanels();
         }
+        setVideoGenPanelHidden(false);
       }
 
       // --- Generator status overlays ---
@@ -710,6 +946,15 @@ export function CanvasToolMenu({
             : {}),
         }));
         setErrorElements(errored);
+      }
+
+      const videoKey = getVideoOverlayKey(elements, scrollX, scrollY, zoom);
+
+      if (videoKey !== prevVideoKeyRef.current) {
+        prevVideoKeyRef.current = videoKey;
+        setVideoElements(
+          getVideoOverlayItems(elements, scrollX, scrollY, zoom),
+        );
       }
     });
 
@@ -780,6 +1025,7 @@ export function CanvasToolMenu({
       appState: { selectedElementIds: { [elementId]: true } },
     });
     setActiveVideoGenId(elementId);
+    setVideoGenPanelHidden(false);
     const elements = excalidrawApi.getSceneElements();
     const el = elements.find((item) => item.id === elementId);
     if (el) {
@@ -798,17 +1044,11 @@ export function CanvasToolMenu({
     setActiveVideoGenId(null);
     setVideoGenData(null);
     setVideoGenBounds(null);
-  }, [clearSelectionForElement]);
-
-  const handleCloseVideoPlayer = useCallback(() => {
-    clearSelectionForElement(activeVideoPlayerIdRef.current);
-    setActiveVideoPlayerId(null);
-    setVideoPlayerData(null);
-    setVideoPlayerBounds(null);
+    setVideoGenPanelHidden(false);
   }, [clearSelectionForElement]);
 
   useEffect(() => {
-    if (!activeGeneratorId && !activeVideoGenId && !activeVideoPlayerId) return;
+    if (!activeGeneratorId && !activeVideoGenId) return;
 
     const handlePointerDownOutside = (event: PointerEvent) => {
       const target = event.target;
@@ -816,10 +1056,10 @@ export function CanvasToolMenu({
       if (isExcalidrawContextMenuTarget(target)) return;
       const panel = document.querySelector("[data-aimc-generator-panel]");
       if (panel?.contains(target)) return;
+      if (isExcalidrawCanvasTarget(target)) return;
 
       if (activeGeneratorIdRef.current) handleCloseGenerator();
       if (activeVideoGenIdRef.current) handleCloseVideoGenerator();
-      if (activeVideoPlayerIdRef.current) handleCloseVideoPlayer();
     };
 
     document.addEventListener("pointerdown", handlePointerDownOutside, true);
@@ -832,10 +1072,8 @@ export function CanvasToolMenu({
   }, [
     activeGeneratorId,
     activeVideoGenId,
-    activeVideoPlayerId,
     handleCloseGenerator,
     handleCloseVideoGenerator,
-    handleCloseVideoPlayer,
   ]);
 
   return (
@@ -895,18 +1133,21 @@ export function CanvasToolMenu({
       </div>
 
       {/* Image Generator Panel -- floats below the selected generator node */}
-      {activeGeneratorId && generatorData && generatorBounds && (
-        <ImageGeneratorPanel
-          elementId={activeGeneratorId}
-          elementBounds={generatorBounds}
-          data={generatorData}
-          excalidrawApi={excalidrawApi}
-          canvasScrollZoom={canvasScrollZoom}
-          onClose={handleCloseGenerator}
-        />
-      )}
+      {activeGeneratorId &&
+        generatorData &&
+        generatorBounds &&
+        excalidrawApi && (
+          <ImageGeneratorPanel
+            elementId={activeGeneratorId}
+            elementBounds={generatorBounds}
+            data={generatorData}
+            excalidrawApi={excalidrawApi}
+            canvasScrollZoom={canvasScrollZoom}
+            onClose={handleCloseGenerator}
+          />
+        )}
 
-      {activeVideoGenId && videoGenData && videoGenBounds && (
+      {activeVideoGenId && videoGenData && videoGenBounds && excalidrawApi && (
         <VideoGeneratorPanel
           elementId={activeVideoGenId}
           elementBounds={videoGenBounds}
@@ -915,24 +1156,8 @@ export function CanvasToolMenu({
           excalidrawApi={excalidrawApi}
           projectId={projectId}
           canvasScrollZoom={canvasScrollZoom}
+          hidden={videoGenPanelHidden}
           onClose={handleCloseVideoGenerator}
-        />
-      )}
-
-      {activeVideoPlayerId && videoPlayerData && videoPlayerBounds && (
-        <VideoPlayerPanel
-          elementId={activeVideoPlayerId}
-          elementBounds={videoPlayerBounds}
-          videoUrl={videoPlayerData.videoUrl}
-          mimeType={videoPlayerData.mimeType}
-          {...(videoPlayerData.durationSeconds != null
-            ? { durationSeconds: videoPlayerData.durationSeconds }
-            : {})}
-          {...(videoPlayerData.title != null
-            ? { title: videoPlayerData.title }
-            : {})}
-          canvasScrollZoom={canvasScrollZoom}
-          onClose={handleCloseVideoPlayer}
         />
       )}
 
@@ -956,6 +1181,19 @@ export function CanvasToolMenu({
               key={el.id}
               {...el}
               errorMessage={el.errorMessage || t("tools.generateFailed")}
+            />
+          )),
+          document.body,
+        )}
+
+      {videoElements.length > 0 &&
+        excalidrawApi &&
+        createPortal(
+          videoElements.map((el) => (
+            <VideoOverlayFrame
+              key={el.id}
+              item={el}
+              excalidrawApi={excalidrawApi}
             />
           )),
           document.body,

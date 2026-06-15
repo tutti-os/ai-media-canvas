@@ -13,6 +13,7 @@ import {
   prepareCanvasImageFiles,
   serializeExcalidrawFiles,
 } from "../lib/canvas-file-serialization";
+import { prepareThumbnailExportScene } from "../lib/canvas-thumbnail-export";
 import {
   normalizeCanvasElementIndices,
   normalizeCanvasElements,
@@ -399,10 +400,15 @@ export function CanvasEditor({
             const sceneFiles = excalidrawApi.getFiles();
             if (!sceneElements.length) return;
 
+            const thumbnailScene = await prepareThumbnailExportScene({
+              elements: sceneElements,
+              files: sceneFiles,
+            });
+
             const blob = await exportToBlob({
-              elements: sceneElements as never,
+              elements: thumbnailScene.elements as never,
               appState: { exportBackground: true },
-              files: sceneFiles as never,
+              files: thumbnailScene.files as never,
               mimeType: "image/webp",
               quality: 0.8,
               maxWidthOrHeight: THUMBNAIL_MAX_SIZE,
@@ -676,17 +682,51 @@ export function CanvasEditor({
         ? (record.customData as Record<string, unknown>)
         : {};
     const link = record.link;
-    if (
-      typeof link === "string" &&
-      (isVideoUrl(link) || customData.isVideo === true)
-    ) {
+    const videoUrl =
+      typeof customData.videoUrl === "string"
+        ? customData.videoUrl
+        : typeof link === "string"
+          ? link
+          : null;
+    if (videoUrl && (isVideoUrl(videoUrl) || customData.isVideo === true)) {
       const assetId =
         typeof customData.assetId === "string" ? customData.assetId : null;
       return (
         <VideoCanvasElement
-          src={toRuntimeAssetUrl(link, assetId)}
+          src={toRuntimeAssetUrl(videoUrl, assetId)}
           width={typeof record.width === "number" ? record.width : 640}
           height={typeof record.height === "number" ? record.height : 360}
+          title={
+            typeof customData.title === "string" ? customData.title : undefined
+          }
+          prompt={
+            typeof customData.prompt === "string"
+              ? customData.prompt
+              : undefined
+          }
+          model={
+            typeof customData.model === "string" ? customData.model : undefined
+          }
+          durationSeconds={
+            typeof customData.durationSeconds === "number"
+              ? customData.durationSeconds
+              : undefined
+          }
+          resolution={
+            typeof customData.resolution === "string"
+              ? customData.resolution
+              : undefined
+          }
+          aspectRatio={
+            typeof customData.aspectRatio === "string"
+              ? customData.aspectRatio
+              : undefined
+          }
+          mimeType={
+            typeof customData.mimeType === "string"
+              ? customData.mimeType
+              : undefined
+          }
         />
       );
     }

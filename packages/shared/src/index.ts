@@ -3,6 +3,7 @@ export * from "./contracts.js";
 export * from "./errors.js";
 export * from "./events.js";
 export * from "./http.js";
+export * from "./generation-model-schema.js";
 export * from "./job-contracts.js";
 export * from "./brand-kit-contracts.js";
 export * from "./tutti-cli-contracts.js";

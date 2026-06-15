@@ -23,6 +23,9 @@ export type ServerEnv = {
   googleVertexLocation?: string;
   googleVertexProject?: string;
   googleVertexVideoLocation?: string;
+  kieApiKey?: string;
+  kieBaseUrl?: string;
+  kieUploadBaseUrl?: string;
   openAIApiBase?: string;
   openAIApiKey?: string;
   tuttiApiBaseUrl?: string;
@@ -149,6 +152,17 @@ export function loadServerEnv(
     normalizeOptionalString(
       source.AIMC_REPLICATE_API_TOKEN ?? source.REPLICATE_API_TOKEN,
     );
+  const kieApiKey =
+    overrides.kieApiKey ??
+    normalizeOptionalString(source.AIMC_KIE_API_KEY ?? source.KIE_API_KEY);
+  const kieBaseUrl =
+    overrides.kieBaseUrl ??
+    normalizeOptionalString(source.AIMC_KIE_BASE_URL ?? source.KIE_BASE_URL);
+  const kieUploadBaseUrl =
+    overrides.kieUploadBaseUrl ??
+    normalizeOptionalString(
+      source.AIMC_KIE_UPLOAD_BASE_URL ?? source.KIE_UPLOAD_BASE_URL,
+    );
   const skillsRoot =
     overrides.skillsRoot ??
     normalizeOptionalString(source.AIMC_SKILLS_ROOT ?? source.SKILLS_ROOT);
@@ -207,6 +221,9 @@ export function loadServerEnv(
     ...(googleVertexLocation ? { googleVertexLocation } : {}),
     ...(googleVertexVideoLocation ? { googleVertexVideoLocation } : {}),
     ...(replicateApiToken ? { replicateApiToken } : {}),
+    ...(kieApiKey ? { kieApiKey } : {}),
+    ...(kieBaseUrl ? { kieBaseUrl } : {}),
+    ...(kieUploadBaseUrl ? { kieUploadBaseUrl } : {}),
     ...(skillsRoot ? { skillsRoot } : {}),
     trustedLocalAgentMode,
     ...(volcesApiKey ? { volcesApiKey } : {}),

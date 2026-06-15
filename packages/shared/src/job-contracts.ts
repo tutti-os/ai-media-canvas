@@ -34,7 +34,9 @@ export const imageGenerationPayloadSchema = z.object({
   size: z.string().min(1).optional(),
   seed: z.number().int().optional(),
 });
-export type ImageGenerationPayload = z.infer<typeof imageGenerationPayloadSchema>;
+export type ImageGenerationPayload = z.infer<
+  typeof imageGenerationPayloadSchema
+>;
 
 export const videoGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
@@ -44,14 +46,16 @@ export const videoGenerationPayloadSchema = z.object({
   aspect_ratio: z.string().min(1).optional(),
   input_images: z.array(z.string().min(1)).optional(),
   input_video: z.string().min(1).optional(),
-  video_mode: z.enum(["multivideo", "keyframes"]).optional(),
+  video_mode: z.enum(["multivideo", "keyframes", "reference"]).optional(),
   seed: z.number().int().optional(),
   negative_prompt: z.string().min(1).optional(),
   frame_rate: z.number().int().positive().optional(),
   num_frames: z.number().int().positive().optional(),
   enable_audio: z.boolean().optional(),
 });
-export type VideoGenerationPayload = z.infer<typeof videoGenerationPayloadSchema>;
+export type VideoGenerationPayload = z.infer<
+  typeof videoGenerationPayloadSchema
+>;
 
 export const createImageJobRequestSchema = z.object({
   project_id: projectIdSchema.optional(),
@@ -80,7 +84,7 @@ export const createVideoJobRequestSchema = z.object({
   aspect_ratio: z.string().min(1).optional(),
   input_images: z.array(z.string().min(1)).optional(),
   input_video: z.string().min(1).optional(),
-  video_mode: z.enum(["multivideo", "keyframes"]).optional(),
+  video_mode: z.enum(["multivideo", "keyframes", "reference"]).optional(),
   seed: z.number().int().optional(),
   negative_prompt: z.string().min(1).optional(),
   frame_rate: z.number().int().positive().optional(),

@@ -1,3 +1,5 @@
+import type { GenerationModelSchema } from "@aimc/shared";
+
 /** Metadata describing a model supported by a provider. */
 export interface ModelInfo {
   /** Provider-scoped model ID, e.g. "google/nano-banana-pro" */
@@ -8,6 +10,8 @@ export interface ModelInfo {
   description: string;
   /** URL to the model owner's avatar/icon */
   iconUrl?: string;
+  /** AIMC standard model parameter schema. */
+  schema?: GenerationModelSchema;
 }
 
 /**
@@ -52,12 +56,12 @@ export interface ImageProvider {
 export interface VideoGenerateParams {
   prompt: string;
   model: string;
-  resolution?: "480p" | "720p" | "1080p";
+  resolution?: "480p" | "720p" | "1080p" | "4k" | "2160p";
   duration?: number;
   aspectRatio?: string;
   inputImages?: string[];
   inputVideo?: string;
-  videoMode?: "multivideo" | "keyframes";
+  videoMode?: "multivideo" | "keyframes" | "reference";
   seed?: number;
   negativePrompt?: string;
   frameRate?: number;

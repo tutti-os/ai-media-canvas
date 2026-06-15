@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import React, { useMemo } from "react";
 
 import type { ContentBlock, ToolArtifact, ToolBlock } from "@aimc/shared";
+import { toRuntimeAssetUrl } from "../lib/local-assets";
 import { ImagePill } from "./chat/image-lightbox";
 import { MarkdownRenderer } from "./chat/markdown-renderer";
 import { MentionPill } from "./chat/mention-pill";
@@ -26,6 +27,44 @@ type ChatMessageProps = {
   isStreaming?: boolean;
 };
 
+function stableStringHash(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function imageBlockKey(block: ContentBlock) {
+  const imageBlock = block as { assetId?: string; url?: string };
+  return `image:${imageBlock.assetId ?? ""}:${imageBlock.url ?? ""}`;
+}
+
+function mentionBlockKey(block: ContentBlock) {
+  const mentionBlock = block as {
+    id?: string;
+    label?: string;
+    mentionType?: string;
+  };
+  return `mention:${mentionBlock.mentionType ?? ""}:${mentionBlock.id ?? mentionBlock.label ?? ""}`;
+}
+
+function assistantBlockKey(block: ContentBlock) {
+  if (block.type === "thinking") {
+    return `thinking:${stableStringHash(block.thinking)}`;
+  }
+  if (block.type === "text") {
+    return `text:${stableStringHash(block.text)}`;
+  }
+  if (block.type === "tool") {
+    return `tool:${block.toolCallId}`;
+  }
+  if (block.type === "image") {
+    return imageBlockKey(block);
+  }
+  return mentionBlockKey(block);
+}
+
 /**
  * Top-level chat message component.
  *
@@ -38,11 +77,7 @@ type ChatMessageProps = {
  * each independently memoized for fine-grained update control.
  */
 export const ChatMessage = React.memo(
-  function ChatMessage({
-    role,
-    contentBlocks,
-    isStreaming,
-  }: ChatMessageProps) {
+  function ChatMessage({ role, contentBlocks, isStreaming }: ChatMessageProps) {
     const isUser = role === "user";
 
     if (isUser) {
@@ -118,12 +153,15 @@ const UserMessage = React.memo(function UserMessage({
             <span className="inline">
               {mentionBlocks.map((block, idx) => (
                 <MentionPill
-                  key={idx}
+                  key={mentionBlockKey(block)}
                   label={(block as { label: string }).label}
                   kind={
                     (
                       block as {
-                        mentionType: "image-model" | "brand-kit-asset" | "skill";
+                        mentionType:
+                          | "image-model"
+                          | "brand-kit-asset"
+                          | "skill";
                       }
                     ).mentionType
                   }
@@ -135,12 +173,9 @@ const UserMessage = React.memo(function UserMessage({
             <span className="inline">
               {imageBlocks.map((block, idx) => (
                 <ImagePill
-                  key={idx}
-                  src={(block as { url: string }).url}
-                  name={
-                    (block as { name?: string }).name ??
-                    `image-${idx + 1}`
-                  }
+                  key={imageBlockKey(block)}
+                  src={toRuntimeAssetUrl((block as { url: string }).url)}
+                  name={(block as { name?: string }).name ?? `image-${idx + 1}`}
                 />
               ))}
             </span>
@@ -154,7 +189,7 @@ const UserMessage = React.memo(function UserMessage({
         >
           {mentionBlocks.map((block, idx) => (
             <MentionPill
-              key={`mention-${idx}`}
+              key={mentionBlockKey(block)}
               label={(block as { label: string }).label}
               kind={
                 (
@@ -167,11 +202,9 @@ const UserMessage = React.memo(function UserMessage({
           ))}
           {imageBlocks.map((block, idx) => (
             <ImagePill
-              key={idx}
-              src={(block as { url: string }).url}
-              name={
-                (block as { name?: string }).name ?? `image-${idx + 1}`
-              }
+              key={imageBlockKey(block)}
+              src={toRuntimeAssetUrl((block as { url: string }).url)}
+              name={(block as { name?: string }).name ?? `image-${idx + 1}`}
             />
           ))}
         </div>
@@ -213,23 +246,24 @@ const AssistantMessage = React.memo(function AssistantMessage({
         if (block.type === "thinking") {
           return (
             <ThinkingBlockView
-              key={`thinking-${idx}`}
+              key={assistantBlockKey(block)}
               thinking={block.thinking}
-              isStreaming={
-                isStreaming && idx === contentBlocks.length - 1
-              }
+              isStreaming={isStreaming && idx === contentBlocks.length - 1}
             />
           );
         }
 
         if (block.type === "text") {
-          return <MarkdownRenderer key={idx} text={block.text} />;
+          return (
+            <MarkdownRenderer
+              key={assistantBlockKey(block)}
+              text={block.text}
+            />
+          );
         }
 
         if (block.type === "tool") {
-          return (
-            <ToolBlockView key={block.toolCallId} block={block} />
-          );
+          return <ToolBlockView key={block.toolCallId} block={block} />;
         }
 
         // ImageBlock -- skip in assistant messages (user-side only)

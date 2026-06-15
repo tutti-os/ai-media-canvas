@@ -137,6 +137,7 @@
   "recentProjects": {
     "archive": "Archive {{name}}",
     "newProject": "New project",
+    "previewCover": "Preview {{name}} cover",
     "title": "Recent projects",
     "untitled": "Untitled",
     "updatedAt": "Updated {{date}}",

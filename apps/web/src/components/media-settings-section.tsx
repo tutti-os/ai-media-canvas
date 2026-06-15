@@ -1,5 +1,6 @@
 "use client";
 
+import { ExternalLink } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import type { WorkspaceSettings } from "@aimc/shared";
@@ -27,7 +28,7 @@ type StringSettingsKey = Exclude<
 >;
 
 type MediaProviderCard = {
-  id: "agnes" | "openai" | "google" | "vertex" | "replicate" | "volces";
+  id: "agnes" | "kie" | "openai" | "google" | "vertex" | "replicate" | "volces";
   label: string;
   capabilitiesKey: string;
   summaryKey: string;
@@ -36,8 +37,17 @@ type MediaProviderCard = {
     key: StringSettingsKey;
     label: string;
     placeholder: string;
+    defaultValue?: string;
+    apiKeyUrl?: string;
   }>;
 };
+
+const GOOGLE_AI_STUDIO_API_KEYS_URL = "https://aistudio.google.com/app/apikey";
+const KIE_API_KEYS_URL = "https://kie.ai/api-key";
+const OPENAI_API_KEYS_URL = "https://platform.openai.com/api-keys";
+const REPLICATE_API_TOKENS_URL = "https://replicate.com/account/api-tokens";
+const VOLCES_API_KEYS_URL =
+  "https://console.volcengine.com/ark/region:ark+cn-beijing/apikey";
 
 const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
   {
@@ -60,6 +70,42 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
         key: "agnesBaseUrl",
         label: "Agnes Base URL",
         placeholder: "https://apihub.agnes-ai.com/v1",
+        defaultValue: "https://apihub.agnes-ai.com/v1",
+      },
+    ],
+  },
+  {
+    id: "kie",
+    label: "Kie.ai",
+    capabilitiesKey: "media.capabilities.imageVideo",
+    summaryKey: "media.cards.kie.summary",
+    models: [
+      "Z-Image",
+      "Seedream 5.0 Lite",
+      "GPT Image 2",
+      "Qwen2",
+      "Nano Banana Pro",
+      "Nano Banana",
+      "Runway Gen-4 Turbo",
+      "Grok Imagine 1.5 Preview",
+      "Hailuo Pro",
+      "Veo 3.1",
+      "Kling 2.6",
+      "Seedance 2.0",
+      "HappyHorse 1.0",
+    ],
+    fields: [
+      {
+        key: "kieApiKey",
+        label: "Kie API Key",
+        placeholder: "kie-...",
+        apiKeyUrl: KIE_API_KEYS_URL,
+      },
+      {
+        key: "kieBaseUrl",
+        label: "Kie Base URL",
+        placeholder: "https://api.kie.ai",
+        defaultValue: "https://api.kie.ai",
       },
     ],
   },
@@ -81,6 +127,7 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
         key: "replicateApiToken",
         label: "Replicate API Token",
         placeholder: "r8_...",
+        apiKeyUrl: REPLICATE_API_TOKENS_URL,
       },
     ],
   },
@@ -95,11 +142,13 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
         key: "volcesApiKey",
         label: "Volces API Key",
         placeholder: "volces-key",
+        apiKeyUrl: VOLCES_API_KEYS_URL,
       },
       {
         key: "volcesBaseUrl",
         label: "Volces Base URL",
         placeholder: "https://ark.cn-beijing.volces.com/api/v3",
+        defaultValue: "https://ark.cn-beijing.volces.com/api/v3",
       },
     ],
   },
@@ -114,6 +163,7 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
         key: "googleApiKey",
         label: "Google API Key",
         placeholder: "AIza...",
+        apiKeyUrl: GOOGLE_AI_STUDIO_API_KEYS_URL,
       },
     ],
   },
@@ -157,22 +207,44 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
         key: "openAIApiKey",
         label: "OpenAI API Key",
         placeholder: "sk-...",
+        apiKeyUrl: OPENAI_API_KEYS_URL,
       },
       {
         key: "openAIApiBase",
         label: "OpenAI Base URL",
         placeholder: "http://127.0.0.1:4000/v1",
+        defaultValue: "http://127.0.0.1:4000/v1",
       },
     ],
   },
 ];
+
+function applyMediaFieldDefaults(
+  settings: WorkspaceSettings,
+): WorkspaceSettings {
+  const defaults: Partial<Record<StringSettingsKey, string>> = {};
+
+  for (const card of MEDIA_PROVIDER_CARDS) {
+    for (const field of card.fields) {
+      if (!field.defaultValue) continue;
+      if (String(settings[field.key] ?? "").trim()) continue;
+      defaults[field.key] = field.defaultValue;
+    }
+  }
+
+  return Object.keys(defaults).length > 0
+    ? { ...settings, ...defaults }
+    : settings;
+}
 
 export function MediaSettingsSection({
   settings: initialSettings,
   onSave,
 }: MediaSettingsSectionProps) {
   const { t } = useAppTranslation("settings");
-  const [settings, setSettings] = useState(initialSettings);
+  const [settings, setSettings] = useState(() =>
+    applyMediaFieldDefaults(initialSettings),
+  );
   const [savingCard, setSavingCard] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -180,11 +252,11 @@ export function MediaSettingsSection({
   } | null>(null);
 
   useEffect(() => {
-    setSettings(initialSettings);
+    setSettings(applyMediaFieldDefaults(initialSettings));
   }, [initialSettings]);
 
   const normalizedInitial = useMemo(
-    () => JSON.stringify(initialSettings),
+    () => JSON.stringify(applyMediaFieldDefaults(initialSettings)),
     [initialSettings],
   );
   const normalizedCurrent = JSON.stringify(settings);
@@ -242,7 +314,9 @@ export function MediaSettingsSection({
       <div className="space-y-4">
         {MEDIA_PROVIDER_CARDS.map((card) => {
           const isConfigured = card.fields.some(
-            (field) => String(settings[field.key] ?? "").trim().length > 0,
+            (field) =>
+              !field.defaultValue &&
+              String(settings[field.key] ?? "").trim().length > 0,
           );
 
           return (
@@ -310,6 +384,19 @@ export function MediaSettingsSection({
                       }
                       placeholder={field.placeholder}
                     />
+                    {field.apiKeyUrl ? (
+                      <a
+                        href={field.apiKeyUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
+                      >
+                        {t("media.actions.getApiKey", {
+                          provider: card.label,
+                        })}
+                        <ExternalLink className="size-3.5" />
+                      </a>
+                    ) : null}
                   </div>
                 ))}
               </div>
