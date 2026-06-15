@@ -418,10 +418,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 </>
               )}
               {/* Agent model selector */}
-              <AgentModelSelector compact />
+              <AgentModelSelector compact collisionSide="flip" />
               {/* Model preference button */}
               <div className="relative">
                 <ImageModelPreferencePopover
+                  collisionSide="flip"
                   open={modelPopoverOpen}
                   onOpenChange={setModelPopoverOpen}
                   onOpenSettings={handleOpenMediaSettings}

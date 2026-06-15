@@ -24,12 +24,16 @@ import {
   fetchWorkspaceSettings,
 } from "../lib/server-api";
 
+type PopoverCollisionSide = "flip" | "none" | "shift";
+
 export function ImageModelPreferencePopover({
+  collisionSide = "none",
   open,
   onOpenChange,
   trigger,
   onOpenSettings,
 }: {
+  collisionSide?: PopoverCollisionSide;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   trigger: ReactElement;
@@ -110,7 +114,7 @@ export function ImageModelPreferencePopover({
         collisionAvoidance={{
           align: "shift",
           fallbackAxisSide: "none",
-          side: "flip",
+          side: collisionSide,
         }}
         collisionPadding={8}
         data-testid="image-model-preference-popover"
