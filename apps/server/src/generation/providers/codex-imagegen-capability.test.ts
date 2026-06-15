@@ -50,7 +50,6 @@ describe("detectCodexImagegenCapability", () => {
   it("reports old Codex versions, auth failures, and missing skills", () => {
     const runCommand: CodexImagegenCommandRunner = (_command, args) => {
       if (args.join(" ") === "--version") return "codex 0.123.0";
-      if (args.join(" ") === "login status") throw new Error("not logged in");
       return "ok";
     };
 
@@ -81,6 +80,7 @@ describe("detectCodexImagegenCapability", () => {
       runCommand: (_command, args) =>
         args.join(" ") === "--version" ? "codex 0.124.0" : "ok",
       fileExists: (path) =>
+        path === "/tmp/codex-home/auth.json" ||
         path === "/tmp/codex-home/skills/.system/imagegen/SKILL.md",
     });
 
@@ -90,6 +90,24 @@ describe("detectCodexImagegenCapability", () => {
       codexVersion: "0.124.0",
       codexHome: "/tmp/codex-home",
     });
+  });
+
+  it("probes exec with user config ignored", () => {
+    const calls: string[] = [];
+    const capability = detectCodexImagegenCapability({
+      enabled: true,
+      cacheTtlMs: 0,
+      codexHome: "/tmp/codex-home",
+      runCommand: (_command, args) => {
+        calls.push(args.join(" "));
+        return args.join(" ") === "--version" ? "codex 0.124.0" : "ok";
+      },
+      fileExists: () => true,
+    });
+
+    expect(capability.ready).toBe(true);
+    expect(calls).toContain("exec --ignore-user-config --full-auto --help");
+    expect(calls).not.toContain("login status");
   });
 });
 

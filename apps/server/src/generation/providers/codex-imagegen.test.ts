@@ -32,6 +32,7 @@ describe("CodexImagegenProvider", () => {
     expect(execCodex).toHaveBeenCalledWith(
       expect.arrayContaining([
         "exec",
+        "--ignore-user-config",
         "--full-auto",
         "--skip-git-repo-check",
         "-C",

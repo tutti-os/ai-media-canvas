@@ -136,20 +136,19 @@ function probeCodexImagegenCapability(options: {
   }
 
   if (!reasons.includes("codex_not_found")) {
-    try {
-      options.runCommand(options.codexPath, ["login", "status"], {
-        timeoutMs: options.timeoutMs,
-        env: options.env,
-      });
-    } catch {
+    if (!options.fileExists(join(options.codexHome, "auth.json"))) {
       reasons.push("codex_not_logged_in");
     }
 
     try {
-      options.runCommand(options.codexPath, ["exec", "--full-auto", "--help"], {
-        timeoutMs: options.timeoutMs,
-        env: options.env,
-      });
+      options.runCommand(
+        options.codexPath,
+        ["exec", "--ignore-user-config", "--full-auto", "--help"],
+        {
+          timeoutMs: options.timeoutMs,
+          env: options.env,
+        },
+      );
     } catch {
       reasons.push("full_auto_unavailable");
     }

@@ -92,6 +92,7 @@ export class CodexImagegenProvider implements ImageProvider {
       const result = await this.execCodex(
         [
           "exec",
+          "--ignore-user-config",
           "--full-auto",
           "--skip-git-repo-check",
           "-C",
