@@ -124,6 +124,10 @@ export async function executeVideoGenerationJob(
     height: generated.height,
     duration_seconds: generated.durationSeconds,
     mime_type: stored.asset.mimeType ?? mimeType,
+    prompt: payload.prompt,
+    model,
+    ...(payload.aspect_ratio ? { aspect_ratio: payload.aspect_ratio } : {}),
+    ...(payload.resolution ? { resolution: payload.resolution } : {}),
   };
 }
 

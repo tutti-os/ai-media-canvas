@@ -241,6 +241,9 @@ export async function registerGenerateRoutes(
         width: result.width,
         height: result.height,
         durationSeconds: result.duration_seconds,
+        model: result.model,
+        aspectRatio: result.aspect_ratio,
+        resolution: result.resolution,
       });
     } catch (error) {
       return sendGenerationError(reply, error);

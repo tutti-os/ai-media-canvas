@@ -212,7 +212,10 @@ export async function insertVideoElement(
     durationSeconds?: number;
     height: number;
     mimeType: string;
+    model?: string;
     prompt: string;
+    aspectRatio?: string;
+    resolution?: string;
     signedUrl: string;
     title?: string;
     width: number;
@@ -251,6 +254,9 @@ export async function insertVideoElement(
       mimeType: input.mimeType,
       prompt: input.prompt,
       videoUrl,
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
+      ...(input.resolution ? { resolution: input.resolution } : {}),
       ...(input.title ? { title: input.title } : {}),
       ...(input.durationSeconds != null
         ? { durationSeconds: input.durationSeconds }

@@ -168,6 +168,22 @@ async function replaceRecoveredVideoGenerator(
     "@excalidraw/excalidraw"
   );
   const durationSeconds = result.duration_seconds;
+  const prompt =
+    typeof result.prompt === "string"
+      ? result.prompt
+      : current.customData?.prompt;
+  const model =
+    typeof result.model === "string" ? result.model : current.customData?.model;
+  const aspectRatio =
+    typeof result.aspectRatio === "string"
+      ? result.aspectRatio
+      : typeof result.aspect_ratio === "string"
+        ? result.aspect_ratio
+        : current.customData?.aspectRatio;
+  const resolution =
+    typeof result.resolution === "string"
+      ? result.resolution
+      : current.customData?.resolution;
   const newElements = convertToExcalidrawElements([
     {
       type: "rectangle",
@@ -185,8 +201,11 @@ async function replaceRecoveredVideoGenerator(
         ...(typeof assetId === "string" ? { assetId } : {}),
         mimeType,
         ...(typeof durationSeconds === "number" ? { durationSeconds } : {}),
-        title: String(current.customData?.prompt ?? "").slice(0, 60),
-        prompt: current.customData?.prompt,
+        title: String(prompt ?? "").slice(0, 60),
+        ...(typeof prompt === "string" ? { prompt } : {}),
+        ...(typeof model === "string" ? { model } : {}),
+        ...(typeof aspectRatio === "string" ? { aspectRatio } : {}),
+        ...(typeof resolution === "string" ? { resolution } : {}),
         videoUrl:
           normalizeLocalAssetStorageUrl(
             url,

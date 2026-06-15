@@ -9,9 +9,6 @@ import type {
   MessageCreateResponse,
   MessageListResponse,
   ModelListResponse,
-  TuttiManagedConnectionResponse,
-  TuttiManagedGrantCreateRequest,
-  TuttiManagedGrantResponse,
   ProfileUpdateResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
@@ -26,6 +23,9 @@ import type {
   SkillListResponse,
   SkillToggleRequest,
   StreamEvent,
+  TuttiManagedConnectionResponse,
+  TuttiManagedGrantCreateRequest,
+  TuttiManagedGrantResponse,
   UploadResponse,
   ViewerResponse,
   WorkspaceSettingsResponse,
@@ -578,6 +578,9 @@ export type GenerateVideoResponse = {
   width: number;
   height: number;
   durationSeconds: number;
+  model?: string;
+  aspectRatio?: string;
+  resolution?: string;
 };
 
 export async function generateVideoDirect(
@@ -635,6 +638,18 @@ export async function generateVideoDirect(
     jobType: "video_generation",
     ...(options?.signal ? { signal: options.signal } : {}),
   }).promise;
+  const model =
+    typeof result.model === "string" ? result.model : options?.model;
+  const aspectRatio =
+    typeof result.aspectRatio === "string"
+      ? result.aspectRatio
+      : typeof result.aspect_ratio === "string"
+        ? result.aspect_ratio
+        : options?.aspectRatio;
+  const resolution =
+    typeof result.resolution === "string"
+      ? result.resolution
+      : options?.resolution;
   return {
     url: readStringResult(result, "signed_url"),
     assetId: readStringResult(result, "asset_id"),
@@ -643,6 +658,9 @@ export async function generateVideoDirect(
     width: readNumberResult(result, "width"),
     height: readNumberResult(result, "height"),
     durationSeconds: readNumberResult(result, "duration_seconds"),
+    ...(model ? { model } : {}),
+    ...(aspectRatio ? { aspectRatio } : {}),
+    ...(resolution ? { resolution } : {}),
   };
 }
 
