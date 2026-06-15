@@ -78,7 +78,7 @@
         "title": "Illustrate a dreamy seaside story"
       },
       "storyboard-comic-sequence": {
-        "prompt": "Break an action concept into a comic-style sequence with consistent character movement, ready to become a short-form animatic.",
+        "prompt": "Break an original rooftop chase scene, where a character leaps over neon signs on a rainy night, into a comic-style sequence with consistent character movement, ready to become a short-form animatic.",
         "title": "Create a comic-style sequence"
       },
       "storyboard-music-teaser": {
@@ -110,7 +110,7 @@
         "title": "Turn a selfie into a magazine cover"
       },
       "visual-superhero-comic": {
-        "prompt": "Break this idea into a vintage superhero comic page with four to six panels, speech bubbles, narration boxes, and consistent character action with a 1970s comic-paper feel.",
+        "prompt": "Design a vintage superhero comic page about an original city hero rescuing people in a night street scene, with four to six panels, speech bubbles, narration boxes, action lines, and consistent character action with a 1970s comic-paper feel.",
         "title": "Make a classic superhero comic strip"
       }
     },

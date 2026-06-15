@@ -14,7 +14,10 @@ import { GoogleVertexVideoProvider } from "./google-vertex-video.js";
 import { GoogleVideoProvider } from "./google-video.js";
 import { KieImageProvider } from "./kie-image.js";
 import { KieVideoProvider } from "./kie-video.js";
-import { OpenAIImageProvider } from "./openai-image.js";
+import {
+  OpenAIImageProvider,
+  isOfficialOpenAIImageBaseURL,
+} from "./openai-image.js";
 import { registerImageProvider, registerVideoProvider } from "./registry.js";
 import { ReplicateImageProvider } from "./replicate-image.js";
 import { ReplicateVideoProvider } from "./replicate-video.js";
@@ -75,7 +78,7 @@ export function registerAllProviders(env: ServerEnv): void {
   }
 
   // OpenAI — image only
-  if (env.openAIApiKey) {
+  if (env.openAIApiKey && isOfficialOpenAIImageBaseURL(env.openAIApiBase)) {
     registerImageProvider(
       new OpenAIImageProvider(env.openAIApiKey, env.openAIApiBase),
     );

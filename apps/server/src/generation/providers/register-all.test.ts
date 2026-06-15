@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ServerEnv } from "../../config/env.js";
+import { loadServerEnv } from "../../config/env.js";
 import { registerAllProviders } from "./register-all.js";
 import {
   clearProviders,
@@ -14,10 +14,7 @@ describe("registerAllProviders", () => {
   });
 
   it("registers Kie image and video providers when configured", () => {
-    registerAllProviders({
-      ...MINIMAL_SERVER_ENV,
-      kieApiKey: "test-kie-key",
-    });
+    registerAllProviders(loadServerEnv({ kieApiKey: "test-kie-key" }, {}));
 
     expect(getAvailableImageModels().map((model) => model.id)).toContain(
       "kie/nano-banana-pro",
@@ -26,12 +23,53 @@ describe("registerAllProviders", () => {
       "kie/veo-3.1",
     );
   });
-});
 
-const MINIMAL_SERVER_ENV: ServerEnv = {
-  agentBackendMode: "state",
-  agentModel: "mock",
-  port: 0,
-  version: "test",
-  webOrigin: "http://localhost:3000",
-};
+  it("registers OpenAI image models when the default official endpoint is used", () => {
+    registerAllProviders(loadServerEnv({ openAIApiKey: "sk-openai" }, {}));
+
+    expect(getAvailableImageModels()).toContainEqual(
+      expect.objectContaining({
+        id: "gpt-image-1",
+        provider: "openai",
+      }),
+    );
+  });
+
+  it("registers OpenAI image models for the explicit official endpoint", () => {
+    registerAllProviders(
+      loadServerEnv(
+        {
+          openAIApiKey: "sk-openai",
+          openAIApiBase: "https://api.openai.com/v1",
+        },
+        {},
+      ),
+    );
+
+    expect(getAvailableImageModels()).toContainEqual(
+      expect.objectContaining({
+        id: "gpt-image-1",
+        provider: "openai",
+      }),
+    );
+  });
+
+  it("does not expose official OpenAI image models for OpenAI-compatible gateways", () => {
+    registerAllProviders(
+      loadServerEnv(
+        {
+          openAIApiKey: "sk-compatible",
+          openAIApiBase: "https://api.deepseek.com",
+        },
+        {},
+      ),
+    );
+
+    expect(getAvailableImageModels()).not.toContainEqual(
+      expect.objectContaining({
+        id: "gpt-image-1",
+        provider: "openai",
+      }),
+    );
+  });
+});
