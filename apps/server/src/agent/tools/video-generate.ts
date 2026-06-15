@@ -1,13 +1,18 @@
 import { tool } from "langchain";
 import { z } from "zod";
 
+import { validateVideoGenerationParams } from "../../generation/model-schemas.js";
 import {
-  type AvailableModel,
+  type AvailableVideoModel,
   getAvailableVideoModels,
   resolveVideoProviderName,
 } from "../../generation/providers/registry.js";
 import { generateVideo } from "../../generation/video-generation.js";
 import type { CanvasLayoutInspectionState } from "./inspect-canvas.js";
+import {
+  collectStringEnumValues,
+  summarizeModelSchemaForTool,
+} from "./model-schema-summary.js";
 
 const DEFAULT_MODEL = "google-official/veo-3.1-generate-preview";
 const AGNES_VIDEO_MODEL_PREFIX = "agnes-video/";
@@ -103,15 +108,17 @@ export type SubmitVideoJobFn = (input: {
 
 // ── Dynamic schema builder ─────────────────────────────────────────────────
 
-function buildVideoGenerateSchema(models: AvailableModel[]) {
+function buildVideoGenerateSchema(models: AvailableVideoModel[]) {
   const modelIds = models.map((m) => m.id);
   const defaultModel = modelIds.includes(DEFAULT_MODEL)
     ? DEFAULT_MODEL
     : (modelIds[0] ?? DEFAULT_MODEL);
 
   const modelDescription = models.length
-    ? `Video model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.description}`).join("\n")}`
+    ? `Video model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.displayName} — ${m.description}. Limits: ${summarizeModelSchemaForTool(m)}`).join("\n")}`
     : "Model identifier (no video providers currently registered)";
+  const aspectRatioValues = collectStringEnumValues(models, "aspectRatio");
+  const resolutionValues = collectStringEnumValues(models, "resolution");
 
   const modelField =
     modelIds.length >= 1
@@ -141,24 +148,37 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
       .min(3)
       .max(16)
       .optional()
-      .default(5)
       .describe(
         "Video duration in seconds. Valid range depends on model (see model descriptions). Google Veo supports 4/6/8, Replicate models support 3-16.",
       ),
-    resolution: z
-      .enum(["480p", "720p", "1080p", "4k"])
-      .optional()
-      .default("720p")
-      .describe(
-        "Output resolution. 720p recommended for balance of quality and speed. 1080p/4k supported by Google Veo official models (8s duration required).",
-      ),
-    aspectRatio: z
-      .enum(["1:1", "16:9", "9:16", "4:3", "3:4"])
-      .optional()
-      .default("16:9")
-      .describe(
-        "Video aspect ratio. 16:9 for landscape, 9:16 for portrait/mobile.",
-      ),
+    resolution:
+      resolutionValues.length >= 1
+        ? z
+            .enum(resolutionValues as [string, ...string[]])
+            .optional()
+            .describe(
+              "Output resolution. Must be one of the values listed for the selected model in the model field description.",
+            )
+        : z
+            .enum(["480p", "720p", "1080p", "4k"])
+            .optional()
+            .describe(
+              "Output resolution. Must match the selected model's schema limits.",
+            ),
+    aspectRatio:
+      aspectRatioValues.length >= 1
+        ? z
+            .enum(aspectRatioValues as [string, ...string[]])
+            .optional()
+            .describe(
+              "Video aspect ratio. Must be one of the values listed for the selected model in the model field description.",
+            )
+        : z
+            .enum(["1:1", "16:9", "9:16", "4:3", "3:4"])
+            .optional()
+            .describe(
+              "Video aspect ratio. Must match the selected model's schema limits.",
+            ),
     inputImages: z
       .array(z.string())
       .max(7)
@@ -213,9 +233,8 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
     enableAudio: z
       .boolean()
       .optional()
-      .default(true)
       .describe(
-        "Generate synchronized audio (dialogue, sound effects, ambient). Not all models support this — ignored for models without audio capability.",
+        "Generate synchronized audio (dialogue, sound effects, ambient). Only pass true for models whose limits list audio support.",
       ),
     placementX: z
       .number()
@@ -298,13 +317,25 @@ export async function runVideoGenerate(
   if (submitVideoJob) {
     try {
       lap("job_submit", { model: effectiveInput.model });
-      const jobResult = await submitVideoJob({
-        title: effectiveInput.title,
+      validateVideoGenerationParams({
         prompt: effectiveInput.prompt,
         model: effectiveInput.model,
-        duration: effectiveInput.duration,
-        resolution: effectiveInput.resolution,
-        aspectRatio: effectiveInput.aspectRatio,
+        ...(effectiveInput.duration != null
+          ? { duration: effectiveInput.duration }
+          : {}),
+        ...(effectiveInput.resolution
+          ? {
+              resolution: effectiveInput.resolution as
+                | "480p"
+                | "720p"
+                | "1080p"
+                | "4k"
+                | "2160p",
+            }
+          : {}),
+        ...(effectiveInput.aspectRatio
+          ? { aspectRatio: effectiveInput.aspectRatio }
+          : {}),
         ...(effectiveInput.inputImages
           ? { inputImages: effectiveInput.inputImages }
           : {}),
@@ -326,7 +357,47 @@ export async function runVideoGenerate(
         ...(effectiveInput.numFrames !== undefined
           ? { numFrames: effectiveInput.numFrames }
           : {}),
-        enableAudio: effectiveInput.enableAudio,
+        ...(effectiveInput.enableAudio != null
+          ? { enableAudio: effectiveInput.enableAudio }
+          : {}),
+      });
+      const jobResult = await submitVideoJob({
+        title: effectiveInput.title,
+        prompt: effectiveInput.prompt,
+        model: effectiveInput.model,
+        ...(effectiveInput.duration != null
+          ? { duration: effectiveInput.duration }
+          : {}),
+        ...(effectiveInput.resolution
+          ? { resolution: effectiveInput.resolution }
+          : {}),
+        ...(effectiveInput.aspectRatio
+          ? { aspectRatio: effectiveInput.aspectRatio }
+          : {}),
+        ...(effectiveInput.inputImages
+          ? { inputImages: effectiveInput.inputImages }
+          : {}),
+        ...(effectiveInput.inputVideo
+          ? { inputVideo: effectiveInput.inputVideo }
+          : {}),
+        ...(effectiveInput.videoMode
+          ? { videoMode: effectiveInput.videoMode }
+          : {}),
+        ...(effectiveInput.seed !== undefined
+          ? { seed: effectiveInput.seed }
+          : {}),
+        ...(effectiveInput.negativePrompt
+          ? { negativePrompt: effectiveInput.negativePrompt }
+          : {}),
+        ...(effectiveInput.frameRate !== undefined
+          ? { frameRate: effectiveInput.frameRate }
+          : {}),
+        ...(effectiveInput.numFrames !== undefined
+          ? { numFrames: effectiveInput.numFrames }
+          : {}),
+        ...(effectiveInput.enableAudio != null
+          ? { enableAudio: effectiveInput.enableAudio }
+          : {}),
         ...(effectiveInput.placementX !== undefined
           ? { placementX: effectiveInput.placementX }
           : {}),
@@ -410,13 +481,68 @@ export async function runVideoGenerate(
   try {
     lap("direct_generate_start", { model: effectiveInput.model });
     const providerName = resolveVideoProviderName(effectiveInput.model);
+    validateVideoGenerationParams({
+      prompt: effectiveInput.prompt,
+      model: effectiveInput.model,
+      ...(effectiveInput.duration != null
+        ? { duration: effectiveInput.duration }
+        : {}),
+      ...(effectiveInput.resolution
+        ? {
+            resolution: effectiveInput.resolution as
+              | "480p"
+              | "720p"
+              | "1080p"
+              | "4k"
+              | "2160p",
+          }
+        : {}),
+      ...(effectiveInput.aspectRatio
+        ? { aspectRatio: effectiveInput.aspectRatio }
+        : {}),
+      ...(effectiveInput.inputImages
+        ? { inputImages: effectiveInput.inputImages }
+        : {}),
+      ...(effectiveInput.inputVideo
+        ? { inputVideo: effectiveInput.inputVideo }
+        : {}),
+      ...(effectiveInput.videoMode
+        ? { videoMode: effectiveInput.videoMode }
+        : {}),
+      ...(effectiveInput.seed !== undefined
+        ? { seed: effectiveInput.seed }
+        : {}),
+      ...(effectiveInput.negativePrompt
+        ? { negativePrompt: effectiveInput.negativePrompt }
+        : {}),
+      ...(effectiveInput.frameRate !== undefined
+        ? { frameRate: effectiveInput.frameRate }
+        : {}),
+      ...(effectiveInput.numFrames !== undefined
+        ? { numFrames: effectiveInput.numFrames }
+        : {}),
+      ...(effectiveInput.enableAudio != null
+        ? { enableAudio: effectiveInput.enableAudio }
+        : {}),
+    });
     const result = await generateVideo(providerName, {
       prompt: effectiveInput.prompt,
       model: effectiveInput.model,
-      duration: effectiveInput.duration,
-      aspectRatio: effectiveInput.aspectRatio,
+      ...(effectiveInput.duration != null
+        ? { duration: effectiveInput.duration }
+        : {}),
+      ...(effectiveInput.aspectRatio
+        ? { aspectRatio: effectiveInput.aspectRatio }
+        : {}),
       ...(effectiveInput.resolution
-        ? { resolution: effectiveInput.resolution as "480p" | "720p" | "1080p" }
+        ? {
+            resolution: effectiveInput.resolution as
+              | "480p"
+              | "720p"
+              | "1080p"
+              | "4k"
+              | "2160p",
+          }
         : {}),
       ...(effectiveInput.inputImages
         ? { inputImages: effectiveInput.inputImages }
@@ -481,7 +607,7 @@ export async function runVideoGenerate(
 export function createVideoGenerateTool(deps?: {
   submitVideoJob?: SubmitVideoJobFn;
   layoutInspectionState?: CanvasLayoutInspectionState;
-  availableModels?: AvailableModel[];
+  availableModels?: AvailableVideoModel[];
 }) {
   const models = deps?.availableModels ?? getAvailableVideoModels();
 

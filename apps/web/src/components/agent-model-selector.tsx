@@ -12,17 +12,11 @@ import {
 import { fetchModels, fetchWorkspaceSettings } from "@/lib/server-api";
 import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "@/lib/workspace-settings-events";
 import { Cloud, Settings2, Terminal } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useState } from "react";
 import { useAppTranslation } from "../i18n";
 import { LocalCliProviderIcon } from "./local-cli-provider-icon";
 import { SettingsDialog } from "./settings-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 
 type ModelOption = {
   description?: string | undefined;
@@ -167,11 +161,8 @@ export function AgentModelSelector({
   >(null);
   const [workspaceDefaultModelSource, setWorkspaceDefaultModelSource] =
     useState<AgentModelSourceTab | null>(null);
-  const [customModelDraft, setCustomModelDraft] = useState("");
   const [activeModelTab, setActiveModelTab] =
     useState<AgentModelSourceTab>("local-agent");
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
 
   const loadModels = useCallback(() => {
     fetchModels()
@@ -217,7 +208,6 @@ export function AgentModelSelector({
 
   useEffect(() => {
     if (!open) return;
-    setCustomModelDraft(model ?? workspaceDefaultModel ?? "");
     const selected = models.find((item) => item.id === model);
     setActiveModelTab(
       modelSource ??
@@ -227,41 +217,7 @@ export function AgentModelSelector({
             ? workspaceDefaultModelSource
             : getAgentModelSourceTab(model)),
     );
-  }, [
-    model,
-    modelSource,
-    models,
-    open,
-    workspaceDefaultModel,
-    workspaceDefaultModelSource,
-  ]);
-
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node) &&
-        btnRef.current &&
-        !btnRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [open]);
+  }, [model, modelSource, models, open, workspaceDefaultModelSource]);
 
   const selectedModel = models.find((m) => m.id === model);
   const selectedModelSource =
@@ -315,40 +271,6 @@ export function AgentModelSelector({
   const defaultModelLabel = workspaceDefaultProviderIsUnsupportedLocal
     ? null
     : formatDefaultModelLabel(workspaceDefaultModel, models);
-  const trimmedCustomModelDraft = customModelDraft.trim();
-
-  // Auto-positioning popover (above or below based on available space)
-  const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
-  useLayoutEffect(() => {
-    if (!open || !btnRef.current) return;
-    const rect = btnRef.current.getBoundingClientRect();
-    const popoverWidth = Math.min(416, Math.max(280, window.innerWidth - 32));
-    const popoverHeight = 420;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const openAbove = spaceBelow < popoverHeight && rect.top > spaceBelow;
-    const left = Math.min(
-      Math.max(16, rect.left),
-      window.innerWidth - popoverWidth - 16,
-    );
-
-    if (openAbove) {
-      setPopoverStyle({
-        position: "fixed",
-        bottom: window.innerHeight - rect.top + 8,
-        left,
-        width: popoverWidth,
-        zIndex: 9999,
-      });
-    } else {
-      setPopoverStyle({
-        position: "fixed",
-        top: rect.bottom + 8,
-        left,
-        width: popoverWidth,
-        zIndex: 9999,
-      });
-    }
-  }, [open]);
 
   const visibleModels = models.filter(
     (item) => getModelSourceTab(item) === activeModelTab,
@@ -374,271 +296,237 @@ export function AgentModelSelector({
     },
   );
 
-  function applyCustomModel() {
-    if (!trimmedCustomModelDraft) return;
-    setModel(trimmedCustomModelDraft, "api-provider");
-    setOpen(false);
-  }
-
   return (
     <>
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={`group relative flex items-center justify-center box-border rounded-full border-[0.5px] cursor-pointer bg-background font-inter transition-[border-color,background-color,color] duration-100 ease-in-out ${
-          compact ? "h-8 px-2.5" : "h-8 px-3"
-        } ${
-          isTriggerActive
-            ? `${getTriggerAccentClasses(selectedProvider || triggerLocalProvider)} shadow-[0_1px_4px_rgba(0,0,0,0.06)]`
-            : "border-border text-foreground hover:bg-muted"
-        }`}
-      >
-        <span className="flex items-center justify-center gap-1">
-          {triggerLocalProvider ? (
-            <LocalCliProviderIcon
-              provider={triggerLocalProvider}
-              label={triggerLocalProviderLabel ?? displayLabel}
-              className="size-4 rounded-sm"
-              iconSize={15}
-            />
-          ) : (
-            <svg
-              aria-hidden="true"
-              xmlns="http://www.w3.org/2000/svg"
-              width="14"
-              height="14"
-              fill="none"
-              viewBox="0 0 14 14"
-              className="[&_path]:fill-current"
-            >
-              <path fill="currentColor" d={SPARKLE_ICON_PATH} />
-            </svg>
-          )}
-          <span className={compact ? "text-[11px]" : "text-xs"}>
-            {displayLabel}
-          </span>
-        </span>
-        <ModelTriggerTooltip
-          label={t("agentModelSelector.tooltip")}
-          placement={tooltipPlacement}
-        />
-      </button>
-      {open &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <div
-            ref={popoverRef}
-            style={popoverStyle}
-            className="max-h-[min(28rem,calc(100vh-2rem))] overflow-y-auto rounded-xl border border-border bg-popover p-2 shadow-lg"
-          >
-            <div className="mb-2 flex items-center justify-between gap-2 px-2">
-              <div className="text-xs font-medium text-muted-foreground">
-                {t("agentModelSelector.assistantMode")}
-              </div>
-              <button
-                type="button"
-                aria-label={t("agentModelSelector.openSettings")}
-                onClick={() => {
-                  setOpen(false);
-                  setSettingsInitialSourceTab(undefined);
-                  setSettingsOpen(true);
-                }}
-                className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Settings2 className="h-3 w-3" />
-                {t("agentModelSelector.settings")}
-              </button>
-            </div>
-            <div className="mb-2 grid grid-cols-3 rounded-full border border-border bg-muted/30 p-0.5">
-              {[
-                {
-                  id: "local-agent" as const,
-                  label: t("agentModelSelector.localAgent"),
-                  icon: Terminal,
-                },
-                {
-                  id: "tutti-managed" as const,
-                  label: t("agentModelSelector.tuttiManaged"),
-                  icon: Cloud,
-                },
-                {
-                  id: "api-provider" as const,
-                  label: t("agentModelSelector.apiProvider"),
-                  icon: Cloud,
-                },
-              ].map((tab) => {
-                const Icon = tab.icon;
-                const selected = activeModelTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => setActiveModelTab(tab.id)}
-                    className={`inline-flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-full px-2 text-[12px] font-medium leading-tight transition-colors ${
-                      selected
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Icon className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{tab.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            {/* Auto option */}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          render={
             <button
               type="button"
-              onClick={() => {
-                setModel(null);
-                setOpen(false);
-              }}
-              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors ${
-                !isActive
-                  ? "bg-accent/10 text-accent-foreground"
-                  : "hover:bg-muted"
+              className={`group relative flex items-center justify-center box-border rounded-full border-[0.5px] cursor-pointer bg-background font-inter transition-[border-color,background-color,color] duration-100 ease-in-out ${
+                compact ? "h-8 px-2.5" : "h-8 px-3"
+              } ${
+                isTriggerActive
+                  ? `${getTriggerAccentClasses(selectedProvider || triggerLocalProvider)} shadow-[0_1px_4px_rgba(0,0,0,0.06)]`
+                  : "border-border text-foreground hover:bg-muted"
               }`}
             >
-              <span className="flex-1 text-left">
-                <span className="block">
-                  {t("agentModelSelector.localAssistant")}
-                </span>
-                <span className="block text-xs text-muted-foreground">
-                  {defaultModelLabel
-                    ? t("agentModelSelector.usesDefaultModel", {
-                        model: defaultModelLabel,
-                      })
-                    : t("agentModelSelector.usesConfiguredDefaultRoute")}
+              <span className="flex items-center justify-center gap-1">
+                {triggerLocalProvider ? (
+                  <LocalCliProviderIcon
+                    provider={triggerLocalProvider}
+                    label={triggerLocalProviderLabel ?? displayLabel}
+                    className="size-4 rounded-sm"
+                    iconSize={15}
+                  />
+                ) : (
+                  <svg
+                    aria-hidden="true"
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    fill="none"
+                    viewBox="0 0 14 14"
+                    className="[&_path]:fill-current"
+                  >
+                    <path fill="currentColor" d={SPARKLE_ICON_PATH} />
+                  </svg>
+                )}
+                <span className={compact ? "text-[11px]" : "text-xs"}>
+                  {displayLabel}
                 </span>
               </span>
-              {!isActive && (
-                <svg
-                  aria-hidden="true"
-                  className="h-3 w-3 text-accent-foreground"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                >
-                  <path d={CHECK_PATH} />
-                </svg>
-              )}
+              <ModelTriggerTooltip
+                label={t("agentModelSelector.tooltip")}
+                placement={tooltipPlacement}
+              />
             </button>
-            {/* Group by provider */}
-            {providers.map((provider) => {
-              const providerModels = visibleModels.filter(
-                (m) => m.provider === provider,
-              );
-              if (providerModels.length === 0) return null;
+          }
+        />
+        <PopoverContent
+          align="start"
+          className="max-h-[min(28rem,calc(100vh-2rem))] w-[min(26rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border-[0.5px] border-border bg-popover p-2 shadow-lg"
+          collisionAvoidance={{
+            align: "shift",
+            fallbackAxisSide: "none",
+            side: "none",
+          }}
+          collisionPadding={8}
+          side="bottom"
+          sideOffset={8}
+        >
+          <div className="mb-2 flex items-center justify-between gap-2 px-2">
+            <div className="text-xs font-medium text-muted-foreground">
+              {t("agentModelSelector.assistantMode")}
+            </div>
+            <button
+              type="button"
+              aria-label={t("agentModelSelector.openSettings")}
+              onClick={() => {
+                setOpen(false);
+                setSettingsInitialSourceTab(undefined);
+                setSettingsOpen(true);
+              }}
+              className="inline-flex items-center gap-1 rounded-full border-[0.5px] border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Settings2 className="h-3 w-3" />
+              {t("agentModelSelector.settings")}
+            </button>
+          </div>
+          <div className="mb-2 grid grid-cols-3 rounded-full bg-muted p-0.5">
+            {[
+              {
+                id: "local-agent" as const,
+                label: t("agentModelSelector.localAgent"),
+                icon: Terminal,
+              },
+              {
+                id: "tutti-managed" as const,
+                label: t("agentModelSelector.tuttiManaged"),
+                icon: Cloud,
+              },
+              {
+                id: "api-provider" as const,
+                label: t("agentModelSelector.apiProvider"),
+                icon: Cloud,
+              },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const selected = activeModelTab === tab.id;
               return (
-                <div key={provider} className="mt-2">
-                  <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
-                    <ProviderLogo provider={provider} />
-                    {isLocalCliProvider(provider)
-                      ? formatLocalCliProviderLabel(provider)
-                      : formatProviderLabel(provider)}
-                  </div>
-                  {providerModels.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => {
-                        setModel(
-                          resolveExecutableModelId(m.id),
-                          getModelSourceTab(m),
-                        );
-                        setOpen(false);
-                      }}
-                      className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors ${
-                        model === m.id
-                          ? "bg-accent/10 text-accent-foreground"
-                          : "hover:bg-muted"
-                      }`}
-                    >
-                      <span className="min-w-0 flex-1 text-left">
-                        <span className="block truncate">{m.name}</span>
-                        {m.description && (
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {m.description}
-                          </span>
-                        )}
-                      </span>
-                      {model === m.id && (
-                        <svg
-                          aria-hidden="true"
-                          className="h-3 w-3 text-accent-foreground"
-                          viewBox="0 0 16 16"
-                          fill="currentColor"
-                        >
-                          <path d={CHECK_PATH} />
-                        </svg>
-                      )}
-                    </button>
-                  ))}
-                </div>
+                <button
+                  key={tab.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setActiveModelTab(tab.id)}
+                  className={`inline-flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-full px-2 text-[12px] font-medium leading-tight transition-colors ${
+                    selected
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{tab.label}</span>
+                </button>
               );
             })}
-            {providers.length === 0 ? (
-              <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
-                <p>
-                  {activeModelTab === "local-agent"
-                    ? t("agentModelSelector.noLocalCliModels")
-                    : activeModelTab === "tutti-managed"
-                      ? t("agentModelSelector.noTuttiManagedModels")
-                      : t("agentModelSelector.noApiProviderModels")}
-                </p>
-                {activeModelTab === "tutti-managed" ? (
+          </div>
+          {/* Auto option */}
+          <button
+            type="button"
+            onClick={() => {
+              setModel(null);
+              setOpen(false);
+            }}
+            className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors ${
+              !isActive
+                ? "bg-accent/10 text-accent-foreground"
+                : "hover:bg-muted"
+            }`}
+          >
+            <span className="flex-1 text-left">
+              <span className="block">
+                {t("agentModelSelector.localAssistant")}
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                {defaultModelLabel
+                  ? t("agentModelSelector.usesDefaultModel", {
+                      model: defaultModelLabel,
+                    })
+                  : t("agentModelSelector.usesConfiguredDefaultRoute")}
+              </span>
+            </span>
+            {!isActive && (
+              <svg
+                aria-hidden="true"
+                className="h-3 w-3 text-accent-foreground"
+                viewBox="0 0 16 16"
+                fill="currentColor"
+              >
+                <path d={CHECK_PATH} />
+              </svg>
+            )}
+          </button>
+          {/* Group by provider */}
+          {providers.map((provider) => {
+            const providerModels = visibleModels.filter(
+              (m) => m.provider === provider,
+            );
+            if (providerModels.length === 0) return null;
+            return (
+              <div key={provider} className="mt-2">
+                <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                  <ProviderLogo provider={provider} />
+                  {isLocalCliProvider(provider)
+                    ? formatLocalCliProviderLabel(provider)
+                    : formatProviderLabel(provider)}
+                </div>
+                {providerModels.map((m) => (
                   <button
+                    key={m.id}
                     type="button"
                     onClick={() => {
+                      setModel(
+                        resolveExecutableModelId(m.id),
+                        getModelSourceTab(m),
+                      );
                       setOpen(false);
-                      setSettingsInitialSourceTab("tutti-managed");
-                      setSettingsOpen(true);
                     }}
-                    className="mt-3 inline-flex h-8 items-center rounded-full border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors ${
+                      model === m.id
+                        ? "bg-accent/10 text-accent-foreground"
+                        : "hover:bg-muted"
+                    }`}
                   >
-                    {t("agentModelSelector.connectTuttiManaged")}
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block truncate">{m.name}</span>
+                      {m.description && (
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {m.description}
+                        </span>
+                      )}
+                    </span>
+                    {model === m.id && (
+                      <svg
+                        aria-hidden="true"
+                        className="h-3 w-3 text-accent-foreground"
+                        viewBox="0 0 16 16"
+                        fill="currentColor"
+                      >
+                        <path d={CHECK_PATH} />
+                      </svg>
+                    )}
                   </button>
-                ) : null}
+                ))}
               </div>
-            ) : null}
-            {activeModelTab === "api-provider" ? (
-              <form
-                className="mt-3 border-t border-border pt-3"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  applyCustomModel();
-                }}
-              >
-                <label
-                  htmlFor="customModelId"
-                  className="px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60"
+            );
+          })}
+          {providers.length === 0 ? (
+            <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+              <p>
+                {activeModelTab === "local-agent"
+                  ? t("agentModelSelector.noLocalCliModels")
+                  : activeModelTab === "tutti-managed"
+                    ? t("agentModelSelector.noTuttiManagedModels")
+                    : t("agentModelSelector.noApiProviderModels")}
+              </p>
+              {activeModelTab === "tutti-managed" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    setSettingsInitialSourceTab("tutti-managed");
+                    setSettingsOpen(true);
+                  }}
+                  className="mt-3 inline-flex h-8 items-center rounded-full border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted"
                 >
-                  {t("agentModelSelector.customModelId")}
-                </label>
-                <div className="mt-2 space-y-2 px-2">
-                  <input
-                    id="customModelId"
-                    value={customModelDraft}
-                    onChange={(event) =>
-                      setCustomModelDraft(event.target.value)
-                    }
-                    placeholder="anthropic:minimax-m2.5"
-                    className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-accent"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!trimmedCustomModelDraft}
-                    className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {t("agentModelSelector.useCustomModel")}
-                  </button>
-                </div>
-              </form>
-            ) : null}
-          </div>,
-          document.body,
-        )}
+                  {t("agentModelSelector.connectTuttiManaged")}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </PopoverContent>
+      </Popover>
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}

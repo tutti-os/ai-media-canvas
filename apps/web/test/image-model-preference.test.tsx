@@ -3,7 +3,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ImageModelPreferencePopover } from "../src/components/image-model-preference";
@@ -32,19 +31,15 @@ function OpenPopover({
   onClose?: () => void;
   onOpenSettings?: () => void;
 }) {
-  const anchorRef = useRef<HTMLButtonElement | null>(null);
   return (
-    <>
-      <button ref={anchorRef} type="button">
-        Anchor
-      </button>
-      <ImageModelPreferencePopover
-        anchorRef={anchorRef}
-        onClose={onClose}
-        onOpenSettings={onOpenSettings}
-        open
-      />
-    </>
+    <ImageModelPreferencePopover
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+      onOpenSettings={onOpenSettings}
+      open
+      trigger={<button type="button">Anchor</button>}
+    />
   );
 }
 
@@ -104,6 +99,7 @@ describe("ImageModelPreferencePopover", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("hides provider models when the matching media provider is not configured in settings", async () => {

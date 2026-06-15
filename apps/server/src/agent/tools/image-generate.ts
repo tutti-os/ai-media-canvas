@@ -4,12 +4,17 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 
 import { generateImage } from "../../generation/image-generation.js";
+import { validateImageGenerationParams } from "../../generation/model-schemas.js";
 import {
   type AvailableModel,
   getAvailableImageModels,
   resolveImageProviderName,
 } from "../../generation/providers/registry.js";
 import type { CanvasLayoutInspectionState } from "./inspect-canvas.js";
+import {
+  collectStringEnumValues,
+  summarizeModelSchemaForTool,
+} from "./model-schema-summary.js";
 
 const DEFAULT_MODEL = "black-forest-labs/flux-kontext-pro";
 
@@ -24,8 +29,12 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
     : (modelIds[0] ?? DEFAULT_MODEL);
 
   const modelDescription = models.length
-    ? `Model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.displayName} — ${m.description}`).join("\n")}`
+    ? `Model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.displayName} — ${m.description}. Limits: ${summarizeModelSchemaForTool(m)}`).join("\n")}`
     : "Model identifier (no providers currently registered)";
+  const aspectRatioValues = collectStringEnumValues(models, "aspectRatio");
+  const defaultAspectRatio = aspectRatioValues.includes("1:1")
+    ? "1:1"
+    : (aspectRatioValues[0] ?? "1:1");
 
   // z.enum needs [string, ...string[]], but we may have 0 models at test time.
   const modelField =
@@ -52,13 +61,22 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .optional()
       .describe("Detailed image generation prompt"),
     model: modelField,
-    aspectRatio: z
-      .string()
-      .optional()
-      .default("1:1")
-      .describe(
-        "Aspect ratio (e.g. 1:1, 16:9, 9:16, 4:3, 3:4, 4:5, 5:4, 2:3, 3:2). Provider auto-normalizes unsupported ratios to nearest match.",
-      ),
+    aspectRatio:
+      aspectRatioValues.length >= 1
+        ? z
+            .enum(aspectRatioValues as [string, ...string[]])
+            .optional()
+            .default(defaultAspectRatio)
+            .describe(
+              "Aspect ratio. Must be one of the values listed for the selected model in the model field description.",
+            )
+        : z
+            .string()
+            .optional()
+            .default("1:1")
+            .describe(
+              "Aspect ratio. Must match the selected model's schema limits.",
+            ),
     quality: z
       .enum(["standard", "hd", "ultra"])
       .optional()
@@ -283,6 +301,21 @@ export async function runImageGenerate(
   if (submitImageJob) {
     try {
       lap("job_submit", { model: effectiveInput.model });
+      validateImageGenerationParams({
+        prompt: effectiveInput.prompt,
+        model: effectiveInput.model,
+        ...(effectiveInput.aspectRatio
+          ? { aspectRatio: effectiveInput.aspectRatio }
+          : {}),
+        ...(effectiveInput.inputImages?.length
+          ? { inputImages: effectiveInput.inputImages }
+          : {}),
+        ...(effectiveInput.quality ? { quality: effectiveInput.quality } : {}),
+        ...(effectiveInput.size ? { size: effectiveInput.size } : {}),
+        ...(effectiveInput.seed !== undefined
+          ? { seed: effectiveInput.seed }
+          : {}),
+      });
       const jobResult = await submitImageJob({
         prompt: effectiveInput.prompt,
         title: effectiveInput.title,
@@ -375,6 +408,24 @@ export async function runImageGenerate(
   try {
     lap("direct_generate_start", { model: effectiveInput.model });
     const providerName = resolveImageProviderName(effectiveInput.model);
+    validateImageGenerationParams({
+      prompt: effectiveInput.prompt,
+      model: effectiveInput.model,
+      ...(effectiveInput.aspectRatio
+        ? { aspectRatio: effectiveInput.aspectRatio }
+        : {}),
+      ...(effectiveInput.inputImages?.length
+        ? { inputImages: effectiveInput.inputImages }
+        : {}),
+      ...(effectiveInput.quality ? { quality: effectiveInput.quality } : {}),
+      ...(effectiveInput.outputFormat
+        ? { outputFormat: effectiveInput.outputFormat }
+        : {}),
+      ...(effectiveInput.size ? { size: effectiveInput.size } : {}),
+      ...(effectiveInput.seed !== undefined
+        ? { seed: effectiveInput.seed }
+        : {}),
+    });
     const result = await generateImage(providerName, {
       prompt: effectiveInput.prompt,
       model: effectiveInput.model,
