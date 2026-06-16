@@ -21,7 +21,7 @@ const AGNES_VIDEO_ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const AGNES_VIDEO_ALLOWED_DURATIONS = [4, 5, 6, 8, 10, 15, 16] as const;
 const MAX_AGNES_DURATION_SECONDS = 16;
 const MAX_AGNES_IMAGE_DURATION_SECONDS = 16;
-const MAX_AGNES_IMAGE_RESOLUTION: AgnesVideoResolution = "720p";
+const MAX_AGNES_1080P_IMAGE_NUM_FRAMES = 169;
 const MAX_AGNES_NUM_FRAMES = 441;
 type AgnesVideoModelId = (typeof AGNES_VIDEO_MODEL_IDS)[number];
 type AgnesVideoAspectRatio = (typeof AGNES_VIDEO_ASPECT_RATIOS)[number];
@@ -102,6 +102,7 @@ function getVideoDimensions(
 function resolveAgnesResolution(
   resolution: VideoGenerateParams["resolution"] | "4k" | undefined,
   hasInputImages = false,
+  numFrames = 0,
 ): AgnesVideoResolution | undefined {
   if (resolution === undefined) {
     return resolution;
@@ -110,7 +111,9 @@ function resolveAgnesResolution(
     return resolution;
   }
   if (resolution === "1080p") {
-    return hasInputImages ? MAX_AGNES_IMAGE_RESOLUTION : resolution;
+    return hasInputImages && numFrames > MAX_AGNES_1080P_IMAGE_NUM_FRAMES
+      ? "720p"
+      : resolution;
   }
   throw new GenerationError(
     "agnes-video",
@@ -271,11 +274,6 @@ function resolveAgnesVideoRequest(params: VideoGenerateParams) {
   const inputImages = params.inputImages ?? [];
   const hasInputImages = inputImages.length > 0;
   const aspectRatio = resolveAgnesAspectRatio(params.aspectRatio);
-  const resolution = resolveAgnesResolution(
-    params.resolution as VideoGenerateParams["resolution"] | "4k" | undefined,
-    hasInputImages,
-  );
-  const { width, height } = getVideoDimensions(resolution, aspectRatio);
   const frameRate = resolveAgnesFrameRate(params.frameRate);
   const durationSeconds = hasInputImages
     ? resolveAgnesImageDuration(resolveAgnesDuration(params.duration))
@@ -285,6 +283,12 @@ function resolveAgnesVideoRequest(params: VideoGenerateParams) {
     frameRate,
     params.numFrames,
   );
+  const resolution = resolveAgnesResolution(
+    params.resolution as VideoGenerateParams["resolution"] | "4k" | undefined,
+    hasInputImages,
+    numFrames,
+  );
+  const { width, height } = getVideoDimensions(resolution, aspectRatio);
   const mode = resolveAgnesVideoMode(params);
   resolveAgnesVideoModel(params.model);
 

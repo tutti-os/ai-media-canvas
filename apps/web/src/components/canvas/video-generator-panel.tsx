@@ -49,7 +49,7 @@ const ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const FALLBACK_DURATION_OPTIONS = [4, 5, 6, 8, 10, 15, 18] as const;
 const RESOLUTION_OPTIONS = ["480p", "720p", "1080p", "4k", "2160p"] as const;
 const AGNES_MAX_REFERENCE_VIDEO_DURATION = 16;
-const AGNES_MAX_REFERENCE_VIDEO_RESOLUTION: VideoResolution = "720p";
+const AGNES_MAX_REFERENCE_VIDEO_1080P_DURATION = 6;
 const PANEL_WIDTH = 640;
 type FrameSlot = "first" | "last";
 type FrameData = { dataUrl: string; file?: File };
@@ -122,17 +122,28 @@ function getDurationOptions(
 function getResolutionOptions(
   model?: VideoModelInfo,
   mode?: AimcInputMode,
+  duration?: number,
 ): VideoResolution[] {
   const modeResolutions = mode?.limits?.resolutions?.filter(
     (value): value is VideoResolution =>
       RESOLUTION_OPTIONS.includes(value as VideoResolution),
   );
-  if (modeResolutions?.length) return modeResolutions;
+  if (modeResolutions?.length) {
+    return filterAgnesReferenceResolutions(model, mode, duration, [
+      ...modeResolutions,
+    ]);
+  }
 
   if (mode && model && isAgnesModel(model.id)) {
-    return RESOLUTION_OPTIONS.slice(
-      0,
-      RESOLUTION_OPTIONS.indexOf(AGNES_MAX_REFERENCE_VIDEO_RESOLUTION) + 1,
+    const schemaResolutions = getSchemaEnum<string>(model, "resolution").filter(
+      (value): value is VideoResolution =>
+        RESOLUTION_OPTIONS.includes(value as VideoResolution),
+    );
+    return filterAgnesReferenceResolutions(
+      model,
+      mode,
+      duration,
+      schemaResolutions.length ? schemaResolutions : ["480p", "720p", "1080p"],
     );
   }
 
@@ -148,6 +159,28 @@ function getResolutionOptions(
   const maxIndex = RESOLUTION_OPTIONS.indexOf(normalizedMax as VideoResolution);
   if (maxIndex < 0) return [...RESOLUTION_OPTIONS];
   return RESOLUTION_OPTIONS.slice(0, maxIndex + 1);
+}
+
+function getAgnesReferenceMaxResolution(duration: number): VideoResolution {
+  return duration <= AGNES_MAX_REFERENCE_VIDEO_1080P_DURATION
+    ? "1080p"
+    : "720p";
+}
+
+function filterAgnesReferenceResolutions(
+  model: VideoModelInfo | undefined,
+  mode: AimcInputMode | undefined,
+  duration: number | undefined,
+  options: VideoResolution[],
+) {
+  if (!mode || !model || !isAgnesModel(model.id)) return options;
+  const maxResolution = getAgnesReferenceMaxResolution(
+    duration ?? AGNES_MAX_REFERENCE_VIDEO_DURATION,
+  );
+  const maxIndex = RESOLUTION_OPTIONS.indexOf(maxResolution);
+  return options.filter(
+    (value) => RESOLUTION_OPTIONS.indexOf(value) <= maxIndex,
+  );
 }
 
 function getAspectRatioOptions(model?: VideoModelInfo): string[] {
@@ -406,9 +439,9 @@ function resolveSubmittedVideoControls(input: {
     duration: Math.min(input.duration, AGNES_MAX_REFERENCE_VIDEO_DURATION),
     resolution: isResolutionAbove(
       input.resolution,
-      AGNES_MAX_REFERENCE_VIDEO_RESOLUTION,
+      getAgnesReferenceMaxResolution(input.duration),
     )
-      ? AGNES_MAX_REFERENCE_VIDEO_RESOLUTION
+      ? getAgnesReferenceMaxResolution(input.duration)
       : input.resolution,
   };
 }
@@ -687,8 +720,8 @@ export function VideoGeneratorPanel({
     [currentModel, constrainedInputMode],
   );
   const resolutionOptions = useMemo(
-    () => getResolutionOptions(currentModel, constrainedInputMode),
-    [currentModel, constrainedInputMode],
+    () => getResolutionOptions(currentModel, constrainedInputMode, duration),
+    [currentModel, constrainedInputMode, duration],
   );
 
   useEffect(() => {

@@ -1031,7 +1031,7 @@ describe("canvas generation panels", () => {
                   limits: {
                     allowedDurations: [4, 5, 6, 8, 10, 15, 16],
                     maxDuration: 16,
-                    resolutions: ["480p", "720p"],
+                    resolutions: ["480p", "720p", "1080p"],
                   },
                   slots: ["firstFrame"],
                 },
@@ -1044,7 +1044,7 @@ describe("canvas generation panels", () => {
                   limits: {
                     allowedDurations: [4, 5, 6, 8, 10, 15, 16],
                     maxDuration: 16,
-                    resolutions: ["480p", "720p"],
+                    resolutions: ["480p", "720p", "1080p"],
                   },
                   slots: ["firstFrame", "lastFrame"],
                 },
@@ -1137,7 +1137,7 @@ describe("canvas generation panels", () => {
                   limits: {
                     allowedDurations: [4, 5, 6, 8, 10, 15, 16],
                     maxDuration: 16,
-                    resolutions: ["480p", "720p"],
+                    resolutions: ["480p", "720p", "1080p"],
                   },
                   slots: ["firstFrame"],
                 },
@@ -1150,7 +1150,7 @@ describe("canvas generation panels", () => {
                   limits: {
                     allowedDurations: [4, 5, 6, 8, 10, 15, 16],
                     maxDuration: 16,
-                    resolutions: ["480p", "720p"],
+                    resolutions: ["480p", "720p", "1080p"],
                   },
                   slots: ["firstFrame", "lastFrame"],
                 },
@@ -1246,6 +1246,48 @@ describe("canvas generation panels", () => {
     expect(
       screen.queryByRole("button", { name: "1080p" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("allows Agnes 1080p reference video controls for short durations", async () => {
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "跳舞",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "1080p",
+            inputMode: "keyframes",
+            inputImages: [
+              "http://127.0.0.1:3001/local-assets/uploaded-reference",
+            ],
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    expect(await screen.findByAltText("首帧预览")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "16:9 · 5s" }),
+      ).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "16:9 · 5s" }));
+
+    expect(screen.getByRole("button", { name: "5s" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "1080p" })).toHaveClass(
+      "bg-foreground",
+    );
   });
 
   it("restores uploaded video frame previews from generator data", async () => {

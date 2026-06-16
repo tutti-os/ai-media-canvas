@@ -280,6 +280,30 @@ describe("AgnesVideoProvider", () => {
     });
   });
 
+  it("keeps short image-conditioned Agnes videos at 1080p", async () => {
+    const provider = new AgnesVideoProvider("agnes-test-key");
+
+    await provider.generate({
+      prompt: "Make the first frame dance",
+      model: "agnes-video/agnes-video-v2.0",
+      duration: 5,
+      aspectRatio: "16:9",
+      resolution: "1080p",
+      inputImages: ["data:image/png;base64,AAAA"],
+    });
+
+    expect(videoGenerateMock).toHaveBeenCalledWith({
+      mode: "img2video",
+      image: "data:image/png;base64,AAAA",
+      prompt: "Make the first frame dance",
+      width: 1920,
+      height: 1080,
+      numFrames: 121,
+      frameRate: 24,
+      ttl: "1h",
+    });
+  });
+
   it("maps multiple input images to Agnes multivideo mode by default", async () => {
     const provider = new AgnesVideoProvider("agnes-test-key");
 
@@ -296,8 +320,8 @@ describe("AgnesVideoProvider", () => {
       mode: "multivideo",
       images: ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"],
       prompt: "Blend these two concepts",
-      width: 1280,
-      height: 720,
+      width: 1920,
+      height: 1080,
       numFrames: 145,
       frameRate: 24,
       ttl: "1h",

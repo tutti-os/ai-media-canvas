@@ -17,7 +17,7 @@ const AGNES_VIDEO_ALLOWED_DURATIONS = [4, 5, 6, 8, 10, 15, 16] as const;
 const AGNES_REFERENCE_VIDEO_LIMITS = {
   allowedDurations: AGNES_VIDEO_ALLOWED_DURATIONS,
   maxDuration: 16,
-  resolutions: ["480p", "720p"],
+  resolutions: ["480p", "720p", "1080p"],
 } as const;
 
 type ImageSchemaOptions = {
