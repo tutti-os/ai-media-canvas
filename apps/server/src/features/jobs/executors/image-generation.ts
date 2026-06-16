@@ -1,6 +1,7 @@
 import type { BackgroundJob, ImageGenerationPayload } from "@aimc/shared";
 
 import type { ServerEnv } from "../../../config/env.js";
+import { evaluateCodexImagegenDelegation } from "../../../generation/codex-imagegen-delegation.js";
 import { FALLBACK_IMAGE_MODEL } from "../../../generation/default-models.js";
 import { loadGeneratedAsset } from "../../../generation/generated-asset.js";
 import { generateImage } from "../../../generation/image-generation.js";
@@ -30,6 +31,25 @@ export async function executeImageGenerationJob(
     ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
   });
   const provider = resolveImageProviderName(model);
+  const delegationDecision = evaluateCodexImagegenDelegation({
+    imageProvider: provider,
+    setting: "ask",
+    consentBudget: payload.codex_imagegen_delegation_allowed ? 1 : 0,
+    ...(payload.caller_provider
+      ? { callerProvider: payload.caller_provider }
+      : {}),
+  });
+  if (delegationDecision.status === "blocked") {
+    throw new GenerationError(
+      provider,
+      delegationDecision.reason === "needs_confirmation"
+        ? "codex_imagegen_confirmation_required"
+        : "codex_imagegen_disabled_by_user",
+      delegationDecision.reason === "needs_confirmation"
+        ? "Codex image generation requires user confirmation before a non-Codex agent can use it."
+        : "Codex image generation is disabled for non-Codex agents in workspace settings.",
+    );
+  }
   const generated = await generateImage(provider, {
     prompt: payload.prompt,
     model,

@@ -34,6 +34,24 @@
       "updateFailed": "Failed to update local agent settings. Please try again."
     },
     "local": {
+      "codexImagegen": {
+        "description": "Choose how non-Codex local agents handle delegation to Codex Image 2.0.",
+        "options": {
+          "always": {
+            "description": "Allow future matching requests to use Codex image generation automatically.",
+            "label": "Always delegate"
+          },
+          "ask": {
+            "description": "Ask before every non-Codex agent delegation.",
+            "label": "Ask each time"
+          },
+          "never": {
+            "description": "Block Codex image generation delegation from non-Codex agents.",
+            "label": "Never delegate"
+          }
+        },
+        "title": "Codex image delegation"
+      },
       "customModelId": "Custom model id",
       "customModelPlaceholder": "e.g. my-model",
       "customOption": "Custom (type below)...",

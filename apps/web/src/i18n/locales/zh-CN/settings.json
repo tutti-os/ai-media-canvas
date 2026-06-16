@@ -34,6 +34,24 @@
       "updateFailed": "本地 Agent 设置更新失败，请重试。"
     },
     "local": {
+      "codexImagegen": {
+        "description": "Choose how non-Codex local agents handle delegation to Codex Image 2.0.",
+        "options": {
+          "always": {
+            "description": "Allow future matching requests to use Codex image generation automatically.",
+            "label": "Always delegate"
+          },
+          "ask": {
+            "description": "Ask before every non-Codex agent delegation.",
+            "label": "Ask each time"
+          },
+          "never": {
+            "description": "Block Codex image generation delegation from non-Codex agents.",
+            "label": "Never delegate"
+          }
+        },
+        "title": "Codex image delegation"
+      },
       "customModelId": "自定义模型 ID",
       "customModelPlaceholder": "例如 my-model",
       "customOption": "自定义（在下方输入）...",

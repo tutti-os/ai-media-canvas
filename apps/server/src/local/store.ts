@@ -78,6 +78,7 @@ const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   kieBaseUrl: "",
   volcesApiKey: "",
   volcesBaseUrl: "",
+  codexImagegenDelegation: "ask",
 };
 const EMPTY_TUTTI_MANAGED_CONNECTION: TuttiManagedConnection = {
   connected: false,
@@ -107,6 +108,12 @@ function normalizeAgentModelSourceForStore(
     source === "api-provider"
     ? source
     : undefined;
+}
+
+function normalizeCodexImagegenDelegationForStore(
+  value: string | undefined,
+): WorkspaceSettings["codexImagegenDelegation"] {
+  return value === "always" || value === "never" ? value : "ask";
 }
 
 function normalizeTuttiManagedProviders(
@@ -333,7 +340,8 @@ export function createLocalStore(options: {
       google_vertex_video_location TEXT NOT NULL DEFAULT '',
       replicate_api_token TEXT NOT NULL DEFAULT '',
       volces_api_key TEXT NOT NULL DEFAULT '',
-      volces_base_url TEXT NOT NULL DEFAULT ''
+      volces_base_url TEXT NOT NULL DEFAULT '',
+      codex_imagegen_delegation TEXT NOT NULL DEFAULT 'ask'
     );
     CREATE TABLE IF NOT EXISTS tutti_managed_model_connection (
       workspace_id TEXT PRIMARY KEY,
@@ -604,6 +612,7 @@ export function createLocalStore(options: {
       ["kie_base_url", "TEXT NOT NULL DEFAULT ''"],
       ["volces_api_key", "TEXT NOT NULL DEFAULT ''"],
       ["volces_base_url", "TEXT NOT NULL DEFAULT ''"],
+      ["codex_imagegen_delegation", "TEXT NOT NULL DEFAULT 'ask'"],
     ];
 
     for (const [columnName, columnSql] of missingColumns) {
@@ -879,7 +888,8 @@ export function createLocalStore(options: {
             kie_api_key,
             kie_base_url,
             volces_api_key,
-            volces_base_url
+            volces_base_url,
+            codex_imagegen_delegation
           FROM workspace_settings
           WHERE workspace_id = ?
         `,
@@ -905,6 +915,7 @@ export function createLocalStore(options: {
           kie_base_url: string;
           volces_api_key: string;
           volces_base_url: string;
+          codex_imagegen_delegation: string;
         }
       | undefined;
 
@@ -962,6 +973,9 @@ export function createLocalStore(options: {
       kieBaseUrl: row.kie_base_url ?? "",
       volcesApiKey: row.volces_api_key ?? "",
       volcesBaseUrl: row.volces_base_url ?? "",
+      codexImagegenDelegation: normalizeCodexImagegenDelegationForStore(
+        row.codex_imagegen_delegation ?? undefined,
+      ),
     };
   }
 
@@ -975,6 +989,9 @@ export function createLocalStore(options: {
         ? normalizeAgentModelSourceForStore(settings.defaultModelSource)
         : undefined,
       providerModels: normalizeProviderModelsForStore(settings.providerModels),
+      codexImagegenDelegation: normalizeCodexImagegenDelegationForStore(
+        settings.codexImagegenDelegation,
+      ),
     };
 
     if (workspaceSettingsHasLegacyIdColumn) {
@@ -1001,8 +1018,9 @@ export function createLocalStore(options: {
             kie_api_key,
             kie_base_url,
             volces_api_key,
-            volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            volces_base_url,
+            codex_imagegen_delegation
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             workspace_id = excluded.workspace_id,
             default_model = excluded.default_model,
@@ -1023,7 +1041,8 @@ export function createLocalStore(options: {
             kie_api_key = excluded.kie_api_key,
             kie_base_url = excluded.kie_base_url,
             volces_api_key = excluded.volces_api_key,
-            volces_base_url = excluded.volces_base_url
+            volces_base_url = excluded.volces_base_url,
+            codex_imagegen_delegation = excluded.codex_imagegen_delegation
         `,
       ).run(
         1,
@@ -1047,6 +1066,7 @@ export function createLocalStore(options: {
         normalizedSettings.kieBaseUrl,
         normalizedSettings.volcesApiKey,
         normalizedSettings.volcesBaseUrl,
+        normalizedSettings.codexImagegenDelegation,
       );
     } else {
       db.prepare(
@@ -1071,8 +1091,9 @@ export function createLocalStore(options: {
             kie_api_key,
             kie_base_url,
             volces_api_key,
-            volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            volces_base_url,
+            codex_imagegen_delegation
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(workspace_id) DO UPDATE SET
             default_model = excluded.default_model,
             default_model_source = excluded.default_model_source,
@@ -1092,7 +1113,8 @@ export function createLocalStore(options: {
             kie_api_key = excluded.kie_api_key,
             kie_base_url = excluded.kie_base_url,
             volces_api_key = excluded.volces_api_key,
-            volces_base_url = excluded.volces_base_url
+            volces_base_url = excluded.volces_base_url,
+            codex_imagegen_delegation = excluded.codex_imagegen_delegation
         `,
       ).run(
         LOCAL_WORKSPACE_ID,
@@ -1115,6 +1137,7 @@ export function createLocalStore(options: {
         normalizedSettings.kieBaseUrl,
         normalizedSettings.volcesApiKey,
         normalizedSettings.volcesBaseUrl,
+        normalizedSettings.codexImagegenDelegation,
       );
     }
 

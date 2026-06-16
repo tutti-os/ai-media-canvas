@@ -15,6 +15,7 @@ import type {
   RuntimeKind,
   StreamEvent,
   VideoGenerationPreference,
+  WorkspaceSettings,
 } from "@aimc/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
@@ -43,10 +44,12 @@ import {
 import type { JobService } from "../features/jobs/job-service.js";
 import { refreshGenerationProviders } from "../features/settings/settings-service.js";
 import { isManagedModelId } from "../features/tutti-managed/credential-service.js";
+import { evaluateCodexImagegenDelegation } from "../generation/codex-imagegen-delegation.js";
 import {
   validateImageGenerationParams,
   validateVideoGenerationParams,
 } from "../generation/model-schemas.js";
+import { resolveImageProviderName } from "../generation/providers/registry.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
@@ -79,12 +82,27 @@ import type { RuntimeExecutionContext } from "./runtimes/types.js";
 import type { SubmitImageJobFn } from "./tools/image-generate.js";
 import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
+import type {
+  ApplyWorkspaceSettingsPatch,
+  ReadWorkspaceSettings,
+  WorkspaceSettingsPatch,
+} from "./tools/workspace-settings.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
 type BillingErrorCode = string;
 type ImageQualityLevel = "standard" | "hd" | "ultra";
 const IMAGE_JOB_POLL_INTERVAL_MS = 3_000;
 const IMAGE_JOB_MAX_WAIT_MS = 10 * 60_000;
+
+function inferRunCallerProvider(run: RuntimeRunRecord): string {
+  if (run.runtimeProvider) return run.runtimeProvider;
+  if (typeof run.modelOverride === "string") {
+    const provider = run.modelOverride.split(":", 1)[0]?.trim();
+    if (provider) return provider;
+  }
+  return run.runtimeKind ?? "server-deepagent";
+}
+
 type CanvasSummaryClient = {
   from(table: "canvases"): {
     select(columns: string): {
@@ -347,6 +365,8 @@ type RuntimeRunRecord = RunCreateRequest & {
   connectionId?: string;
   consumed: boolean;
   controller: AbortController;
+  codexImagegenDelegation?: "ask" | "always" | "never";
+  codexImagegenConsentBudget?: number;
   envOverride?: ServerEnv;
   modelOverride?: string;
   resumeContext?: {
@@ -362,6 +382,11 @@ type RuntimeRunRecord = RunCreateRequest & {
   threadId?: string;
   userId?: string;
 };
+
+type PatchWorkspaceSettings = (input: {
+  patch: Pick<WorkspaceSettings, "codexImagegenDelegation">;
+  userId?: string;
+}) => Promise<WorkspaceSettings>;
 
 type CreateAgentRuntimeOptions = {
   agentFactory?: AimcAgentFactory;
@@ -425,6 +450,7 @@ type CreateAgentRuntimeOptions = {
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
   model?: BaseLanguageModel | string;
   now?: () => string;
+  patchWorkspaceSettings?: PatchWorkspaceSettings;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
   toolGateway?: ReturnType<typeof createLocalToolGatewayService>;
@@ -635,6 +661,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         model?: string;
         runtimeKind?: RuntimeKind;
         runtimeProvider?: AgentRuntimeProvider;
+        codexImagegenDelegation?: "ask" | "always" | "never";
         threadId?: string;
         userId?: string;
       },
@@ -729,6 +756,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
+        ...(runOptions?.codexImagegenDelegation
+          ? { codexImagegenDelegation: runOptions.codexImagegenDelegation }
+          : {}),
+        codexImagegenConsentBudget:
+          runInput.delegationConsent?.codexImagegen === "allow-once" ? 1 : 0,
         ...(resolvedModel ? { modelOverride: resolvedModel } : {}),
         ...(resumeContext ? { resumeContext } : {}),
         ...(persistedRuntimeKind ? { runtimeKind: persistedRuntimeKind } : {}),
@@ -800,6 +832,78 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       const rlog = createPipelineLogger("runtime", { runId });
 
       rlog.lap("local_history_mode");
+
+      const getWorkspaceSettings: ReadWorkspaceSettings = async () => {
+        const setting = run.codexImagegenDelegation ?? "ask";
+        const consentBudget = run.codexImagegenConsentBudget ?? 0;
+        const callerProvider = inferRunCallerProvider(run);
+        const confirmationRequired =
+          callerProvider !== "codex" && setting === "ask" && consentBudget <= 0;
+        return {
+          codexImagegen: {
+            callerProvider,
+            confirmationRequired,
+            consentBudget,
+          },
+          settings: {
+            codexImagegenDelegation: setting,
+          },
+          success: true,
+          summary: `Workspace settings loaded: codexImagegenDelegation=${setting}, codexImagegenConfirmationRequired=${confirmationRequired}.`,
+        };
+      };
+
+      const updateWorkspaceSettings: ApplyWorkspaceSettingsPatch = async ({
+        patch,
+      }) => {
+        const resultPatch: WorkspaceSettingsPatch = { ...patch };
+        const summaryParts: string[] = [];
+        let settings:
+          | Pick<WorkspaceSettings, "codexImagegenDelegation">
+          | undefined;
+
+        if (patch.codexImagegenDelegation === "allow-once") {
+          run.codexImagegenConsentBudget = Math.max(
+            1,
+            run.codexImagegenConsentBudget ?? 0,
+          );
+          summaryParts.push("codexImagegenDelegation=allow-once");
+        } else if (patch.codexImagegenDelegation === "deny") {
+          run.codexImagegenConsentBudget = 0;
+          summaryParts.push("codexImagegenDelegation=deny");
+        } else if (patch.codexImagegenDelegation !== undefined) {
+          if (!options.patchWorkspaceSettings) {
+            throw new Error(
+              "Workspace settings are not available in this runtime.",
+            );
+          }
+          const updated = await options.patchWorkspaceSettings({
+            patch: {
+              codexImagegenDelegation: patch.codexImagegenDelegation,
+            },
+            ...(run.userId ? { userId: run.userId } : {}),
+          });
+          run.codexImagegenDelegation = updated.codexImagegenDelegation;
+          settings = {
+            codexImagegenDelegation: updated.codexImagegenDelegation,
+          };
+          summaryParts.push(
+            `codexImagegenDelegation=${updated.codexImagegenDelegation}`,
+          );
+        }
+
+        return {
+          ...(run.codexImagegenConsentBudget !== undefined
+            ? { codexImagegenConsentBudget: run.codexImagegenConsentBudget }
+            : {}),
+          patch: resultPatch,
+          ...(settings ? { settings } : {}),
+          success: true,
+          summary: summaryParts.length
+            ? `Workspace settings updated: ${summaryParts.join(", ")}.`
+            : "Workspace settings updated.",
+        };
+      };
 
       // Build submitImageJob / submitVideoJob closures for async jobs via PGMQ
       let submitImageJob: SubmitImageJobFn | undefined;
@@ -890,6 +994,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(input.size ? { size: input.size } : {}),
             ...(input.seed !== undefined ? { seed: input.seed } : {}),
           });
+          const imageProvider = resolveImageProviderName(input.model);
+          const callerProvider = inferRunCallerProvider(run);
+          const delegationDecision = evaluateCodexImagegenDelegation({
+            callerProvider,
+            imageProvider,
+            setting: run.codexImagegenDelegation ?? "ask",
+            consentBudget: run.codexImagegenConsentBudget ?? 0,
+          });
+          if (delegationDecision.status === "blocked") {
+            throw new Error(
+              delegationDecision.reason === "needs_confirmation"
+                ? "codex_imagegen_confirmation_required: Codex image generation requires user confirmation before a non-Codex agent can use it."
+                : "codex_imagegen_disabled_by_user: Codex image generation is disabled for non-Codex agents in workspace settings.",
+            );
+          }
           const reservedPlacement = await reserveImagePlacement(input);
 
           // Look up personal workspace directly — the viewer is already
@@ -975,8 +1094,24 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "image_generation",
-            payload: buildAgentImageJobPayload(input),
+            payload: {
+              ...buildAgentImageJobPayload(input),
+              caller_provider: callerProvider,
+              ...(imageProvider === "codex-imagegen" &&
+              callerProvider !== "codex"
+                ? { codex_imagegen_delegation_allowed: true }
+                : {}),
+              ...(delegationDecision.consumesConsent
+                ? { codex_imagegen_consent: "allow-once" as const }
+                : {}),
+            },
           });
+          if (delegationDecision.consumesConsent) {
+            run.codexImagegenConsentBudget = Math.max(
+              0,
+              (run.codexImagegenConsentBudget ?? 0) - 1,
+            );
+          }
 
           // Deduct credits after job creation
           if (options.creditService && creditsCost > 0) {
@@ -1404,8 +1539,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             rlog,
             run,
             runtimeEnv,
+            getWorkspaceSettings,
             ...(submitImageJob ? { submitImageJob } : {}),
             ...(submitVideoJob ? { submitVideoJob } : {}),
+            updateWorkspaceSettings,
             workspaceSkills,
           },
         )) {

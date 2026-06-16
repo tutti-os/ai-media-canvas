@@ -391,15 +391,35 @@ export function ChatSidebar({
     );
   }, []);
 
+  const canvasArtifactUrls = useCallback(() => {
+    return new Set(
+      (onRequestCanvasImages ? onRequestCanvasImages() : [])
+        .flatMap((item) => [item.url, runtimeCanvasImageUrl(item)])
+        .filter(
+          (url): url is string => typeof url === "string" && url.length > 0,
+        ),
+    );
+  }, [onRequestCanvasImages]);
+
+  const ensureArtifactOnCanvas = useCallback(
+    (artifact: ToolArtifact) => {
+      const artifactUrl = runtimeArtifactUrl(artifact);
+      if (canvasArtifactUrls().has(artifactUrl)) return;
+      onImageGenerated?.(artifact);
+    },
+    [canvasArtifactUrls, onImageGenerated],
+  );
+
+  const ensureBackendInsertedArtifact = useCallback(
+    (artifact: ToolArtifact) => {
+      window.setTimeout(() => ensureArtifactOnCanvas(artifact), 500);
+    },
+    [ensureArtifactOnCanvas],
+  );
+
   const recoverMediaArtifactsFromBlocks = useCallback(
     (contentBlocks: ContentBlock[]) => {
-      const canvasUrls = new Set(
-        (onRequestCanvasImages ? onRequestCanvasImages() : [])
-          .flatMap((item) => [item.url, runtimeCanvasImageUrl(item)])
-          .filter(
-            (url): url is string => typeof url === "string" && url.length > 0,
-          ),
-      );
+      const canvasUrls = canvasArtifactUrls();
 
       for (const block of contentBlocks) {
         if (
@@ -417,6 +437,9 @@ export function ChatSidebar({
           if (replayedArtifactKeysRef.current.has(replayKey)) continue;
           if (hasBackendInsertedElement(block)) {
             replayedArtifactKeysRef.current.add(replayKey);
+            if (!canvasUrls.has(artifactUrl)) {
+              ensureBackendInsertedArtifact(artifact);
+            }
             continue;
           }
           if (canvasUrls.has(artifactUrl)) {
@@ -430,9 +453,10 @@ export function ChatSidebar({
     },
     [
       artifactReplayKey,
+      canvasArtifactUrls,
+      ensureBackendInsertedArtifact,
       hasBackendInsertedElement,
       onImageGenerated,
-      onRequestCanvasImages,
     ],
   );
 
@@ -783,6 +807,7 @@ export function ChatSidebar({
         videoGenerationPreferenceOverride ??
         activeVideoGenerationPreferenceRef.current;
       const currentMentions = mentionsOverride ?? messageMentionsRef.current;
+      const agentPromptText = text;
 
       // Add user message locally
       const imageBlocks: ContentBlock[] = currentAttachments.map((a) => ({
@@ -933,7 +958,9 @@ export function ChatSidebar({
           onStreamEvent?.(event);
 
           // Fire canvas insertion callbacks for image/video artifacts.
-          // Skip if the backend already inserted the element (elementId in output).
+          // Backend-inserted artifacts should already arrive through canvas.sync.
+          // Verify after sync has had a chance to land; if the canvas still does
+          // not contain the artifact, fall back to client-side insertion.
           const backendInserted =
             event.type === "tool.completed" &&
             event.output &&
@@ -942,12 +969,13 @@ export function ChatSidebar({
           if (
             event.type === "tool.completed" &&
             event.artifacts &&
-            event.toolName !== "screenshot_canvas" &&
-            !backendInserted
+            event.toolName !== "screenshot_canvas"
           ) {
             for (const artifact of event.artifacts) {
-              if (onImageGenerated) {
-                onImageGenerated(artifact);
+              if (backendInserted) {
+                ensureBackendInsertedArtifact(artifact);
+              } else if (onImageGenerated) {
+                onImageGenerated?.(artifact);
               }
             }
           }
@@ -987,7 +1015,7 @@ export function ChatSidebar({
             {
               sessionId: currentSessionId,
               conversationId: canvasId,
-              prompt: text,
+              prompt: agentPromptText,
               canvasId,
               ...(currentAttachments.length > 0
                 ? { attachments: currentAttachments }
@@ -1091,6 +1119,7 @@ export function ChatSidebar({
       buildAutoTitleSource,
       activeSessionIdRef,
       ensureAgentModelConfigured,
+      ensureBackendInsertedArtifact,
       setStreaming,
       showToast,
     ],
@@ -1308,8 +1337,7 @@ export function ChatSidebar({
         if (
           evt.type === "tool.completed" &&
           evt.artifacts &&
-          evt.toolName !== "screenshot_canvas" &&
-          !backendInserted
+          evt.toolName !== "screenshot_canvas"
         ) {
           for (const artifact of evt.artifacts) {
             const replayKey = artifactReplayKey(
@@ -1318,7 +1346,11 @@ export function ChatSidebar({
             );
             if (replayedArtifactKeysRef.current.has(replayKey)) continue;
             replayedArtifactKeysRef.current.add(replayKey);
-            onImageGenerated?.(artifact);
+            if (backendInserted) {
+              ensureBackendInsertedArtifact(artifact);
+            } else {
+              onImageGenerated?.(artifact);
+            }
           }
         }
 
@@ -1480,6 +1512,7 @@ export function ChatSidebar({
     onCanvasSync,
     activeSessionIdRef,
     artifactReplayKey,
+    ensureBackendInsertedArtifact,
     recoverMediaArtifactsFromBlocks,
     recoverPersistedMediaArtifacts,
     reloadMessages,

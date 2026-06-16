@@ -837,6 +837,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const localToolGateway = createLocalToolGatewayService({
     connectionPublisher: connectionManager,
     createUserClient,
+    patchWorkspaceSettings: async ({ patch }) => {
+      const current = await settingsService.getWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+      );
+      return settingsService.updateWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+        {
+          ...current,
+          ...patch,
+        },
+      );
+    },
   });
   const localToolGatewayBaseUrl = `http://127.0.0.1:${env.port}/api/agent-tools`;
   const localAuth: RequestAuthenticator = {
@@ -889,6 +903,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     },
     toolGateway: localToolGateway,
     toolGatewayBaseUrl: localToolGatewayBaseUrl,
+    patchWorkspaceSettings: async ({ patch }) => {
+      const current = await settingsService.getWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+      );
+      return settingsService.updateWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+        {
+          ...current,
+          ...patch,
+        },
+      );
+    },
   });
   const agentRunOrchestrator = createAgentRunOrchestrator({
     eventPersistence: {
@@ -1068,6 +1096,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         ...(payload.runtimeProvider
           ? { runtimeProvider: payload.runtimeProvider }
           : {}),
+        ...(workspaceSettings.codexImagegenDelegation
+          ? {
+              codexImagegenDelegation:
+                workspaceSettings.codexImagegenDelegation,
+            }
+          : {}),
         userId: localUser.id,
       }),
     );
@@ -1135,6 +1169,31 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     return canceledRun;
   };
 
+  const submitLocalAgentConsent = async (payload: {
+    decision: "allow-once" | "always" | "deny";
+    runId: string;
+  }) => {
+    if (payload.decision === "always") {
+      const current = await settingsService.getWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+      );
+      await settingsService.updateWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+        {
+          ...current,
+          codexImagegenDelegation: "always",
+        },
+      );
+    }
+    return {
+      decision: payload.decision,
+      runId: payload.runId,
+      status: "accepted",
+    };
+  };
+
   void registerHealthRoutes(app, env);
   void registerProjectRoutes(app, {
     localUser,
@@ -1174,6 +1233,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     agentOperations: {
       cancelRun: cancelLocalAgentRun,
       listRunEvents: listLocalAgentRunEvents,
+      submitConsent: submitLocalAgentConsent,
       startRun: startLocalAgentRun,
     },
     canvasOperations,

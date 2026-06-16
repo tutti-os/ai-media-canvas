@@ -16,23 +16,30 @@ import type { ServerEnv } from "../config/env.js";
 import { CanvasServiceError } from "../features/canvas/canvas-service.js";
 import { ChatServiceError } from "../features/chat/chat-service.js";
 import { JobServiceError } from "../features/jobs/job-service.js";
-import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 import { ProjectServiceError } from "../features/projects/project-service.js";
-import type { SettingsService } from "../features/settings/settings-service.js";
+import {
+  LOCAL_WORKSPACE_ID,
+  type SettingsService,
+} from "../features/settings/settings-service.js";
 import { SkillServiceError } from "../features/skills/skill-service.js";
+import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 import type { CanvasOperations } from "./canvas-operations.js";
 import type { ChatOperations } from "./chat-operations.js";
 import { listImageModels } from "./image-models.js";
 import type { JobOperations } from "./job-operations.js";
 import { listAgentModels } from "./models.js";
-import { isZodError, sendCliError, sendCliJson } from "./tutti-cli-output.js";
 import type { ProjectOperations } from "./project-operations.js";
 import type { SkillOperations } from "./skill-operations.js";
+import { isZodError, sendCliError, sendCliJson } from "./tutti-cli-output.js";
 import { listVideoModels } from "./video-models.js";
 
 type AgentCliOperations = {
   cancelRun: (runId: string) => Promise<unknown>;
   listRunEvents: (runId: string, cursor: number) => Promise<unknown>;
+  submitConsent?: (payload: {
+    decision: "allow-once" | "always" | "deny";
+    runId: string;
+  }) => Promise<unknown>;
   startRun: (payload: RunCreateRequest) => Promise<RunCreateResponse>;
 };
 
@@ -62,10 +69,15 @@ const agentRunCliBodySchema = z.object({
   model: z.string().min(1).optional(),
   "runtime-kind": z.enum(["server-deepagent", "local-agent"]).optional(),
   "runtime-provider": z.string().min(1).optional(),
+  "codex-imagegen-consent": z.enum(["allow-once"]).optional(),
 });
 const agentEventsCliBodySchema = z.object({
   "run-id": z.string().min(1),
   cursor: z.number().int().nonnegative().optional(),
+});
+const agentConsentCliBodySchema = z.object({
+  "run-id": z.string().min(1),
+  decision: z.enum(["allow-once", "always", "deny"]),
 });
 const jobListCliBodySchema = z.object({
   status: z.string().min(1).optional(),
@@ -82,6 +94,9 @@ const generationImageCliBodySchema = z.object({
   size: z.string().min(1).optional(),
   seed: z.number().int().optional(),
   "input-images": z.string().min(1).optional(),
+  "caller-provider": z.string().min(1).optional(),
+  "codex-imagegen-consent": z.enum(["allow-once"]).optional(),
+  "direct-user": z.boolean().optional(),
 });
 const generationVideoCliBodySchema = z.object({
   prompt: z.string().min(1),
@@ -97,6 +112,9 @@ const generationVideoCliBodySchema = z.object({
   "negative-prompt": z.string().min(1).optional(),
   seed: z.number().int().optional(),
   "enable-audio": z.boolean().optional(),
+});
+const settingsUpdateCliBodySchema = z.object({
+  "codex-imagegen-delegation": z.enum(["ask", "always", "never"]).optional(),
 });
 const skillEnableCliBodySchema = z.object({
   "skill-id": z.string().min(1),
@@ -232,6 +250,13 @@ export async function registerTuttiCliRoutes(
           ...(payload["runtime-provider"]
             ? { runtimeProvider: payload["runtime-provider"] }
             : {}),
+          ...(payload["codex-imagegen-consent"]
+            ? {
+                delegationConsent: {
+                  codexImagegen: payload["codex-imagegen-consent"],
+                },
+              }
+            : {}),
         }),
       );
     },
@@ -253,11 +278,28 @@ export async function registerTuttiCliRoutes(
     },
     202,
   );
+  route(
+    "/tutti/cli/agent/consent",
+    async (body) => {
+      if (!options.agentOperations.submitConsent) {
+        throw new Error("Agent consent is not supported by this server.");
+      }
+      const payload = agentConsentCliBodySchema.parse(body);
+      return options.agentOperations.submitConsent({
+        runId: payload["run-id"],
+        decision: payload.decision,
+      });
+    },
+    202,
+  );
 
   route(
     "/tutti/cli/generation/image",
     async (body) => {
       const payload = generationImageCliBodySchema.parse(body);
+      const callerProvider = payload["direct-user"]
+        ? undefined
+        : (payload["caller-provider"] ?? "external-cli");
       return options.jobOperations.createImageJob(
         createImageJobRequestSchema.parse({
           prompt: payload.prompt,
@@ -277,6 +319,13 @@ export async function registerTuttiCliRoutes(
           ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
           ...(payload["input-images"]
             ? { input_images: splitCsv(payload["input-images"]) }
+            : {}),
+          ...(callerProvider ? { caller_provider: callerProvider } : {}),
+          ...(payload["codex-imagegen-consent"]
+            ? {
+                codex_imagegen_consent: payload["codex-imagegen-consent"],
+                codex_imagegen_delegation_allowed: true,
+              }
             : {}),
         }),
       );
@@ -354,6 +403,41 @@ export async function registerTuttiCliRoutes(
   route("/tutti/cli/models/video", async () => ({
     models: await listVideoModels(options.env, options.settingsService),
   }));
+
+  route("/tutti/cli/settings/get", async () => {
+    if (!options.settingsService) {
+      throw new Error("Workspace settings are not supported by this server.");
+    }
+    return {
+      settings: await options.settingsService.getWorkspaceSettings(
+        null,
+        LOCAL_WORKSPACE_ID,
+      ),
+    };
+  });
+  route("/tutti/cli/settings/update", async (body) => {
+    if (!options.settingsService) {
+      throw new Error("Workspace settings are not supported by this server.");
+    }
+    const payload = settingsUpdateCliBodySchema.parse(body ?? {});
+    const current = await options.settingsService.getWorkspaceSettings(
+      null,
+      LOCAL_WORKSPACE_ID,
+    );
+    const settings = await options.settingsService.updateWorkspaceSettings(
+      null,
+      LOCAL_WORKSPACE_ID,
+      {
+        ...current,
+        ...(payload["codex-imagegen-delegation"]
+          ? {
+              codexImagegenDelegation: payload["codex-imagegen-delegation"],
+            }
+          : {}),
+      },
+    );
+    return { settings };
+  });
 
   route("/tutti/cli/skills/list", async () =>
     options.skillOperations.listInstalledSkills(),

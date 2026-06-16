@@ -24,9 +24,12 @@ const LOCAL_USER: AuthenticatedUser = {
 
 describe("createSettingsService", () => {
   it("uses Agnes built-in defaults when only Agnes API key is configured", async () => {
-    const env = loadServerEnv({}, {
-      AGNES_API_KEY: "env-agnes-key",
-    });
+    const env = loadServerEnv(
+      {},
+      {
+        AGNES_API_KEY: "env-agnes-key",
+      },
+    );
 
     expect(env).toMatchObject({
       agnesApiKey: "env-agnes-key",
@@ -86,6 +89,7 @@ describe("createSettingsService", () => {
       kieBaseUrl: "",
       volcesApiKey: "",
       volcesBaseUrl: "",
+      codexImagegenDelegation: "ask",
     });
 
     await service.updateWorkspaceSettings(LOCAL_USER, "local-workspace", {
@@ -113,6 +117,7 @@ describe("createSettingsService", () => {
       volcesBaseUrl: "",
       kieApiKey: "local-kie-key",
       kieBaseUrl: "https://local.kie.example",
+      codexImagegenDelegation: "ask",
     });
 
     await expect(
@@ -198,6 +203,7 @@ describe("createSettingsService", () => {
       kieBaseUrl: "",
       volcesApiKey: "",
       volcesBaseUrl: "",
+      codexImagegenDelegation: "ask",
     });
 
     await expect(
@@ -281,6 +287,7 @@ describe("createSettingsService", () => {
       kieBaseUrl: "",
       volcesApiKey: "",
       volcesBaseUrl: "",
+      codexImagegenDelegation: "ask",
     });
 
     await expect(

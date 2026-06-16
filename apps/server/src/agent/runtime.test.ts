@@ -22,7 +22,10 @@ vi.mock("./backends/index.js", () => ({
   createAgentBackend: createAgentBackendMock,
 }));
 
-import { clearProviders } from "../generation/providers/registry.js";
+import {
+  clearProviders,
+  registerImageProvider,
+} from "../generation/providers/registry.js";
 import { createLocalStore } from "../local/store.js";
 import { createLocalUserClient } from "../local/user-client.js";
 import { AIMC_SYSTEM_PROMPT } from "./prompts/aimc-main.js";
@@ -104,6 +107,82 @@ describe("createAgentRunService", () => {
         { content: "继续" },
       ],
     });
+  });
+
+  it("blocks server-deepagent Codex image jobs without delegation consent", async () => {
+    registerImageProvider({
+      name: "codex-imagegen",
+      models: [
+        {
+          id: "codex/gpt-image-2",
+          displayName: "GPT Image 2",
+          description: "Codex image generation",
+        },
+      ],
+      async generate() {
+        throw new Error("not used");
+      },
+    });
+
+    let capturedSubmitImageJob:
+      | ((input: {
+          aspectRatio: string;
+          model: string;
+          prompt: string;
+          title: string;
+        }) => Promise<unknown>)
+      | undefined;
+    const agentFactory = vi.fn((agentOptions) => {
+      capturedSubmitImageJob = agentOptions.submitImageJob;
+      return {
+        stream: vi.fn(),
+        streamEvents: vi.fn(() => (async function* () {})()),
+      };
+    });
+
+    const runs = createAgentRunService({
+      agentFactory,
+      createUserClient: vi.fn(),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "anthropic:claude-sonnet-4",
+        codexImagegenEnabled: true,
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {} as never,
+      loadSessionMessages: async () => [],
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "Generate image",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "anthropic:claude-sonnet-4",
+        runtimeKind: "server-deepagent",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the agent factory.
+    }
+
+    expect(capturedSubmitImageJob).toBeTypeOf("function");
+    await expect(
+      capturedSubmitImageJob?.({
+        aspectRatio: "1:1",
+        model: "codex/gpt-image-2",
+        prompt: "poster",
+        title: "poster",
+      }),
+    ).rejects.toThrow("codex_imagegen_confirmation_required");
   });
 
   it("uses saved session messages when a local thread id is present without persistence", async () => {

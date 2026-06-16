@@ -810,6 +810,7 @@ license: MIT
       kieBaseUrl: "",
       volcesApiKey: "volces-local-key",
       volcesBaseUrl: "https://volces.example.com/api/v3",
+      codexImagegenDelegation: "ask",
     });
 
     const reopenedStore = createLocalStore({
@@ -842,6 +843,7 @@ license: MIT
       kieBaseUrl: "",
       volcesApiKey: "volces-local-key",
       volcesBaseUrl: "https://volces.example.com/api/v3",
+      codexImagegenDelegation: "ask",
     });
   });
 
@@ -890,6 +892,7 @@ license: MIT
       kieBaseUrl: "",
       volcesApiKey: "",
       volcesBaseUrl: "",
+      codexImagegenDelegation: "ask",
     });
   });
 
@@ -939,6 +942,7 @@ license: MIT
         kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
+        codexImagegenDelegation: "ask",
       }),
     ).toEqual({
       defaultModel: "agnes:agnes-2.0-flash",
@@ -965,6 +969,7 @@ license: MIT
       kieBaseUrl: "",
       volcesApiKey: "",
       volcesBaseUrl: "",
+      codexImagegenDelegation: "ask",
     });
   });
 });

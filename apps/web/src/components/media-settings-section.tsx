@@ -24,7 +24,7 @@ type StringSettingsKey = Exclude<
         ? Key
         : never;
   }[keyof WorkspaceSettings],
-  undefined
+  "codexImagegenDelegation" | undefined
 >;
 
 type MediaProviderCard = {

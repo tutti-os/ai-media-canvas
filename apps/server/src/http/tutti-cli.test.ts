@@ -93,6 +93,41 @@ describe("registerTuttiCliRoutes", () => {
     });
   });
 
+  it("maps one-time Codex imagegen consent on agent runs", async () => {
+    const agentOperations = {
+      cancelRun: vi.fn(),
+      listRunEvents: vi.fn(),
+      startRun: vi.fn(async (input) => ({
+        conversationId: input.conversationId,
+        runId: "run-1",
+        sessionId: input.sessionId,
+        status: "accepted" as const,
+      })),
+    };
+    const app = buildTestApp({ agentOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/agent/run",
+      payload: {
+        "session-id": "session-1",
+        "conversation-id": "canvas-1",
+        prompt: "Continue the image task",
+        "codex-imagegen-consent": "allow-once",
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(agentOperations.startRun).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      conversationId: "canvas-1",
+      prompt: "Continue the image task",
+      delegationConsent: {
+        codexImagegen: "allow-once",
+      },
+    });
+  });
+
   it("requires generation image commands to pass a model", async () => {
     const jobOperations = {
       createImageJob: vi.fn(),
@@ -168,6 +203,169 @@ describe("registerTuttiCliRoutes", () => {
     expect(jobOperations.createImageJob).toHaveBeenCalledWith({
       prompt: "A launch poster",
       model: "agnes-image/agnes-image-2.1-flash",
+      caller_provider: "external-cli",
+    });
+  });
+
+  it("allows explicit direct-user generation image commands without caller metadata", async () => {
+    const jobOperations = {
+      createImageJob: vi.fn(async (input) => ({
+        job: {
+          id: "job-1",
+          payload: input,
+          status: "queued",
+        },
+      })),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/image",
+      payload: {
+        prompt: "A launch poster",
+        model: "codex/gpt-image-2",
+        "direct-user": true,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(jobOperations.createImageJob).toHaveBeenCalledWith({
+      prompt: "A launch poster",
+      model: "codex/gpt-image-2",
+    });
+  });
+
+  it("forwards optional agent caller metadata for proxied generation image commands", async () => {
+    const jobOperations = {
+      createImageJob: vi.fn(async (input) => ({
+        job: {
+          id: "job-1",
+          payload: input,
+          status: "queued",
+        },
+      })),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/image",
+      payload: {
+        prompt: "A launch poster",
+        model: "codex/gpt-image-2",
+        "caller-provider": "claude",
+        "codex-imagegen-consent": "allow-once",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(jobOperations.createImageJob).toHaveBeenCalledWith({
+      prompt: "A launch poster",
+      model: "codex/gpt-image-2",
+      caller_provider: "claude",
+      codex_imagegen_consent: "allow-once",
+      codex_imagegen_delegation_allowed: true,
+    });
+  });
+
+  it("routes CLI agent consent decisions to agent operations", async () => {
+    const agentOperations = {
+      cancelRun: vi.fn(),
+      listRunEvents: vi.fn(),
+      submitConsent: vi.fn(async (input) => ({
+        decision: input.decision,
+        runId: input.runId,
+        status: "accepted",
+      })),
+      startRun: vi.fn(),
+    };
+    const app = buildTestApp({ agentOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/agent/consent",
+      payload: {
+        "run-id": "run-1",
+        decision: "allow-once",
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(agentOperations.submitConsent).toHaveBeenCalledWith({
+      runId: "run-1",
+      decision: "allow-once",
+    });
+    expect(response.json()).toEqual({
+      kind: "json",
+      value: {
+        decision: "allow-once",
+        runId: "run-1",
+        status: "accepted",
+      },
+    });
+  });
+
+  it("patches Codex image delegation through CLI settings update", async () => {
+    const currentSettings = {
+      defaultModel: "",
+      providerModels: {
+        openai: [],
+        anthropic: [],
+        agnes: [],
+        google: [],
+        vertex: [],
+      },
+      openAIApiKey: "",
+      openAIApiBase: "",
+      anthropicApiKey: "",
+      anthropicBaseUrl: "",
+      agnesApiKey: "",
+      agnesBaseUrl: "",
+      agnesDefaultModel: "",
+      googleApiKey: "",
+      googleVertexProject: "",
+      googleVertexLocation: "",
+      googleVertexVideoLocation: "",
+      replicateApiToken: "",
+      kieApiKey: "",
+      kieBaseUrl: "",
+      volcesApiKey: "",
+      volcesBaseUrl: "",
+      codexImagegenDelegation: "ask" as const,
+    };
+    const settingsService = {
+      getWorkspaceSettings: vi.fn(async () => currentSettings),
+      updateWorkspaceSettings: vi.fn(async (_user, _workspaceId, settings) => ({
+        ...settings,
+      })),
+    };
+    const app = buildTestApp({ settingsService });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/settings/update",
+      payload: {
+        "codex-imagegen-delegation": "always",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(settingsService.updateWorkspaceSettings).toHaveBeenCalledWith(
+      null,
+      "local-workspace",
+      {
+        ...currentSettings,
+        codexImagegenDelegation: "always",
+      },
+    );
+    expect(response.json()).toMatchObject({
+      kind: "json",
+      value: {
+        settings: {
+          codexImagegenDelegation: "always",
+        },
+      },
     });
   });
 
@@ -222,6 +420,9 @@ function buildTestApp(overrides: Record<string, unknown> = {}) {
       listJobs: vi.fn(),
       ...(overrides.jobOperations as object | undefined),
     } as never,
+    ...(overrides.settingsService
+      ? { settingsService: overrides.settingsService as never }
+      : {}),
     projectOperations: {
       createProject: vi.fn(),
       getProject: vi.fn(),

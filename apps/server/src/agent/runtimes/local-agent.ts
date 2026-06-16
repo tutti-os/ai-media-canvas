@@ -163,6 +163,7 @@ export function createLocalAgentRuntimeProvider(
         "If the user wants a finished visual asset, call generate_image or generate_video.",
         "Use inspect_canvas before precise canvas edits, and use manipulate_canvas for deterministic canvas updates.",
         "Do not claim an image or canvas update happened unless the tool actually succeeded.",
+        "Ask clarifying questions or confirmation requests in normal assistant text. Do not use provider-native interactive question tools such as AskUserQuestion.",
         "Workspace skill files are materialized under the current working directory; when reading them with shell or file tools, use relative paths such as `workspace-skills/<slug>/SKILL.md` and never `/workspace-skills/<slug>/SKILL.md`.",
         handoffSection,
         normalizedPrompt,
@@ -190,8 +191,20 @@ export function createLocalAgentRuntimeProvider(
         ...(run.canvasId ? { canvasId: run.canvasId } : {}),
         ...(run.connectionId ? { connectionId: run.connectionId } : {}),
         runId: run.runId,
+        runtimeProvider,
         sessionId: run.sessionId,
         runtimeEnv,
+        ...(run.delegationConsent
+          ? { delegationConsent: run.delegationConsent }
+          : {}),
+        codexImagegenConsentBudget: run.codexImagegenConsentBudget ?? 0,
+        ...(run.codexImagegenDelegation
+          ? {
+              workspaceSettings: {
+                codexImagegenDelegation: run.codexImagegenDelegation,
+              },
+            }
+          : {}),
         sandboxDir: runDir,
         ...(submitImageJob ? { submitImageJob } : {}),
         ...(submitVideoJob ? { submitVideoJob } : {}),
@@ -236,10 +249,7 @@ export function createLocalAgentRuntimeProvider(
           prompt,
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
-          model: stripLocalAgentProviderPrefix(
-            resolvedModel,
-            runtimeProvider,
-          ),
+          model: stripLocalAgentProviderPrefix(resolvedModel, runtimeProvider),
           runtimeKind: "local-agent",
           runtimeProvider,
           mcpServers,
