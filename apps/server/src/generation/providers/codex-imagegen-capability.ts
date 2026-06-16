@@ -155,7 +155,13 @@ function probeCodexImagegenCapability(options: {
     try {
       options.runCommand(
         options.codexPath,
-        ["exec", "--ignore-user-config", "--full-auto", "--help"],
+        [
+          "exec",
+          "--ignore-user-config",
+          "--sandbox",
+          "workspace-write",
+          "--help",
+        ],
         {
           timeoutMs: options.timeoutMs,
           env: options.env,

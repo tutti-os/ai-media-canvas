@@ -159,7 +159,9 @@ describe("detectCodexImagegenCapability", () => {
     });
 
     expect(capability.ready).toBe(true);
-    expect(calls).toContain("exec --ignore-user-config --full-auto --help");
+    expect(calls).toContain(
+      "exec --ignore-user-config --sandbox workspace-write --help",
+    );
     expect(calls).not.toContain("login status");
   });
 });
