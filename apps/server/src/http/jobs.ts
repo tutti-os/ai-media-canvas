@@ -16,6 +16,8 @@ import {
 import { GenerationError } from "../generation/utils.js";
 import { type JobOperations, createJobOperations } from "./job-operations.js";
 
+const VIDEO_JOB_BODY_LIMIT_BYTES = 10 * 1024 * 1024;
+
 export async function registerJobRoutes(
   app: FastifyInstance,
   options: {
@@ -44,18 +46,24 @@ export async function registerJobRoutes(
     }
   });
 
-  app.post("/api/jobs/video-generation", async (request, reply) => {
-    try {
-      const payload = createVideoJobRequestSchema.parse(request.body);
-      return reply.code(201).send(await jobOperations.createVideoJob(payload));
-    } catch (error) {
-      if (isZodError(error)) return sendValidationError(reply);
-      if (isGenerationValidationError(error)) {
-        return sendGenerationValidationError(reply, error);
+  app.post(
+    "/api/jobs/video-generation",
+    { bodyLimit: VIDEO_JOB_BODY_LIMIT_BYTES }, // 10 MB — keyframe video requests may include base64 image data
+    async (request, reply) => {
+      try {
+        const payload = createVideoJobRequestSchema.parse(request.body);
+        return reply
+          .code(201)
+          .send(await jobOperations.createVideoJob(payload));
+      } catch (error) {
+        if (isZodError(error)) return sendValidationError(reply);
+        if (isGenerationValidationError(error)) {
+          return sendGenerationValidationError(reply, error);
+        }
+        return sendJobError(error, reply, "job_create_failed");
       }
-      return sendJobError(error, reply, "job_create_failed");
-    }
-  });
+    },
+  );
 
   app.get("/api/jobs/:jobId", async (request, reply) => {
     try {

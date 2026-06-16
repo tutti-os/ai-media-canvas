@@ -13,6 +13,12 @@ const VIDEO_ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const IMAGE_QUALITIES = ["standard", "hd", "ultra"] as const;
 const OUTPUT_FORMATS = ["png", "jpg", "webp"] as const;
 const VIDEO_RESOLUTIONS = ["480p", "720p", "1080p", "4k", "2160p"] as const;
+const AGNES_VIDEO_ALLOWED_DURATIONS = [4, 5, 6, 8, 10, 15, 16] as const;
+const AGNES_REFERENCE_VIDEO_LIMITS = {
+  allowedDurations: AGNES_VIDEO_ALLOWED_DURATIONS,
+  maxDuration: 16,
+  resolutions: ["480p", "720p", "1080p"],
+} as const;
 
 type ImageSchemaOptions = {
   maxInputImages: number;
@@ -132,7 +138,7 @@ function getExplicitImageSchema(modelId: string) {
   }
   if (modelId === "codex/gpt-image-2") {
     return imageSchema({
-      maxInputImages: 0,
+      maxInputImages: 16,
       outputFormats: ["png"],
       seed: false,
       size: false,
@@ -144,7 +150,8 @@ function getExplicitImageSchema(modelId: string) {
 function getExplicitVideoSchema(modelId: string) {
   if (modelId === "agnes-video/agnes-video-v2.0") {
     return videoSchema({
-      maxDuration: 18,
+      allowedDurations: AGNES_VIDEO_ALLOWED_DURATIONS,
+      maxDuration: 16,
       resolutions: ["480p", "720p", "1080p"],
       maxInputImages: 8,
       inputModes: [
@@ -154,6 +161,7 @@ function getExplicitVideoSchema(modelId: string) {
           labelKey: "tools.schema.inputModes.image",
           minImages: 1,
           maxImages: 1,
+          limits: AGNES_REFERENCE_VIDEO_LIMITS,
           slots: ["firstFrame"],
         },
         {
@@ -162,6 +170,7 @@ function getExplicitVideoSchema(modelId: string) {
           videoMode: "multivideo",
           minImages: 2,
           maxImages: 8,
+          limits: AGNES_REFERENCE_VIDEO_LIMITS,
           slots: ["inputImages"],
         },
         {
@@ -170,6 +179,7 @@ function getExplicitVideoSchema(modelId: string) {
           videoMode: "keyframes",
           minImages: 2,
           maxImages: 8,
+          limits: AGNES_REFERENCE_VIDEO_LIMITS,
           slots: ["firstFrame", "lastFrame"],
         },
       ],

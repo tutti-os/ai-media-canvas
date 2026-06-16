@@ -41,14 +41,15 @@ export async function fetchAsBase64(
   // Already a data URI — extract inline.
   if (url.startsWith("data:")) {
     const match = url.match(/^data:([^;]+);base64,(.+)$/);
-    if (!match) {
+    const [, mimeType, data] = match ?? [];
+    if (!mimeType || !data) {
       throw new GenerationError(
         providerName,
         "input_fetch_error",
         `Invalid data URI format: ${url.slice(0, 80)}`,
       );
     }
-    return { mimeType: match[1]!, data: match[2]! };
+    return { mimeType, data };
   }
 
   // HTTP(S) URL — fetch and convert.
@@ -73,7 +74,8 @@ export async function fetchAsBase64(
 
   const buffer = await response.arrayBuffer();
   const data = Buffer.from(buffer).toString("base64");
-  const mimeType = response.headers.get("content-type") ?? "application/octet-stream";
+  const mimeType =
+    response.headers.get("content-type") ?? "application/octet-stream";
 
   return { data, mimeType };
 }
@@ -87,4 +89,21 @@ export class GenerationError extends Error {
     super(message);
     this.name = "GenerationError";
   }
+}
+
+export function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => Error,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(onTimeout());
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
 }
