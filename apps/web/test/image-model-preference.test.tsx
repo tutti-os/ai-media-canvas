@@ -110,6 +110,25 @@ describe("ImageModelPreferencePopover", () => {
     expect(screen.queryByText("Agnes Image 2.1 Flash")).not.toBeInTheDocument();
   });
 
+  it("shows Codex imagegen models returned by the backend capability check", async () => {
+    fetchImageModelsMock.mockResolvedValueOnce({
+      models: [
+        {
+          id: "codex/gpt-image-2",
+          displayName: "Codex GPT Image 2",
+          description: "Codex Imagegen route.",
+          provider: "codex-imagegen",
+        },
+      ],
+    });
+
+    render(<OpenPopover />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Codex GPT Image 2")).toBeInTheDocument(),
+    );
+  });
+
   it("opens media settings from the empty model state", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();

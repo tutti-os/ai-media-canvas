@@ -14,6 +14,7 @@ const BASE_SETTINGS: MediaProviderSettings = {
   googleVertexLocation: "",
   openAIApiKey: "",
   openAIApiBase: "",
+  kieApiKey: "",
   volcesApiKey: "",
 };
 
@@ -48,5 +49,14 @@ describe("media provider configuration", () => {
 
     expect(hasConfiguredImageProvider(settings)).toBe(false);
     expect(isMediaProviderConfigured("openai", "image", settings)).toBe(false);
+  });
+
+  it("treats Codex imagegen as configured when the backend exposes it", () => {
+    expect(isMediaProviderConfigured("codex-imagegen", "image", BASE_SETTINGS)).toBe(
+      true,
+    );
+    expect(isMediaProviderConfigured("codex-imagegen", "video", BASE_SETTINGS)).toBe(
+      false,
+    );
   });
 });
