@@ -4,6 +4,8 @@ type ImageTargetSize = {
 };
 
 const IMAGE_LOAD_TIMEOUT_MS = 10_000;
+const DEFAULT_NORMALIZED_IMAGE_MIME_TYPE = "image/png";
+const DEFAULT_NORMALIZED_IMAGE_QUALITY = 0.92;
 
 export function isAgnesModel(modelId: string): boolean {
   return modelId.startsWith("agnes-");
@@ -45,6 +47,7 @@ export function videoTargetForAspectRatio(
 export async function normalizeImageDataUrlToTarget(
   dataUrl: string,
   target: ImageTargetSize,
+  outputMimeType = DEFAULT_NORMALIZED_IMAGE_MIME_TYPE,
 ): Promise<string> {
   if (!dataUrl.startsWith("data:image/")) return dataUrl;
 
@@ -74,6 +77,11 @@ export async function normalizeImageDataUrlToTarget(
   const context = canvas.getContext("2d");
   if (!context) return dataUrl;
 
+  if (outputMimeType === "image/jpeg") {
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, target.width, target.height);
+  }
+
   context.drawImage(
     image,
     sourceX,
@@ -85,15 +93,18 @@ export async function normalizeImageDataUrlToTarget(
     target.width,
     target.height,
   );
-  return canvas.toDataURL("image/png");
+  return canvas.toDataURL(outputMimeType, DEFAULT_NORMALIZED_IMAGE_QUALITY);
 }
 
 export async function normalizeImageDataUrlsToTarget(
   dataUrls: string[],
   target: ImageTargetSize,
+  outputMimeType = DEFAULT_NORMALIZED_IMAGE_MIME_TYPE,
 ): Promise<string[]> {
   return Promise.all(
-    dataUrls.map((dataUrl) => normalizeImageDataUrlToTarget(dataUrl, target)),
+    dataUrls.map((dataUrl) =>
+      normalizeImageDataUrlToTarget(dataUrl, target, outputMimeType),
+    ),
   );
 }
 

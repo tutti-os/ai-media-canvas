@@ -155,6 +155,26 @@ describe("AgnesVideoProvider", () => {
     });
   });
 
+  it("rejects Agnes durations above the remote creation limit before calling the API", async () => {
+    const provider = new AgnesVideoProvider("agnes-test-key");
+
+    await expect(
+      provider.generate({
+        prompt: "A long stylized camera move",
+        model: "agnes-video/agnes-video-v2.0",
+        duration: 18,
+        aspectRatio: "16:9",
+        resolution: "720p",
+      }),
+    ).rejects.toMatchObject({
+      code: "invalid_input",
+      message:
+        "Invalid Agnes duration: 18. Use one of 4, 5, 6, 8, 10, 15, 16 seconds.",
+      provider: "agnes-video",
+    });
+    expect(videoGenerateMock).not.toHaveBeenCalled();
+  });
+
   it("rejects Agnes numFrames values that violate the 8n + 1 rule", async () => {
     const provider = new AgnesVideoProvider("agnes-test-key");
 
@@ -236,6 +256,30 @@ describe("AgnesVideoProvider", () => {
     });
   });
 
+  it("caps image-conditioned Agnes videos to the supported 720p short duration", async () => {
+    const provider = new AgnesVideoProvider("agnes-test-key");
+
+    await provider.generate({
+      prompt: "Make the first frame dance",
+      model: "agnes-video/agnes-video-v2.0",
+      duration: 16,
+      aspectRatio: "16:9",
+      resolution: "1080p",
+      inputImages: ["data:image/png;base64,AAAA"],
+    });
+
+    expect(videoGenerateMock).toHaveBeenCalledWith({
+      mode: "img2video",
+      image: "data:image/png;base64,AAAA",
+      prompt: "Make the first frame dance",
+      width: 1280,
+      height: 720,
+      numFrames: 121,
+      frameRate: 24,
+      ttl: "1h",
+    });
+  });
+
   it("maps multiple input images to Agnes multivideo mode by default", async () => {
     const provider = new AgnesVideoProvider("agnes-test-key");
 
@@ -252,9 +296,9 @@ describe("AgnesVideoProvider", () => {
       mode: "multivideo",
       images: ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"],
       prompt: "Blend these two concepts",
-      width: 1920,
-      height: 1080,
-      numFrames: 145,
+      width: 1280,
+      height: 720,
+      numFrames: 121,
       frameRate: 24,
       ttl: "1h",
     });

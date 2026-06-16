@@ -27,6 +27,7 @@ import { normalizeLocalAssetStorageUrl } from "../../lib/local-assets";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { VideoModelInfo } from "../../lib/server-api";
 import {
+  fetchGenerationJob,
   fetchVideoModels,
   generateVideoDirect,
   uploadFile,
@@ -47,9 +48,11 @@ type VideoGeneratorPanelProps = {
 const ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const FALLBACK_DURATION_OPTIONS = [4, 5, 6, 8, 10, 15, 18] as const;
 const RESOLUTION_OPTIONS = ["480p", "720p", "1080p", "4k", "2160p"] as const;
+const AGNES_MAX_REFERENCE_VIDEO_DURATION = 5;
+const AGNES_MAX_REFERENCE_VIDEO_RESOLUTION: VideoResolution = "720p";
 const PANEL_WIDTH = 640;
 type FrameSlot = "first" | "last";
-type FrameData = { dataUrl: string; file: File };
+type FrameData = { dataUrl: string; file?: File };
 type VideoResolution = (typeof RESOLUTION_OPTIONS)[number];
 type CanvasElement = Record<string, unknown> & {
   id?: string;
@@ -68,7 +71,7 @@ type VideoInputModeId =
   | "video";
 const videoInputModeMemory = new Map<string, VideoInputModeId>();
 type VideoModeOption = {
-  id: "keyframes" | "reference";
+  id: "image" | "keyframes" | "reference";
   labelKey: string;
   mode: AimcInputMode;
 };
@@ -207,19 +210,25 @@ function getModeById(modes: readonly AimcInputMode[], id: string) {
 }
 
 function getKeyframeMode(modes: readonly AimcInputMode[]) {
-  return (
-    getModeById(modes, "keyframes") ??
-    getModeById(modes, "image") ??
-    getModeById(modes, "multivideo")
-  );
+  return getModeById(modes, "keyframes") ?? getModeById(modes, "multivideo");
 }
 
 function getVideoModeOptions(
   modes: readonly AimcInputMode[],
 ): VideoModeOption[] {
+  const imageMode = getModeById(modes, "image");
   const keyframeMode = getKeyframeMode(modes);
   const referenceMode = getModeById(modes, "reference");
   return [
+    ...(imageMode
+      ? [
+          {
+            id: "image" as const,
+            labelKey: imageMode.labelKey,
+            mode: imageMode,
+          },
+        ]
+      : []),
     ...(keyframeMode
       ? [
           {
@@ -282,6 +291,20 @@ function normalizeStoredInputMode(mode: VideoGeneratorData["inputMode"]) {
   return "text";
 }
 
+function frameFromUrl(url: string | undefined): FrameData | null {
+  if (!url) return null;
+  return { dataUrl: normalizeLocalAssetStorageUrl(url) ?? url };
+}
+
+function getPayloadInputImages(payload: Record<string, unknown>): string[] {
+  const value = payload.input_images;
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is string => typeof item === "string" && item.length > 0,
+      )
+    : [];
+}
+
 function normalizeDuration(duration: number, options: number[]) {
   return options.includes(duration) ? duration : (options[0] ?? duration);
 }
@@ -290,6 +313,41 @@ function normalizeResolution(resolution: string, options: VideoResolution[]) {
   return options.includes(resolution as VideoResolution)
     ? resolution
     : (options.at(-1) ?? resolution);
+}
+
+function isResolutionAbove(
+  resolution: string,
+  maximum: VideoResolution,
+): boolean {
+  const currentIndex = RESOLUTION_OPTIONS.indexOf(
+    resolution as VideoResolution,
+  );
+  const maximumIndex = RESOLUTION_OPTIONS.indexOf(maximum);
+  return currentIndex >= 0 && maximumIndex >= 0 && currentIndex > maximumIndex;
+}
+
+function resolveSubmittedVideoControls(input: {
+  duration: number;
+  inputImageCount: number;
+  model: string;
+  resolution: VideoResolution;
+}) {
+  if (!isAgnesModel(input.model) || input.inputImageCount === 0) {
+    return {
+      duration: input.duration,
+      resolution: input.resolution,
+    };
+  }
+
+  return {
+    duration: Math.min(input.duration, AGNES_MAX_REFERENCE_VIDEO_DURATION),
+    resolution: isResolutionAbove(
+      input.resolution,
+      AGNES_MAX_REFERENCE_VIDEO_RESOLUTION,
+    )
+      ? AGNES_MAX_REFERENCE_VIDEO_RESOLUTION
+      : input.resolution,
+  };
 }
 
 function FrameUploadTile({
@@ -415,6 +473,7 @@ export function VideoGeneratorPanel({
   const { handleGenerationError } = useGenerationErrorHandler();
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
+  const restoredJobInputImagesRef = useRef(new Set<string>());
 
   useEffect(() => {
     let cancelled = false;
@@ -471,6 +530,56 @@ export function VideoGeneratorPanel({
         normalizeStoredInputMode(data.inputMode),
     );
   }, [data.inputMode, elementId]);
+
+  useEffect(() => {
+    const restoredImages = data.inputImages ?? [];
+    if (restoredImages.length === 0) return;
+
+    if (normalizeStoredInputMode(data.inputMode) === "reference") {
+      setReferenceFrame(
+        (current) => current ?? frameFromUrl(restoredImages[0]),
+      );
+      return;
+    }
+
+    setFirstFrame((current) => current ?? frameFromUrl(restoredImages[0]));
+    setLastFrame((current) => current ?? frameFromUrl(restoredImages[1]));
+  }, [data.inputImages, data.inputMode]);
+
+  useEffect(() => {
+    if ((data.inputImages?.length ?? 0) > 0 || !data.jobId) return;
+    if (restoredJobInputImagesRef.current.has(data.jobId)) return;
+    restoredJobInputImagesRef.current.add(data.jobId);
+
+    let cancelled = false;
+    fetchGenerationJob(data.jobId)
+      .then(({ job }) => {
+        if (cancelled) return;
+        const restoredImages = getPayloadInputImages(job.payload);
+        if (restoredImages.length === 0) return;
+
+        if (normalizeStoredInputMode(data.inputMode) === "reference") {
+          setReferenceFrame(
+            (current) => current ?? frameFromUrl(restoredImages[0]),
+          );
+        } else {
+          setFirstFrame(
+            (current) => current ?? frameFromUrl(restoredImages[0]),
+          );
+          setLastFrame((current) => current ?? frameFromUrl(restoredImages[1]));
+        }
+        updateVideoGeneratorElement(excalidrawApi, elementId, {
+          inputImages: restoredImages,
+        });
+      })
+      .catch((err) => {
+        console.warn("[video-gen] Failed to restore job input images:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data.inputImages, data.inputMode, data.jobId, elementId, excalidrawApi]);
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -648,6 +757,27 @@ export function VideoGeneratorPanel({
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || loading) return;
 
+    const inputFrames: FrameData[] = [];
+    const selectedOption = selectedModeOption;
+    if (selectedOption?.id === "keyframes") {
+      if (firstFrame) inputFrames.push(firstFrame);
+      if (lastFrame) inputFrames.push(lastFrame);
+    } else if (selectedOption?.id === "reference") {
+      if (referenceFrame) inputFrames.push(referenceFrame);
+    }
+    const submittedControls = resolveSubmittedVideoControls({
+      duration,
+      inputImageCount: inputFrames.length,
+      model,
+      resolution: resolution as VideoResolution,
+    });
+    if (submittedControls.duration !== duration) {
+      setDuration(submittedControls.duration);
+    }
+    if (submittedControls.resolution !== resolution) {
+      setResolution(submittedControls.resolution);
+    }
+
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -659,19 +789,11 @@ export function VideoGeneratorPanel({
       prompt: prompt.trim(),
       model,
       aspectRatio,
-      duration,
-      resolution,
+      duration: submittedControls.duration,
+      resolution: submittedControls.resolution,
     });
 
     try {
-      const inputFrames: FrameData[] = [];
-      const selectedOption = selectedModeOption;
-      if (selectedOption?.id === "keyframes") {
-        if (firstFrame) inputFrames.push(firstFrame);
-        if (lastFrame) inputFrames.push(lastFrame);
-      } else if (selectedOption?.id === "reference") {
-        if (referenceFrame) inputFrames.push(referenceFrame);
-      }
       const videoMode = resolveSubmissionVideoMode(
         inputModes,
         selectedOption,
@@ -682,7 +804,11 @@ export function VideoGeneratorPanel({
         inputImages.length > 0 && isAgnesModel(model)
           ? await normalizeImageDataUrlsToTarget(
               inputImages,
-              videoTargetForAspectRatio(aspectRatio, resolution),
+              videoTargetForAspectRatio(
+                aspectRatio,
+                submittedControls.resolution,
+              ),
+              "image/jpeg",
             )
           : inputImages;
       const submittedInputImageUrls = await uploadVideoInputFrames(
@@ -690,11 +816,17 @@ export function VideoGeneratorPanel({
         inputFrames,
         projectId,
       );
+      if (submittedInputImageUrls.length > 0) {
+        updateVideoGeneratorElement(excalidrawApi, elementId, {
+          inputImages: submittedInputImageUrls,
+          inputMode,
+        });
+      }
 
       const result = await generateVideoDirect(prompt.trim(), {
         model,
-        duration,
-        resolution,
+        duration: submittedControls.duration,
+        resolution: submittedControls.resolution,
         aspectRatio,
         ...(submittedInputImageUrls.length
           ? { inputImages: submittedInputImageUrls }
@@ -794,6 +926,7 @@ export function VideoGeneratorPanel({
     lastFrame,
     referenceFrame,
     selectedModeOption,
+    inputMode,
     inputModes,
     projectId,
     canvasId,
@@ -809,7 +942,9 @@ export function VideoGeneratorPanel({
   const showModePicker = modeOptions.length > 1;
   const keyframeMaxImages =
     selectedModeOption?.id === "keyframes" ? getModeMaxImages(selectedMode) : 0;
-  const showFirstFrame = selectedModeOption?.id === "keyframes";
+  const showFirstFrame =
+    selectedModeOption?.id === "image" ||
+    selectedModeOption?.id === "keyframes";
   const showLastFrame = showFirstFrame && keyframeMaxImages > 1;
   const showReferenceFrame = selectedModeOption?.id === "reference";
 
@@ -1116,6 +1251,12 @@ async function uploadVideoInputFrames(
 ): Promise<string[]> {
   return Promise.all(
     dataUrls.map(async (dataUrl, index) => {
+      if (
+        /^https?:\/\//.test(dataUrl) ||
+        dataUrl.startsWith("/local-assets/")
+      ) {
+        return normalizeLocalAssetStorageUrl(dataUrl) ?? dataUrl;
+      }
       const file = dataUrlToFile(dataUrl, sourceFrames[index]?.file);
       const upload = await uploadFile(file, projectId);
       return upload.url;
@@ -1145,9 +1286,13 @@ function dataUrlToFile(dataUrl: string, sourceFile: File | undefined): File {
     bytes[index] = binary.charCodeAt(index);
   }
 
-  return new File([bytes], sourceFile?.name || fileNameForMimeType(mimeType), {
-    type: mimeType,
-  });
+  return new File(
+    [bytes],
+    sourceFile?.type === mimeType
+      ? sourceFile.name
+      : fileNameForMimeType(mimeType),
+    { type: mimeType },
+  );
 }
 
 function fileNameForMimeType(mimeType: string): string {

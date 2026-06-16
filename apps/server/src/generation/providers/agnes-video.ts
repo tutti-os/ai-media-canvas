@@ -18,6 +18,10 @@ const AGNES_VIDEO_POLL_INTERVAL_SECONDS = 10;
 const AGNES_VIDEO_POLL_TIMEOUT_SECONDS = 7_200;
 const AGNES_VIDEO_MODEL_IDS = ["agnes-video-v2.0"] as const;
 const AGNES_VIDEO_ASPECT_RATIOS = ["16:9", "9:16"] as const;
+const AGNES_VIDEO_ALLOWED_DURATIONS = [4, 5, 6, 8, 10, 15, 16] as const;
+const MAX_AGNES_DURATION_SECONDS = 16;
+const MAX_AGNES_IMAGE_DURATION_SECONDS = 5;
+const MAX_AGNES_IMAGE_RESOLUTION: AgnesVideoResolution = "720p";
 const MAX_AGNES_NUM_FRAMES = 441;
 type AgnesVideoModelId = (typeof AGNES_VIDEO_MODEL_IDS)[number];
 type AgnesVideoAspectRatio = (typeof AGNES_VIDEO_ASPECT_RATIOS)[number];
@@ -70,7 +74,8 @@ const AGNES_VIDEO_MODELS: readonly VideoModelInfo[] = [
       audio: false,
     },
     limits: {
-      maxDuration: 18,
+      allowedDurations: [...AGNES_VIDEO_ALLOWED_DURATIONS],
+      maxDuration: MAX_AGNES_DURATION_SECONDS,
       maxResolution: "1080p",
       maxInputImages: 8,
     },
@@ -96,14 +101,16 @@ function getVideoDimensions(
 
 function resolveAgnesResolution(
   resolution: VideoGenerateParams["resolution"] | "4k" | undefined,
+  hasInputImages = false,
 ): AgnesVideoResolution | undefined {
-  if (
-    resolution === undefined ||
-    resolution === "480p" ||
-    resolution === "720p" ||
-    resolution === "1080p"
-  ) {
+  if (resolution === undefined) {
     return resolution;
+  }
+  if (resolution === "480p" || resolution === "720p") {
+    return resolution;
+  }
+  if (resolution === "1080p") {
+    return hasInputImages ? MAX_AGNES_IMAGE_RESOLUTION : resolution;
   }
   throw new GenerationError(
     "agnes-video",
@@ -144,6 +151,27 @@ function resolveAgnesFrameRate(frameRate: number | undefined) {
     );
   }
   return resolvedFrameRate;
+}
+
+function resolveAgnesDuration(duration: number | undefined) {
+  const resolvedDuration = duration ?? 5;
+  if (
+    !Number.isInteger(resolvedDuration) ||
+    !AGNES_VIDEO_ALLOWED_DURATIONS.includes(
+      resolvedDuration as (typeof AGNES_VIDEO_ALLOWED_DURATIONS)[number],
+    )
+  ) {
+    throw new GenerationError(
+      "agnes-video",
+      "invalid_input",
+      `Invalid Agnes duration: ${resolvedDuration}. Use one of ${AGNES_VIDEO_ALLOWED_DURATIONS.join(", ")} seconds.`,
+    );
+  }
+  return resolvedDuration;
+}
+
+function resolveAgnesImageDuration(durationSeconds: number) {
+  return Math.min(durationSeconds, MAX_AGNES_IMAGE_DURATION_SECONDS);
 }
 
 function alignAgnesNumFrames(durationSeconds: number, frameRate: number) {
@@ -240,19 +268,23 @@ function resolveAgnesVideoRequest(params: VideoGenerateParams) {
     );
   }
 
+  const inputImages = params.inputImages ?? [];
+  const hasInputImages = inputImages.length > 0;
   const aspectRatio = resolveAgnesAspectRatio(params.aspectRatio);
   const resolution = resolveAgnesResolution(
     params.resolution as VideoGenerateParams["resolution"] | "4k" | undefined,
+    hasInputImages,
   );
   const { width, height } = getVideoDimensions(resolution, aspectRatio);
   const frameRate = resolveAgnesFrameRate(params.frameRate);
-  const durationSeconds = params.duration ?? 5;
+  const durationSeconds = hasInputImages
+    ? resolveAgnesImageDuration(resolveAgnesDuration(params.duration))
+    : resolveAgnesDuration(params.duration);
   const numFrames = resolveAgnesNumFrames(
     durationSeconds,
     frameRate,
     params.numFrames,
   );
-  const inputImages = params.inputImages ?? [];
   const mode = resolveAgnesVideoMode(params);
   resolveAgnesVideoModel(params.model);
 

@@ -144,7 +144,8 @@ function getExplicitImageSchema(modelId: string) {
 function getExplicitVideoSchema(modelId: string) {
   if (modelId === "agnes-video/agnes-video-v2.0") {
     return videoSchema({
-      maxDuration: 18,
+      allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+      maxDuration: 16,
       resolutions: ["480p", "720p", "1080p"],
       maxInputImages: 8,
       inputModes: [
