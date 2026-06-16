@@ -93,6 +93,10 @@ function getDurationOptions(
     return options.length ? options : [modeMaxDuration];
   }
 
+  if (mode && model && isAgnesModel(model.id)) {
+    return [AGNES_MAX_REFERENCE_VIDEO_DURATION];
+  }
+
   const schemaDurations = getSchemaEnum<number>(model, "duration");
   if (schemaDurations.length) return schemaDurations.sort((a, b) => a - b);
 
@@ -119,6 +123,13 @@ function getResolutionOptions(
       RESOLUTION_OPTIONS.includes(value as VideoResolution),
   );
   if (modeResolutions?.length) return modeResolutions;
+
+  if (mode && model && isAgnesModel(model.id)) {
+    return RESOLUTION_OPTIONS.slice(
+      0,
+      RESOLUTION_OPTIONS.indexOf(AGNES_MAX_REFERENCE_VIDEO_RESOLUTION) + 1,
+    );
+  }
 
   const schemaResolutions = getSchemaEnum<string>(model, "resolution").filter(
     (value): value is VideoResolution =>
