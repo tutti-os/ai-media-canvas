@@ -1143,6 +1143,7 @@ export function CanvasToolMenu({
             data={generatorData}
             excalidrawApi={excalidrawApi}
             canvasScrollZoom={canvasScrollZoom}
+            projectId={projectId}
             onClose={handleCloseGenerator}
           />
         )}

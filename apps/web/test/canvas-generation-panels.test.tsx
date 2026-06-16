@@ -20,11 +20,13 @@ const {
   fetchVideoModelsMock,
   generateImageDirectMock,
   generateVideoDirectMock,
+  uploadFileMock,
 } = vi.hoisted(() => ({
   fetchImageModelsMock: vi.fn(),
   fetchVideoModelsMock: vi.fn(),
   generateImageDirectMock: vi.fn(),
   generateVideoDirectMock: vi.fn(),
+  uploadFileMock: vi.fn(),
 }));
 
 vi.mock("../src/lib/server-api", () => ({
@@ -32,6 +34,7 @@ vi.mock("../src/lib/server-api", () => ({
   fetchVideoModels: fetchVideoModelsMock,
   generateImageDirect: generateImageDirectMock,
   generateVideoDirect: generateVideoDirectMock,
+  uploadFile: uploadFileMock,
 }));
 
 vi.mock("@excalidraw/excalidraw", () => ({
@@ -64,7 +67,7 @@ function findPositionedPanel(start: HTMLElement): HTMLElement {
 }
 
 function mockBrowserImageNormalization(
-  output = "data:image/png;base64,normalized",
+  output = "data:image/png;base64,bm9ybWFsaXplZA==",
 ) {
   const drawImage = vi.fn();
   const originalCreateElement = document.createElement.bind(document);
@@ -130,6 +133,20 @@ describe("canvas generation panels", () => {
           },
         },
       ],
+    });
+
+    uploadFileMock.mockReset();
+    uploadFileMock.mockResolvedValue({
+      asset: {
+        id: "uploaded-reference",
+        bucket: "project-assets",
+        objectPath: "uploads/uploaded-reference.png",
+        mimeType: "image/png",
+        byteSize: 128,
+        projectId: null,
+        createdAt: "2026-06-16T00:00:00.000Z",
+      },
+      url: "http://127.0.0.1:3001/local-assets/uploaded-reference",
     });
   });
 
@@ -375,8 +392,8 @@ describe("canvas generation panels", () => {
     expect(capturedSignal?.aborted).toBe(false);
   });
 
-  it("normalizes Agnes reference images before image generation", async () => {
-    const { drawImage, output } = mockBrowserImageNormalization();
+  it("uploads normalized Agnes reference images before image generation", async () => {
+    const { drawImage } = mockBrowserImageNormalization();
     fetchImageModelsMock.mockResolvedValue({
       models: [
         {
@@ -410,6 +427,7 @@ describe("canvas generation panels", () => {
           }}
           excalidrawApi={createExcalidrawApiStub()}
           canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          projectId="project-1"
           onClose={() => {}}
         />
       </ToastProvider>,
@@ -422,10 +440,16 @@ describe("canvas generation panels", () => {
     await screen.findByAltText("参考图预览");
     await userEvent.click(screen.getByRole("button", { name: "生成图片" }));
 
+    await waitFor(() => expect(uploadFileMock).toHaveBeenCalledTimes(1));
+    expect(uploadFileMock).toHaveBeenCalledWith(expect.any(File), "project-1");
+    const uploadedFile = uploadFileMock.mock.calls[0]?.[0] as File;
+    expect(uploadedFile.name).toBe("reference.png");
+    expect(uploadedFile.type).toBe("image/png");
     expect(generateImageDirectMock).toHaveBeenCalledWith(
       "生成一张参考图变体",
       expect.objectContaining({
-        inputImages: [output],
+        inputImages: ["http://127.0.0.1:3001/local-assets/uploaded-reference"],
+        projectId: "project-1",
       }),
     );
     expect(drawImage).toHaveBeenCalledWith(
