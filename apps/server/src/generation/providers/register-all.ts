@@ -8,11 +8,11 @@
 import type { ServerEnv } from "../../config/env.js";
 import { AgnesImageProvider } from "./agnes-image.js";
 import { AgnesVideoProvider } from "./agnes-video.js";
-import {
-  type CodexImagegenCapability,
-  detectCodexImagegenCapability,
-} from "./codex-imagegen-capability.js";
 import { CodexImagegenProvider } from "./codex-imagegen.js";
+import {
+  detectCodexImagegenCapability,
+  type CodexImagegenCapability,
+} from "./codex-imagegen-capability.js";
 import { GoogleImageProvider } from "./google-image.js";
 import { GoogleVertexImageProvider } from "./google-vertex-image.js";
 import { GoogleVertexVideoProvider } from "./google-vertex-video.js";
@@ -38,7 +38,9 @@ import { VolcesImageProvider } from "./volces-image.js";
 export function registerAllProviders(
   env: ServerEnv,
   options: {
-    detectCodexImagegenCapability?: (env: ServerEnv) => CodexImagegenCapability;
+    detectCodexImagegenCapability?: (
+      env: ServerEnv,
+    ) => CodexImagegenCapability;
   } = {},
 ): void {
   if (env.codexImagegenEnabled) {

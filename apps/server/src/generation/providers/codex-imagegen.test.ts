@@ -150,6 +150,7 @@ describe("CodexImagegenProvider", () => {
     const provider = new CodexImagegenProvider({
       codexHome: sourceHome,
       execCodex,
+      resolveAgentModel: async () => undefined,
     });
 
     try {
