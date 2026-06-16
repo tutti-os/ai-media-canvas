@@ -26,7 +26,11 @@ import {
 import { normalizeLocalAssetStorageUrl } from "../../lib/local-assets";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { VideoModelInfo } from "../../lib/server-api";
-import { fetchVideoModels, generateVideoDirect } from "../../lib/server-api";
+import {
+  fetchVideoModels,
+  generateVideoDirect,
+  uploadFile,
+} from "../../lib/server-api";
 
 type VideoGeneratorPanelProps = {
   elementId: string;
@@ -660,19 +664,20 @@ export function VideoGeneratorPanel({
     });
 
     try {
-      const inputImages: string[] = [];
+      const inputFrames: FrameData[] = [];
       const selectedOption = selectedModeOption;
       if (selectedOption?.id === "keyframes") {
-        if (firstFrame) inputImages.push(firstFrame.dataUrl);
-        if (lastFrame) inputImages.push(lastFrame.dataUrl);
+        if (firstFrame) inputFrames.push(firstFrame);
+        if (lastFrame) inputFrames.push(lastFrame);
       } else if (selectedOption?.id === "reference") {
-        if (referenceFrame) inputImages.push(referenceFrame.dataUrl);
+        if (referenceFrame) inputFrames.push(referenceFrame);
       }
       const videoMode = resolveSubmissionVideoMode(
         inputModes,
         selectedOption,
-        inputImages.length,
+        inputFrames.length,
       );
+      const inputImages = inputFrames.map((frame) => frame.dataUrl);
       const submittedInputImages =
         inputImages.length > 0 && isAgnesModel(model)
           ? await normalizeImageDataUrlsToTarget(
@@ -680,14 +685,19 @@ export function VideoGeneratorPanel({
               videoTargetForAspectRatio(aspectRatio, resolution),
             )
           : inputImages;
+      const submittedInputImageUrls = await uploadVideoInputFrames(
+        submittedInputImages,
+        inputFrames,
+        projectId,
+      );
 
       const result = await generateVideoDirect(prompt.trim(), {
         model,
         duration,
         resolution,
         aspectRatio,
-        ...(submittedInputImages.length
-          ? { inputImages: submittedInputImages }
+        ...(submittedInputImageUrls.length
+          ? { inputImages: submittedInputImageUrls }
           : {}),
         ...(videoMode ? { videoMode } : {}),
         enableAudio: false,
@@ -1097,4 +1107,53 @@ export function VideoGeneratorPanel({
     </div>,
     document.body,
   );
+}
+
+async function uploadVideoInputFrames(
+  dataUrls: readonly string[],
+  sourceFrames: readonly FrameData[],
+  projectId: string | undefined,
+): Promise<string[]> {
+  return Promise.all(
+    dataUrls.map(async (dataUrl, index) => {
+      const file = dataUrlToFile(dataUrl, sourceFrames[index]?.file);
+      const upload = await uploadFile(file, projectId);
+      return upload.url;
+    }),
+  );
+}
+
+function dataUrlToFile(dataUrl: string, sourceFile: File | undefined): File {
+  const match = dataUrl.match(/^data:([^;,]+)?((?:;[^,]+)*?),(.*)$/s);
+  if (!match) {
+    return (
+      sourceFile ??
+      new File([dataUrl], "video-reference-image.txt", {
+        type: "text/plain",
+      })
+    );
+  }
+
+  const mimeType = match[1] || sourceFile?.type || "application/octet-stream";
+  const metadata = match[2] ?? "";
+  const body = match[3] ?? "";
+  const binary = metadata.includes(";base64")
+    ? atob(body)
+    : decodeURIComponent(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return new File([bytes], sourceFile?.name || fileNameForMimeType(mimeType), {
+    type: mimeType,
+  });
+}
+
+function fileNameForMimeType(mimeType: string): string {
+  if (mimeType === "image/jpeg") return "video-reference-image.jpg";
+  if (mimeType === "image/webp") return "video-reference-image.webp";
+  if (mimeType === "image/gif") return "video-reference-image.gif";
+  if (mimeType === "image/svg+xml") return "video-reference-image.svg";
+  return "video-reference-image.png";
 }

@@ -772,8 +772,8 @@ describe("canvas generation panels", () => {
     );
   });
 
-  it("submits a single first frame as image-to-video instead of keyframes", async () => {
-    const { drawImage, output } = mockBrowserImageNormalization();
+  it("uploads a single first frame as image-to-video instead of keyframes", async () => {
+    const { drawImage } = mockBrowserImageNormalization();
     fetchVideoModelsMock.mockResolvedValue({
       models: [
         {
@@ -867,10 +867,15 @@ describe("canvas generation panels", () => {
     await screen.findByAltText("首帧预览");
     await userEvent.click(screen.getByRole("button", { name: "生成视频" }));
 
+    await waitFor(() => expect(uploadFileMock).toHaveBeenCalledTimes(1));
+    expect(uploadFileMock).toHaveBeenCalledWith(expect.any(File), "project-1");
+    const uploadedFile = uploadFileMock.mock.calls[0]?.[0] as File;
+    expect(uploadedFile.name).toBe("first.png");
+    expect(uploadedFile.type).toBe("image/png");
     expect(generateVideoDirectMock).toHaveBeenCalledWith(
       "让首帧动起来",
       expect.objectContaining({
-        inputImages: [output],
+        inputImages: ["http://127.0.0.1:3001/local-assets/uploaded-reference"],
       }),
     );
     expect(drawImage).toHaveBeenCalledWith(
