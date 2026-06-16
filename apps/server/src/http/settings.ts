@@ -11,6 +11,7 @@ import {
   LOCAL_WORKSPACE_ID,
   type SettingsService,
 } from "../features/settings/settings-service.js";
+import { detectCodexImagegenCapability } from "../generation/providers/codex-imagegen-capability.js";
 
 export async function registerSettingsRoutes(
   app: FastifyInstance,
@@ -34,6 +35,34 @@ export async function registerSettingsRoutes(
           error: {
             code: "application_error",
             message: "Unable to load local workspace settings.",
+          },
+        }),
+      );
+    }
+  });
+
+  app.get("/api/workspace/settings/codex-imagegen", async (_request, reply) => {
+    try {
+      const effectiveEnv = await options.settingsService.getEffectiveServerEnv(
+        LOCAL_WORKSPACE_ID,
+      );
+      return reply.code(200).send({
+        capability: detectCodexImagegenCapability({
+          enabled: effectiveEnv.codexImagegenEnabled === true,
+          ...(effectiveEnv.codexImagegenCodexHome
+            ? { codexHome: effectiveEnv.codexImagegenCodexHome }
+            : {}),
+          ...(effectiveEnv.codexImagegenTimeoutMs
+            ? { timeoutMs: effectiveEnv.codexImagegenTimeoutMs }
+            : {}),
+        }),
+      });
+    } catch {
+      return reply.code(500).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "application_error",
+            message: "Unable to inspect Codex Imagegen settings.",
           },
         }),
       );

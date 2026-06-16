@@ -60,7 +60,7 @@ describe("createJobOperations", () => {
       localUser,
       expect.objectContaining({
         payload: expect.objectContaining({
-          model: "agnes-image/agnes-image-2.1-flash",
+          model: "codex/gpt-image-2",
         }),
       }),
     );

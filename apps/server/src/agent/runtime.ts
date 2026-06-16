@@ -84,7 +84,7 @@ import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 type BillingErrorCode = string;
 type ImageQualityLevel = "standard" | "hd" | "ultra";
 const IMAGE_JOB_POLL_INTERVAL_MS = 3_000;
-const IMAGE_JOB_MAX_WAIT_MS = 180_000;
+const IMAGE_JOB_MAX_WAIT_MS = 10 * 60_000;
 type CanvasSummaryClient = {
   from(table: "canvases"): {
     select(columns: string): {

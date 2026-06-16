@@ -17,6 +17,11 @@ export type ServerEnv = {
   agnesDefaultModel?: string;
   anthropicApiKey?: string;
   anthropicBaseUrl?: string;
+  codexImagegenCodexHome?: string;
+  codexImagegenEnabled?: boolean;
+  codexImagegenAgentModel?: string;
+  codexImagegenAgentModelConfigured?: boolean;
+  codexImagegenTimeoutMs?: number;
   dataRoot?: string;
   googleApiKey?: string;
   googleApplicationCredentials?: string;
@@ -97,6 +102,18 @@ export function loadServerEnv(
     normalizeOptionalString(
       source.AIMC_ANTHROPIC_BASE_URL ?? source.ANTHROPIC_BASE_URL,
     );
+  const codexImagegenEnabled =
+    overrides.codexImagegenEnabled ??
+    parseOptionalBoolean(source.AIMC_CODEX_IMAGEGEN_ENABLED, true);
+  const codexImagegenTimeoutMs =
+    overrides.codexImagegenTimeoutMs ??
+    parseOptionalInt(source.AIMC_CODEX_IMAGEGEN_TIMEOUT_MS);
+  const codexImagegenCodexHome =
+    overrides.codexImagegenCodexHome ??
+    normalizeOptionalString(source.AIMC_CODEX_HOME ?? source.CODEX_HOME);
+  const codexImagegenAgentModel =
+    overrides.codexImagegenAgentModel ??
+    normalizeOptionalString(source.AIMC_CODEX_IMAGEGEN_AGENT_MODEL);
   const agentModel =
     configuredAgentModel ??
     agnesDefaultModel ??
@@ -208,6 +225,11 @@ export function loadServerEnv(
     ...(agnesDefaultModel ? { agnesDefaultModel } : {}),
     ...(anthropicApiKey ? { anthropicApiKey } : {}),
     ...(anthropicBaseUrl ? { anthropicBaseUrl } : {}),
+    codexImagegenEnabled,
+    codexImagegenAgentModelConfigured: codexImagegenAgentModel !== undefined,
+    ...(codexImagegenAgentModel ? { codexImagegenAgentModel } : {}),
+    ...(codexImagegenTimeoutMs ? { codexImagegenTimeoutMs } : {}),
+    ...(codexImagegenCodexHome ? { codexImagegenCodexHome } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
     ...(openAIApiKey ? { openAIApiKey } : {}),
     ...(tuttiApiBaseUrl ? { tuttiApiBaseUrl } : {}),

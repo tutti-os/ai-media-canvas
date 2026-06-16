@@ -13,6 +13,7 @@ import { imageArtifactSchema, videoArtifactSchema } from "@aimc/shared";
 import type { StreamEvent, ToolArtifact } from "@aimc/shared";
 
 import { sanitizeErrorForClient } from "../../utils/error-sanitizer.js";
+import { createPipelineLogger } from "../../ws/logger.js";
 
 /**
  * Shape of a LangChain v2 stream event from `streamEvents()`.
@@ -64,6 +65,10 @@ export async function* adaptDeepAgentStream(
   let consecutiveCanvasLayoutFailures = 0;
   /** Tracks active sub-agent parent runs so we can detect nested inner tools. */
   const activeSubAgentRuns = new Set<string>();
+  const log = createPipelineLogger("deepagent.events", {
+    runId: options.runId,
+    sessionId: options.sessionId,
+  });
 
   yield {
     conversationId: options.conversationId,
@@ -205,7 +210,14 @@ export async function* adaptDeepAgentStream(
         // Use run_id as the tool call identifier for consistent start/end pairing
         const toolCallId = readString(evt.run_id) ?? `tool_${Date.now()}`;
 
-        if (seenStartedToolCalls.has(toolCallId)) continue;
+        if (seenStartedToolCalls.has(toolCallId)) {
+          log.info("tool_start_suppressed", {
+            reason: "duplicate_tool_call_id",
+            toolCallId,
+            toolName,
+          });
+          continue;
+        }
         seenStartedToolCalls.add(toolCallId);
 
         // Extract tool input arguments for frontend display
@@ -220,6 +232,11 @@ export async function* adaptDeepAgentStream(
           activeSubAgentRuns.add(toolCallId);
         }
 
+        log.info("tool_start_mapped", {
+          toolCallId,
+          toolName,
+          inputKeys: toolInput ? Object.keys(toolInput).sort() : [],
+        });
         yield {
           runId: options.runId,
           timestamp: now(),
@@ -237,7 +254,14 @@ export async function* adaptDeepAgentStream(
         // Use run_id for consistent pairing with on_tool_start
         const toolCallId = readString(evt.run_id) ?? `tool_${Date.now()}`;
 
-        if (seenCompletedToolCalls.has(toolCallId)) continue;
+        if (seenCompletedToolCalls.has(toolCallId)) {
+          log.info("tool_end_suppressed", {
+            reason: "duplicate_tool_call_id",
+            toolCallId,
+            toolName,
+          });
+          continue;
+        }
         seenCompletedToolCalls.add(toolCallId);
 
         const output = evt.data?.output;
@@ -253,6 +277,16 @@ export async function* adaptDeepAgentStream(
           output,
           (extractedArtifacts?.length ?? 0) > 0,
         );
+        log.info("tool_end_mapped", {
+          toolCallId,
+          toolName,
+          isNestedInSubAgent,
+          outputKeys:
+            extractedOutput && typeof extractedOutput === "object"
+              ? Object.keys(extractedOutput).sort()
+              : [],
+          artifactCount: extractedArtifacts?.length ?? 0,
+        });
         yield {
           output: extractedOutput,
           outputSummary: summarizeOutput(output),

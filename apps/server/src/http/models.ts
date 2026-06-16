@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 
 import {
-  type AgentRuntimeProvider,
   type InstallableAgentProviderId,
   type ModelInfo,
   type WorkspaceSettings,
@@ -10,20 +9,16 @@ import {
   installableAgentProviderIdSchema,
   modelListResponseSchema,
 } from "@aimc/shared";
-import {
-  type AgentDetection,
-  type LocalAgentRuntime,
-  createLocalAgentRuntime,
-} from "@tutti-os/agent-acp-kit";
 
 import {
   type AgentProviderInstallResult,
   installAgentProvider,
 } from "../agent/local-agent-provider-installer.js";
 import {
-  createAimcLocalAgentProviderPlugins,
-  isAimcLocalAgentProvider,
-} from "../agent/local-agent-providers.js";
+  type LocalAgentModelDiscovery,
+  buildLocalAgentModels,
+  createDefaultLocalAgentModelDiscovery,
+} from "../agent/local-agent-models.js";
 import type { ServerEnv } from "../config/env.js";
 import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 import {
@@ -87,10 +82,6 @@ const AGNES_MODELS: ModelInfo[] = [
   { id: "agnes:agnes-1.5-flash", name: "Agnes 1.5 Flash", provider: "agnes" },
 ];
 
-type LocalAgentModelDiscovery = Pick<
-  LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
-  "detect"
->;
 type LocalAgentProviderInstaller = (
   provider: InstallableAgentProviderId,
 ) => Promise<AgentProviderInstallResult>;
@@ -237,49 +228,6 @@ async function fetchOpenAICompatibleModels(
   }
 
   return normalizeOpenAICompatibleModels(await response.json());
-}
-
-function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
-  return createLocalAgentRuntime({
-    providers: createAimcLocalAgentProviderPlugins(),
-  });
-}
-
-function localAgentModelId(provider: string, modelId: string) {
-  const trimmed = modelId.trim();
-  if (!trimmed) return null;
-  return trimmed.startsWith(`${provider}:`)
-    ? trimmed
-    : `${provider}:${trimmed}`;
-}
-
-function buildLocalAgentModels(
-  detections: Awaited<ReturnType<LocalAgentModelDiscovery["detect"]>>,
-): ModelInfo[] {
-  const models: ModelInfo[] = [];
-  const seen = new Set<string>();
-
-  for (const detection of detections) {
-    if (!isAimcLocalAgentProvider(String(detection.provider))) continue;
-
-    const result = detection.result as AgentDetection | null;
-    if (!result || result.supported === false) continue;
-
-    for (const model of result.models ?? []) {
-      const id = localAgentModelId(String(detection.provider), model.id);
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      models.push({
-        id,
-        name: model.label || model.id,
-        ...(model.description ? { description: model.description } : {}),
-        provider: String(detection.provider),
-        source: "local-agent",
-      });
-    }
-  }
-
-  return models;
 }
 
 function localAgentProviderInstallMessage(

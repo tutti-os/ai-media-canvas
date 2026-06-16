@@ -83,6 +83,8 @@ export function isMediaProviderConfigured(
       return hasVertexConfig(settings);
     case "openai":
       return mediaType === "image" && hasOfficialOpenAIImageProvider(settings);
+    case "codex-imagegen":
+      return mediaType === "image";
     case "volces":
       return mediaType === "image" && hasValue(settings.volcesApiKey);
     default:
