@@ -10,4 +10,4 @@
 - 修复方案: 为 `/api/jobs/video-generation` 配置 10 MB route-level `bodyLimit`，与已有 chat/canvas base64 payload 路由策略对齐；新增 HTTP 回归测试，构造大于 1 MB 的首尾帧 data URL payload，确认请求能进入 `createVideoJob`。
 - 验证方式和结果: `pnpm --filter @aimc/server test -- src/http/jobs.test.ts` 通过（Vitest 实际运行 38 个 server 测试文件、230 个测试）；`pnpm --filter @aimc/server typecheck` 通过；`pnpm exec biome check apps/server/src/http/jobs.ts apps/server/src/http/jobs.test.ts` 通过。
 - 是否已修复完: 是
-- commit hash: `待提交后回填`
+- commit hash: `9e8837d`
