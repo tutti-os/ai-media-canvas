@@ -30,6 +30,7 @@ import {
   type SubmitVideoJobFn,
   createVideoGenerateTool,
 } from "../tools/video-generate.js";
+import { createPipelineLogger } from "../../ws/logger.js";
 
 type StructuredToolLike = {
   description: string;
@@ -59,6 +60,7 @@ type LocalToolGatewaySession = {
   canvasId?: string;
   connectionId?: string;
   runId: string;
+  sessionId?: string;
   runtimeEnv: ServerEnv;
   sandboxDir?: string;
   layoutInspectionState?: CanvasLayoutInspectionState;
@@ -81,6 +83,35 @@ const TOOL_NAME_ALIASES = new Map<string, string>([
 
 function normalizeToolName(name: string) {
   return TOOL_NAME_ALIASES.get(name) ?? name;
+}
+
+function summarizeToolInput(args: Record<string, unknown>) {
+  return {
+    inputKeys: Object.keys(args).sort(),
+    ...(typeof args.model === "string" ? { model: args.model } : {}),
+    ...(typeof args.aspectRatio === "string"
+      ? { aspectRatio: args.aspectRatio }
+      : {}),
+    ...(typeof args.title === "string" ? { title: args.title } : {}),
+    ...(Array.isArray(args.inputImages)
+      ? { inputImageCount: args.inputImages.length }
+      : {}),
+  };
+}
+
+function summarizeToolResult(result: LocalToolGatewayCallResult) {
+  const output = result.output;
+  return {
+    isError: result.isError,
+    outputKeys: output ? Object.keys(output).sort() : [],
+    artifactCount: result.artifacts?.length ?? 0,
+    ...(typeof output?.jobId === "string" ? { jobId: output.jobId } : {}),
+    ...(typeof output?.status === "string" ? { status: output.status } : {}),
+    ...(typeof output?.assetId === "string" ? { assetId: output.assetId } : {}),
+    ...(typeof output?.elementId === "string"
+      ? { elementId: output.elementId }
+      : {}),
+  };
 }
 
 function parseMaybeJson(value: unknown): unknown {
@@ -515,8 +546,19 @@ export function createLocalToolGatewayService(
       }
       const tools = buildTools(session);
       const canonicalName = normalizeToolName(name);
+      const log = createPipelineLogger("tool.gateway", {
+        runId: session.runId,
+        ...(session.sessionId ? { sessionId: session.sessionId } : {}),
+        ...(session.canvasId ? { canvasId: session.canvasId } : {}),
+        requestedToolName: name,
+        toolName: canonicalName,
+      });
+      log.info("call_start", summarizeToolInput(args));
       const toolInstance = tools.get(canonicalName);
       if (!toolInstance) {
+        log.warn("tool_not_found", {
+          availableToolNames: [...tools.keys()].sort(),
+        });
         return {
           isError: true,
           output: {
@@ -535,20 +577,26 @@ export function createLocalToolGatewayService(
           canonicalName,
           await toolInstance.invoke(args, toolOptionsForSession(session)),
         );
+        log.info("call_result", summarizeToolResult(result));
         if (
           canonicalName === "generate_image" &&
           !result.isError &&
           result.output
         ) {
+          log.info("direct_image_insert_start", summarizeToolResult(result));
           await insertDirectGeneratedImage({
             createUserClient,
             output: result.output,
             session,
             pushToCanvas: options.connectionPublisher,
           });
+          log.info("direct_image_insert_done", summarizeToolResult(result));
         }
         return result;
       } catch (error) {
+        log.error("call_error", {
+          message: error instanceof Error ? error.message : String(error),
+        });
         return {
           isError: true,
           output: {

@@ -5,6 +5,7 @@ import {
   type ToolArtifact,
   videoArtifactSchema,
 } from "@aimc/shared";
+import { createPipelineLogger } from "../../ws/logger.js";
 
 const INTERNAL_SKILL_READ_RE =
   /\/skills\/.+\/SKILL\.md|(?:^|[\s'"])(?:\.\/)?workspace-skills\/[^\s'"]+/;
@@ -207,6 +208,7 @@ export function adaptLocalAgentEvent(input: {
   runId: string;
 }): StreamEvent[] {
   const { event, messageId, now, runId } = input;
+  const log = createPipelineLogger("local_agent.events", { runId });
 
   if (event.type === "thinking" || event.type === "thinking_delta") {
     return [
@@ -239,9 +241,19 @@ export function adaptLocalAgentEvent(input: {
       typeof inputRecord?.command === "string" &&
       INTERNAL_SKILL_READ_RE.test(inputRecord.command)
     ) {
+      log.info("tool_call_suppressed", {
+        providerToolName: event.name,
+        reason: "internal_skill_read",
+        toolCallId: event.id,
+      });
       return [];
     }
 
+    log.info("tool_call_mapped", {
+      providerToolName: event.name,
+      toolCallId: event.id,
+      inputKeys: inputRecord ? Object.keys(inputRecord).sort() : [],
+    });
     return [
       {
         type: "tool.started",
@@ -264,10 +276,22 @@ export function adaptLocalAgentEvent(input: {
       typeof output?.output === "string" &&
       INTERNAL_SKILL_READ_RE.test(output.output)
     ) {
+      log.info("tool_result_suppressed", {
+        providerToolName: toolName,
+        reason: "internal_skill_read",
+        toolCallId: event.id,
+      });
       return [];
     }
 
     const artifacts = output ? buildArtifacts(toolName, output) : undefined;
+    log.info("tool_result_mapped", {
+      providerToolName: toolName,
+      toolCallId: event.id,
+      isError: isToolFailure,
+      outputKeys: output ? Object.keys(output).sort() : [],
+      artifactCount: artifacts?.length ?? 0,
+    });
     const common = {
       runId,
       toolCallId: event.id,

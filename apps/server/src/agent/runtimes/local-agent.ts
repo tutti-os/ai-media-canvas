@@ -190,6 +190,7 @@ export function createLocalAgentRuntimeProvider(
         ...(run.canvasId ? { canvasId: run.canvasId } : {}),
         ...(run.connectionId ? { connectionId: run.connectionId } : {}),
         runId: run.runId,
+        sessionId: run.sessionId,
         runtimeEnv,
         sandboxDir: runDir,
         ...(submitImageJob ? { submitImageJob } : {}),
