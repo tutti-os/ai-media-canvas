@@ -18,6 +18,11 @@ import {
 } from "../../lib/canvas-image-generator";
 import { withNormalizedCanvasElementIndices } from "../../lib/canvas-normalize";
 import { isExcalidrawContextMenuTarget } from "../../lib/excalidraw-context-menu";
+import {
+  imageTargetForAspectRatio,
+  isAgnesModel,
+  normalizeImageDataUrlToTarget,
+} from "../../lib/image-input-normalization";
 import { normalizeLocalAssetStorageUrl } from "../../lib/local-assets";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { ImageModelInfo } from "../../lib/server-api";
@@ -284,13 +289,20 @@ export function ImageGeneratorPanel({
     });
 
     try {
+      const inputImage =
+        referenceImage && maxInputImages > 0
+          ? isAgnesModel(model)
+            ? await normalizeImageDataUrlToTarget(
+                referenceImage.dataUrl,
+                imageTargetForAspectRatio(aspectRatio),
+              )
+            : referenceImage.dataUrl
+          : null;
       const result = await generateImageDirect(prompt.trim(), {
         model,
         aspectRatio,
         quality: data.quality,
-        ...(referenceImage && maxInputImages > 0
-          ? { inputImages: [referenceImage.dataUrl] }
-          : {}),
+        ...(inputImage ? { inputImages: [inputImage] } : {}),
         onJobCreated: (jobId) => {
           updateImageGeneratorElement(excalidrawApi, elementId, {
             jobId,

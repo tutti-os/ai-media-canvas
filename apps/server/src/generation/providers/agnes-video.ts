@@ -1,4 +1,4 @@
-import { createAgnesClient } from "agnes-ai-cli";
+import { type AgnesClientConfig, createAgnesClient } from "agnes-ai-cli";
 
 import type {
   GeneratedVideo,
@@ -6,12 +6,14 @@ import type {
   VideoModelInfo,
   VideoProvider,
 } from "../types.js";
-import { GenerationError } from "../utils.js";
+import { GenerationError, withTimeout } from "../utils.js";
 
 const ICON_AGNES = "https://agnes-cdn.kiwiar.com/logo/agnes-icon-400x400.jpg";
 const DEFAULT_FRAME_RATE = 24;
 const DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
 const DEFAULT_AGNES_MEDIA_TTL = "1h" as const;
+const AGNES_VIDEO_CREATE_TIMEOUT_MS = 120_000;
+const AGNES_VIDEO_POLL_REQUEST_TIMEOUT_MS = 30_000;
 const AGNES_VIDEO_POLL_INTERVAL_SECONDS = 10;
 const AGNES_VIDEO_POLL_TIMEOUT_SECONDS = 7_200;
 const AGNES_VIDEO_MODEL_IDS = ["agnes-video-v2.0"] as const;
@@ -272,12 +274,19 @@ export class AgnesVideoProvider implements VideoProvider {
   private apiKey: string;
   private baseUrl: string;
 
-  constructor(apiKey: string, baseUrl?: string) {
+  constructor(
+    apiKey: string,
+    baseUrl?: string,
+    options: Pick<AgnesClientConfig, "mediaProvider"> = {},
+  ) {
     this.apiKey = apiKey;
     this.baseUrl = (baseUrl ?? DEFAULT_AGNES_BASE_URL).replace(/\/$/, "");
     this.client = createAgnesClient({
       apiKey,
       ...(baseUrl ? { baseUrl } : {}),
+      ...(options.mediaProvider
+        ? { mediaProvider: options.mediaProvider }
+        : {}),
     });
   }
 
@@ -286,9 +295,9 @@ export class AgnesVideoProvider implements VideoProvider {
     const metadata = getAgnesRemoteTaskMetadata(params);
 
     try {
-      const task =
+      const task = await withTimeout(
         request.mode === "text2video"
-          ? await this.client.video.generate({
+          ? this.client.video.generate({
               mode: request.mode,
               prompt: params.prompt,
               width: request.width,
@@ -301,7 +310,7 @@ export class AgnesVideoProvider implements VideoProvider {
                 : {}),
             })
           : request.mode === "img2video"
-            ? await this.client.video.generate({
+            ? this.client.video.generate({
                 mode: request.mode,
                 image: getFirstAgnesInputImage(request.inputImages),
                 prompt: params.prompt,
@@ -315,7 +324,7 @@ export class AgnesVideoProvider implements VideoProvider {
                   ? { negativePrompt: params.negativePrompt }
                   : {}),
               })
-            : await this.client.video.generate({
+            : this.client.video.generate({
                 mode: request.mode,
                 images: request.inputImages,
                 prompt: params.prompt,
@@ -328,7 +337,15 @@ export class AgnesVideoProvider implements VideoProvider {
                 ...(params.negativePrompt
                   ? { negativePrompt: params.negativePrompt }
                   : {}),
-              });
+              }),
+        AGNES_VIDEO_CREATE_TIMEOUT_MS,
+        () =>
+          new GenerationError(
+            this.name,
+            "timeout",
+            `Agnes video task creation timed out after ${AGNES_VIDEO_CREATE_TIMEOUT_MS}ms.`,
+          ),
+      );
 
       const taskWithVideoId = task as typeof task & { videoId?: string };
 
@@ -411,6 +428,14 @@ export class AgnesVideoProvider implements VideoProvider {
         raw: task.raw ?? task,
       });
 
+      if (status === "failed" || status === "canceled") {
+        throw new GenerationError(
+          this.name,
+          status === "canceled" ? "canceled" : "api_error",
+          getAgnesTaskErrorMessage(task.error, status),
+        );
+      }
+
       if (status === "completed" || task.completed_at) {
         const videoUrl = extractAgnesVideoUrl(task);
         if (!videoUrl) {
@@ -430,14 +455,6 @@ export class AgnesVideoProvider implements VideoProvider {
             request.durationSeconds ??
             Math.round((request.numFrames - 1) / request.frameRate),
         };
-      }
-
-      if (status === "failed" || status === "canceled") {
-        throw new GenerationError(
-          this.name,
-          status === "canceled" ? "canceled" : "api_error",
-          getAgnesTaskErrorMessage(task.error, status),
-        );
       }
 
       if (videoId) {
@@ -464,6 +481,7 @@ export class AgnesVideoProvider implements VideoProvider {
         Accept: "application/json",
         Authorization: `Bearer ${this.apiKey}`,
       },
+      signal: AbortSignal.timeout(AGNES_VIDEO_POLL_REQUEST_TIMEOUT_MS),
     });
     const text = await response.text();
     const body = parseAgnesJson(text);

@@ -115,7 +115,7 @@ describe("ImageModelPreferencePopover", () => {
       models: [
         {
           id: "codex/gpt-image-2",
-          displayName: "Codex GPT Image 2",
+          displayName: "GPT Image 2",
           description: "Codex Imagegen route.",
           provider: "codex-imagegen",
         },
@@ -125,7 +125,7 @@ describe("ImageModelPreferencePopover", () => {
     render(<OpenPopover />);
 
     await waitFor(() =>
-      expect(screen.getByText("Codex GPT Image 2")).toBeInTheDocument(),
+      expect(screen.getByText("GPT Image 2")).toBeInTheDocument(),
     );
   });
 

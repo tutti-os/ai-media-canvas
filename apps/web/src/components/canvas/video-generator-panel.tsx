@@ -18,6 +18,11 @@ import {
   isExcalidrawCanvasTarget,
   isExcalidrawContextMenuTarget,
 } from "../../lib/excalidraw-context-menu";
+import {
+  isAgnesModel,
+  normalizeImageDataUrlsToTarget,
+  videoTargetForAspectRatio,
+} from "../../lib/image-input-normalization";
 import { normalizeLocalAssetStorageUrl } from "../../lib/local-assets";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { VideoModelInfo } from "../../lib/server-api";
@@ -234,6 +239,29 @@ function getVideoModeOptions(
 
 function getModeMaxImages(mode?: AimcInputMode) {
   return mode?.maxImages ?? 0;
+}
+
+function supportsImageCount(mode: AimcInputMode | undefined, count: number) {
+  if (!mode) return false;
+  if (mode.minImages !== undefined && count < mode.minImages) return false;
+  if (mode.maxImages !== undefined && count > mode.maxImages) return false;
+  return true;
+}
+
+function resolveSubmissionVideoMode(
+  modes: readonly AimcInputMode[],
+  selectedOption: VideoModeOption | undefined,
+  imageCount: number,
+) {
+  if (!selectedOption || imageCount === 0) return undefined;
+  if (
+    selectedOption.id === "keyframes" &&
+    !supportsImageCount(selectedOption.mode, imageCount)
+  ) {
+    const imageMode = getModeById(modes, "image");
+    if (supportsImageCount(imageMode, imageCount)) return imageMode?.videoMode;
+  }
+  return selectedOption.mode.videoMode;
 }
 
 function normalizeStoredInputMode(mode: VideoGeneratorData["inputMode"]) {
@@ -640,16 +668,27 @@ export function VideoGeneratorPanel({
       } else if (selectedOption?.id === "reference") {
         if (referenceFrame) inputImages.push(referenceFrame.dataUrl);
       }
-      const videoMode = inputImages.length
-        ? selectedOption?.mode.videoMode
-        : undefined;
+      const videoMode = resolveSubmissionVideoMode(
+        inputModes,
+        selectedOption,
+        inputImages.length,
+      );
+      const submittedInputImages =
+        inputImages.length > 0 && isAgnesModel(model)
+          ? await normalizeImageDataUrlsToTarget(
+              inputImages,
+              videoTargetForAspectRatio(aspectRatio, resolution),
+            )
+          : inputImages;
 
       const result = await generateVideoDirect(prompt.trim(), {
         model,
         duration,
         resolution,
         aspectRatio,
-        ...(inputImages.length ? { inputImages } : {}),
+        ...(submittedInputImages.length
+          ? { inputImages: submittedInputImages }
+          : {}),
         ...(videoMode ? { videoMode } : {}),
         enableAudio: false,
         projectId,
@@ -745,6 +784,7 @@ export function VideoGeneratorPanel({
     lastFrame,
     referenceFrame,
     selectedModeOption,
+    inputModes,
     projectId,
     canvasId,
     excalidrawApi,
@@ -854,53 +894,6 @@ export function VideoGeneratorPanel({
           className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3"
         >
           <div className="flex min-w-0 flex-1 basis-[420px] items-center gap-2">
-            {selectedModeOption && (
-              <div className="relative shrink-0">
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => {
-                    setShowModeDropdown((value) => !value);
-                    setShowModelDropdown(false);
-                    setShowParamsPopover(false);
-                  }}
-                  className="flex h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <span className="truncate max-w-[120px]">
-                    {t(selectedModeOption.labelKey)}
-                  </span>
-                  {showModePicker && (
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                  )}
-                </button>
-                {showModeDropdown && showModePicker && (
-                  <div className="absolute bottom-full left-0 z-50 mb-2 w-[200px] overflow-hidden rounded-2xl border border-border bg-popover shadow-card">
-                    <div className="py-1">
-                      {modeOptions.map((option) => (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() =>
-                            handleInputModeChange(
-                              option.mode.id as VideoInputModeId,
-                            )
-                          }
-                          className="flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
-                        >
-                          <span className="flex h-5 w-5 items-center justify-center text-muted-foreground">
-                            {selectedModeOption.id === option.id && (
-                              <Check className="h-4 w-4" />
-                            )}
-                          </span>
-                          <span>{t(option.labelKey)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
             <div className="relative min-w-[180px] flex-1">
               <button
                 type="button"
@@ -948,6 +941,53 @@ export function VideoGeneratorPanel({
               )}
             </div>
 
+            {selectedModeOption && (
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    setShowModeDropdown((value) => !value);
+                    setShowModelDropdown(false);
+                    setShowParamsPopover(false);
+                  }}
+                  className="flex h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="truncate max-w-[120px]">
+                    {t(selectedModeOption.labelKey)}
+                  </span>
+                  {showModePicker && (
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                </button>
+                {showModeDropdown && showModePicker && (
+                  <div className="absolute bottom-full left-0 z-50 mb-2 w-[200px] overflow-hidden rounded-2xl border border-border bg-popover shadow-card">
+                    <div className="py-1">
+                      {modeOptions.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() =>
+                            handleInputModeChange(
+                              option.mode.id as VideoInputModeId,
+                            )
+                          }
+                          className="flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
+                        >
+                          <span className="flex h-5 w-5 items-center justify-center text-muted-foreground">
+                            {selectedModeOption.id === option.id && (
+                              <Check className="h-4 w-4" />
+                            )}
+                          </span>
+                          <span>{t(option.labelKey)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="relative shrink-0">
               <button
                 type="button"
@@ -968,13 +1008,13 @@ export function VideoGeneratorPanel({
                       <div className="mb-2 text-xs font-medium text-muted-foreground">
                         {t("tools.videoPanel.aspectRatio")}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         {aspectRatioOptions.map((ratio) => (
                           <button
                             key={ratio}
                             type="button"
                             onClick={() => handleAspectRatioChange(ratio)}
-                            className={`cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
+                            className={`shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
                               aspectRatio === ratio
                                 ? "bg-foreground text-background"
                                 : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -990,13 +1030,13 @@ export function VideoGeneratorPanel({
                       <div className="mb-2 text-xs font-medium text-muted-foreground">
                         {t("tools.videoPanel.duration")}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         {durationOptions.map((value) => (
                           <button
                             key={value}
                             type="button"
                             onClick={() => handleDurationChange(value)}
-                            className={`cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
+                            className={`shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
                               duration === value
                                 ? "bg-foreground text-background"
                                 : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -1012,7 +1052,7 @@ export function VideoGeneratorPanel({
                       <div className="mb-2 text-xs font-medium text-muted-foreground">
                         {t("tools.videoPanel.resolution")}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         {resolutionOptions.map((value) => (
                           <button
                             key={value}
@@ -1027,7 +1067,7 @@ export function VideoGeneratorPanel({
                                 },
                               );
                             }}
-                            className={`cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
+                            className={`shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
                               resolution === value
                                 ? "bg-foreground text-background"
                                 : "bg-muted text-muted-foreground hover:bg-muted/80"

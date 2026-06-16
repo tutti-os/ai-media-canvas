@@ -285,6 +285,33 @@ describe("AgnesVideoProvider", () => {
     });
   });
 
+  it("times out if Agnes video task creation never returns", async () => {
+    const provider = new AgnesVideoProvider("agnes-test-key");
+    videoGenerateMock.mockReturnValueOnce(new Promise(() => {}));
+    vi.useFakeTimers();
+
+    try {
+      const resultPromise = provider.generate({
+        prompt: "A stuck Agnes request",
+        model: "agnes-video/agnes-video-v2.0",
+        aspectRatio: "16:9",
+        resolution: "720p",
+      });
+      const rejection = expect(resultPromise).rejects.toMatchObject({
+        code: "timeout",
+        message: "Agnes video task creation timed out after 120000ms.",
+        provider: "agnes-video",
+      });
+
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      await rejection;
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps polling queued Agnes tasks instead of using the SDK timeout", async () => {
     const provider = new AgnesVideoProvider("agnes-test-key");
     videoGenerateMock.mockResolvedValueOnce({
@@ -411,6 +438,7 @@ describe("AgnesVideoProvider", () => {
           id: "task_123",
           object: "video",
           status: "failed",
+          completed_at: 1790000000,
           error: {
             message: "Remote generation failed.",
           },
