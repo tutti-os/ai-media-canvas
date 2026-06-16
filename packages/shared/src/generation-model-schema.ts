@@ -24,6 +24,11 @@ export type AimcInputMode = {
   videoMode?: "multivideo" | "keyframes" | "reference";
   minImages?: number;
   maxImages?: number;
+  limits?: {
+    allowedDurations?: readonly number[];
+    maxDuration?: number;
+    resolutions?: readonly string[];
+  };
   requiresInputVideo?: boolean;
   slots?: AimcUploadSlotId[];
 };

@@ -76,7 +76,23 @@ type VideoModeOption = {
   mode: AimcInputMode;
 };
 
-function getDurationOptions(model?: VideoModelInfo): number[] {
+function getDurationOptions(
+  model?: VideoModelInfo,
+  mode?: AimcInputMode,
+): number[] {
+  const modeDurations = mode?.limits?.allowedDurations;
+  if (modeDurations?.length) {
+    return [...modeDurations].sort((a, b) => a - b);
+  }
+
+  const modeMaxDuration = mode?.limits?.maxDuration;
+  if (modeMaxDuration) {
+    const options = FALLBACK_DURATION_OPTIONS.filter(
+      (value) => value <= modeMaxDuration,
+    );
+    return options.length ? options : [modeMaxDuration];
+  }
+
   const schemaDurations = getSchemaEnum<number>(model, "duration");
   if (schemaDurations.length) return schemaDurations.sort((a, b) => a - b);
 
@@ -94,7 +110,16 @@ function getDurationOptions(model?: VideoModelInfo): number[] {
   return options.length ? options : [maxDuration];
 }
 
-function getResolutionOptions(model?: VideoModelInfo): VideoResolution[] {
+function getResolutionOptions(
+  model?: VideoModelInfo,
+  mode?: AimcInputMode,
+): VideoResolution[] {
+  const modeResolutions = mode?.limits?.resolutions?.filter(
+    (value): value is VideoResolution =>
+      RESOLUTION_OPTIONS.includes(value as VideoResolution),
+  );
+  if (modeResolutions?.length) return modeResolutions;
+
   const schemaResolutions = getSchemaEnum<string>(model, "resolution").filter(
     (value): value is VideoResolution =>
       RESOLUTION_OPTIONS.includes(value as VideoResolution),
@@ -303,6 +328,28 @@ function getPayloadInputImages(payload: Record<string, unknown>): string[] {
         (item): item is string => typeof item === "string" && item.length > 0,
       )
     : [];
+}
+
+function getSelectedInputFrames(
+  selectedOption: VideoModeOption | undefined,
+  frames: {
+    firstFrame: FrameData | null;
+    lastFrame: FrameData | null;
+    referenceFrame: FrameData | null;
+  },
+): FrameData[] {
+  if (selectedOption?.id === "image") {
+    return frames.firstFrame ? [frames.firstFrame] : [];
+  }
+  if (selectedOption?.id === "keyframes") {
+    return [frames.firstFrame, frames.lastFrame].filter(
+      (frame): frame is FrameData => frame !== null,
+    );
+  }
+  if (selectedOption?.id === "reference") {
+    return frames.referenceFrame ? [frames.referenceFrame] : [];
+  }
+  return [];
 }
 
 function normalizeDuration(duration: number, options: number[]) {
@@ -604,17 +651,28 @@ export function VideoGeneratorPanel({
     modeOptions.find((option) => option.mode.id === inputMode) ??
     modeOptions[0];
   const selectedMode = selectedModeOption?.mode;
+  const currentInputFrames = useMemo(
+    () =>
+      getSelectedInputFrames(selectedModeOption, {
+        firstFrame,
+        lastFrame,
+        referenceFrame,
+      }),
+    [firstFrame, lastFrame, referenceFrame, selectedModeOption],
+  );
+  const constrainedInputMode =
+    currentInputFrames.length > 0 ? selectedMode : undefined;
   const aspectRatioOptions = useMemo(
     () => getAspectRatioOptions(currentModel),
     [currentModel],
   );
   const durationOptions = useMemo(
-    () => getDurationOptions(currentModel),
-    [currentModel],
+    () => getDurationOptions(currentModel, constrainedInputMode),
+    [currentModel, constrainedInputMode],
   );
   const resolutionOptions = useMemo(
-    () => getResolutionOptions(currentModel),
-    [currentModel],
+    () => getResolutionOptions(currentModel, constrainedInputMode),
+    [currentModel, constrainedInputMode],
   );
 
   useEffect(() => {
@@ -757,14 +815,8 @@ export function VideoGeneratorPanel({
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || loading) return;
 
-    const inputFrames: FrameData[] = [];
+    const inputFrames = currentInputFrames;
     const selectedOption = selectedModeOption;
-    if (selectedOption?.id === "keyframes") {
-      if (firstFrame) inputFrames.push(firstFrame);
-      if (lastFrame) inputFrames.push(lastFrame);
-    } else if (selectedOption?.id === "reference") {
-      if (referenceFrame) inputFrames.push(referenceFrame);
-    }
     const submittedControls = resolveSubmittedVideoControls({
       duration,
       inputImageCount: inputFrames.length,
@@ -880,7 +932,7 @@ export function VideoGeneratorPanel({
           videoUrl,
           model,
           aspectRatio,
-          resolution,
+          resolution: submittedControls.resolution,
         },
       } as unknown as NonNullable<
         Parameters<typeof convertToExcalidrawElements>[0]
@@ -922,9 +974,7 @@ export function VideoGeneratorPanel({
     aspectRatio,
     duration,
     resolution,
-    firstFrame,
-    lastFrame,
-    referenceFrame,
+    currentInputFrames,
     selectedModeOption,
     inputMode,
     inputModes,

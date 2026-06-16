@@ -13,6 +13,11 @@ const VIDEO_ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const IMAGE_QUALITIES = ["standard", "hd", "ultra"] as const;
 const OUTPUT_FORMATS = ["png", "jpg", "webp"] as const;
 const VIDEO_RESOLUTIONS = ["480p", "720p", "1080p", "4k", "2160p"] as const;
+const AGNES_REFERENCE_VIDEO_LIMITS = {
+  allowedDurations: [5],
+  maxDuration: 5,
+  resolutions: ["480p", "720p"],
+} as const;
 
 type ImageSchemaOptions = {
   maxInputImages: number;
@@ -155,6 +160,7 @@ function getExplicitVideoSchema(modelId: string) {
           labelKey: "tools.schema.inputModes.image",
           minImages: 1,
           maxImages: 1,
+          limits: AGNES_REFERENCE_VIDEO_LIMITS,
           slots: ["firstFrame"],
         },
         {
@@ -163,6 +169,7 @@ function getExplicitVideoSchema(modelId: string) {
           videoMode: "multivideo",
           minImages: 2,
           maxImages: 8,
+          limits: AGNES_REFERENCE_VIDEO_LIMITS,
           slots: ["inputImages"],
         },
         {
@@ -171,6 +178,7 @@ function getExplicitVideoSchema(modelId: string) {
           videoMode: "keyframes",
           minImages: 2,
           maxImages: 8,
+          limits: AGNES_REFERENCE_VIDEO_LIMITS,
           slots: ["firstFrame", "lastFrame"],
         },
       ],

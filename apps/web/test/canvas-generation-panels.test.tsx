@@ -993,6 +993,114 @@ describe("canvas generation panels", () => {
     );
   });
 
+  it("limits Agnes reference video controls after a first frame is selected", async () => {
+    fetchVideoModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "agnes-video/agnes-video-v2.0",
+          displayName: "Agnes Video v2.0",
+          description: "Agnes video route",
+          provider: "agnes-video",
+          capabilities: {
+            textToVideo: true,
+            imageToVideo: true,
+            videoToVideo: false,
+            audio: false,
+          },
+          limits: {
+            maxDuration: 16,
+            allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+            maxResolution: "1080p",
+            maxInputImages: 8,
+          },
+          schema: {
+            type: "object",
+            properties: {},
+            "x-aimc-ui": {
+              inputModes: [
+                {
+                  id: "text",
+                  labelKey: "tools.schema.inputModes.text",
+                  maxImages: 0,
+                },
+                {
+                  id: "image",
+                  labelKey: "tools.schema.inputModes.image",
+                  minImages: 1,
+                  maxImages: 1,
+                  limits: {
+                    allowedDurations: [5],
+                    maxDuration: 5,
+                    resolutions: ["480p", "720p"],
+                  },
+                  slots: ["firstFrame"],
+                },
+                {
+                  id: "keyframes",
+                  labelKey: "tools.schema.inputModes.keyframes",
+                  videoMode: "keyframes",
+                  minImages: 2,
+                  maxImages: 8,
+                  limits: {
+                    allowedDurations: [5],
+                    maxDuration: 5,
+                    resolutions: ["480p", "720p"],
+                  },
+                  slots: ["firstFrame", "lastFrame"],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "跳舞",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 16,
+            resolution: "1080p",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.upload(
+      await screen.findByLabelText("上传首帧"),
+      new File(["fake"], "first.png", { type: "image/png" }),
+    );
+    await screen.findByAltText("首帧预览");
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "16:9 · 5s" }),
+      ).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "16:9 · 5s" }));
+
+    expect(screen.getByRole("button", { name: "5s" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "16s" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "720p" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "1080p" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("restores uploaded video frame previews from generator data", async () => {
     render(
       <ToastProvider>
