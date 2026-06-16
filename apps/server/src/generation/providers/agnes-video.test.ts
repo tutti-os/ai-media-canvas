@@ -256,7 +256,7 @@ describe("AgnesVideoProvider", () => {
     });
   });
 
-  it("caps image-conditioned Agnes videos to the supported 720p short duration", async () => {
+  it("caps image-conditioned Agnes videos to the supported 720p resolution", async () => {
     const provider = new AgnesVideoProvider("agnes-test-key");
 
     await provider.generate({
@@ -274,7 +274,7 @@ describe("AgnesVideoProvider", () => {
       prompt: "Make the first frame dance",
       width: 1280,
       height: 720,
-      numFrames: 121,
+      numFrames: 385,
       frameRate: 24,
       ttl: "1h",
     });
@@ -298,7 +298,7 @@ describe("AgnesVideoProvider", () => {
       prompt: "Blend these two concepts",
       width: 1280,
       height: 720,
-      numFrames: 121,
+      numFrames: 145,
       frameRate: 24,
       ttl: "1h",
     });

@@ -13,9 +13,10 @@ const VIDEO_ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const IMAGE_QUALITIES = ["standard", "hd", "ultra"] as const;
 const OUTPUT_FORMATS = ["png", "jpg", "webp"] as const;
 const VIDEO_RESOLUTIONS = ["480p", "720p", "1080p", "4k", "2160p"] as const;
+const AGNES_VIDEO_ALLOWED_DURATIONS = [4, 5, 6, 8, 10, 15, 16] as const;
 const AGNES_REFERENCE_VIDEO_LIMITS = {
-  allowedDurations: [5],
-  maxDuration: 5,
+  allowedDurations: AGNES_VIDEO_ALLOWED_DURATIONS,
+  maxDuration: 16,
   resolutions: ["480p", "720p"],
 } as const;
 
@@ -149,7 +150,7 @@ function getExplicitImageSchema(modelId: string) {
 function getExplicitVideoSchema(modelId: string) {
   if (modelId === "agnes-video/agnes-video-v2.0") {
     return videoSchema({
-      allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+      allowedDurations: AGNES_VIDEO_ALLOWED_DURATIONS,
       maxDuration: 16,
       resolutions: ["480p", "720p", "1080p"],
       maxInputImages: 8,

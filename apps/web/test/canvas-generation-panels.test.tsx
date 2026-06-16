@@ -986,7 +986,7 @@ describe("canvas generation panels", () => {
     expect(generateVideoDirectMock).toHaveBeenCalledWith(
       "跳舞",
       expect.objectContaining({
-        duration: 5,
+        duration: 16,
         resolution: "720p",
         inputImages: ["http://127.0.0.1:3001/local-assets/uploaded-reference"],
       }),
@@ -1029,8 +1029,8 @@ describe("canvas generation panels", () => {
                   minImages: 1,
                   maxImages: 1,
                   limits: {
-                    allowedDurations: [5],
-                    maxDuration: 5,
+                    allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+                    maxDuration: 16,
                     resolutions: ["480p", "720p"],
                   },
                   slots: ["firstFrame"],
@@ -1042,8 +1042,8 @@ describe("canvas generation panels", () => {
                   minImages: 2,
                   maxImages: 8,
                   limits: {
-                    allowedDurations: [5],
-                    maxDuration: 5,
+                    allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+                    maxDuration: 16,
                     resolutions: ["480p", "720p"],
                   },
                   slots: ["firstFrame", "lastFrame"],
@@ -1086,15 +1086,13 @@ describe("canvas generation panels", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "16:9 · 5s" }),
+        screen.getByRole("button", { name: "16:9 · 16s" }),
       ).toBeInTheDocument(),
     );
-    await userEvent.click(screen.getByRole("button", { name: "16:9 · 5s" }));
+    await userEvent.click(screen.getByRole("button", { name: "16:9 · 16s" }));
 
     expect(screen.getByRole("button", { name: "5s" })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "16s" }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "16s" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "720p" })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "1080p" }),
@@ -1137,8 +1135,8 @@ describe("canvas generation panels", () => {
                   minImages: 1,
                   maxImages: 1,
                   limits: {
-                    allowedDurations: [5],
-                    maxDuration: 5,
+                    allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+                    maxDuration: 16,
                     resolutions: ["480p", "720p"],
                   },
                   slots: ["firstFrame"],
@@ -1150,8 +1148,8 @@ describe("canvas generation panels", () => {
                   minImages: 2,
                   maxImages: 8,
                   limits: {
-                    allowedDurations: [5],
-                    maxDuration: 5,
+                    allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+                    maxDuration: 16,
                     resolutions: ["480p", "720p"],
                   },
                   slots: ["firstFrame", "lastFrame"],
@@ -1193,15 +1191,13 @@ describe("canvas generation panels", () => {
     expect(await screen.findByAltText("首帧预览")).toBeInTheDocument();
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "16:9 · 5s" }),
+        screen.getByRole("button", { name: "16:9 · 16s" }),
       ).toBeInTheDocument(),
     );
-    await userEvent.click(screen.getByRole("button", { name: "16:9 · 5s" }));
+    await userEvent.click(screen.getByRole("button", { name: "16:9 · 16s" }));
 
     expect(screen.getByRole("button", { name: "5s" })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "16s" }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "16s" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "720p" })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "1080p" }),
@@ -1239,15 +1235,13 @@ describe("canvas generation panels", () => {
     expect(await screen.findByAltText("首帧预览")).toBeInTheDocument();
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "16:9 · 5s" }),
+        screen.getByRole("button", { name: "16:9 · 16s" }),
       ).toBeInTheDocument(),
     );
-    await userEvent.click(screen.getByRole("button", { name: "16:9 · 5s" }));
+    await userEvent.click(screen.getByRole("button", { name: "16:9 · 16s" }));
 
     expect(screen.getByRole("button", { name: "5s" })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "16s" }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "16s" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "720p" })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "1080p" }),

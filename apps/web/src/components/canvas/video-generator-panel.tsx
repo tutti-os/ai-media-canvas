@@ -48,7 +48,7 @@ type VideoGeneratorPanelProps = {
 const ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const FALLBACK_DURATION_OPTIONS = [4, 5, 6, 8, 10, 15, 18] as const;
 const RESOLUTION_OPTIONS = ["480p", "720p", "1080p", "4k", "2160p"] as const;
-const AGNES_MAX_REFERENCE_VIDEO_DURATION = 5;
+const AGNES_MAX_REFERENCE_VIDEO_DURATION = 16;
 const AGNES_MAX_REFERENCE_VIDEO_RESOLUTION: VideoResolution = "720p";
 const PANEL_WIDTH = 640;
 type FrameSlot = "first" | "last";
@@ -94,7 +94,12 @@ function getDurationOptions(
   }
 
   if (mode && model && isAgnesModel(model.id)) {
-    return [AGNES_MAX_REFERENCE_VIDEO_DURATION];
+    const options = model.limits?.allowedDurations?.length
+      ? model.limits.allowedDurations
+      : FALLBACK_DURATION_OPTIONS;
+    return options.filter(
+      (value) => value <= AGNES_MAX_REFERENCE_VIDEO_DURATION,
+    );
   }
 
   const schemaDurations = getSchemaEnum<number>(model, "duration");
