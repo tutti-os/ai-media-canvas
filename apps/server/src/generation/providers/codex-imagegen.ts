@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { cp, copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 import type {
@@ -95,9 +95,13 @@ export class CodexImagegenProvider implements ImageProvider {
         outputPath,
       });
       const agentModel = await this.resolveAgentModel();
+      const codexHome = await materializeCodexImagegenHome({
+        runDir,
+        sourceHome: this.codexHome ?? join(homedir(), ".codex"),
+      });
       const env = {
         ...process.env,
-        ...(this.codexHome ? { CODEX_HOME: this.codexHome } : {}),
+        CODEX_HOME: codexHome,
       };
       const result = await this.execCodex(
         [
@@ -146,6 +150,24 @@ export class CodexImagegenProvider implements ImageProvider {
       await rm(runDir, { recursive: true, force: true });
     }
   }
+}
+
+async function materializeCodexImagegenHome(options: {
+  runDir: string;
+  sourceHome: string;
+}) {
+  const runHome = join(options.runDir, ".codex-home");
+  await mkdir(runHome, { recursive: true });
+  await copyFile(
+    join(options.sourceHome, "auth.json"),
+    join(runHome, "auth.json"),
+  );
+  await cp(
+    join(options.sourceHome, "skills", ".system", "imagegen"),
+    join(runHome, "skills", ".system", "imagegen"),
+    { recursive: true },
+  );
+  return runHome;
 }
 
 function buildCodexImagegenInstruction(
