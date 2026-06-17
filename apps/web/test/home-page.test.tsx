@@ -12,6 +12,7 @@ const createProjectMock = vi.fn();
 const fetchProjectsMock = vi.fn();
 const pushMock = vi.fn();
 const scrollIntoViewMock = vi.fn();
+const textareaFocusMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -82,6 +83,7 @@ describe("Home page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     Element.prototype.scrollIntoView = scrollIntoViewMock;
+    HTMLTextAreaElement.prototype.focus = textareaFocusMock;
     void i18n.changeLanguage("zh-CN");
     fetchProjectsMock.mockResolvedValue({
       projects: [
@@ -162,6 +164,11 @@ describe("Home page", () => {
       expect(scrollIntoViewMock).toHaveBeenCalledWith({
         behavior: "smooth",
         block: "center",
+      });
+    });
+    await waitFor(() => {
+      expect(textareaFocusMock).toHaveBeenCalledWith({
+        preventScroll: true,
       });
     });
     expect(createProjectMock).not.toHaveBeenCalled();
