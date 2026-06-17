@@ -82,7 +82,7 @@ async function collect<T>(stream: AsyncIterable<T>) {
 }
 
 describe("createLocalAgentRuntimeProvider", () => {
-  it("injects the managed agent invocation credential only into the provider env", async () => {
+  it("passes managed agent invocation only to the SDK run input", async () => {
     const localAgentRuntimeRun = vi.fn(async function* () {
       yield {
         type: "done" as const,
@@ -127,10 +127,12 @@ describe("createLocalAgentRuntimeProvider", () => {
     const params = localAgentRuntimeRun.mock.calls[0]?.[0];
     expect(params).toMatchObject({
       cwd: "/workspace/.aimc-agent-runs/codex-run-1",
-      env: {
-        TSH_MANAGED_AGENT_INVOCATION_CREDENTIAL: "credential-run-1",
+      managedAgentInvocation: {
+        credential: "credential-run-1",
+        cwd: "/workspace/.aimc-agent-runs/codex-run-1",
       },
     });
+    expect(params).not.toHaveProperty("env");
     expect(params).not.toHaveProperty("mcpServers");
     expect(context.run.managedAgentInvocationCredential).toBeUndefined();
   });

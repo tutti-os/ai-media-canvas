@@ -7,6 +7,7 @@ import type {
   AgentEvent,
   LocalAgentProviderPlugin,
 } from "@tutti-os/agent-acp-kit";
+import { isManagedAgentInvocationCwd } from "@tutti-os/agent-acp-kit";
 
 import { createAimcToolsMcpServerConfig } from "../local-agent-host/mcp-config.js";
 import {
@@ -36,15 +37,8 @@ const MANAGED_AGENT_RUNS_DIR = join(
   MANAGED_AGENT_WORKSPACE_ROOT,
   ".aimc-agent-runs",
 );
-const MANAGED_AGENT_INVOCATION_CREDENTIAL_ENV =
-  "TSH_MANAGED_AGENT_INVOCATION_CREDENTIAL";
 
-export function isManagedAgentWorkspaceCwd(cwd: string) {
-  return (
-    cwd === MANAGED_AGENT_WORKSPACE_ROOT ||
-    cwd.startsWith(`${MANAGED_AGENT_WORKSPACE_ROOT}/`)
-  );
-}
+export const isManagedAgentWorkspaceCwd = isManagedAgentInvocationCwd;
 
 function safeRunDirSegment(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -62,7 +56,7 @@ async function createLocalAgentRunDirectory(input: {
         input.runId,
       )}`,
     );
-    if (!isManagedAgentWorkspaceCwd(runDir)) {
+    if (!isManagedAgentInvocationCwd(runDir)) {
       throw new Error("Managed agent cwd must be under /workspace.");
     }
     await mkdir(runDir, { recursive: true });
@@ -72,16 +66,6 @@ async function createLocalAgentRunDirectory(input: {
   return mkdtemp(
     join(tmpdir(), `aimc-local-agent-${input.runtimeProvider}-run-`),
   );
-}
-
-function buildManagedAgentInvocationEnv(
-  credential: string | undefined,
-): Record<string, string> | undefined {
-  const trimmed = credential?.trim();
-  if (!trimmed) return undefined;
-  return {
-    [MANAGED_AGENT_INVOCATION_CREDENTIAL_ENV]: trimmed,
-  };
 }
 
 function mapResumeContext(
@@ -224,11 +208,8 @@ export function createLocalAgentRuntimeProvider(
         brandKitId: readyContext.brandKitId,
       });
       const managedAgentInvocationCredential =
-        run.managedAgentInvocationCredential;
-      const managedAgentEnv = buildManagedAgentInvocationEnv(
-        managedAgentInvocationCredential,
-      );
-      const managed = managedAgentEnv !== undefined;
+        run.managedAgentInvocationCredential?.trim();
+      const managed = Boolean(managedAgentInvocationCredential);
       run.managedAgentInvocationCredential = undefined;
 
       const runDir = deps.createRunDirectory
@@ -242,9 +223,15 @@ export function createLocalAgentRuntimeProvider(
             runId: run.runId,
             runtimeProvider,
           });
-      if (managed && !isManagedAgentWorkspaceCwd(runDir)) {
+      if (managed && !isManagedAgentInvocationCwd(runDir)) {
         throw new Error("Managed agent cwd must be under /workspace.");
       }
+      const managedAgentInvocation = managedAgentInvocationCredential
+        ? {
+            credential: managedAgentInvocationCredential,
+            cwd: runDir,
+          }
+        : undefined;
       await materializeWorkspaceSkillsForLocalAgent({
         runDir,
         workspaceSkills,
@@ -309,7 +296,7 @@ export function createLocalAgentRuntimeProvider(
           prompt,
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
-          ...(managedAgentEnv ? { env: managedAgentEnv } : {}),
+          ...(managedAgentInvocation ? { managedAgentInvocation } : {}),
           model: stripLocalAgentProviderPrefix(resolvedModel, runtimeProvider),
           runtimeKind: "local-agent",
           runtimeProvider,

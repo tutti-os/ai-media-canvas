@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  modelListRequestSchema,
   runCreateRequestSchema,
   workspaceSettingsSchema,
-} from "./contracts.js";
+} from "./index.js";
 
 const baseRunCreateRequest = {
   conversationId: "canvas_1",
@@ -111,6 +112,21 @@ describe("runCreateRequestSchema", () => {
         }),
       ]),
     );
+  });
+});
+
+describe("modelListRequestSchema", () => {
+  it("accepts a request-scoped managed agent invocation credential", () => {
+    const result = modelListRequestSchema.safeParse({
+      managedAgentInvocationCredential: "  bearer-model-1  ",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.managedAgentInvocationCredential).toBe(
+        "bearer-model-1",
+      );
+    }
   });
 });
 

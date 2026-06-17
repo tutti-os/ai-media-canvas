@@ -8,6 +8,7 @@ import type {
   JobResponse,
   MessageCreateResponse,
   MessageListResponse,
+  ModelListRequest,
   ModelListResponse,
   ProfileUpdateResponse,
   ProjectCreateRequest,
@@ -36,6 +37,7 @@ import { ApiApplicationError } from "./api-errors";
 import { dedupeRequest } from "./dedupe-request";
 import { getServerBaseUrl } from "./env";
 import { generationJobService } from "./generation-job-service";
+import { getManagedAgentInvocationCredential } from "./managed-agent-invocation-credential";
 
 export { ApiApplicationError } from "./api-errors";
 
@@ -186,9 +188,27 @@ export async function updateWorkspaceSettings(
   return (await response.json()) as WorkspaceSettingsResponse;
 }
 
-export async function fetchModels(): Promise<ModelListResponse> {
+export async function fetchModels(
+  options: { includeManagedAgentInvocationCredential?: boolean } = {},
+): Promise<ModelListResponse> {
+  const managedAgentInvocationCredential =
+    options.includeManagedAgentInvocationCredential === false
+      ? undefined
+      : await getManagedAgentInvocationCredential();
+  const body = managedAgentInvocationCredential
+    ? ({
+        managedAgentInvocationCredential,
+      } satisfies ModelListRequest)
+    : undefined;
   const response = await fetch(`${getServerBaseUrl()}/api/models`, {
     cache: "no-store",
+    ...(body
+      ? {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      : {}),
   });
   if (!response.ok) {
     throw new Error(`Failed to fetch models: ${response.status}`);

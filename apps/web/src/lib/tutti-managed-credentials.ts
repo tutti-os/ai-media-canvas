@@ -5,6 +5,10 @@ import type {
 } from "@aimc/shared";
 
 import { fetchTuttiManagedConnection } from "./server-api";
+export {
+  getManagedAgentInvocationCredential,
+  hasManagedAgentInvocationCredentialBridge,
+} from "./managed-agent-invocation-credential";
 
 type TuttiManagedGrantResult = {
   grantCode: string;
@@ -21,12 +25,6 @@ type TuttiAppContext = {
 };
 
 type TuttiBridge = {
-  agent?: {
-    getManagedAgentInvocationCredential?: () => Promise<{
-      credential?: string;
-      connId?: string;
-    }>;
-  };
   appContext?: {
     get?: () => Promise<TuttiAppContext>;
   };
@@ -68,27 +66,6 @@ export function hasTuttiManagedCredentialBridge() {
     typeof bridge?.appContext?.get === "function" &&
     typeof bridge?.managedCredentials?.requestGrant === "function"
   );
-}
-
-export function hasManagedAgentInvocationCredentialBridge() {
-  return (
-    typeof getManagedCredentialBridge()?.agent
-      ?.getManagedAgentInvocationCredential === "function"
-  );
-}
-
-export async function getManagedAgentInvocationCredential(): Promise<
-  string | undefined
-> {
-  const getCredential =
-    getManagedCredentialBridge()?.agent?.getManagedAgentInvocationCredential;
-  if (typeof getCredential !== "function") {
-    return undefined;
-  }
-
-  const result = await getCredential();
-  const credential = result?.credential?.trim();
-  return credential || undefined;
 }
 
 export async function requestTuttiManagedGrant(): Promise<TuttiManagedGrantCreateRequest> {

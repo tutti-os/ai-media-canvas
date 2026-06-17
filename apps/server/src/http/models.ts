@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
   type InstallableAgentProviderId,
@@ -7,24 +7,25 @@ import {
   agentProviderInstallResponseSchema,
   applicationErrorResponseSchema,
   installableAgentProviderIdSchema,
+  modelListRequestSchema,
   modelListResponseSchema,
 } from "@aimc/shared";
 
-import {
-  type AgentProviderInstallResult,
-  installAgentProvider,
-} from "../agent/local-agent-provider-installer.js";
 import {
   type LocalAgentModelDiscovery,
   buildLocalAgentModels,
   createDefaultLocalAgentModelDiscovery,
 } from "../agent/local-agent-models.js";
+import {
+  type AgentProviderInstallResult,
+  installAgentProvider,
+} from "../agent/local-agent-provider-installer.js";
 import type { ServerEnv } from "../config/env.js";
-import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 import {
   LOCAL_WORKSPACE_ID,
   type SettingsService,
 } from "../features/settings/settings-service.js";
+import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 
 const OPENAI_MODELS: ModelInfo[] = [
   { id: "openai:gpt-5.5", name: "OpenAI GPT-5.5", provider: "openai" },
@@ -266,17 +267,45 @@ export async function registerModelRoutes(
   const localAgentProviderInstaller =
     options?.localAgentProviderInstaller ?? installAgentProvider;
 
-  app.get("/api/models", async (_request, reply) => {
+  const sendModels = async (
+    reply: FastifyReply,
+    input: { managedAgentInvocationCredential?: string | undefined } = {},
+  ) => {
     const models = await listAgentModels({
       env,
       localAgentModelDiscovery,
       logger: app.log,
+      ...(input.managedAgentInvocationCredential
+        ? {
+            managedAgentInvocationCredential:
+              input.managedAgentInvocationCredential,
+          }
+        : {}),
       ...(options?.tuttiManagedCredentials
         ? { tuttiManagedCredentials: options.tuttiManagedCredentials }
         : {}),
       ...(settingsService ? { settingsService } : {}),
     });
     return reply.code(200).send(modelListResponseSchema.parse({ models }));
+  };
+
+  app.get("/api/models", async (_request, reply) => {
+    return sendModels(reply);
+  });
+
+  app.post("/api/models", async (request, reply) => {
+    const result = modelListRequestSchema.safeParse(request.body ?? {});
+    if (!result.success) {
+      return reply.code(400).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "invalid_input",
+            message: "Invalid model list request.",
+          },
+        }),
+      );
+    }
+    return sendModels(reply, result.data);
   });
 
   app.post(
@@ -340,6 +369,7 @@ export async function listAgentModels(options: {
   env: ServerEnv;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
+  managedAgentInvocationCredential?: string;
   tuttiManagedCredentials?: TuttiManagedCredentialService;
   settingsService?: SettingsService;
 }) {
@@ -425,13 +455,21 @@ export async function listAgentModels(options: {
     );
   }
   if (effectiveEnv.trustedLocalAgentMode !== false) {
+    const managedAgentInvocationCredential =
+      options.managedAgentInvocationCredential?.trim();
     try {
-      models.push(
-        ...buildLocalAgentModels(await localAgentModelDiscovery.detect()),
-      );
+      const detections = managedAgentInvocationCredential
+        ? await localAgentModelDiscovery.detect({
+            managedAgentInvocation: {
+              credential: managedAgentInvocationCredential,
+              cwd: "/workspace",
+            },
+          })
+        : await localAgentModelDiscovery.detect();
+      models.push(...buildLocalAgentModels(detections));
     } catch (error) {
       options.logger?.warn(
-        { err: error },
+        managedAgentInvocationCredential ? {} : { err: error },
         "Failed to load local-agent models; omitting local providers.",
       );
     }
