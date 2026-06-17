@@ -100,6 +100,7 @@ export const runCreateRequestSchema = z
     modelSource: z
       .enum(["local-agent", "tutti-managed", "api-provider"])
       .optional(),
+    managedAgentInvocationCredential: z.string().trim().min(1).optional(),
     resumeFromRunId: runIdSchema.optional(),
     resumeMode: agentRunResumeModeSchema.optional(),
     runtimeKind: runtimeKindSchema.optional(),

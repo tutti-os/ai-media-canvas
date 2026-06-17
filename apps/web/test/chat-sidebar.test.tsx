@@ -231,6 +231,7 @@ describe("ChatSidebar", () => {
   afterEach(() => {
     cleanup();
     sessionStorage.clear();
+    (window as Window & { tutti?: unknown }).tutti = undefined;
     settingsDialogSpy.mockClear();
     vi.clearAllMocks();
     vi.restoreAllMocks();
@@ -506,6 +507,70 @@ describe("ChatSidebar", () => {
       }),
       expect.any(Function),
     );
+  });
+
+  it("fetches a fresh managed agent invocation credential for each run", async () => {
+    const getManagedAgentInvocationCredential = vi
+      .fn()
+      .mockResolvedValueOnce({
+        connId: "ignored-conn-1",
+        credential: "credential-run-1",
+      })
+      .mockResolvedValueOnce({
+        connId: "ignored-conn-2",
+        credential: "credential-run-2",
+      });
+    (
+      window as Window & {
+        tutti?: {
+          agent?: {
+            getManagedAgentInvocationCredential?: typeof getManagedAgentInvocationCredential;
+          };
+        };
+      }
+    ).tutti = {
+      agent: { getManagedAgentInvocationCredential },
+    };
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "first run{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByRole("button", { name: "新建对话" }));
+    await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
+
+    const nextInput = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await waitFor(() => expect(nextInput).not.toBeDisabled());
+    await userEvent.type(nextInput, "second run{Enter}");
+
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(2));
+    expect(getManagedAgentInvocationCredential).toHaveBeenCalledTimes(2);
+
+    const startRunMock = mockWs.startRun as unknown as {
+      mock: { calls: Array<[Record<string, unknown>, unknown]> };
+    };
+    expect(startRunMock.mock.calls[0]?.[0]).toMatchObject({
+      managedAgentInvocationCredential: "credential-run-1",
+      prompt: "first run",
+    });
+    expect(startRunMock.mock.calls[1]?.[0]).toMatchObject({
+      managedAgentInvocationCredential: "credential-run-2",
+      prompt: "second run",
+    });
+    expect(startRunMock.mock.calls[0]?.[0]).not.toHaveProperty("connId");
+    expect(startRunMock.mock.calls[1]?.[0]).not.toHaveProperty("connId");
   });
 
   it("does not attach selected canvas images when sending a local template", async () => {

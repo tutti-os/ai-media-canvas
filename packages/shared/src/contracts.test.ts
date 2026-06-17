@@ -47,6 +47,18 @@ describe("runCreateRequestSchema", () => {
     ).toBe(true);
   });
 
+  it("accepts a run-scoped managed agent invocation credential", () => {
+    const result = runCreateRequestSchema.safeParse({
+      ...baseRunCreateRequest,
+      managedAgentInvocationCredential: "  bearer-run-1  ",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.managedAgentInvocationCredential).toBe("bearer-run-1");
+    }
+  });
+
   it("rejects malformed local provider ids", () => {
     expect(
       runCreateRequestSchema.safeParse({

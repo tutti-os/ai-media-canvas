@@ -44,6 +44,7 @@ import {
   fetchRunEvents,
   saveMessage,
 } from "../lib/server-api";
+import { getManagedAgentInvocationCredential } from "../lib/tutti-managed-credentials";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import {
   type BrandKitMentionItem,
@@ -977,71 +978,71 @@ export function ChatSidebar({
         });
 
         // Start run via WebSocket
+        const managedAgentInvocationCredential =
+          await getManagedAgentInvocationCredential();
+        const runPayload = {
+          sessionId: currentSessionId,
+          conversationId: canvasId,
+          prompt: text,
+          canvasId,
+          ...(currentAttachments.length > 0
+            ? { attachments: currentAttachments }
+            : {}),
+          ...(currentMentions.length > 0 ? { mentions: currentMentions } : {}),
+          ...(currentImageGenerationPreference
+            ? {
+                imageGenerationPreference: currentImageGenerationPreference,
+              }
+            : {}),
+          ...(currentVideoGenerationPreference
+            ? {
+                videoGenerationPreference: currentVideoGenerationPreference,
+              }
+            : {}),
+          ...(agentModelRef.current ? { model: agentModelRef.current } : {}),
+          ...(agentModelRef.current && agentModelSourceRef.current
+            ? { modelSource: agentModelSourceRef.current }
+            : {}),
+          ...(managedAgentInvocationCredential
+            ? { managedAgentInvocationCredential }
+            : {}),
+        };
+
         const runId = await new Promise<string>((resolve, reject) => {
           const timeout = setTimeout(() => {
             cleanup();
             reject(new Error("WebSocket ack timeout — connection may be down"));
           }, 10_000);
 
-          ws.startRun(
-            {
-              sessionId: currentSessionId,
-              conversationId: canvasId,
-              prompt: text,
-              canvasId,
-              ...(currentAttachments.length > 0
-                ? { attachments: currentAttachments }
-                : {}),
-              ...(currentMentions.length > 0
-                ? { mentions: currentMentions }
-                : {}),
-              ...(currentImageGenerationPreference
-                ? {
-                    imageGenerationPreference: currentImageGenerationPreference,
-                  }
-                : {}),
-              ...(currentVideoGenerationPreference
-                ? {
-                    videoGenerationPreference: currentVideoGenerationPreference,
-                  }
-                : {}),
-              ...(agentModelRef.current
-                ? { model: agentModelRef.current }
-                : {}),
-              ...(agentModelRef.current && agentModelSourceRef.current
-                ? { modelSource: agentModelSourceRef.current }
-                : {}),
-            },
-            (ack) => {
-              clearTimeout(timeout);
-              perf.tAck = performance.now();
-              console.log(
-                `[perf] send → ack: ${(perf.tAck - perf.t0Send).toFixed(0)}ms`,
+          ws.startRun(runPayload, (ack) => {
+            clearTimeout(timeout);
+            perf.tAck = performance.now();
+            console.log(
+              `[perf] send → ack: ${(perf.tAck - perf.t0Send).toFixed(0)}ms`,
+            );
+            const payloadRecord = ack.payload as Record<string, unknown>;
+            const id = payloadRecord.runId as string;
+            const assistantMessageId =
+              typeof payloadRecord.assistantMessageId === "string"
+                ? payloadRecord.assistantMessageId
+                : null;
+            if (
+              assistantMessageId &&
+              assistantMessageId !== assistantIdRef.current
+            ) {
+              const previousAssistantId = assistantIdRef.current;
+              assistantIdRef.current = assistantMessageId;
+              updateSessionMessages(currentSessionId, (prev) =>
+                prev.map((message) =>
+                  message.id === previousAssistantId
+                    ? { ...message, id: assistantMessageId }
+                    : message,
+                ),
               );
-              const payloadRecord = ack.payload as Record<string, unknown>;
-              const id = payloadRecord.runId as string;
-              const assistantMessageId =
-                typeof payloadRecord.assistantMessageId === "string"
-                  ? payloadRecord.assistantMessageId
-                  : null;
-              if (
-                assistantMessageId &&
-                assistantMessageId !== assistantIdRef.current
-              ) {
-                const previousAssistantId = assistantIdRef.current;
-                assistantIdRef.current = assistantMessageId;
-                updateSessionMessages(currentSessionId, (prev) =>
-                  prev.map((message) =>
-                    message.id === previousAssistantId
-                      ? { ...message, id: assistantMessageId }
-                      : message,
-                  ),
-                );
-              }
-              runIdRef.current = id;
-              resolve(id);
-            },
-          );
+            }
+            runIdRef.current = id;
+            resolve(id);
+          });
         });
         clearAttachments();
         setMessageMentions([]);

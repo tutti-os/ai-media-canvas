@@ -1374,7 +1374,7 @@ describe("createAgentRunService", () => {
     );
   });
 
-  it("strips the local provider prefix before invoking generic ACP providers", async () => {
+  it("strips the local provider prefix before invoking Nexight", async () => {
     const localRun = vi.fn(async function* () {
       yield {
         type: "done" as const,
@@ -1396,8 +1396,8 @@ describe("createAgentRunService", () => {
       },
       localAgentProviderPlugins: [
         {
-          id: "hermes",
-          displayName: "Hermes",
+          id: "nexight",
+          displayName: "Nexight",
           kind: "local-agent",
           async detect() {
             return null;
@@ -1436,9 +1436,9 @@ describe("createAgentRunService", () => {
         sessionId: "session-1",
       },
       {
-        model: "hermes:openai-codex:gpt-5.4",
+        model: "nexight:openai-codex:gpt-5.4",
         runtimeKind: "local-agent",
-        runtimeProvider: "hermes",
+        runtimeProvider: "nexight",
       },
     );
 
@@ -1448,8 +1448,8 @@ describe("createAgentRunService", () => {
 
     expect(localRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        provider: "hermes",
-        runtimeProvider: "hermes",
+        provider: "nexight",
+        runtimeProvider: "nexight",
         model: "openai-codex:gpt-5.4",
       }),
     );
@@ -2385,5 +2385,73 @@ describe("createAgentRunService", () => {
       }),
       model: "agnes:agnes-2.0-flash",
     });
+  });
+
+  it("does not expose managed agent invocation credentials outside local-agent runs", async () => {
+    let capturedAgentOptions: unknown;
+    let capturedStreamConfig: unknown;
+    const agentFactory = vi.fn((agentOptions) => {
+      capturedAgentOptions = agentOptions;
+      return {
+        stream: vi.fn(),
+        streamEvents: vi.fn((_input: unknown, config: unknown) => {
+          capturedStreamConfig = config;
+          return (async function* () {
+            yield {
+              type: "run.completed" as const,
+              runId: "run-server",
+              timestamp: "2026-06-17T00:00:00.000Z",
+            };
+          })();
+        }),
+      };
+    });
+    const createRun = vi.fn();
+    const updateRun = vi.fn();
+    const runs = createAgentRunService({
+      agentFactory,
+      agentRunStore: {
+        createRun,
+        updateRun,
+      },
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      loadSessionMessages: async () => [],
+    });
+
+    const run = runs.createRun({
+      canvasId: "canvas-1",
+      conversationId: "canvas-1",
+      managedAgentInvocationCredential: "credential-run-1",
+      prompt: "hi",
+      sessionId: "session-1",
+    });
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the server runtime reaches the agent factory.
+    }
+
+    expect(createRun).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        managedAgentInvocationCredential: "credential-run-1",
+      }),
+    );
+    expect(JSON.stringify(createRun.mock.calls)).not.toContain(
+      "credential-run-1",
+    );
+    expect(JSON.stringify(updateRun.mock.calls)).not.toContain(
+      "credential-run-1",
+    );
+    expect(JSON.stringify(capturedAgentOptions)).not.toContain(
+      "credential-run-1",
+    );
+    expect(JSON.stringify(capturedStreamConfig)).not.toContain(
+      "credential-run-1",
+    );
   });
 });

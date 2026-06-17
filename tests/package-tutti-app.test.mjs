@@ -149,6 +149,9 @@ test("createManifest returns the Tutti package manifest contract", () => {
     cli: {
       manifest: "tutti.cli.json",
     },
+    references: {
+      listEndpoint: "/tutti/references/list",
+    },
     localizationInfo: {
       defaultLocale: "en",
       additionalLocales: [
@@ -250,10 +253,7 @@ test("renderBootstrap maps Tutti runtime env into AI Media Canvas env", () => {
     bootstrap,
     /package_dir="\$\{TUTTI_APP_PACKAGE_DIR:-\$script_dir\}"/,
   );
-  assert.match(
-    bootstrap,
-    /export HOST="\$\{TUTTI_APP_HOST:-127\.0\.0\.1\}"/,
-  );
+  assert.match(bootstrap, /export HOST="\$\{TUTTI_APP_HOST:-127\.0\.0\.1\}"/);
   assert.match(
     bootstrap,
     /export AIMC_SERVER_PORT="\$\{TUTTI_APP_PORT:-3001\}"/,
@@ -277,10 +277,7 @@ test("renderBootstrap maps Tutti runtime env into AI Media Canvas env", () => {
     bootstrap,
     /base_url="\$\{TUTTI_APP_BASE_URL:-http:\/\/\$HOST:\$AIMC_SERVER_PORT\}"/,
   );
-  assert.match(
-    bootstrap,
-    /node_bin="\$\{TUTTI_APP_NODE:-node\}"/,
-  );
+  assert.match(bootstrap, /node_bin="\$\{TUTTI_APP_NODE:-node\}"/);
   assert.match(
     bootstrap,
     /runtime_dir="\$\{TUTTI_APP_RUNTIME_DIR:-\$AIMC_DATA_ROOT\/\.runtime\}"/,

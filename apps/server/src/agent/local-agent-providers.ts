@@ -4,6 +4,7 @@ import {
   type RawAgentEvent,
   type RawAgentStream,
   createDefaultLocalAgentProviderPlugins,
+  createGenericAcpProvider,
 } from "@tutti-os/agent-acp-kit";
 
 type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
@@ -11,7 +12,7 @@ type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   AgentRuntimeProvider
 >;
 
-const AIMC_LOCAL_AGENT_PROVIDER_IDS = new Set(["codex", "claude"]);
+const AIMC_LOCAL_AGENT_PROVIDER_IDS = new Set(["codex", "claude", "nexight"]);
 
 export function isAimcLocalAgentProvider(provider: string) {
   return AIMC_LOCAL_AGENT_PROVIDER_IDS.has(provider);
@@ -136,7 +137,22 @@ function withAimcClaudeStreamCompatibility(
 }
 
 export function createAimcLocalAgentProviderPlugins(): AimcLocalAgentProviderPlugin[] {
-  return createDefaultLocalAgentProviderPlugins()
+  const packageProviders = createDefaultLocalAgentProviderPlugins();
+  const providers = packageProviders.some(
+    (provider) => provider.id === "nexight",
+  )
+    ? packageProviders
+    : [
+        ...packageProviders,
+        createGenericAcpProvider({
+          args: ["acp"],
+          command: "nexight",
+          displayName: "Nexight",
+          providerId: "nexight",
+        }),
+      ];
+
+  return providers
     .filter((provider) => isAimcLocalAgentProvider(provider.id))
     .map((provider) =>
       provider.id === "claude"

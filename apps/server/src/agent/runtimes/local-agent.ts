@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -30,6 +30,59 @@ type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   "local-agent",
   AgentRuntimeProvider
 >;
+
+const MANAGED_AGENT_WORKSPACE_ROOT = "/workspace";
+const MANAGED_AGENT_RUNS_DIR = join(
+  MANAGED_AGENT_WORKSPACE_ROOT,
+  ".aimc-agent-runs",
+);
+const MANAGED_AGENT_INVOCATION_CREDENTIAL_ENV =
+  "TSH_MANAGED_AGENT_INVOCATION_CREDENTIAL";
+
+export function isManagedAgentWorkspaceCwd(cwd: string) {
+  return (
+    cwd === MANAGED_AGENT_WORKSPACE_ROOT ||
+    cwd.startsWith(`${MANAGED_AGENT_WORKSPACE_ROOT}/`)
+  );
+}
+
+function safeRunDirSegment(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+async function createLocalAgentRunDirectory(input: {
+  managed: boolean;
+  runId: string;
+  runtimeProvider: AgentRuntimeProvider;
+}) {
+  if (input.managed) {
+    const runDir = join(
+      MANAGED_AGENT_RUNS_DIR,
+      `${safeRunDirSegment(input.runtimeProvider)}-${safeRunDirSegment(
+        input.runId,
+      )}`,
+    );
+    if (!isManagedAgentWorkspaceCwd(runDir)) {
+      throw new Error("Managed agent cwd must be under /workspace.");
+    }
+    await mkdir(runDir, { recursive: true });
+    return runDir;
+  }
+
+  return mkdtemp(
+    join(tmpdir(), `aimc-local-agent-${input.runtimeProvider}-run-`),
+  );
+}
+
+function buildManagedAgentInvocationEnv(
+  credential: string | undefined,
+): Record<string, string> | undefined {
+  const trimmed = credential?.trim();
+  if (!trimmed) return undefined;
+  return {
+    [MANAGED_AGENT_INVOCATION_CREDENTIAL_ENV]: trimmed,
+  };
+}
 
 function mapResumeContext(
   resumeContext: RuntimeExecutionContext["run"]["resumeContext"],
@@ -170,10 +223,28 @@ export function createLocalAgentRuntimeProvider(
       const systemPrompt = buildAimcSystemPrompt({
         brandKitId: readyContext.brandKitId,
       });
-
-      const runDir = await mkdtemp(
-        join(tmpdir(), `aimc-local-agent-${runtimeProvider}-run-`),
+      const managedAgentInvocationCredential =
+        run.managedAgentInvocationCredential;
+      const managedAgentEnv = buildManagedAgentInvocationEnv(
+        managedAgentInvocationCredential,
       );
+      const managed = managedAgentEnv !== undefined;
+      run.managedAgentInvocationCredential = undefined;
+
+      const runDir = deps.createRunDirectory
+        ? await deps.createRunDirectory({
+            managed,
+            runId: run.runId,
+            runtimeProvider,
+          })
+        : await createLocalAgentRunDirectory({
+            managed,
+            runId: run.runId,
+            runtimeProvider,
+          });
+      if (managed && !isManagedAgentWorkspaceCwd(runDir)) {
+        throw new Error("Managed agent cwd must be under /workspace.");
+      }
       await materializeWorkspaceSkillsForLocalAgent({
         runDir,
         workspaceSkills,
@@ -208,12 +279,14 @@ export function createLocalAgentRuntimeProvider(
       const skillManifest =
         mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills);
       const resume = mapResumeContext(run.resumeContext);
-      const mcpServers = [
-        createAimcToolsMcpServerConfig({
-          gatewayBaseUrl: deps.toolGatewayBaseUrl,
-          gatewayToken: gatewaySession.token,
-        }),
-      ];
+      const mcpServers = managed
+        ? undefined
+        : [
+            createAimcToolsMcpServerConfig({
+              gatewayBaseUrl: deps.toolGatewayBaseUrl,
+              gatewayToken: gatewaySession.token,
+            }),
+          ];
       const messageId = run.assistantMessageId ?? `message_${run.runId}`;
       let terminalEmitted = false;
       let lastError: Extract<AgentEvent, { type: "error" }> | undefined;
@@ -236,13 +309,11 @@ export function createLocalAgentRuntimeProvider(
           prompt,
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
-          model: stripLocalAgentProviderPrefix(
-            resolvedModel,
-            runtimeProvider,
-          ),
+          ...(managedAgentEnv ? { env: managedAgentEnv } : {}),
+          model: stripLocalAgentProviderPrefix(resolvedModel, runtimeProvider),
           runtimeKind: "local-agent",
           runtimeProvider,
-          mcpServers,
+          ...(mcpServers ? { mcpServers } : {}),
           ...(resume ? { resume } : {}),
           signal: run.controller.signal,
           skillManifest,

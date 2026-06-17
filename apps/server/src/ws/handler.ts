@@ -238,6 +238,15 @@ async function authenticateAndBind(
               : {}),
             ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
             ...(p.model !== undefined ? { model: p.model } : {}),
+            ...(p.modelSource !== undefined
+              ? { modelSource: p.modelSource }
+              : {}),
+            ...(p.managedAgentInvocationCredential !== undefined
+              ? {
+                  managedAgentInvocationCredential:
+                    p.managedAgentInvocationCredential,
+                }
+              : {}),
             ...(p.runtimeKind !== undefined
               ? { runtimeKind: p.runtimeKind }
               : {}),

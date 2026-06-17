@@ -5,7 +5,6 @@ import type {
   StreamEvent,
   ToolBlock,
 } from "@aimc/shared";
-import { DEFAULT_LOCAL_AGENT_PROVIDER_IDS } from "@tutti-os/agent-acp-kit";
 import type {
   AgentRuntimeCapabilities,
   AgentRuntimeMode,
@@ -51,6 +50,12 @@ export type RuntimeTarget = PackageRuntimeTarget<
   AgentRuntimeProvider
 >;
 
+export const AIMC_SUPPORTED_LOCAL_AGENT_PROVIDER_IDS = [
+  "codex",
+  "claude",
+  "nexight",
+] as const;
+
 export function createRuntimeControlPlane<TContext>(
   providers: RuntimeProvider<TContext>[],
   options?: {
@@ -72,7 +77,7 @@ export function inferRuntimeKind(
   return inferPackageRuntimeKind<RuntimeKind, AgentRuntimeProvider>(input);
 }
 
-const LOCAL_AGENT_MODEL_PREFIXES = DEFAULT_LOCAL_AGENT_PROVIDER_IDS.map(
+const LOCAL_AGENT_MODEL_PREFIXES = AIMC_SUPPORTED_LOCAL_AGENT_PROVIDER_IDS.map(
   (provider) => `${provider}:`,
 );
 

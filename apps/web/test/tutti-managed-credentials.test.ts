@@ -2,18 +2,23 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fetchTuttiManagedConnection } from "../src/lib/server-api";
 import {
+  getManagedAgentInvocationCredential,
+  hasManagedAgentInvocationCredentialBridge,
   hasTuttiManagedCredentialBridge,
   openTuttiManagedModelSettings,
   requestTuttiManagedGrant,
 } from "../src/lib/tutti-managed-credentials";
-import { fetchTuttiManagedConnection } from "../src/lib/server-api";
 
 vi.mock("../src/lib/server-api", () => ({
   fetchTuttiManagedConnection: vi.fn(),
 }));
 
 type HostBridge = {
+  agent?: {
+    getManagedAgentInvocationCredential?: ReturnType<typeof vi.fn>;
+  };
   appContext?: {
     get?: () => Promise<{
       appId?: string;
@@ -90,6 +95,25 @@ describe("Tutti managed credential bridge", () => {
         workspaceId: "workspace-1",
       }),
     );
+  });
+
+  it("uses only the managed agent invocation credential from the bridge", async () => {
+    const getManagedAgentInvocationCredentialMock = vi.fn().mockResolvedValue({
+      connId: "ignored-conn",
+      credential: " run-credential-1 ",
+    });
+    setHostBridge({
+      agent: {
+        getManagedAgentInvocationCredential:
+          getManagedAgentInvocationCredentialMock,
+      },
+    });
+
+    expect(hasManagedAgentInvocationCredentialBridge()).toBe(true);
+    await expect(getManagedAgentInvocationCredential()).resolves.toBe(
+      "run-credential-1",
+    );
+    expect(getManagedAgentInvocationCredentialMock).toHaveBeenCalledTimes(1);
   });
 
   it("opens Tutti managed model settings through window.tutti", async () => {
