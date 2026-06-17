@@ -99,8 +99,11 @@ describe("Tutti managed credential bridge", () => {
 
   it("uses only the managed agent invocation credential from the bridge", async () => {
     const getManagedAgentInvocationCredentialMock = vi.fn().mockResolvedValue({
-      connId: "ignored-conn",
-      credential: " run-credential-1 ",
+      ok: true,
+      value: {
+        connId: "ignored-conn",
+        credential: " run-credential-1 ",
+      },
     });
     setHostBridge({
       agent: {

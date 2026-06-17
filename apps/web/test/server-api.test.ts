@@ -222,8 +222,11 @@ describe("local server API", () => {
 
   it("fetchModels sends only a fresh managed agent invocation credential when the bridge is available", async () => {
     const getManagedAgentInvocationCredential = vi.fn().mockResolvedValue({
-      connId: "ignored-conn-1",
-      credential: " credential-model-1 ",
+      ok: true,
+      value: {
+        connId: "ignored-conn-1",
+        credential: " credential-model-1 ",
+      },
     });
     (
       window as Window & {

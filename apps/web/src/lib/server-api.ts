@@ -37,7 +37,10 @@ import { ApiApplicationError } from "./api-errors";
 import { dedupeRequest } from "./dedupe-request";
 import { getServerBaseUrl } from "./env";
 import { generationJobService } from "./generation-job-service";
-import { getManagedAgentInvocationCredential } from "./managed-agent-invocation-credential";
+import {
+  getManagedAgentInvocationCredential,
+  shouldWaitForManagedAgentInvocationCredentialBridge,
+} from "./managed-agent-invocation-credential";
 
 export { ApiApplicationError } from "./api-errors";
 
@@ -194,7 +197,11 @@ export async function fetchModels(
   const managedAgentInvocationCredential =
     options.includeManagedAgentInvocationCredential === false
       ? undefined
-      : await getManagedAgentInvocationCredential();
+      : await getManagedAgentInvocationCredential({
+          waitForBridgeMs: shouldWaitForManagedAgentInvocationCredentialBridge()
+            ? 500
+            : 0,
+        });
   const body = managedAgentInvocationCredential
     ? ({
         managedAgentInvocationCredential,
