@@ -11,34 +11,32 @@ type HostContext = {
   language?: string;
 };
 
-type HostAppContext = {
-  get?: () => Promise<HostContext> | HostContext;
+type HostExternalApp = {
+  getContext?: () => Promise<HostContext> | HostContext;
   subscribe?: (listener: (context: HostContext) => void) => () => void;
 };
 
-function setHostAppContext(appContext: HostAppContext | undefined) {
+function setHostExternalApp(app: HostExternalApp | undefined) {
   const hostWindow = window as Window & {
-    tutti?: { appContext?: HostAppContext };
-    tuttiAppContext?: HostAppContext;
+    tuttiExternal?: { app?: HostExternalApp };
   };
 
-  if (appContext) {
-    hostWindow.tutti = { appContext };
+  if (app) {
+    hostWindow.tuttiExternal = { app };
     return;
   }
 
-  hostWindow.tutti = undefined;
-  hostWindow.tuttiAppContext = undefined;
+  hostWindow.tuttiExternal = undefined;
 }
 
-describe("Tutti host app context locale", () => {
+describe("Tutti external app context locale", () => {
   beforeEach(() => {
     installMemoryLocalStorage();
     void i18n.changeLanguage("zh-CN");
   });
 
   afterEach(() => {
-    setHostAppContext(undefined);
+    setHostExternalApp(undefined);
     window.localStorage.clear();
     document.documentElement.lang = "";
     cleanup();
@@ -58,11 +56,11 @@ describe("Tutti host app context locale", () => {
     await waitFor(() => expect(document.documentElement.lang).toBe("en"));
   });
 
-  it("reads and subscribes to the host app context locale", async () => {
+  it("reads and subscribes to the host locale through tuttiExternal.app", async () => {
     let localeListener: ((context: HostContext) => void) | undefined;
     const unsubscribe = vi.fn();
-    setHostAppContext({
-      get: vi.fn().mockResolvedValue({ locale: "zh-CN" }),
+    setHostExternalApp({
+      getContext: vi.fn().mockResolvedValue({ locale: "zh-CN" }),
       subscribe: vi.fn((listener) => {
         localeListener = listener;
         return unsubscribe;
