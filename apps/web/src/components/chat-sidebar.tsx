@@ -680,10 +680,23 @@ export function ChatSidebar({
   useEffect(() => {
     if (!open) return;
 
-    const isInsidePanel = (target: EventTarget | null) =>
-      target instanceof Node &&
+    const isNodeInsidePanel = (node: Node | null) =>
+      node !== null &&
       panelRootRef.current !== null &&
-      panelRootRef.current.contains(target);
+      panelRootRef.current.contains(node);
+
+    const hasSelectionInsidePanel = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) return false;
+      return (
+        isNodeInsidePanel(selection.anchorNode) ||
+        isNodeInsidePanel(selection.focusNode)
+      );
+    };
+
+    const isInsidePanel = (target: EventTarget | null) =>
+      (target instanceof Node && isNodeInsidePanel(target)) ||
+      hasSelectionInsidePanel();
 
     const isolateEvent = (event: Event) => {
       if (!isInsidePanel(event.target)) return;
