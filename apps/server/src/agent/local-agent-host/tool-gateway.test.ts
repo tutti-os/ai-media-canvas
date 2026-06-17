@@ -423,9 +423,10 @@ describe("createLocalToolGatewayService", () => {
     });
 
     expect(result).toMatchObject({
-      isError: true,
+      isError: false,
       output: {
-        error: "codex_imagegen_confirmation_required",
+        status: "requires_user_confirmation",
+        requiresUserConfirmation: true,
       },
     });
     expect(pushToCanvas).not.toHaveBeenCalled();
@@ -460,8 +461,61 @@ describe("createLocalToolGatewayService", () => {
     ).resolves.toMatchObject({
       isError: false,
       output: {
+        codexImagegen: {
+          callerProvider: "claude",
+          confirmationRequired: false,
+          consentBudget: 1,
+        },
+        settings: {
+          codexImagegenDelegation: "ask",
+        },
+      },
+    });
+
+    await expect(
+      gateway.callTool(session.token, "get_workspace_settings", {}),
+    ).resolves.toMatchObject({
+      isError: false,
+      output: {
+        codexImagegen: {
+          consentBudget: 1,
+        },
+        settings: {
+          codexImagegenDelegation: "ask",
+        },
+      },
+    });
+
+    await expect(
+      gateway.callTool(session.token, "update_workspace_settings", {
+        patch: {
+          codexImagegenDelegation: "deny",
+        },
+      }),
+    ).resolves.toMatchObject({
+      isError: false,
+      output: {
+        codexImagegen: {
+          consentBudget: 0,
+        },
+        settings: {
+          codexImagegenDelegation: "ask",
+        },
+        summary: expect.stringContaining("denied for the current task"),
+      },
+    });
+
+    await expect(
+      gateway.callTool(session.token, "update_workspace_settings", {
         patch: {
           codexImagegenDelegation: "allow-once",
+        },
+      }),
+    ).resolves.toMatchObject({
+      isError: false,
+      output: {
+        codexImagegen: {
+          consentBudget: 1,
         },
       },
     });
@@ -503,13 +557,31 @@ describe("createLocalToolGatewayService", () => {
         settings: {
           codexImagegenDelegation: "ask",
         },
+        summary: expect.stringContaining(
+          "No image generation model is directly available",
+        ),
+      },
+    });
+    await expect(
+      gateway.callTool(session.token, "get_workspace_settings", {}),
+    ).resolves.toMatchObject({
+      output: {
+        summary: expect.not.stringContaining("codexImagegenDelegation=ask"),
       },
     });
   });
 
   it("lets agents persist Codex imagegen delegation through a structured tool", async () => {
     const patchWorkspaceSettings = vi.fn(async ({ patch }) => ({
+      anthropicApiKey: "secret-anthropic-key",
       codexImagegenDelegation: patch.codexImagegenDelegation,
+      openAIApiBase: "http://127.0.0.1:4000/v1",
+      openAIApiKey: "secret-openai-key",
+      providerModels: {
+        anthropic: [],
+        google: [],
+        openai: [],
+      },
     }));
     const gateway = createLocalToolGatewayService({
       createUserClient: vi.fn(),
@@ -533,8 +605,10 @@ describe("createLocalToolGatewayService", () => {
     ).resolves.toMatchObject({
       isError: false,
       output: {
-        patch: {
-          codexImagegenDelegation: "always",
+        codexImagegen: {
+          callerProvider: "claude",
+          confirmationRequired: false,
+          consentBudget: 0,
         },
         settings: {
           codexImagegenDelegation: "always",
@@ -546,6 +620,18 @@ describe("createLocalToolGatewayService", () => {
         codexImagegenDelegation: "always",
       },
     });
+    const output = await gateway.callTool(
+      session.token,
+      "update_workspace_settings",
+      {
+        patch: {
+          codexImagegenDelegation: "never",
+        },
+      },
+    );
+    expect(JSON.stringify(output.output)).not.toContain("providerModels");
+    expect(JSON.stringify(output.output)).not.toContain("secret-openai-key");
+    expect(JSON.stringify(output.output)).not.toContain("secret-anthropic-key");
   });
 
   it("consumes allow-once Codex imagegen consent after one authorized call", async () => {
@@ -587,9 +673,10 @@ describe("createLocalToolGatewayService", () => {
         model: "codex/gpt-image-2",
       }),
     ).resolves.toMatchObject({
-      isError: true,
+      isError: false,
       output: {
-        error: "codex_imagegen_confirmation_required",
+        status: "requires_user_confirmation",
+        requiresUserConfirmation: true,
       },
     });
     expect(generate).toHaveBeenCalledTimes(1);

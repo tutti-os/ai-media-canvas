@@ -1262,48 +1262,6 @@ export function AgentSettingsSection({
                 onInstallProvider={handleInstallLocalProvider}
                 installingProvider={installingLocalProvider}
               />
-
-              <section className="rounded-2xl border bg-card p-5 shadow-sm">
-                <div className="mb-4">
-                  <h3 className="text-base font-semibold">
-                    {t("agentSettings.local.codexImagegen.title")}
-                  </h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {t("agentSettings.local.codexImagegen.description")}
-                  </p>
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  {(["ask", "always", "never"] as const).map((value) => {
-                    const selected = settings.codexImagegenDelegation === value;
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        aria-pressed={selected}
-                        onClick={() =>
-                          updateField("codexImagegenDelegation", value)
-                        }
-                        className={`min-h-24 rounded-xl border p-3 text-left transition-colors ${
-                          selected
-                            ? "border-accent bg-accent/10 text-foreground"
-                            : "border-border bg-background text-muted-foreground hover:border-accent/40 hover:text-foreground"
-                        }`}
-                      >
-                        <span className="block text-sm font-semibold">
-                          {t(
-                            `agentSettings.local.codexImagegen.options.${value}.label`,
-                          )}
-                        </span>
-                        <span className="mt-1 block text-xs leading-5">
-                          {t(
-                            `agentSettings.local.codexImagegen.options.${value}.description`,
-                          )}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
             </div>
           ) : null}
 

@@ -185,6 +185,7 @@ export const canvasDetailSchema = z.object({
   id: canvasIdSchema,
   name: z.string().min(1),
   projectId: projectIdSchema,
+  revision: z.number().int().nonnegative(),
   content: canvasContentSchema,
 });
 

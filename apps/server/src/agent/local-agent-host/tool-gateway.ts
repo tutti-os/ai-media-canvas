@@ -40,7 +40,7 @@ import {
 import {
   type ApplyWorkspaceSettingsPatch,
   type ReadWorkspaceSettings,
-  type WorkspaceSettingsPatch,
+  buildWorkspaceSettingsSnapshot,
   createGetWorkspaceSettingsTool,
   createUpdateWorkspaceSettingsTool,
 } from "../tools/workspace-settings.js";
@@ -80,6 +80,10 @@ type LocalToolGatewaySession = {
     codexImagegen?: "allow-once";
   };
   codexImagegenConsentBudget?: number;
+  onWorkspaceSettingsStateChange?: (state: {
+    codexImagegenConsentBudget?: number;
+    codexImagegenDelegation?: CodexImagegenDelegationSetting;
+  }) => void;
   sandboxDir?: string;
   workspaceSettings?: {
     codexImagegenDelegation?: CodexImagegenDelegationSetting;
@@ -467,49 +471,39 @@ export function createLocalToolGatewayService(
         session.workspaceSettings?.codexImagegenDelegation ?? "ask";
       const consentBudget = session.codexImagegenConsentBudget ?? 0;
       const callerProvider = session.runtimeProvider;
-      const confirmationRequired =
-        callerProvider !== undefined &&
-        callerProvider !== "codex" &&
-        setting === "ask" &&
-        consentBudget <= 0;
-      return {
-        codexImagegen: {
-          ...(callerProvider ? { callerProvider } : {}),
-          confirmationRequired,
-          consentBudget,
-        },
-        settings: {
-          codexImagegenDelegation: setting,
-        },
-        success: true,
-        summary: `Workspace settings loaded: codexImagegenDelegation=${setting}, codexImagegenConfirmationRequired=${confirmationRequired}.`,
-      };
+      return buildWorkspaceSettingsSnapshot({
+        ...(callerProvider ? { callerProvider } : {}),
+        codexImagegenDelegation: setting,
+        consentBudget,
+      });
     };
     const applyWorkspaceSettingsPatch: ApplyWorkspaceSettingsPatch = async ({
       patch,
     }) => {
-      const resultPatch: WorkspaceSettingsPatch = { ...patch };
-      const summaryParts: string[] = [];
-      let settings:
-        | { codexImagegenDelegation: CodexImagegenDelegationSetting }
-        | undefined;
+      let summary: string | undefined;
 
       if (patch.codexImagegenDelegation === "allow-once") {
         session.codexImagegenConsentBudget = Math.max(
           1,
           session.codexImagegenConsentBudget ?? 0,
         );
-        summaryParts.push("codexImagegenDelegation=allow-once");
+        session.onWorkspaceSettingsStateChange?.({
+          codexImagegenConsentBudget: session.codexImagegenConsentBudget,
+        });
       } else if (patch.codexImagegenDelegation === "deny") {
         session.codexImagegenConsentBudget = 0;
-        summaryParts.push("codexImagegenDelegation=deny");
+        session.onWorkspaceSettingsStateChange?.({
+          codexImagegenConsentBudget: session.codexImagegenConsentBudget,
+        });
+        summary =
+          "Codex image generation delegation was denied for the current task. Do not call Codex image generation for this task.";
       } else if (patch.codexImagegenDelegation !== undefined) {
         if (!options.patchWorkspaceSettings) {
           throw new Error(
             "Workspace settings are not available for this tool session.",
           );
         }
-        settings = await options.patchWorkspaceSettings({
+        const settings = await options.patchWorkspaceSettings({
           patch: {
             codexImagegenDelegation: patch.codexImagegenDelegation,
           },
@@ -519,22 +513,20 @@ export function createLocalToolGatewayService(
           ...(session.workspaceSettings ?? {}),
           codexImagegenDelegation: settings.codexImagegenDelegation,
         };
-        summaryParts.push(
-          `codexImagegenDelegation=${settings.codexImagegenDelegation}`,
-        );
+        session.onWorkspaceSettingsStateChange?.({
+          codexImagegenDelegation: settings.codexImagegenDelegation,
+        });
       }
 
-      return {
-        ...(session.codexImagegenConsentBudget !== undefined
-          ? { codexImagegenConsentBudget: session.codexImagegenConsentBudget }
+      return buildWorkspaceSettingsSnapshot({
+        ...(session.runtimeProvider
+          ? { callerProvider: session.runtimeProvider }
           : {}),
-        patch: resultPatch,
-        ...(settings ? { settings } : {}),
-        success: true,
-        summary: summaryParts.length
-          ? `Workspace settings updated: ${summaryParts.join(", ")}.`
-          : "Workspace settings updated.",
-      };
+        codexImagegenDelegation:
+          session.workspaceSettings?.codexImagegenDelegation ?? "ask",
+        consentBudget: session.codexImagegenConsentBudget ?? 0,
+        ...(summary ? { summary } : {}),
+      });
     };
     const layoutInspectionState = session.layoutInspectionState ?? {};
     const sessionAccessToken = session.accessToken;
@@ -722,20 +714,21 @@ export function createLocalToolGatewayService(
               if (decision.status === "blocked") {
                 const isConfirmationRequired =
                   decision.reason === "needs_confirmation";
-                const message = isConfirmationRequired
-                  ? "Codex image generation requires user confirmation before a non-Codex agent can use it."
-                  : "Codex image generation is disabled for non-Codex agents in workspace settings.";
+                const summary = isConfirmationRequired
+                  ? "Codex image generation needs explicit user confirmation before this non-Codex agent can use it."
+                  : "Codex image generation delegation is disabled for this non-Codex agent in workspace settings.";
                 return {
-                  isError: true,
+                  isError: false,
                   output: {
-                    error: isConfirmationRequired
-                      ? "codex_imagegen_confirmation_required"
-                      : "codex_imagegen_disabled_by_user",
-                    message,
+                    status: isConfirmationRequired
+                      ? "requires_user_confirmation"
+                      : "blocked_by_workspace_settings",
+                    requiresUserConfirmation: isConfirmationRequired,
+                    message: summary,
                     requestedProvider: session.runtimeProvider,
                     model: requestedModel,
                   },
-                  outputSummary: message,
+                  outputSummary: summary,
                 };
               }
               consumeCodexImagegenConsentAfterSuccess =

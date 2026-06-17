@@ -50,6 +50,7 @@ const projectCreateCliBodySchema = z.object({
 });
 const canvasSaveCliBodySchema = z.object({
   "canvas-id": z.string().min(1),
+  "base-revision": z.coerce.number().int().nonnegative().optional(),
   "content-json": z.string().min(1),
 });
 const sessionCreateCliBodySchema = z.object({
@@ -194,7 +195,13 @@ export async function registerTuttiCliRoutes(
     const content = canvasContentSchema.parse(
       JSON.parse(payload["content-json"]),
     );
-    return options.canvasOperations.saveCanvas(payload["canvas-id"], content);
+    return options.canvasOperations.saveCanvas(
+      payload["canvas-id"],
+      content,
+      payload["base-revision"] === undefined
+        ? {}
+        : { baseRevision: payload["base-revision"] },
+    );
   });
 
   route("/tutti/cli/sessions/list", async (body) => {

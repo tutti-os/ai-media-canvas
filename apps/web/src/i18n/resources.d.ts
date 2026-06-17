@@ -544,24 +544,6 @@ export default interface Resources {
         "updated": "本地 Agent 设置已更新。"
       },
       "local": {
-        "codexImagegen": {
-          "description": "Choose how non-Codex local agents handle delegation to Codex Image 2.0.",
-          "options": {
-            "always": {
-              "description": "Allow future matching requests to use Codex image generation automatically.",
-              "label": "Always delegate"
-            },
-            "ask": {
-              "description": "Ask before every non-Codex agent delegation.",
-              "label": "Ask each time"
-            },
-            "never": {
-              "description": "Block Codex image generation delegation from non-Codex agents.",
-              "label": "Never delegate"
-            }
-          },
-          "title": "Codex image delegation"
-        },
         "customModelId": "自定义模型 ID",
         "customModelPlaceholder": "例如 my-model",
         "customOption": "自定义（在下方输入）...",
@@ -661,16 +643,30 @@ export default interface Resources {
           "summary": "字节跳动 / 火山引擎官方通道，用于通过 Ark 提供的豆包 Seedream 模型。"
         }
       },
+      "codexImagegen": {
+        "description": "当没有直接可用的生图模型时，设置其他 Agent 是否可以调用 Codex Image 2.0 生图能力。",
+        "options": {
+          "always": {
+            "description": "以后符合条件的生图请求自动使用 Codex。",
+            "label": "默认调用"
+          },
+          "ask": {
+            "description": "每次符合条件的生图请求都会先询问。",
+            "label": "每次询问"
+          },
+          "never": {
+            "description": "不将生图任务委托给 Codex。",
+            "label": "不调用"
+          }
+        },
+        "title": "Codex 生图权限"
+      },
       "description": "按平台配置图片与视频提供商。如果同一模型家族后续存在多个平台版本，AIMC 会按提供商范围的模型 ID 分开保存，方便你显式选择路由。",
       "feedback": {
         "updateFailed": "本地媒体提供商设置更新失败，请重试。",
         "updated": "本地媒体提供商设置已更新。"
       },
       "localStorageNote": "这些值会保存在本地 sqlite 设置数据库中，并被对应媒体提供商复用。",
-      "providerNotes": {
-        "replicate": "{{provider}} 是第三方托管平台。",
-        "volces": "{{provider}} 是字节跳动 / 火山引擎官方通道。"
-      },
       "status": {
         "configured": "已配置",
         "notConfigured": "未配置"

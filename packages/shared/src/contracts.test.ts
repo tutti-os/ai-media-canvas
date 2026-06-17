@@ -5,6 +5,10 @@ import {
   runCreateRequestSchema,
   workspaceSettingsSchema,
 } from "./contracts.js";
+import {
+  canvasGetResponseSchema,
+  canvasSaveRequestSchema,
+} from "./http.js";
 
 const baseRunCreateRequest = {
   conversationId: "canvas_1",
@@ -167,5 +171,36 @@ describe("workspaceSettingsSchema", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+});
+
+describe("canvas contracts", () => {
+  it("carries canvas revisions through fetch and save requests", () => {
+    expect(
+      canvasGetResponseSchema.parse({
+        canvas: {
+          id: "canvas_1",
+          name: "Main Canvas",
+          projectId: "project_1",
+          revision: 2,
+          content: {
+            elements: [],
+            appState: {},
+            files: {},
+          },
+        },
+      }).canvas.revision,
+    ).toBe(2);
+
+    expect(
+      canvasSaveRequestSchema.parse({
+        baseRevision: 2,
+        content: {
+          elements: [],
+          appState: {},
+          files: {},
+        },
+      }).baseRevision,
+    ).toBe(2);
   });
 });

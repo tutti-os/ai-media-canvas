@@ -79,4 +79,116 @@ describe("buildApp", () => {
     expect(response.headers["content-type"]).toContain("video/mp4");
     expect(response.body).toBe("0123");
   });
+
+  it("allows local frontend origins even when the configured dev port differs", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
+    dataRoots.push(dataRoot);
+
+    const app = buildApp({
+      env: {
+        dataRoot,
+        webOrigin: "http://localhost:3002",
+      },
+    });
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/api/workspace/settings",
+      headers: {
+        origin: "http://localhost:3000",
+      },
+    });
+    await app.close();
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-origin"]).toBe(
+      "http://localhost:3000",
+    );
+  });
+
+  it("does not reflect non-local origins that differ from the configured web origin", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
+    dataRoots.push(dataRoot);
+
+    const app = buildApp({
+      env: {
+        dataRoot,
+        webOrigin: "https://app.example.com",
+      },
+    });
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/api/workspace/settings",
+      headers: {
+        origin: "https://evil.example.com",
+      },
+    });
+    await app.close();
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-origin"]).toBe(
+      "https://app.example.com",
+    );
+  });
+
+  it("rejects stale canvas saves over HTTP", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
+    dataRoots.push(dataRoot);
+
+    const setupStore = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = setupStore.createProject({ name: "Canvas conflict" });
+    const initialCanvas = setupStore.getCanvas(project.primaryCanvas.id);
+    expect(initialCanvas).not.toBeNull();
+    const initialRevision = initialCanvas?.revision ?? 0;
+
+    const app = buildApp({ env: { dataRoot } });
+    const firstSave = await app.inject({
+      method: "PUT",
+      url: `/api/canvases/${project.primaryCanvas.id}`,
+      payload: {
+        baseRevision: initialRevision,
+        content: {
+          elements: [
+            {
+              id: "server-image",
+              type: "image",
+              isDeleted: false,
+            },
+          ],
+          appState: {},
+          files: {},
+        },
+      },
+    });
+    expect(firstSave.statusCode).toBe(200);
+
+    const response = await app.inject({
+      method: "PUT",
+      url: `/api/canvases/${project.primaryCanvas.id}`,
+      payload: {
+        baseRevision: initialRevision,
+        content: {
+          elements: [],
+          appState: {},
+          files: {},
+        },
+      },
+    });
+    const latest = await app.inject({
+      method: "GET",
+      url: `/api/canvases/${project.primaryCanvas.id}`,
+    });
+    await app.close();
+
+    expect(response.statusCode).toBe(409);
+    expect(JSON.parse(latest.body).canvas.content.elements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "server-image",
+        }),
+      ]),
+    );
+  });
 });

@@ -13,6 +13,8 @@ describe("createAimcToolsMcpServerConfig", () => {
     const config = createAimcToolsMcpServerConfig({
       gatewayBaseUrl: "http://127.0.0.1:4000/api/tools",
       gatewayToken: "tool-token",
+      startupTimeoutMs: 120_000,
+      toolTimeoutMs: 1_800_000,
     });
 
     expect(config).toMatchObject({
@@ -20,10 +22,29 @@ describe("createAimcToolsMcpServerConfig", () => {
       type: "stdio",
       command: process.execPath,
       args: ["/package/server/tools-mcp.js"],
+      startupTimeoutMs: 120_000,
+      toolTimeoutMs: 1_800_000,
       env: {
         AIMC_TOOL_GATEWAY_URL: "http://127.0.0.1:4000/api/tools",
         AIMC_TOOL_TOKEN: "tool-token",
       },
+    });
+  });
+
+  it("adds MCP timeout metadata for the development entrypoint", () => {
+    const config = createAimcToolsMcpServerConfig({
+      gatewayBaseUrl: "http://127.0.0.1:4000/api/tools",
+      gatewayToken: "tool-token",
+      startupTimeoutMs: 120_000,
+      toolTimeoutMs: 1_800_000,
+    });
+
+    expect(config).toMatchObject({
+      name: "aimc",
+      type: "stdio",
+      command: "pnpm",
+      startupTimeoutMs: 120_000,
+      toolTimeoutMs: 1_800_000,
     });
   });
 });

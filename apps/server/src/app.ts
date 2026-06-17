@@ -153,17 +153,31 @@ const LOCAL_FONT_LIBRARY = [
   },
 ];
 
-function isAllowedLocalOrigin(origin: string, expectedOrigin: string) {
+function isLoopbackHttpOrigin(url: URL) {
+  return (
+    (url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
+    /^https?:$/.test(url.protocol)
+  );
+}
+
+function resolveCorsAllowOrigin(
+  origin: string | undefined,
+  expectedOrigin: string,
+) {
   try {
-    const url = new URL(origin);
     const expected = new URL(expectedOrigin);
-    return (
-      (url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
-      url.port === expected.port &&
-      /^https?:$/.test(url.protocol)
-    );
+    if (!origin) return expected.origin;
+
+    const request = new URL(origin);
+    if (request.origin === expected.origin) return request.origin;
+
+    if (isLoopbackHttpOrigin(expected) && isLoopbackHttpOrigin(request)) {
+      return request.origin;
+    }
+
+    return expected.origin;
   } catch {
-    return false;
+    return expectedOrigin;
   }
 }
 
@@ -265,14 +279,23 @@ function buildCanvasService(store: LocalStore): CanvasService {
       }
       return canvas;
     },
-    async saveCanvasContent(_user, canvasId, content) {
-      if (!store.saveCanvas(canvasId, content)) {
+    async saveCanvasContent(_user, canvasId, content, options) {
+      const result = store.saveCanvas(canvasId, content, options);
+      if (!result.ok) {
+        if (result.reason === "revision_conflict") {
+          throw new CanvasServiceError(
+            "canvas_conflict",
+            "Canvas has changed. Fetch the latest canvas before saving again.",
+            409,
+          );
+        }
         throw new CanvasServiceError(
           "canvas_not_found",
           "Canvas not found.",
           404,
         );
       }
+      return { revision: result.revision };
     },
   };
 }
@@ -771,11 +794,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
 
   app.addHook("onRequest", async (request, reply) => {
-    const requestOrigin = request.headers.origin;
-    const allowOrigin =
-      requestOrigin && isAllowedLocalOrigin(requestOrigin, env.webOrigin)
-        ? requestOrigin
-        : env.webOrigin;
+    const allowOrigin = resolveCorsAllowOrigin(
+      request.headers.origin,
+      env.webOrigin,
+    );
     reply.header("Access-Control-Allow-Origin", allowOrigin);
     reply.header("Vary", "Origin");
     reply.header("Access-Control-Allow-Headers", "Content-Type, Range");

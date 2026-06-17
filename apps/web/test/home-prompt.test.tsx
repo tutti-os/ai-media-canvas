@@ -3,6 +3,12 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import {
+  cloneElement,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HomePrompt } from "../src/components/home-prompt";
@@ -48,16 +54,29 @@ vi.mock("../src/components/settings-dialog", () => ({
 vi.mock("../src/components/image-model-preference", () => ({
   ImageModelPreferencePopover: ({
     open,
+    onOpenChange,
     onOpenSettings,
+    trigger,
   }: {
     open: boolean;
+    onOpenChange?: (open: boolean) => void;
     onOpenSettings?: () => void;
+    trigger?: ReactNode;
   }) =>
-    open ? (
-      <button type="button" onClick={onOpenSettings}>
-        Open media settings
-      </button>
-    ) : null,
+    (
+      <>
+        {isValidElement(trigger)
+          ? cloneElement(trigger as ReactElement<{ onClick?: () => void }>, {
+              onClick: () => onOpenChange?.(true),
+            })
+          : trigger}
+        {open ? (
+          <button type="button" onClick={onOpenSettings}>
+            Open media settings
+          </button>
+        ) : null}
+      </>
+    ),
 }));
 
 vi.mock("../src/lib/server-api", () => ({

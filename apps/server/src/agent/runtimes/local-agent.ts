@@ -58,6 +58,18 @@ function normalizeWorkspaceSkillPathsForLocalAgent(prompt: string) {
   return prompt.replaceAll("/workspace-skills/", "workspace-skills/");
 }
 
+const DEFAULT_LOCAL_AGENT_TIMEOUT_MS = 30 * 60_000;
+const DEFAULT_LOCAL_AGENT_MCP_STARTUP_TIMEOUT_MS = 2 * 60_000;
+
+function resolveLocalAgentTimeoutMs(runtimeEnv: {
+  codexImagegenTimeoutMs?: number;
+}) {
+  return Math.max(
+    runtimeEnv.codexImagegenTimeoutMs ?? 0,
+    DEFAULT_LOCAL_AGENT_TIMEOUT_MS,
+  );
+}
+
 export function createLocalAgentRuntimeProvider(
   deps: LocalAgentRuntimeProviderDeps,
   providerPlugin: AimcLocalAgentProviderPlugin,
@@ -164,6 +176,7 @@ export function createLocalAgentRuntimeProvider(
         "Use inspect_canvas before precise canvas edits, and use manipulate_canvas for deterministic canvas updates.",
         "Do not claim an image or canvas update happened unless the tool actually succeeded.",
         "Ask clarifying questions or confirmation requests in normal assistant text. Do not use provider-native interactive question tools such as AskUserQuestion.",
+        "Before a non-Codex agent calls generate_image with model codex/gpt-image-2, it must call get_workspace_settings. If codexImagegen.confirmationRequired is true, explain in normal assistant text that no image generation model is directly available for this agent and ask whether to delegate this image generation task to Codex. After the user answers, call update_workspace_settings with patch.codexImagegenDelegation=allow-once for a one-time allow, always for a durable allow, or deny before stopping.",
         "Workspace skill files are materialized under the current working directory; when reading them with shell or file tools, use relative paths such as `workspace-skills/<slug>/SKILL.md` and never `/workspace-skills/<slug>/SKILL.md`.",
         handoffSection,
         normalizedPrompt,
@@ -198,6 +211,14 @@ export function createLocalAgentRuntimeProvider(
           ? { delegationConsent: run.delegationConsent }
           : {}),
         codexImagegenConsentBudget: run.codexImagegenConsentBudget ?? 0,
+        onWorkspaceSettingsStateChange: (state) => {
+          if (state.codexImagegenConsentBudget !== undefined) {
+            run.codexImagegenConsentBudget = state.codexImagegenConsentBudget;
+          }
+          if (state.codexImagegenDelegation !== undefined) {
+            run.codexImagegenDelegation = state.codexImagegenDelegation;
+          }
+        },
         ...(run.codexImagegenDelegation
           ? {
               workspaceSettings: {
@@ -225,6 +246,8 @@ export function createLocalAgentRuntimeProvider(
         createAimcToolsMcpServerConfig({
           gatewayBaseUrl: deps.toolGatewayBaseUrl,
           gatewayToken: gatewaySession.token,
+          startupTimeoutMs: DEFAULT_LOCAL_AGENT_MCP_STARTUP_TIMEOUT_MS,
+          toolTimeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
         }),
       ];
       const messageId = run.assistantMessageId ?? `message_${run.runId}`;
@@ -256,6 +279,7 @@ export function createLocalAgentRuntimeProvider(
           ...(resume ? { resume } : {}),
           signal: run.controller.signal,
           skillManifest,
+          timeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
         })) {
           if (event.type === "error") {
             lastError = event;

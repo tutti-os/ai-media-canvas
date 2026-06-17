@@ -16,7 +16,7 @@ import {
   summarizeModelSchemaForTool,
 } from "./model-schema-summary.js";
 
-const DEFAULT_MODEL = "black-forest-labs/flux-kontext-pro";
+const DEFAULT_MODEL = "codex/gpt-image-2";
 
 /**
  * Build the zod schema dynamically from the models available in the registry.
@@ -94,7 +94,7 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .array(z.string())
       .optional()
       .describe(
-        "Reference image URLs for editing/transformation. Google models accept up to 14, Flux models accept 1. Imagen 4 and Recraft V3 are text-only.",
+        "Reference image URLs for editing/transformation. Only use models whose schema supports inputImages; respect each selected model's limits.",
       ),
     size: z
       .string()

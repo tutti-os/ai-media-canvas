@@ -49,7 +49,10 @@ import {
   validateImageGenerationParams,
   validateVideoGenerationParams,
 } from "../generation/model-schemas.js";
-import { resolveImageProviderName } from "../generation/providers/registry.js";
+import {
+  getAvailableImageModels,
+  resolveImageProviderName,
+} from "../generation/providers/registry.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
@@ -85,8 +88,8 @@ import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 import type {
   ApplyWorkspaceSettingsPatch,
   ReadWorkspaceSettings,
-  WorkspaceSettingsPatch,
 } from "./tools/workspace-settings.js";
+import { buildWorkspaceSettingsSnapshot } from "./tools/workspace-settings.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
 type BillingErrorCode = string;
@@ -208,14 +211,20 @@ function buildImageGenerationPreferenceXml(
     return null;
   }
 
-  const modelXml = imageGenerationPreference.models
+  const availableModelIds = new Set(getAvailableImageModels().map((m) => m.id));
+  const models = imageGenerationPreference.models.filter((model) =>
+    availableModelIds.has(model),
+  );
+  if (models.length === 0) return null;
+
+  const modelXml = models
     .map(
       (model, i) =>
         `<preferred_model index="${i + 1}" id="${escapeXmlAttribute(model)}" />`,
     )
     .join("\n  ");
 
-  return `<human_image_generation_preference mode="manual" count="${imageGenerationPreference.models.length}">\n  ${modelXml}\n</human_image_generation_preference>`;
+  return `<human_image_generation_preference mode="manual" count="${models.length}">\n  ${modelXml}\n</human_image_generation_preference>`;
 }
 
 function buildVideoGenerationPreferenceXml(
@@ -240,12 +249,16 @@ function buildVideoGenerationPreferenceXml(
 
 function buildMentionXmlBlocks(mentions: MessageMention[]): string[] {
   const xmlBlocks: string[] = [];
+  const availableImageModelIds = new Set(
+    getAvailableImageModels().map((m) => m.id),
+  );
 
   const mentionedModels = mentions.filter(
     (
       mention,
     ): mention is Extract<MessageMention, { mentionType: "image-model" }> =>
-      mention.mentionType === "image-model",
+      mention.mentionType === "image-model" &&
+      availableImageModelIds.has(mention.id),
   );
   if (mentionedModels.length > 0) {
     const modelXml = mentionedModels
@@ -837,40 +850,27 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         const setting = run.codexImagegenDelegation ?? "ask";
         const consentBudget = run.codexImagegenConsentBudget ?? 0;
         const callerProvider = inferRunCallerProvider(run);
-        const confirmationRequired =
-          callerProvider !== "codex" && setting === "ask" && consentBudget <= 0;
-        return {
-          codexImagegen: {
-            callerProvider,
-            confirmationRequired,
-            consentBudget,
-          },
-          settings: {
-            codexImagegenDelegation: setting,
-          },
-          success: true,
-          summary: `Workspace settings loaded: codexImagegenDelegation=${setting}, codexImagegenConfirmationRequired=${confirmationRequired}.`,
-        };
+        return buildWorkspaceSettingsSnapshot({
+          callerProvider,
+          codexImagegenDelegation: setting,
+          consentBudget,
+        });
       };
 
       const updateWorkspaceSettings: ApplyWorkspaceSettingsPatch = async ({
         patch,
       }) => {
-        const resultPatch: WorkspaceSettingsPatch = { ...patch };
-        const summaryParts: string[] = [];
-        let settings:
-          | Pick<WorkspaceSettings, "codexImagegenDelegation">
-          | undefined;
+        let summary: string | undefined;
 
         if (patch.codexImagegenDelegation === "allow-once") {
           run.codexImagegenConsentBudget = Math.max(
             1,
             run.codexImagegenConsentBudget ?? 0,
           );
-          summaryParts.push("codexImagegenDelegation=allow-once");
         } else if (patch.codexImagegenDelegation === "deny") {
           run.codexImagegenConsentBudget = 0;
-          summaryParts.push("codexImagegenDelegation=deny");
+          summary =
+            "Codex image generation delegation was denied for the current task. Do not call Codex image generation for this task.";
         } else if (patch.codexImagegenDelegation !== undefined) {
           if (!options.patchWorkspaceSettings) {
             throw new Error(
@@ -884,25 +884,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(run.userId ? { userId: run.userId } : {}),
           });
           run.codexImagegenDelegation = updated.codexImagegenDelegation;
-          settings = {
-            codexImagegenDelegation: updated.codexImagegenDelegation,
-          };
-          summaryParts.push(
-            `codexImagegenDelegation=${updated.codexImagegenDelegation}`,
-          );
         }
 
-        return {
-          ...(run.codexImagegenConsentBudget !== undefined
-            ? { codexImagegenConsentBudget: run.codexImagegenConsentBudget }
-            : {}),
-          patch: resultPatch,
-          ...(settings ? { settings } : {}),
-          success: true,
-          summary: summaryParts.length
-            ? `Workspace settings updated: ${summaryParts.join(", ")}.`
-            : "Workspace settings updated.",
-        };
+        return buildWorkspaceSettingsSnapshot({
+          callerProvider: inferRunCallerProvider(run),
+          codexImagegenDelegation: run.codexImagegenDelegation ?? "ask",
+          consentBudget: run.codexImagegenConsentBudget ?? 0,
+          ...(summary ? { summary } : {}),
+        });
       };
 
       // Build submitImageJob / submitVideoJob closures for async jobs via PGMQ

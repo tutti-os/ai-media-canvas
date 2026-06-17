@@ -128,6 +128,43 @@ describe("registerTuttiCliRoutes", () => {
     });
   });
 
+  it("forwards optional canvas save base revisions", async () => {
+    const canvasOperations = {
+      getCanvas: vi.fn(),
+      saveCanvas: vi.fn(async () => ({ ok: true, revision: 4 })),
+    };
+    const app = buildTestApp({ canvasOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/canvases/save",
+      payload: {
+        "canvas-id": "canvas-1",
+        "base-revision": "3",
+        "content-json": JSON.stringify({
+          elements: [],
+          appState: {},
+          files: {},
+        }),
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(canvasOperations.saveCanvas).toHaveBeenCalledWith(
+      "canvas-1",
+      {
+        elements: [],
+        appState: {},
+        files: {},
+      },
+      { baseRevision: 3 },
+    );
+    expect(response.json()).toEqual({
+      kind: "json",
+      value: { ok: true, revision: 4 },
+    });
+  });
+
   it("requires generation image commands to pass a model", async () => {
     const jobOperations = {
       createImageJob: vi.fn(),

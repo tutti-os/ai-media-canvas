@@ -78,6 +78,7 @@ export const applicationErrorCodeSchema = z.enum([
   "brand_kit_asset_not_found",
   "brand_kit_asset_create_failed",
   "canvas_not_found",
+  "canvas_conflict",
   "canvas_save_failed",
   "chat_error",
   "profile_update_failed",
@@ -123,11 +124,13 @@ export const canvasGetResponseSchema = z.object({
 });
 
 export const canvasSaveRequestSchema = z.object({
+  baseRevision: z.number().int().nonnegative().optional(),
   content: canvasContentSchema,
 });
 
 export const canvasSaveResponseSchema = z.object({
   ok: z.literal(true),
+  revision: z.number().int().nonnegative(),
 });
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;

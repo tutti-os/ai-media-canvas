@@ -14,7 +14,11 @@ const IMAGE_GENERATOR_BACKGROUND = "#F3F4F6";
 const IMAGE_GENERATOR_ERROR_STROKE = "#FCA5A5";
 const IMAGE_GENERATOR_ERROR_BACKGROUND = "#FDECEE";
 
-export type ImageGeneratorStatus = "idle" | "generating" | "completed" | "error";
+export type ImageGeneratorStatus =
+  | "idle"
+  | "generating"
+  | "completed"
+  | "error";
 
 export type ImageGeneratorData = {
   type: "image-generator";
@@ -28,10 +32,41 @@ export type ImageGeneratorData = {
   errorMessage?: string;
 };
 
+type PartialViewportAppState = {
+  height?: number;
+  scrollX?: number;
+  scrollY?: number;
+  width?: number;
+  zoom?: { value?: number };
+};
+type ImageGeneratorElement = Record<string, unknown> & {
+  backgroundColor?: string;
+  customData?: Partial<ImageGeneratorData>;
+  height?: number;
+  id?: string;
+  isDeleted?: boolean;
+  strokeColor?: string;
+  updated?: number;
+  version?: number;
+  versionNonce?: number;
+  width?: number;
+  x?: number;
+  y?: number;
+};
+type ImageGeneratorSceneApi = {
+  getSceneElements: () => readonly ImageGeneratorElement[];
+  updateScene: (scene: {
+    elements: ImageGeneratorElement[];
+    captureUpdate?: string;
+  }) => void;
+};
+type ImageGeneratorCreateApi = ImageGeneratorSceneApi & {
+  getAppState: () => PartialViewportAppState;
+};
+
 function generateId(): string {
   return (
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2)
+    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   ).slice(0, 20);
 }
 
@@ -43,7 +78,8 @@ export function getDisplayDimensions(
   aspectRatio: string,
   displayMaxSize = 400,
 ): { width: number; height: number } {
-  const dims = RATIO_DIMENSIONS[aspectRatio] ?? RATIO_DIMENSIONS["1:1"]!;
+  const dims = RATIO_DIMENSIONS[aspectRatio] ??
+    RATIO_DIMENSIONS["1:1"] ?? { w: 1024, h: 1024 };
   const scale = Math.min(displayMaxSize / dims.w, displayMaxSize / dims.h);
   return {
     width: Math.round(dims.w * scale),
@@ -58,7 +94,8 @@ export function getGenerationDimensions(
   aspectRatio: string,
   quality: string,
 ): { width: number; height: number } {
-  const dims = RATIO_DIMENSIONS[aspectRatio] ?? RATIO_DIMENSIONS["1:1"]!;
+  const dims = RATIO_DIMENSIONS[aspectRatio] ??
+    RATIO_DIMENSIONS["1:1"] ?? { w: 1024, h: 1024 };
   const multiplier = quality === "ultra" ? 4 : quality === "hd" ? 2 : 1;
   return {
     width: dims.w * multiplier,
@@ -70,11 +107,7 @@ export function getGenerationDimensions(
  * Create an Excalidraw rectangle element that serves as an image generator placeholder.
  */
 export function createImageGeneratorElement(
-  api: {
-    getAppState: () => any;
-    getSceneElements: () => readonly any[];
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: ImageGeneratorCreateApi,
   options?: {
     aspectRatio?: string;
     model?: string;
@@ -83,13 +116,20 @@ export function createImageGeneratorElement(
 ): string {
   const aspectRatio = options?.aspectRatio ?? "1:1";
   const { width, height } = getDisplayDimensions(aspectRatio);
-  const center = getViewportCenter(api.getAppState());
+  const appState = api.getAppState();
+  const center = getViewportCenter({
+    scrollX: appState.scrollX ?? 0,
+    scrollY: appState.scrollY ?? 0,
+    width: appState.width ?? 0,
+    height: appState.height ?? 0,
+    zoom: { value: appState.zoom?.value ?? 1 },
+  });
 
   const customData: ImageGeneratorData = {
     type: "image-generator",
     status: "idle",
     prompt: "",
-    model: options?.model ?? "black-forest-labs/flux-kontext-pro",
+    model: options?.model ?? "codex/gpt-image-2",
     aspectRatio,
     quality: options?.quality ?? "hd",
   };
@@ -139,14 +179,20 @@ export function createImageGeneratorElement(
 /**
  * Check if an Excalidraw element is an image-generator placeholder.
  */
-export function isImageGeneratorElement(element: any): element is { customData: ImageGeneratorData } & Record<string, unknown> {
-  return element?.customData?.type === "image-generator";
+export function isImageGeneratorElement(
+  element: unknown,
+): element is ImageGeneratorElement & { customData: ImageGeneratorData } {
+  if (!element || typeof element !== "object") return false;
+  const item = element as { customData?: { type?: unknown } };
+  return item.customData?.type === "image-generator";
 }
 
 /**
  * Get the image-generator data from an element, or null if not an image-generator.
  */
-export function getImageGeneratorData(element: any): ImageGeneratorData | null {
+export function getImageGeneratorData(
+  element: unknown,
+): ImageGeneratorData | null {
   if (!isImageGeneratorElement(element)) return null;
   return element.customData as ImageGeneratorData;
 }
@@ -155,14 +201,11 @@ export function getImageGeneratorData(element: any): ImageGeneratorData | null {
  * Update the customData of an image-generator element.
  */
 export function updateImageGeneratorElement(
-  api: {
-    getSceneElements: () => readonly any[];
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: ImageGeneratorSceneApi,
   elementId: string,
   updates: Partial<ImageGeneratorData>,
 ): void {
-  const elements = api.getSceneElements().map((el: any) => {
+  const elements = api.getSceneElements().map((el) => {
     if (el.id !== elementId || !isImageGeneratorElement(el)) return el;
     return {
       ...el,
@@ -187,19 +230,16 @@ export function updateImageGeneratorElement(
  * Resize an image-generator element when aspect ratio changes.
  */
 export function resizeImageGeneratorElement(
-  api: {
-    getSceneElements: () => readonly any[];
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: ImageGeneratorSceneApi,
   elementId: string,
   aspectRatio: string,
 ): void {
   const { width, height } = getDisplayDimensions(aspectRatio);
-  const elements = api.getSceneElements().map((el: any) => {
+  const elements = api.getSceneElements().map((el) => {
     if (el.id !== elementId) return el;
     // Keep center position, adjust size
-    const cx = el.x + el.width / 2;
-    const cy = el.y + el.height / 2;
+    const cx = (el.x ?? 0) + (el.width ?? 0) / 2;
+    const cy = (el.y ?? 0) + (el.height ?? 0) / 2;
     return {
       ...el,
       x: cx - width / 2,
@@ -219,13 +259,10 @@ export function resizeImageGeneratorElement(
  * Delete an image-generator element from the canvas.
  */
 export function deleteImageGeneratorElement(
-  api: {
-    getSceneElements: () => readonly any[];
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: ImageGeneratorSceneApi,
   elementId: string,
 ): void {
-  const elements = api.getSceneElements().map((el: any) => {
+  const elements = api.getSceneElements().map((el) => {
     if (el.id !== elementId) return el;
     return { ...el, isDeleted: true };
   });
