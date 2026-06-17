@@ -178,9 +178,10 @@ export default function HomePage() {
 
   const handleDiscoverySelect = useCallback(
     (selection: HomeDiscoverySelection) => {
-      createNewProject({ prompt: selection.prompt });
+      setSelectedExample(null);
+      promptRef.current?.fill(selection.prompt);
     },
-    [createNewProject],
+    [],
   );
 
   if (creating) {

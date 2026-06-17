@@ -363,6 +363,7 @@ export default interface Resources {
         "storyboard-video": "影片与分镜",
         "ui-design": "UI设计"
       },
+      "sendToPrompt": "做同款",
       "title": "灵感发现"
     },
     "examples": {

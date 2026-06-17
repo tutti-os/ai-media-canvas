@@ -178,6 +178,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
           if (!textarea) return;
           textarea.style.height = "auto";
           textarea.style.height = `${textarea.scrollHeight}px`;
+          textarea.scrollIntoView({ behavior: "smooth", block: "center" });
           textarea.focus();
         });
       },

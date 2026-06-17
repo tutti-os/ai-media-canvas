@@ -1,5 +1,6 @@
 "use client";
 
+import { SendHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type {
@@ -110,11 +111,8 @@ export function HomeDiscoveryGallery({
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {visibleCases.map((item) => (
-          <button
+          <article
             key={item.id}
-            type="button"
-            aria-label={item.title}
-            onClick={() => onCaseSelect(item)}
             className="group overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
           >
             <div className="relative aspect-[4/4.6] overflow-hidden bg-muted">
@@ -150,8 +148,16 @@ export function HomeDiscoveryGallery({
                   {item.prompt}
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={() => onCaseSelect(item)}
+                className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                <SendHorizontal aria-hidden="true" className="size-3.5" />
+                {t("discovery.sendToPrompt")}
+              </button>
             </div>
-          </button>
+          </article>
         ))}
       </div>
     </section>
