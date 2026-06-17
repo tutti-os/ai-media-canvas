@@ -281,11 +281,18 @@ type VideoGenerateResult = {
   status?: "generating";
 };
 
+type ToolInvokeConfig = {
+  configurable?: {
+    user_attachment_map?: Record<string, string>;
+  };
+};
+
 // ── Run function ───────────────────────────────────────────────────────────
 
 export async function runVideoGenerate(
   input: VideoGenerateInput,
   submitVideoJob?: SubmitVideoJobFn,
+  attachmentMap?: Record<string, string>,
 ): Promise<VideoGenerateResult> {
   let effectiveInput = input;
   const t0 = Date.now();
@@ -296,6 +303,17 @@ export async function runVideoGenerate(
     );
   };
 
+  // Resolve assetId references in inputImages to URLs/data URIs provided by
+  // the current user message attachments.
+  if (effectiveInput.inputImages?.length && attachmentMap) {
+    effectiveInput = {
+      ...effectiveInput,
+      inputImages: effectiveInput.inputImages.map(
+        (ref) => attachmentMap[ref] ?? ref,
+      ),
+    };
+  }
+
   // Filter invalid image references
   if (effectiveInput.inputImages?.length) {
     const validImages = effectiveInput.inputImages.filter(
@@ -304,6 +322,18 @@ export async function runVideoGenerate(
         img.startsWith("https://") ||
         img.startsWith("data:"),
     );
+    if (validImages.length !== effectiveInput.inputImages.length) {
+      lap("filtered_invalid_refs", {
+        before: effectiveInput.inputImages.length,
+        after: validImages.length,
+        dropped: effectiveInput.inputImages.filter(
+          (img) =>
+            !img.startsWith("http://") &&
+            !img.startsWith("https://") &&
+            !img.startsWith("data:"),
+        ),
+      });
+    }
     effectiveInput = {
       ...effectiveInput,
       inputImages: validImages.length > 0 ? validImages : undefined,
@@ -616,8 +646,14 @@ export function createVideoGenerateTool(deps?: {
     : "No video models available";
 
   return tool(
-    async (input: VideoGenerateInput) => {
-      const result = await runVideoGenerate(input, deps?.submitVideoJob);
+    async (input: VideoGenerateInput, config) => {
+      const attachmentMap = (config as ToolInvokeConfig | undefined)
+        ?.configurable?.user_attachment_map;
+      const result = await runVideoGenerate(
+        input,
+        deps?.submitVideoJob,
+        attachmentMap,
+      );
       if (!result.error && deps?.layoutInspectionState) {
         deps.layoutInspectionState.canvasId = undefined;
         deps.layoutInspectionState.inspectedAt = undefined;

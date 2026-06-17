@@ -17,21 +17,27 @@ import { ToastProvider } from "../src/components/toast";
 
 const {
   fetchImageModelsMock,
+  fetchGenerationJobMock,
   fetchVideoModelsMock,
   generateImageDirectMock,
   generateVideoDirectMock,
+  uploadFileMock,
 } = vi.hoisted(() => ({
   fetchImageModelsMock: vi.fn(),
+  fetchGenerationJobMock: vi.fn(),
   fetchVideoModelsMock: vi.fn(),
   generateImageDirectMock: vi.fn(),
   generateVideoDirectMock: vi.fn(),
+  uploadFileMock: vi.fn(),
 }));
 
 vi.mock("../src/lib/server-api", () => ({
+  fetchGenerationJob: fetchGenerationJobMock,
   fetchImageModels: fetchImageModelsMock,
   fetchVideoModels: fetchVideoModelsMock,
   generateImageDirect: generateImageDirectMock,
   generateVideoDirect: generateVideoDirectMock,
+  uploadFile: uploadFileMock,
 }));
 
 vi.mock("@excalidraw/excalidraw", () => ({
@@ -63,6 +69,40 @@ function findPositionedPanel(start: HTMLElement): HTMLElement {
   return current;
 }
 
+function mockBrowserImageNormalization(
+  output = "data:image/png;base64,bm9ybWFsaXplZA==",
+) {
+  const drawImage = vi.fn();
+  const fillRect = vi.fn();
+  const toDataURL = vi.fn(() => output);
+  const originalCreateElement = document.createElement.bind(document);
+  vi.spyOn(document, "createElement").mockImplementation((tagName) => {
+    if (tagName !== "canvas") return originalCreateElement(tagName);
+    return {
+      width: 0,
+      height: 0,
+      getContext: () => ({ drawImage, fillRect, fillStyle: "" }),
+      toDataURL,
+    } as unknown as HTMLCanvasElement;
+  });
+  vi.stubGlobal(
+    "Image",
+    class {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = 2542;
+      naturalHeight = 1630;
+      width = 2542;
+      height = 1630;
+
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    },
+  );
+  return { drawImage, fillRect, output, toDataURL };
+}
+
 describe("canvas generation panels", () => {
   beforeEach(() => {
     fetchImageModelsMock.mockReset();
@@ -92,18 +132,37 @@ describe("canvas generation panels", () => {
             audio: false,
           },
           limits: {
-            maxDuration: 18,
+            maxDuration: 16,
+            allowedDurations: [4, 5, 6, 8, 10, 15, 16],
             maxResolution: "1080p",
             maxInputImages: 8,
           },
         },
       ],
     });
+
+    fetchGenerationJobMock.mockReset();
+
+    uploadFileMock.mockReset();
+    uploadFileMock.mockResolvedValue({
+      asset: {
+        id: "uploaded-reference",
+        bucket: "project-assets",
+        objectPath: "uploads/uploaded-reference.png",
+        mimeType: "image/png",
+        byteSize: 128,
+        projectId: null,
+        createdAt: "2026-06-16T00:00:00.000Z",
+      },
+      url: "http://127.0.0.1:3001/local-assets/uploaded-reference",
+    });
   });
 
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("shows an image model picker and omits the hard-coded storage copy", async () => {
@@ -339,6 +398,79 @@ describe("canvas generation panels", () => {
     unmount();
 
     expect(capturedSignal?.aborted).toBe(false);
+  });
+
+  it("uploads normalized Agnes reference images before image generation", async () => {
+    const { drawImage } = mockBrowserImageNormalization();
+    fetchImageModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "agnes-image/agnes-image-2.1-flash",
+          displayName: "Agnes Image 2.1 Flash",
+          description: "Agnes image route",
+          provider: "agnes-image",
+          schema: {
+            type: "object",
+            properties: {
+              inputImages: { type: "array", maxItems: 1 },
+            },
+          },
+        },
+      ],
+    });
+    generateImageDirectMock.mockImplementation(() => new Promise(() => {}));
+
+    render(
+      <ToastProvider>
+        <ImageGeneratorPanel
+          elementId="el-image"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 320 }}
+          data={{
+            type: "image-generator",
+            status: "idle",
+            prompt: "生成一张参考图变体",
+            model: "agnes-image/agnes-image-2.1-flash",
+            aspectRatio: "1:1",
+            quality: "hd",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          projectId="project-1"
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.upload(
+      await screen.findByLabelText("上传参考图"),
+      new File(["fake"], "reference.png", { type: "image/png" }),
+    );
+    await screen.findByAltText("参考图预览");
+    await userEvent.click(screen.getByRole("button", { name: "生成图片" }));
+
+    await waitFor(() => expect(uploadFileMock).toHaveBeenCalledTimes(1));
+    expect(uploadFileMock).toHaveBeenCalledWith(expect.any(File), "project-1");
+    const uploadedFile = uploadFileMock.mock.calls[0]?.[0] as File;
+    expect(uploadedFile.name).toBe("reference.png");
+    expect(uploadedFile.type).toBe("image/png");
+    expect(generateImageDirectMock).toHaveBeenCalledWith(
+      "生成一张参考图变体",
+      expect.objectContaining({
+        inputImages: ["http://127.0.0.1:3001/local-assets/uploaded-reference"],
+        projectId: "project-1",
+      }),
+    );
+    expect(drawImage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(Number),
+      0,
+      expect.any(Number),
+      1630,
+      0,
+      0,
+      1024,
+      1024,
+    );
   });
 
   it("skips inserting a generated image when the generator element was deleted", async () => {
@@ -644,6 +776,608 @@ describe("canvas generation panels", () => {
       expect.not.objectContaining({
         inputImages: expect.anything(),
         videoMode: expect.anything(),
+      }),
+    );
+  });
+
+  it("uploads a single first frame as image-to-video instead of keyframes", async () => {
+    const { drawImage, toDataURL } = mockBrowserImageNormalization(
+      "data:image/jpeg;base64,bm9ybWFsaXplZA==",
+    );
+    fetchVideoModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "agnes-video/agnes-video-v2.0",
+          displayName: "Agnes Video v2.0",
+          description: "Agnes video route",
+          provider: "agnes-video",
+          capabilities: {
+            textToVideo: true,
+            imageToVideo: true,
+            videoToVideo: false,
+            audio: false,
+          },
+          limits: {
+            maxDuration: 16,
+            allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+            maxResolution: "1080p",
+            maxInputImages: 8,
+          },
+          schema: {
+            type: "object",
+            properties: {},
+            "x-aimc-ui": {
+              inputModes: [
+                {
+                  id: "text",
+                  labelKey: "tools.schema.inputModes.text",
+                  maxImages: 0,
+                },
+                {
+                  id: "image",
+                  labelKey: "tools.schema.inputModes.image",
+                  minImages: 1,
+                  maxImages: 1,
+                  slots: ["firstFrame"],
+                },
+                {
+                  id: "keyframes",
+                  labelKey: "tools.schema.inputModes.keyframes",
+                  videoMode: "keyframes",
+                  minImages: 2,
+                  maxImages: 8,
+                  slots: ["firstFrame", "lastFrame"],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    });
+    generateVideoDirectMock.mockResolvedValue({
+      url: "https://example.com/generated.mp4",
+      assetId: "asset-video-1",
+      mimeType: "video/mp4",
+      durationSeconds: 5,
+    });
+    const excalidrawApi = createExcalidrawApiStub([
+      {
+        id: "el-video",
+        isDeleted: false,
+        customData: { type: "video-generator" },
+      },
+    ]);
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "让首帧动起来",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+          }}
+          excalidrawApi={excalidrawApi}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.upload(
+      await screen.findByLabelText("上传首帧"),
+      new File(["fake"], "first.png", { type: "image/png" }),
+    );
+    await screen.findByAltText("首帧预览");
+    await userEvent.click(screen.getByRole("button", { name: "生成视频" }));
+
+    await waitFor(() => expect(uploadFileMock).toHaveBeenCalledTimes(1));
+    expect(uploadFileMock).toHaveBeenCalledWith(expect.any(File), "project-1");
+    const uploadedFile = uploadFileMock.mock.calls[0]?.[0] as File;
+    expect(uploadedFile.name).toBe("video-reference-image.jpg");
+    expect(uploadedFile.type).toBe("image/jpeg");
+    expect(toDataURL).toHaveBeenCalledWith("image/jpeg", 0.92);
+    expect(generateVideoDirectMock).toHaveBeenCalledWith(
+      "让首帧动起来",
+      expect.objectContaining({
+        inputImages: ["http://127.0.0.1:3001/local-assets/uploaded-reference"],
+      }),
+    );
+    expect(drawImage).toHaveBeenCalledWith(
+      expect.anything(),
+      0,
+      expect.any(Number),
+      2542,
+      expect.any(Number),
+      0,
+      0,
+      1280,
+      720,
+    );
+    expect(generateVideoDirectMock).toHaveBeenCalledWith(
+      "让首帧动起来",
+      expect.not.objectContaining({
+        videoMode: expect.anything(),
+      }),
+    );
+    expect(excalidrawApi.updateScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        elements: expect.arrayContaining([
+          expect.objectContaining({
+            customData: expect.objectContaining({
+              inputImages: [
+                "http://127.0.0.1:3001/local-assets/uploaded-reference",
+              ],
+            }),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("submits Agnes first-frame video at the supported reference-image size", async () => {
+    const { drawImage, toDataURL } = mockBrowserImageNormalization(
+      "data:image/jpeg;base64,bm9ybWFsaXplZA==",
+    );
+    generateVideoDirectMock.mockResolvedValue({
+      url: "https://example.com/generated.mp4",
+      assetId: "asset-video-1",
+      mimeType: "video/mp4",
+      durationSeconds: 5,
+    });
+    const excalidrawApi = createExcalidrawApiStub([
+      {
+        id: "el-video",
+        isDeleted: false,
+        customData: { type: "video-generator" },
+      },
+    ]);
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "跳舞",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 16,
+            resolution: "1080p",
+          }}
+          excalidrawApi={excalidrawApi}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.upload(
+      await screen.findByLabelText("上传首帧"),
+      new File(["fake"], "first.png", { type: "image/png" }),
+    );
+    await screen.findByAltText("首帧预览");
+    await userEvent.click(screen.getByRole("button", { name: "生成视频" }));
+
+    await waitFor(() => expect(uploadFileMock).toHaveBeenCalledTimes(1));
+    expect(toDataURL).toHaveBeenCalledWith("image/jpeg", 0.92);
+    expect(drawImage).toHaveBeenCalledWith(
+      expect.anything(),
+      0,
+      expect.any(Number),
+      2542,
+      expect.any(Number),
+      0,
+      0,
+      1280,
+      720,
+    );
+    expect(generateVideoDirectMock).toHaveBeenCalledWith(
+      "跳舞",
+      expect.objectContaining({
+        duration: 16,
+        resolution: "720p",
+        inputImages: ["http://127.0.0.1:3001/local-assets/uploaded-reference"],
+      }),
+    );
+  });
+
+  it("limits Agnes reference video controls after a first frame is selected", async () => {
+    fetchVideoModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "agnes-video/agnes-video-v2.0",
+          displayName: "Agnes Video v2.0",
+          description: "Agnes video route",
+          provider: "agnes-video",
+          capabilities: {
+            textToVideo: true,
+            imageToVideo: true,
+            videoToVideo: false,
+            audio: false,
+          },
+          limits: {
+            maxDuration: 16,
+            allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+            maxResolution: "1080p",
+            maxInputImages: 8,
+          },
+          schema: {
+            type: "object",
+            properties: {},
+            "x-aimc-ui": {
+              inputModes: [
+                {
+                  id: "text",
+                  labelKey: "tools.schema.inputModes.text",
+                  maxImages: 0,
+                },
+                {
+                  id: "image",
+                  labelKey: "tools.schema.inputModes.image",
+                  minImages: 1,
+                  maxImages: 1,
+                  limits: {
+                    allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+                    maxDuration: 16,
+                    resolutions: ["480p", "720p", "1080p"],
+                  },
+                  slots: ["firstFrame"],
+                },
+                {
+                  id: "keyframes",
+                  labelKey: "tools.schema.inputModes.keyframes",
+                  videoMode: "keyframes",
+                  minImages: 2,
+                  maxImages: 8,
+                  limits: {
+                    allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+                    maxDuration: 16,
+                    resolutions: ["480p", "720p", "1080p"],
+                  },
+                  slots: ["firstFrame", "lastFrame"],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "跳舞",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 16,
+            resolution: "1080p",
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.upload(
+      await screen.findByLabelText("上传首帧"),
+      new File(["fake"], "first.png", { type: "image/png" }),
+    );
+    await screen.findByAltText("首帧预览");
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "16:9 · 16s" }),
+      ).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "16:9 · 16s" }));
+
+    expect(screen.getByRole("button", { name: "5s" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "16s" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "720p" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "1080p" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("limits Agnes keyframe controls when only the first frame is selected", async () => {
+    fetchVideoModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "agnes-video/agnes-video-v2.0",
+          displayName: "Agnes Video v2.0",
+          description: "Agnes video route",
+          provider: "agnes-video",
+          capabilities: {
+            textToVideo: true,
+            imageToVideo: true,
+            videoToVideo: false,
+            audio: false,
+          },
+          limits: {
+            maxDuration: 16,
+            allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+            maxResolution: "1080p",
+            maxInputImages: 8,
+          },
+          schema: {
+            type: "object",
+            properties: {},
+            "x-aimc-ui": {
+              inputModes: [
+                {
+                  id: "text",
+                  labelKey: "tools.schema.inputModes.text",
+                  maxImages: 0,
+                },
+                {
+                  id: "image",
+                  labelKey: "tools.schema.inputModes.image",
+                  minImages: 1,
+                  maxImages: 1,
+                  limits: {
+                    allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+                    maxDuration: 16,
+                    resolutions: ["480p", "720p", "1080p"],
+                  },
+                  slots: ["firstFrame"],
+                },
+                {
+                  id: "keyframes",
+                  labelKey: "tools.schema.inputModes.keyframes",
+                  videoMode: "keyframes",
+                  minImages: 2,
+                  maxImages: 8,
+                  limits: {
+                    allowedDurations: [4, 5, 6, 8, 10, 15, 16],
+                    maxDuration: 16,
+                    resolutions: ["480p", "720p", "1080p"],
+                  },
+                  slots: ["firstFrame", "lastFrame"],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "跳舞",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 16,
+            resolution: "1080p",
+            inputMode: "keyframes",
+            inputImages: [
+              "http://127.0.0.1:3001/local-assets/uploaded-reference",
+            ],
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    expect(await screen.findByAltText("首帧预览")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "16:9 · 16s" }),
+      ).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "16:9 · 16s" }));
+
+    expect(screen.getByRole("button", { name: "5s" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "16s" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "720p" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "1080p" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("limits Agnes reference video controls even when model schema is unavailable", async () => {
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "跳舞",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 16,
+            resolution: "1080p",
+            inputMode: "keyframes",
+            inputImages: [
+              "http://127.0.0.1:3001/local-assets/uploaded-reference",
+            ],
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    expect(await screen.findByAltText("首帧预览")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "16:9 · 16s" }),
+      ).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "16:9 · 16s" }));
+
+    expect(screen.getByRole("button", { name: "5s" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "16s" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "720p" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "1080p" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("allows Agnes 1080p reference video controls for short durations", async () => {
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "idle",
+            prompt: "跳舞",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "1080p",
+            inputMode: "keyframes",
+            inputImages: [
+              "http://127.0.0.1:3001/local-assets/uploaded-reference",
+            ],
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    expect(await screen.findByAltText("首帧预览")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "16:9 · 5s" }),
+      ).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "16:9 · 5s" }));
+
+    expect(screen.getByRole("button", { name: "5s" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "1080p" })).toHaveClass(
+      "bg-foreground",
+    );
+  });
+
+  it("restores uploaded video frame previews from generator data", async () => {
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "error",
+            prompt: "让首帧动起来",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+            inputMode: "keyframes",
+            inputImages: [
+              "http://127.0.0.1:3001/local-assets/uploaded-reference",
+            ],
+          }}
+          excalidrawApi={createExcalidrawApiStub()}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    const preview = await screen.findByAltText("首帧预览");
+    expect(preview).toHaveAttribute("src", "/local-assets/uploaded-reference");
+  });
+
+  it("restores legacy failed video frame previews from the job payload", async () => {
+    fetchGenerationJobMock.mockResolvedValue({
+      job: {
+        id: "job-video-1",
+        payload: {
+          input_images: ["http://127.0.0.1:3001/local-assets/job-reference"],
+        },
+      },
+    });
+    const excalidrawApi = createExcalidrawApiStub([
+      {
+        id: "el-video",
+        isDeleted: false,
+        customData: { type: "video-generator" },
+      },
+    ]);
+
+    render(
+      <ToastProvider>
+        <VideoGeneratorPanel
+          elementId="el-video"
+          elementBounds={{ x: 0, y: 0, width: 320, height: 180 }}
+          canvasId="canvas-1"
+          data={{
+            type: "video-generator",
+            status: "error",
+            prompt: "让首帧动起来",
+            model: "agnes-video/agnes-video-v2.0",
+            aspectRatio: "16:9",
+            duration: 5,
+            resolution: "720p",
+            inputMode: "keyframes",
+            jobId: "job-video-1",
+          }}
+          excalidrawApi={excalidrawApi}
+          projectId="project-1"
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+          onClose={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    expect(await screen.findByAltText("首帧预览")).toHaveAttribute(
+      "src",
+      "/local-assets/job-reference",
+    );
+    expect(fetchGenerationJobMock).toHaveBeenCalledWith("job-video-1");
+    expect(excalidrawApi.updateScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        elements: expect.arrayContaining([
+          expect.objectContaining({
+            customData: expect.objectContaining({
+              inputImages: ["http://127.0.0.1:3001/local-assets/job-reference"],
+            }),
+          }),
+        ]),
       }),
     );
   });

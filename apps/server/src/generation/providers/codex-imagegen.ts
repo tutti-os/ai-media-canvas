@@ -1,8 +1,17 @@
 import { spawn } from "node:child_process";
-import { cp, copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import {
+  copyFile,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 
+import { resolveCodexImagegenAgentModel } from "../../agent/local-agent-models.js";
 import type {
   GeneratedImage,
   ImageGenerateParams,
@@ -10,16 +19,16 @@ import type {
   ModelInfo,
 } from "../types.js";
 import { GenerationError, aspectRatioToDimensions } from "../utils.js";
-import { resolveCodexImagegenAgentModel } from "../../agent/local-agent-models.js";
 
 const ICON_CODEX = "https://github.com/openai.png";
 const DEFAULT_CODEX_TIMEOUT_MS = 10 * 60_000;
 const CODEX_IMAGEGEN_MODEL_ID = "codex/gpt-image-2";
+const CODEX_IMAGEGEN_MAX_INPUT_IMAGES = 16;
 
 export const CODEX_IMAGEGEN_MODELS: readonly ModelInfo[] = [
   {
     id: CODEX_IMAGEGEN_MODEL_ID,
-    displayName: "Codex GPT Image 2",
+    displayName: "GPT Image 2",
     description:
       "Routes image generation through the signed-in local Codex imagegen skill.",
     iconUrl: ICON_CODEX,
@@ -73,11 +82,11 @@ export class CodexImagegenProvider implements ImageProvider {
         `Unsupported Codex Imagegen model: ${params.model}`,
       );
     }
-    if ((params.inputImages?.length ?? 0) > 0) {
+    if ((params.inputImages?.length ?? 0) > CODEX_IMAGEGEN_MAX_INPUT_IMAGES) {
       throw new GenerationError(
         this.name,
         "invalid_input",
-        "Codex Imagegen currently supports text-to-image generation only.",
+        `Codex Imagegen supports at most ${CODEX_IMAGEGEN_MAX_INPUT_IMAGES} reference images.`,
       );
     }
 
@@ -90,9 +99,14 @@ export class CodexImagegenProvider implements ImageProvider {
     await mkdir(dirname(outputPath), { recursive: true });
 
     try {
+      const referenceImages = await materializeReferenceImages(
+        params.inputImages ?? [],
+        runDir,
+      );
       const instruction = buildCodexImagegenInstruction(params, {
         aspectRatio,
         outputPath,
+        referenceImages,
       });
       const agentModel = await this.resolveAgentModel();
       const codexHome = await materializeCodexImagegenHome({
@@ -172,13 +186,26 @@ async function materializeCodexImagegenHome(options: {
 
 function buildCodexImagegenInstruction(
   params: ImageGenerateParams,
-  options: { aspectRatio: string; outputPath: string },
+  options: {
+    aspectRatio: string;
+    outputPath: string;
+    referenceImages: readonly string[];
+  },
 ) {
   const quality = params.quality ?? "hd";
   return [
     "Use the system imagegen skill to generate exactly one raster image.",
     "Do not call any AIMC tools. Do not write explanations.",
     `Prompt: ${params.prompt}`,
+    ...(options.referenceImages.length > 0
+      ? [
+          "Reference images:",
+          ...options.referenceImages.map(
+            (imagePath, index) => `${index + 1}. ${imagePath}`,
+          ),
+          "Use the reference image(s) for subject, composition, or style according to the prompt.",
+        ]
+      : []),
     `Aspect ratio: ${options.aspectRatio}`,
     `Quality: ${quality}`,
     "Output format: PNG.",
@@ -186,6 +213,100 @@ function buildCodexImagegenInstruction(
     "After saving, print a final line in this exact format:",
     `SAVED: ${options.outputPath}`,
   ].join("\n");
+}
+
+async function materializeReferenceImages(
+  inputImages: readonly string[],
+  runDir: string,
+) {
+  if (inputImages.length === 0) return [];
+
+  const referenceDir = join(runDir, "reference-images");
+  await mkdir(referenceDir, { recursive: true });
+
+  const paths: string[] = [];
+  for (const [index, inputImage] of inputImages.entries()) {
+    const materialized = await materializeReferenceImage(
+      inputImage,
+      referenceDir,
+      index,
+    );
+    paths.push(materialized);
+  }
+  return paths;
+}
+
+async function materializeReferenceImage(
+  inputImage: string,
+  referenceDir: string,
+  index: number,
+) {
+  if (inputImage.startsWith("data:")) {
+    const parsed = parseDataUrl(inputImage);
+    const outputPath = join(
+      referenceDir,
+      `reference-${index + 1}.${extensionForMimeType(parsed.mimeType)}`,
+    );
+    await writeFile(outputPath, parsed.buffer);
+    return outputPath;
+  }
+
+  if (/^https?:\/\//i.test(inputImage)) {
+    const response = await fetch(inputImage);
+    if (!response.ok) {
+      throw new GenerationError(
+        "codex-imagegen",
+        "invalid_input",
+        `Unable to fetch reference image ${index + 1}: ${response.status}`,
+      );
+    }
+    const mimeType =
+      response.headers.get("content-type")?.split(";")[0]?.trim() ??
+      "image/png";
+    const outputPath = join(
+      referenceDir,
+      `reference-${index + 1}.${extensionForMimeType(mimeType)}`,
+    );
+    await writeFile(outputPath, Buffer.from(await response.arrayBuffer()));
+    return outputPath;
+  }
+
+  if (isAbsolute(inputImage)) {
+    const outputPath = join(referenceDir, `reference-${index + 1}.png`);
+    await copyFile(inputImage, outputPath);
+    return outputPath;
+  }
+
+  throw new GenerationError(
+    "codex-imagegen",
+    "invalid_input",
+    `Unsupported reference image input ${index + 1}.`,
+  );
+}
+
+function parseDataUrl(dataUrl: string) {
+  const match = dataUrl.match(/^data:([^;,]+)(;base64)?,(.*)$/s);
+  if (!match) {
+    throw new GenerationError(
+      "codex-imagegen",
+      "invalid_input",
+      "Invalid reference image data URL.",
+    );
+  }
+
+  const mimeType = match[1] ?? "image/png";
+  const body = match[3] ?? "";
+  const buffer = match[2]
+    ? Buffer.from(body, "base64")
+    : Buffer.from(decodeURIComponent(body), "utf8");
+  return { mimeType, buffer };
+}
+
+function extensionForMimeType(mimeType: string) {
+  if (mimeType === "image/jpeg" || mimeType === "image/jpg") return "jpg";
+  if (mimeType === "image/webp") return "webp";
+  if (mimeType === "image/gif") return "gif";
+  return "png";
 }
 
 export function parseSavedPath(output: string) {

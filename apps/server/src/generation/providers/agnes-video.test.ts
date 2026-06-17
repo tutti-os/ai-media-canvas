@@ -155,6 +155,26 @@ describe("AgnesVideoProvider", () => {
     });
   });
 
+  it("rejects Agnes durations above the remote creation limit before calling the API", async () => {
+    const provider = new AgnesVideoProvider("agnes-test-key");
+
+    await expect(
+      provider.generate({
+        prompt: "A long stylized camera move",
+        model: "agnes-video/agnes-video-v2.0",
+        duration: 18,
+        aspectRatio: "16:9",
+        resolution: "720p",
+      }),
+    ).rejects.toMatchObject({
+      code: "invalid_input",
+      message:
+        "Invalid Agnes duration: 18. Use one of 4, 5, 6, 8, 10, 15, 16 seconds.",
+      provider: "agnes-video",
+    });
+    expect(videoGenerateMock).not.toHaveBeenCalled();
+  });
+
   it("rejects Agnes numFrames values that violate the 8n + 1 rule", async () => {
     const provider = new AgnesVideoProvider("agnes-test-key");
 
@@ -236,6 +256,54 @@ describe("AgnesVideoProvider", () => {
     });
   });
 
+  it("caps image-conditioned Agnes videos to the supported 720p resolution", async () => {
+    const provider = new AgnesVideoProvider("agnes-test-key");
+
+    await provider.generate({
+      prompt: "Make the first frame dance",
+      model: "agnes-video/agnes-video-v2.0",
+      duration: 16,
+      aspectRatio: "16:9",
+      resolution: "1080p",
+      inputImages: ["data:image/png;base64,AAAA"],
+    });
+
+    expect(videoGenerateMock).toHaveBeenCalledWith({
+      mode: "img2video",
+      image: "data:image/png;base64,AAAA",
+      prompt: "Make the first frame dance",
+      width: 1280,
+      height: 720,
+      numFrames: 385,
+      frameRate: 24,
+      ttl: "1h",
+    });
+  });
+
+  it("keeps short image-conditioned Agnes videos at 1080p", async () => {
+    const provider = new AgnesVideoProvider("agnes-test-key");
+
+    await provider.generate({
+      prompt: "Make the first frame dance",
+      model: "agnes-video/agnes-video-v2.0",
+      duration: 5,
+      aspectRatio: "16:9",
+      resolution: "1080p",
+      inputImages: ["data:image/png;base64,AAAA"],
+    });
+
+    expect(videoGenerateMock).toHaveBeenCalledWith({
+      mode: "img2video",
+      image: "data:image/png;base64,AAAA",
+      prompt: "Make the first frame dance",
+      width: 1920,
+      height: 1080,
+      numFrames: 121,
+      frameRate: 24,
+      ttl: "1h",
+    });
+  });
+
   it("maps multiple input images to Agnes multivideo mode by default", async () => {
     const provider = new AgnesVideoProvider("agnes-test-key");
 
@@ -283,6 +351,33 @@ describe("AgnesVideoProvider", () => {
       frameRate: 24,
       ttl: "1h",
     });
+  });
+
+  it("times out if Agnes video task creation never returns", async () => {
+    const provider = new AgnesVideoProvider("agnes-test-key");
+    videoGenerateMock.mockReturnValueOnce(new Promise(() => {}));
+    vi.useFakeTimers();
+
+    try {
+      const resultPromise = provider.generate({
+        prompt: "A stuck Agnes request",
+        model: "agnes-video/agnes-video-v2.0",
+        aspectRatio: "16:9",
+        resolution: "720p",
+      });
+      const rejection = expect(resultPromise).rejects.toMatchObject({
+        code: "timeout",
+        message: "Agnes video task creation timed out after 120000ms.",
+        provider: "agnes-video",
+      });
+
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      await rejection;
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps polling queued Agnes tasks instead of using the SDK timeout", async () => {
@@ -411,6 +506,7 @@ describe("AgnesVideoProvider", () => {
           id: "task_123",
           object: "video",
           status: "failed",
+          completed_at: 1790000000,
           error: {
             message: "Remote generation failed.",
           },

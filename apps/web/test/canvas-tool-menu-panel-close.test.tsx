@@ -2,6 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -42,10 +43,12 @@ import { CanvasToolMenu } from "../src/components/canvas-tool-menu";
 
 type TestElement = {
   id: string;
+  backgroundColor?: string;
   customData?: Record<string, unknown>;
   height?: number;
   isDeleted?: boolean;
   link?: string | null;
+  strokeColor?: string;
   type?: string;
   width?: number;
   x?: number;
@@ -248,6 +251,66 @@ describe("CanvasToolMenu panel dismissal", () => {
       }),
     );
     expect(appState.selectedElementIds).toEqual({ [generatorId]: true });
+  });
+
+  it("keeps GPT uppercase in the image generator loading overlay", async () => {
+    let onChangeHandler:
+      | ((elements: TestElement[], appState: TestAppState) => void)
+      | null = null;
+    const elements: TestElement[] = [
+      {
+        id: "image-generator-1",
+        type: "rectangle",
+        x: 100,
+        y: 80,
+        width: 320,
+        height: 320,
+        isDeleted: false,
+        backgroundColor: "#F3F4F6",
+        strokeColor: "#D1D5DB",
+        customData: {
+          type: "image-generator",
+          status: "generating",
+          model: "codex/gpt-image-2",
+        },
+      },
+    ];
+    const appState: TestAppState = {
+      scrollX: 0,
+      scrollY: 0,
+      zoom: { value: 1 },
+      activeTool: { type: "selection" },
+      selectedElementIds: {},
+      width: 1200,
+      height: 800,
+    };
+    const excalidrawApi = {
+      getSceneElements: () => elements,
+      getAppState: () => appState,
+      updateScene: vi.fn(),
+      onChange: vi.fn((handler) => {
+        onChangeHandler = handler;
+        return () => {};
+      }),
+      setActiveTool: vi.fn(),
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasToolMenu
+          canvasId="canvas-1"
+          projectId="project-1"
+          excalidrawApi={excalidrawApi}
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => expect(onChangeHandler).toBeTruthy());
+    act(() => {
+      onChangeHandler?.(elements, appState);
+    });
+
+    expect(await screen.findByText("GPT Image 2")).toBeInTheDocument();
   });
 
   it("drags video overlay nodes and shows a grabbing cursor", async () => {

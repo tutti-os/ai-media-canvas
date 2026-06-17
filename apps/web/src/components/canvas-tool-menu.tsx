@@ -51,6 +51,7 @@ import {
   isExcalidrawContextMenuTarget,
 } from "../lib/excalidraw-context-menu";
 import { toRuntimeAssetUrl } from "../lib/local-assets";
+import { formatModelDisplayName } from "./chat/utils";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
@@ -372,12 +373,7 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
           )}
           {showIcon && model && (
             <span className="mt-2 whitespace-nowrap rounded-full bg-foreground/5 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-              {model
-                .split("/")
-                .pop()
-                ?.split("-")
-                .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
-                .join(" ")}
+              {formatModelDisplayName(model)}
             </span>
           )}
           <span
@@ -906,7 +902,10 @@ export function CanvasToolMenu({
       // rendered in screen coordinates and must move when the canvas pans
       // or zooms even if the scene element itself did not change.
       const genKey = `${generatingRaw
-        .map((el) => `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}`)
+        .map(
+          (el) =>
+            `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${el.customData?.model ?? ""}`,
+        )
         .join("|")}@${scrollX}:${scrollY}:${zoom}`;
 
       if (genKey !== prevGeneratingKeyRef.current) {
@@ -1143,6 +1142,7 @@ export function CanvasToolMenu({
             data={generatorData}
             excalidrawApi={excalidrawApi}
             canvasScrollZoom={canvasScrollZoom}
+            projectId={projectId}
             onClose={handleCloseGenerator}
           />
         )}

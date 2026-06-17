@@ -1,4 +1,4 @@
-import { createAgnesClient } from "agnes-ai-cli";
+import { type AgnesClientConfig, createAgnesClient } from "agnes-ai-cli";
 
 import type {
   GeneratedVideo,
@@ -6,16 +6,22 @@ import type {
   VideoModelInfo,
   VideoProvider,
 } from "../types.js";
-import { GenerationError } from "../utils.js";
+import { GenerationError, withTimeout } from "../utils.js";
 
 const ICON_AGNES = "https://agnes-cdn.kiwiar.com/logo/agnes-icon-400x400.jpg";
 const DEFAULT_FRAME_RATE = 24;
 const DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
 const DEFAULT_AGNES_MEDIA_TTL = "1h" as const;
+const AGNES_VIDEO_CREATE_TIMEOUT_MS = 120_000;
+const AGNES_VIDEO_POLL_REQUEST_TIMEOUT_MS = 30_000;
 const AGNES_VIDEO_POLL_INTERVAL_SECONDS = 10;
 const AGNES_VIDEO_POLL_TIMEOUT_SECONDS = 7_200;
 const AGNES_VIDEO_MODEL_IDS = ["agnes-video-v2.0"] as const;
 const AGNES_VIDEO_ASPECT_RATIOS = ["16:9", "9:16"] as const;
+const AGNES_VIDEO_ALLOWED_DURATIONS = [4, 5, 6, 8, 10, 15, 16] as const;
+const MAX_AGNES_DURATION_SECONDS = 16;
+const MAX_AGNES_IMAGE_DURATION_SECONDS = 16;
+const MAX_AGNES_1080P_IMAGE_NUM_FRAMES = 169;
 const MAX_AGNES_NUM_FRAMES = 441;
 type AgnesVideoModelId = (typeof AGNES_VIDEO_MODEL_IDS)[number];
 type AgnesVideoAspectRatio = (typeof AGNES_VIDEO_ASPECT_RATIOS)[number];
@@ -68,7 +74,8 @@ const AGNES_VIDEO_MODELS: readonly VideoModelInfo[] = [
       audio: false,
     },
     limits: {
-      maxDuration: 18,
+      allowedDurations: [...AGNES_VIDEO_ALLOWED_DURATIONS],
+      maxDuration: MAX_AGNES_DURATION_SECONDS,
       maxResolution: "1080p",
       maxInputImages: 8,
     },
@@ -94,14 +101,19 @@ function getVideoDimensions(
 
 function resolveAgnesResolution(
   resolution: VideoGenerateParams["resolution"] | "4k" | undefined,
+  hasInputImages = false,
+  numFrames = 0,
 ): AgnesVideoResolution | undefined {
-  if (
-    resolution === undefined ||
-    resolution === "480p" ||
-    resolution === "720p" ||
-    resolution === "1080p"
-  ) {
+  if (resolution === undefined) {
     return resolution;
+  }
+  if (resolution === "480p" || resolution === "720p") {
+    return resolution;
+  }
+  if (resolution === "1080p") {
+    return hasInputImages && numFrames > MAX_AGNES_1080P_IMAGE_NUM_FRAMES
+      ? "720p"
+      : resolution;
   }
   throw new GenerationError(
     "agnes-video",
@@ -142,6 +154,27 @@ function resolveAgnesFrameRate(frameRate: number | undefined) {
     );
   }
   return resolvedFrameRate;
+}
+
+function resolveAgnesDuration(duration: number | undefined) {
+  const resolvedDuration = duration ?? 5;
+  if (
+    !Number.isInteger(resolvedDuration) ||
+    !AGNES_VIDEO_ALLOWED_DURATIONS.includes(
+      resolvedDuration as (typeof AGNES_VIDEO_ALLOWED_DURATIONS)[number],
+    )
+  ) {
+    throw new GenerationError(
+      "agnes-video",
+      "invalid_input",
+      `Invalid Agnes duration: ${resolvedDuration}. Use one of ${AGNES_VIDEO_ALLOWED_DURATIONS.join(", ")} seconds.`,
+    );
+  }
+  return resolvedDuration;
+}
+
+function resolveAgnesImageDuration(durationSeconds: number) {
+  return Math.min(durationSeconds, MAX_AGNES_IMAGE_DURATION_SECONDS);
 }
 
 function alignAgnesNumFrames(durationSeconds: number, frameRate: number) {
@@ -238,19 +271,24 @@ function resolveAgnesVideoRequest(params: VideoGenerateParams) {
     );
   }
 
+  const inputImages = params.inputImages ?? [];
+  const hasInputImages = inputImages.length > 0;
   const aspectRatio = resolveAgnesAspectRatio(params.aspectRatio);
-  const resolution = resolveAgnesResolution(
-    params.resolution as VideoGenerateParams["resolution"] | "4k" | undefined,
-  );
-  const { width, height } = getVideoDimensions(resolution, aspectRatio);
   const frameRate = resolveAgnesFrameRate(params.frameRate);
-  const durationSeconds = params.duration ?? 5;
+  const durationSeconds = hasInputImages
+    ? resolveAgnesImageDuration(resolveAgnesDuration(params.duration))
+    : resolveAgnesDuration(params.duration);
   const numFrames = resolveAgnesNumFrames(
     durationSeconds,
     frameRate,
     params.numFrames,
   );
-  const inputImages = params.inputImages ?? [];
+  const resolution = resolveAgnesResolution(
+    params.resolution as VideoGenerateParams["resolution"] | "4k" | undefined,
+    hasInputImages,
+    numFrames,
+  );
+  const { width, height } = getVideoDimensions(resolution, aspectRatio);
   const mode = resolveAgnesVideoMode(params);
   resolveAgnesVideoModel(params.model);
 
@@ -272,12 +310,19 @@ export class AgnesVideoProvider implements VideoProvider {
   private apiKey: string;
   private baseUrl: string;
 
-  constructor(apiKey: string, baseUrl?: string) {
+  constructor(
+    apiKey: string,
+    baseUrl?: string,
+    options: Pick<AgnesClientConfig, "mediaProvider"> = {},
+  ) {
     this.apiKey = apiKey;
     this.baseUrl = (baseUrl ?? DEFAULT_AGNES_BASE_URL).replace(/\/$/, "");
     this.client = createAgnesClient({
       apiKey,
       ...(baseUrl ? { baseUrl } : {}),
+      ...(options.mediaProvider
+        ? { mediaProvider: options.mediaProvider }
+        : {}),
     });
   }
 
@@ -286,9 +331,9 @@ export class AgnesVideoProvider implements VideoProvider {
     const metadata = getAgnesRemoteTaskMetadata(params);
 
     try {
-      const task =
+      const task = await withTimeout(
         request.mode === "text2video"
-          ? await this.client.video.generate({
+          ? this.client.video.generate({
               mode: request.mode,
               prompt: params.prompt,
               width: request.width,
@@ -301,7 +346,7 @@ export class AgnesVideoProvider implements VideoProvider {
                 : {}),
             })
           : request.mode === "img2video"
-            ? await this.client.video.generate({
+            ? this.client.video.generate({
                 mode: request.mode,
                 image: getFirstAgnesInputImage(request.inputImages),
                 prompt: params.prompt,
@@ -315,7 +360,7 @@ export class AgnesVideoProvider implements VideoProvider {
                   ? { negativePrompt: params.negativePrompt }
                   : {}),
               })
-            : await this.client.video.generate({
+            : this.client.video.generate({
                 mode: request.mode,
                 images: request.inputImages,
                 prompt: params.prompt,
@@ -328,7 +373,15 @@ export class AgnesVideoProvider implements VideoProvider {
                 ...(params.negativePrompt
                   ? { negativePrompt: params.negativePrompt }
                   : {}),
-              });
+              }),
+        AGNES_VIDEO_CREATE_TIMEOUT_MS,
+        () =>
+          new GenerationError(
+            this.name,
+            "timeout",
+            `Agnes video task creation timed out after ${AGNES_VIDEO_CREATE_TIMEOUT_MS}ms.`,
+          ),
+      );
 
       const taskWithVideoId = task as typeof task & { videoId?: string };
 
@@ -411,6 +464,14 @@ export class AgnesVideoProvider implements VideoProvider {
         raw: task.raw ?? task,
       });
 
+      if (status === "failed" || status === "canceled") {
+        throw new GenerationError(
+          this.name,
+          status === "canceled" ? "canceled" : "api_error",
+          getAgnesTaskErrorMessage(task.error, status),
+        );
+      }
+
       if (status === "completed" || task.completed_at) {
         const videoUrl = extractAgnesVideoUrl(task);
         if (!videoUrl) {
@@ -430,14 +491,6 @@ export class AgnesVideoProvider implements VideoProvider {
             request.durationSeconds ??
             Math.round((request.numFrames - 1) / request.frameRate),
         };
-      }
-
-      if (status === "failed" || status === "canceled") {
-        throw new GenerationError(
-          this.name,
-          status === "canceled" ? "canceled" : "api_error",
-          getAgnesTaskErrorMessage(task.error, status),
-        );
       }
 
       if (videoId) {
@@ -464,6 +517,7 @@ export class AgnesVideoProvider implements VideoProvider {
         Accept: "application/json",
         Authorization: `Bearer ${this.apiKey}`,
       },
+      signal: AbortSignal.timeout(AGNES_VIDEO_POLL_REQUEST_TIMEOUT_MS),
     });
     const text = await response.text();
     const body = parseAgnesJson(text);

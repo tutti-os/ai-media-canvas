@@ -664,6 +664,12 @@ export async function generateVideoDirect(
   };
 }
 
+export async function fetchGenerationJob(jobId: string): Promise<JobResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/jobs/${jobId}`);
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as JobResponse;
+}
+
 async function createGenerationJob(
   endpoint: "/api/jobs/image-generation" | "/api/jobs/video-generation",
   body: Record<string, unknown>,

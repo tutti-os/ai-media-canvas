@@ -18,10 +18,19 @@ import {
 } from "../../lib/canvas-image-generator";
 import { withNormalizedCanvasElementIndices } from "../../lib/canvas-normalize";
 import { isExcalidrawContextMenuTarget } from "../../lib/excalidraw-context-menu";
+import {
+  imageTargetForAspectRatio,
+  isAgnesModel,
+  normalizeImageDataUrlToTarget,
+} from "../../lib/image-input-normalization";
 import { normalizeLocalAssetStorageUrl } from "../../lib/local-assets";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { ImageModelInfo } from "../../lib/server-api";
-import { fetchImageModels, generateImageDirect } from "../../lib/server-api";
+import {
+  fetchImageModels,
+  generateImageDirect,
+  uploadFile,
+} from "../../lib/server-api";
 
 type ImageGeneratorPanelProps = {
   elementId: string;
@@ -29,6 +38,7 @@ type ImageGeneratorPanelProps = {
   data: ImageGeneratorData;
   excalidrawApi: ImageGeneratorExcalidrawApi;
   canvasScrollZoom: { scrollX: number; scrollY: number; zoom: number };
+  projectId?: string;
   onClose: () => void;
 };
 
@@ -80,6 +90,7 @@ export function ImageGeneratorPanel({
   data,
   excalidrawApi,
   canvasScrollZoom,
+  projectId,
   onClose,
 }: ImageGeneratorPanelProps) {
   const { t } = useAppTranslation("canvas");
@@ -284,13 +295,28 @@ export function ImageGeneratorPanel({
     });
 
     try {
+      const inputImage =
+        referenceImage && maxInputImages > 0
+          ? isAgnesModel(model)
+            ? await normalizeImageDataUrlToTarget(
+                referenceImage.dataUrl,
+                imageTargetForAspectRatio(aspectRatio),
+              )
+            : referenceImage.dataUrl
+          : null;
+      const inputImageUrl = inputImage
+        ? await uploadReferenceImageForGeneration(
+            inputImage,
+            referenceImage?.file,
+            projectId,
+          )
+        : null;
       const result = await generateImageDirect(prompt.trim(), {
         model,
         aspectRatio,
         quality: data.quality,
-        ...(referenceImage && maxInputImages > 0
-          ? { inputImages: [referenceImage.dataUrl] }
-          : {}),
+        ...(inputImageUrl ? { inputImages: [inputImageUrl] } : {}),
+        ...(projectId ? { projectId } : {}),
         onJobCreated: (jobId) => {
           updateImageGeneratorElement(excalidrawApi, elementId, {
             jobId,
@@ -380,6 +406,7 @@ export function ImageGeneratorPanel({
     data.quality,
     referenceImage,
     maxInputImages,
+    projectId,
     excalidrawApi,
     elementId,
     elementBounds,
@@ -571,4 +598,49 @@ export function ImageGeneratorPanel({
     </div>,
     document.body,
   );
+}
+
+async function uploadReferenceImageForGeneration(
+  dataUrl: string,
+  sourceFile: File | undefined,
+  projectId: string | undefined,
+): Promise<string> {
+  const file = dataUrlToFile(dataUrl, sourceFile);
+  const upload = await uploadFile(file, projectId);
+  return upload.url;
+}
+
+function dataUrlToFile(dataUrl: string, sourceFile: File | undefined): File {
+  const match = dataUrl.match(/^data:([^;,]+)?((?:;[^,]+)*?),(.*)$/s);
+  if (!match) {
+    return (
+      sourceFile ??
+      new File([dataUrl], "reference-image.txt", {
+        type: "text/plain",
+      })
+    );
+  }
+
+  const mimeType = match[1] || sourceFile?.type || "application/octet-stream";
+  const metadata = match[2] ?? "";
+  const body = match[3] ?? "";
+  const binary = metadata.includes(";base64")
+    ? atob(body)
+    : decodeURIComponent(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return new File([bytes], sourceFile?.name || fileNameForMimeType(mimeType), {
+    type: mimeType,
+  });
+}
+
+function fileNameForMimeType(mimeType: string): string {
+  if (mimeType === "image/jpeg") return "reference-image.jpg";
+  if (mimeType === "image/webp") return "reference-image.webp";
+  if (mimeType === "image/gif") return "reference-image.gif";
+  if (mimeType === "image/svg+xml") return "reference-image.svg";
+  return "reference-image.png";
 }

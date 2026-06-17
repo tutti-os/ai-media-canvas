@@ -18,10 +18,20 @@ import {
   isExcalidrawCanvasTarget,
   isExcalidrawContextMenuTarget,
 } from "../../lib/excalidraw-context-menu";
+import {
+  isAgnesModel,
+  normalizeImageDataUrlsToTarget,
+  videoTargetForAspectRatio,
+} from "../../lib/image-input-normalization";
 import { normalizeLocalAssetStorageUrl } from "../../lib/local-assets";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { VideoModelInfo } from "../../lib/server-api";
-import { fetchVideoModels, generateVideoDirect } from "../../lib/server-api";
+import {
+  fetchGenerationJob,
+  fetchVideoModels,
+  generateVideoDirect,
+  uploadFile,
+} from "../../lib/server-api";
 
 type VideoGeneratorPanelProps = {
   elementId: string;
@@ -38,9 +48,11 @@ type VideoGeneratorPanelProps = {
 const ASPECT_RATIOS = ["16:9", "9:16"] as const;
 const FALLBACK_DURATION_OPTIONS = [4, 5, 6, 8, 10, 15, 18] as const;
 const RESOLUTION_OPTIONS = ["480p", "720p", "1080p", "4k", "2160p"] as const;
+const AGNES_MAX_REFERENCE_VIDEO_DURATION = 16;
+const AGNES_MAX_REFERENCE_VIDEO_1080P_DURATION = 6;
 const PANEL_WIDTH = 640;
 type FrameSlot = "first" | "last";
-type FrameData = { dataUrl: string; file: File };
+type FrameData = { dataUrl: string; file?: File };
 type VideoResolution = (typeof RESOLUTION_OPTIONS)[number];
 type CanvasElement = Record<string, unknown> & {
   id?: string;
@@ -59,12 +71,37 @@ type VideoInputModeId =
   | "video";
 const videoInputModeMemory = new Map<string, VideoInputModeId>();
 type VideoModeOption = {
-  id: "keyframes" | "reference";
+  id: "image" | "keyframes" | "reference";
   labelKey: string;
   mode: AimcInputMode;
 };
 
-function getDurationOptions(model?: VideoModelInfo): number[] {
+function getDurationOptions(
+  model?: VideoModelInfo,
+  mode?: AimcInputMode,
+): number[] {
+  const modeDurations = mode?.limits?.allowedDurations;
+  if (modeDurations?.length) {
+    return [...modeDurations].sort((a, b) => a - b);
+  }
+
+  const modeMaxDuration = mode?.limits?.maxDuration;
+  if (modeMaxDuration) {
+    const options = FALLBACK_DURATION_OPTIONS.filter(
+      (value) => value <= modeMaxDuration,
+    );
+    return options.length ? options : [modeMaxDuration];
+  }
+
+  if (mode && model && isAgnesModel(model.id)) {
+    const options = model.limits?.allowedDurations?.length
+      ? model.limits.allowedDurations
+      : FALLBACK_DURATION_OPTIONS;
+    return options.filter(
+      (value) => value <= AGNES_MAX_REFERENCE_VIDEO_DURATION,
+    );
+  }
+
   const schemaDurations = getSchemaEnum<number>(model, "duration");
   if (schemaDurations.length) return schemaDurations.sort((a, b) => a - b);
 
@@ -82,7 +119,34 @@ function getDurationOptions(model?: VideoModelInfo): number[] {
   return options.length ? options : [maxDuration];
 }
 
-function getResolutionOptions(model?: VideoModelInfo): VideoResolution[] {
+function getResolutionOptions(
+  model?: VideoModelInfo,
+  mode?: AimcInputMode,
+  duration?: number,
+): VideoResolution[] {
+  const modeResolutions = mode?.limits?.resolutions?.filter(
+    (value): value is VideoResolution =>
+      RESOLUTION_OPTIONS.includes(value as VideoResolution),
+  );
+  if (modeResolutions?.length) {
+    return filterAgnesReferenceResolutions(model, mode, duration, [
+      ...modeResolutions,
+    ]);
+  }
+
+  if (mode && model && isAgnesModel(model.id)) {
+    const schemaResolutions = getSchemaEnum<string>(model, "resolution").filter(
+      (value): value is VideoResolution =>
+        RESOLUTION_OPTIONS.includes(value as VideoResolution),
+    );
+    return filterAgnesReferenceResolutions(
+      model,
+      mode,
+      duration,
+      schemaResolutions.length ? schemaResolutions : ["480p", "720p", "1080p"],
+    );
+  }
+
   const schemaResolutions = getSchemaEnum<string>(model, "resolution").filter(
     (value): value is VideoResolution =>
       RESOLUTION_OPTIONS.includes(value as VideoResolution),
@@ -95,6 +159,28 @@ function getResolutionOptions(model?: VideoModelInfo): VideoResolution[] {
   const maxIndex = RESOLUTION_OPTIONS.indexOf(normalizedMax as VideoResolution);
   if (maxIndex < 0) return [...RESOLUTION_OPTIONS];
   return RESOLUTION_OPTIONS.slice(0, maxIndex + 1);
+}
+
+function getAgnesReferenceMaxResolution(duration: number): VideoResolution {
+  return duration <= AGNES_MAX_REFERENCE_VIDEO_1080P_DURATION
+    ? "1080p"
+    : "720p";
+}
+
+function filterAgnesReferenceResolutions(
+  model: VideoModelInfo | undefined,
+  mode: AimcInputMode | undefined,
+  duration: number | undefined,
+  options: VideoResolution[],
+) {
+  if (!mode || !model || !isAgnesModel(model.id)) return options;
+  const maxResolution = getAgnesReferenceMaxResolution(
+    duration ?? AGNES_MAX_REFERENCE_VIDEO_DURATION,
+  );
+  const maxIndex = RESOLUTION_OPTIONS.indexOf(maxResolution);
+  return options.filter(
+    (value) => RESOLUTION_OPTIONS.indexOf(value) <= maxIndex,
+  );
 }
 
 function getAspectRatioOptions(model?: VideoModelInfo): string[] {
@@ -198,19 +284,25 @@ function getModeById(modes: readonly AimcInputMode[], id: string) {
 }
 
 function getKeyframeMode(modes: readonly AimcInputMode[]) {
-  return (
-    getModeById(modes, "keyframes") ??
-    getModeById(modes, "image") ??
-    getModeById(modes, "multivideo")
-  );
+  return getModeById(modes, "keyframes") ?? getModeById(modes, "multivideo");
 }
 
 function getVideoModeOptions(
   modes: readonly AimcInputMode[],
 ): VideoModeOption[] {
+  const imageMode = getModeById(modes, "image");
   const keyframeMode = getKeyframeMode(modes);
   const referenceMode = getModeById(modes, "reference");
   return [
+    ...(imageMode
+      ? [
+          {
+            id: "image" as const,
+            labelKey: imageMode.labelKey,
+            mode: imageMode,
+          },
+        ]
+      : []),
     ...(keyframeMode
       ? [
           {
@@ -236,6 +328,29 @@ function getModeMaxImages(mode?: AimcInputMode) {
   return mode?.maxImages ?? 0;
 }
 
+function supportsImageCount(mode: AimcInputMode | undefined, count: number) {
+  if (!mode) return false;
+  if (mode.minImages !== undefined && count < mode.minImages) return false;
+  if (mode.maxImages !== undefined && count > mode.maxImages) return false;
+  return true;
+}
+
+function resolveSubmissionVideoMode(
+  modes: readonly AimcInputMode[],
+  selectedOption: VideoModeOption | undefined,
+  imageCount: number,
+) {
+  if (!selectedOption || imageCount === 0) return undefined;
+  if (
+    selectedOption.id === "keyframes" &&
+    !supportsImageCount(selectedOption.mode, imageCount)
+  ) {
+    const imageMode = getModeById(modes, "image");
+    if (supportsImageCount(imageMode, imageCount)) return imageMode?.videoMode;
+  }
+  return selectedOption.mode.videoMode;
+}
+
 function normalizeStoredInputMode(mode: VideoGeneratorData["inputMode"]) {
   if (
     mode === "text" ||
@@ -250,6 +365,42 @@ function normalizeStoredInputMode(mode: VideoGeneratorData["inputMode"]) {
   return "text";
 }
 
+function frameFromUrl(url: string | undefined): FrameData | null {
+  if (!url) return null;
+  return { dataUrl: normalizeLocalAssetStorageUrl(url) ?? url };
+}
+
+function getPayloadInputImages(payload: Record<string, unknown>): string[] {
+  const value = payload.input_images;
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is string => typeof item === "string" && item.length > 0,
+      )
+    : [];
+}
+
+function getSelectedInputFrames(
+  selectedOption: VideoModeOption | undefined,
+  frames: {
+    firstFrame: FrameData | null;
+    lastFrame: FrameData | null;
+    referenceFrame: FrameData | null;
+  },
+): FrameData[] {
+  if (selectedOption?.id === "image") {
+    return frames.firstFrame ? [frames.firstFrame] : [];
+  }
+  if (selectedOption?.id === "keyframes") {
+    return [frames.firstFrame, frames.lastFrame].filter(
+      (frame): frame is FrameData => frame !== null,
+    );
+  }
+  if (selectedOption?.id === "reference") {
+    return frames.referenceFrame ? [frames.referenceFrame] : [];
+  }
+  return [];
+}
+
 function normalizeDuration(duration: number, options: number[]) {
   return options.includes(duration) ? duration : (options[0] ?? duration);
 }
@@ -258,6 +409,41 @@ function normalizeResolution(resolution: string, options: VideoResolution[]) {
   return options.includes(resolution as VideoResolution)
     ? resolution
     : (options.at(-1) ?? resolution);
+}
+
+function isResolutionAbove(
+  resolution: string,
+  maximum: VideoResolution,
+): boolean {
+  const currentIndex = RESOLUTION_OPTIONS.indexOf(
+    resolution as VideoResolution,
+  );
+  const maximumIndex = RESOLUTION_OPTIONS.indexOf(maximum);
+  return currentIndex >= 0 && maximumIndex >= 0 && currentIndex > maximumIndex;
+}
+
+function resolveSubmittedVideoControls(input: {
+  duration: number;
+  inputImageCount: number;
+  model: string;
+  resolution: VideoResolution;
+}) {
+  if (!isAgnesModel(input.model) || input.inputImageCount === 0) {
+    return {
+      duration: input.duration,
+      resolution: input.resolution,
+    };
+  }
+
+  return {
+    duration: Math.min(input.duration, AGNES_MAX_REFERENCE_VIDEO_DURATION),
+    resolution: isResolutionAbove(
+      input.resolution,
+      getAgnesReferenceMaxResolution(input.duration),
+    )
+      ? getAgnesReferenceMaxResolution(input.duration)
+      : input.resolution,
+  };
 }
 
 function FrameUploadTile({
@@ -383,6 +569,7 @@ export function VideoGeneratorPanel({
   const { handleGenerationError } = useGenerationErrorHandler();
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
+  const restoredJobInputImagesRef = useRef(new Set<string>());
 
   useEffect(() => {
     let cancelled = false;
@@ -441,6 +628,56 @@ export function VideoGeneratorPanel({
   }, [data.inputMode, elementId]);
 
   useEffect(() => {
+    const restoredImages = data.inputImages ?? [];
+    if (restoredImages.length === 0) return;
+
+    if (normalizeStoredInputMode(data.inputMode) === "reference") {
+      setReferenceFrame(
+        (current) => current ?? frameFromUrl(restoredImages[0]),
+      );
+      return;
+    }
+
+    setFirstFrame((current) => current ?? frameFromUrl(restoredImages[0]));
+    setLastFrame((current) => current ?? frameFromUrl(restoredImages[1]));
+  }, [data.inputImages, data.inputMode]);
+
+  useEffect(() => {
+    if ((data.inputImages?.length ?? 0) > 0 || !data.jobId) return;
+    if (restoredJobInputImagesRef.current.has(data.jobId)) return;
+    restoredJobInputImagesRef.current.add(data.jobId);
+
+    let cancelled = false;
+    fetchGenerationJob(data.jobId)
+      .then(({ job }) => {
+        if (cancelled) return;
+        const restoredImages = getPayloadInputImages(job.payload);
+        if (restoredImages.length === 0) return;
+
+        if (normalizeStoredInputMode(data.inputMode) === "reference") {
+          setReferenceFrame(
+            (current) => current ?? frameFromUrl(restoredImages[0]),
+          );
+        } else {
+          setFirstFrame(
+            (current) => current ?? frameFromUrl(restoredImages[0]),
+          );
+          setLastFrame((current) => current ?? frameFromUrl(restoredImages[1]));
+        }
+        updateVideoGeneratorElement(excalidrawApi, elementId, {
+          inputImages: restoredImages,
+        });
+      })
+      .catch((err) => {
+        console.warn("[video-gen] Failed to restore job input images:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data.inputImages, data.inputMode, data.jobId, elementId, excalidrawApi]);
+
+  useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "auto";
@@ -463,17 +700,28 @@ export function VideoGeneratorPanel({
     modeOptions.find((option) => option.mode.id === inputMode) ??
     modeOptions[0];
   const selectedMode = selectedModeOption?.mode;
+  const currentInputFrames = useMemo(
+    () =>
+      getSelectedInputFrames(selectedModeOption, {
+        firstFrame,
+        lastFrame,
+        referenceFrame,
+      }),
+    [firstFrame, lastFrame, referenceFrame, selectedModeOption],
+  );
+  const constrainedInputMode =
+    currentInputFrames.length > 0 ? selectedMode : undefined;
   const aspectRatioOptions = useMemo(
     () => getAspectRatioOptions(currentModel),
     [currentModel],
   );
   const durationOptions = useMemo(
-    () => getDurationOptions(currentModel),
-    [currentModel],
+    () => getDurationOptions(currentModel, constrainedInputMode),
+    [currentModel, constrainedInputMode],
   );
   const resolutionOptions = useMemo(
-    () => getResolutionOptions(currentModel),
-    [currentModel],
+    () => getResolutionOptions(currentModel, constrainedInputMode, duration),
+    [currentModel, constrainedInputMode, duration],
   );
 
   useEffect(() => {
@@ -616,6 +864,21 @@ export function VideoGeneratorPanel({
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || loading) return;
 
+    const inputFrames = currentInputFrames;
+    const selectedOption = selectedModeOption;
+    const submittedControls = resolveSubmittedVideoControls({
+      duration,
+      inputImageCount: inputFrames.length,
+      model,
+      resolution: resolution as VideoResolution,
+    });
+    if (submittedControls.duration !== duration) {
+      setDuration(submittedControls.duration);
+    }
+    if (submittedControls.resolution !== resolution) {
+      setResolution(submittedControls.resolution);
+    }
+
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -627,29 +890,48 @@ export function VideoGeneratorPanel({
       prompt: prompt.trim(),
       model,
       aspectRatio,
-      duration,
-      resolution,
+      duration: submittedControls.duration,
+      resolution: submittedControls.resolution,
     });
 
     try {
-      const inputImages: string[] = [];
-      const selectedOption = selectedModeOption;
-      if (selectedOption?.id === "keyframes") {
-        if (firstFrame) inputImages.push(firstFrame.dataUrl);
-        if (lastFrame) inputImages.push(lastFrame.dataUrl);
-      } else if (selectedOption?.id === "reference") {
-        if (referenceFrame) inputImages.push(referenceFrame.dataUrl);
+      const videoMode = resolveSubmissionVideoMode(
+        inputModes,
+        selectedOption,
+        inputFrames.length,
+      );
+      const inputImages = inputFrames.map((frame) => frame.dataUrl);
+      const submittedInputImages =
+        inputImages.length > 0 && isAgnesModel(model)
+          ? await normalizeImageDataUrlsToTarget(
+              inputImages,
+              videoTargetForAspectRatio(
+                aspectRatio,
+                submittedControls.resolution,
+              ),
+              "image/jpeg",
+            )
+          : inputImages;
+      const submittedInputImageUrls = await uploadVideoInputFrames(
+        submittedInputImages,
+        inputFrames,
+        projectId,
+      );
+      if (submittedInputImageUrls.length > 0) {
+        updateVideoGeneratorElement(excalidrawApi, elementId, {
+          inputImages: submittedInputImageUrls,
+          inputMode,
+        });
       }
-      const videoMode = inputImages.length
-        ? selectedOption?.mode.videoMode
-        : undefined;
 
       const result = await generateVideoDirect(prompt.trim(), {
         model,
-        duration,
-        resolution,
+        duration: submittedControls.duration,
+        resolution: submittedControls.resolution,
         aspectRatio,
-        ...(inputImages.length ? { inputImages } : {}),
+        ...(submittedInputImageUrls.length
+          ? { inputImages: submittedInputImageUrls }
+          : {}),
         ...(videoMode ? { videoMode } : {}),
         enableAudio: false,
         projectId,
@@ -699,7 +981,7 @@ export function VideoGeneratorPanel({
           videoUrl,
           model,
           aspectRatio,
-          resolution,
+          resolution: submittedControls.resolution,
         },
       } as unknown as NonNullable<
         Parameters<typeof convertToExcalidrawElements>[0]
@@ -741,10 +1023,10 @@ export function VideoGeneratorPanel({
     aspectRatio,
     duration,
     resolution,
-    firstFrame,
-    lastFrame,
-    referenceFrame,
+    currentInputFrames,
     selectedModeOption,
+    inputMode,
+    inputModes,
     projectId,
     canvasId,
     excalidrawApi,
@@ -759,7 +1041,9 @@ export function VideoGeneratorPanel({
   const showModePicker = modeOptions.length > 1;
   const keyframeMaxImages =
     selectedModeOption?.id === "keyframes" ? getModeMaxImages(selectedMode) : 0;
-  const showFirstFrame = selectedModeOption?.id === "keyframes";
+  const showFirstFrame =
+    selectedModeOption?.id === "image" ||
+    selectedModeOption?.id === "keyframes";
   const showLastFrame = showFirstFrame && keyframeMaxImages > 1;
   const showReferenceFrame = selectedModeOption?.id === "reference";
 
@@ -854,53 +1138,6 @@ export function VideoGeneratorPanel({
           className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3"
         >
           <div className="flex min-w-0 flex-1 basis-[420px] items-center gap-2">
-            {selectedModeOption && (
-              <div className="relative shrink-0">
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => {
-                    setShowModeDropdown((value) => !value);
-                    setShowModelDropdown(false);
-                    setShowParamsPopover(false);
-                  }}
-                  className="flex h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <span className="truncate max-w-[120px]">
-                    {t(selectedModeOption.labelKey)}
-                  </span>
-                  {showModePicker && (
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                  )}
-                </button>
-                {showModeDropdown && showModePicker && (
-                  <div className="absolute bottom-full left-0 z-50 mb-2 w-[200px] overflow-hidden rounded-2xl border border-border bg-popover shadow-card">
-                    <div className="py-1">
-                      {modeOptions.map((option) => (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() =>
-                            handleInputModeChange(
-                              option.mode.id as VideoInputModeId,
-                            )
-                          }
-                          className="flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
-                        >
-                          <span className="flex h-5 w-5 items-center justify-center text-muted-foreground">
-                            {selectedModeOption.id === option.id && (
-                              <Check className="h-4 w-4" />
-                            )}
-                          </span>
-                          <span>{t(option.labelKey)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
             <div className="relative min-w-[180px] flex-1">
               <button
                 type="button"
@@ -948,6 +1185,53 @@ export function VideoGeneratorPanel({
               )}
             </div>
 
+            {selectedModeOption && (
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    setShowModeDropdown((value) => !value);
+                    setShowModelDropdown(false);
+                    setShowParamsPopover(false);
+                  }}
+                  className="flex h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="truncate max-w-[120px]">
+                    {t(selectedModeOption.labelKey)}
+                  </span>
+                  {showModePicker && (
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                </button>
+                {showModeDropdown && showModePicker && (
+                  <div className="absolute bottom-full left-0 z-50 mb-2 w-[200px] overflow-hidden rounded-2xl border border-border bg-popover shadow-card">
+                    <div className="py-1">
+                      {modeOptions.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() =>
+                            handleInputModeChange(
+                              option.mode.id as VideoInputModeId,
+                            )
+                          }
+                          className="flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
+                        >
+                          <span className="flex h-5 w-5 items-center justify-center text-muted-foreground">
+                            {selectedModeOption.id === option.id && (
+                              <Check className="h-4 w-4" />
+                            )}
+                          </span>
+                          <span>{t(option.labelKey)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="relative shrink-0">
               <button
                 type="button"
@@ -968,13 +1252,13 @@ export function VideoGeneratorPanel({
                       <div className="mb-2 text-xs font-medium text-muted-foreground">
                         {t("tools.videoPanel.aspectRatio")}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         {aspectRatioOptions.map((ratio) => (
                           <button
                             key={ratio}
                             type="button"
                             onClick={() => handleAspectRatioChange(ratio)}
-                            className={`cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
+                            className={`shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
                               aspectRatio === ratio
                                 ? "bg-foreground text-background"
                                 : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -990,13 +1274,13 @@ export function VideoGeneratorPanel({
                       <div className="mb-2 text-xs font-medium text-muted-foreground">
                         {t("tools.videoPanel.duration")}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         {durationOptions.map((value) => (
                           <button
                             key={value}
                             type="button"
                             onClick={() => handleDurationChange(value)}
-                            className={`cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
+                            className={`shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
                               duration === value
                                 ? "bg-foreground text-background"
                                 : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -1012,7 +1296,7 @@ export function VideoGeneratorPanel({
                       <div className="mb-2 text-xs font-medium text-muted-foreground">
                         {t("tools.videoPanel.resolution")}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         {resolutionOptions.map((value) => (
                           <button
                             key={value}
@@ -1027,7 +1311,7 @@ export function VideoGeneratorPanel({
                                 },
                               );
                             }}
-                            className={`cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
+                            className={`shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-xs transition-colors ${
                               resolution === value
                                 ? "bg-foreground text-background"
                                 : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -1057,4 +1341,63 @@ export function VideoGeneratorPanel({
     </div>,
     document.body,
   );
+}
+
+async function uploadVideoInputFrames(
+  dataUrls: readonly string[],
+  sourceFrames: readonly FrameData[],
+  projectId: string | undefined,
+): Promise<string[]> {
+  return Promise.all(
+    dataUrls.map(async (dataUrl, index) => {
+      if (
+        /^https?:\/\//.test(dataUrl) ||
+        dataUrl.startsWith("/local-assets/")
+      ) {
+        return normalizeLocalAssetStorageUrl(dataUrl) ?? dataUrl;
+      }
+      const file = dataUrlToFile(dataUrl, sourceFrames[index]?.file);
+      const upload = await uploadFile(file, projectId);
+      return upload.url;
+    }),
+  );
+}
+
+function dataUrlToFile(dataUrl: string, sourceFile: File | undefined): File {
+  const match = dataUrl.match(/^data:([^;,]+)?((?:;[^,]+)*?),(.*)$/s);
+  if (!match) {
+    return (
+      sourceFile ??
+      new File([dataUrl], "video-reference-image.txt", {
+        type: "text/plain",
+      })
+    );
+  }
+
+  const mimeType = match[1] || sourceFile?.type || "application/octet-stream";
+  const metadata = match[2] ?? "";
+  const body = match[3] ?? "";
+  const binary = metadata.includes(";base64")
+    ? atob(body)
+    : decodeURIComponent(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return new File(
+    [bytes],
+    sourceFile?.type === mimeType
+      ? sourceFile.name
+      : fileNameForMimeType(mimeType),
+    { type: mimeType },
+  );
+}
+
+function fileNameForMimeType(mimeType: string): string {
+  if (mimeType === "image/jpeg") return "video-reference-image.jpg";
+  if (mimeType === "image/webp") return "video-reference-image.webp";
+  if (mimeType === "image/gif") return "video-reference-image.gif";
+  if (mimeType === "image/svg+xml") return "video-reference-image.svg";
+  return "video-reference-image.png";
 }
