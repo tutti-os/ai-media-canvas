@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { extname, join, resolve } from "node:path";
+import { extname, join, relative, resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 
 import type {
@@ -3584,6 +3584,197 @@ export function createLocalStore(options: {
     };
   }
 
+  // --- Tutti reference protocol (project-scoped asset browsing) ---------------
+  // Only project-attributed media assets are exposed; unassigned assets and
+  // non-media files (e.g. generated video plan JSON) are intentionally excluded.
+  const REFERENCE_MEDIA_PREDICATE =
+    "(a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%')";
+  const REFERENCE_MEDIA_PREDICATE_FILE =
+    "(mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')";
+
+  function referenceTimeBounds(timeRange?: {
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+  }) {
+    const fromIso =
+      timeRange?.fromMs != null && Number.isFinite(timeRange.fromMs)
+        ? new Date(timeRange.fromMs).toISOString()
+        : null;
+    const toIso =
+      timeRange?.toMs != null && Number.isFinite(timeRange.toMs)
+        ? new Date(timeRange.toMs).toISOString()
+        : null;
+    return { fromIso, toIso };
+  }
+
+  function encodeReferenceCursor(parts: string[]): string {
+    return Buffer.from(parts.join(" "), "utf8").toString("base64url");
+  }
+
+  function decodeReferenceCursor(cursor?: string | null): string[] | null {
+    if (!cursor) return null;
+    try {
+      const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+      return decoded.split(" ");
+    } catch {
+      return null;
+    }
+  }
+
+  function dataRelativePath(filePath: string): string {
+    return relative(dataRoot, filePath).split("\\").join("/");
+  }
+
+  // Root level: one group per project that owns >=1 in-range media asset.
+  // Keyset paginated on (project name, project id).
+  function listReferenceProjectGroups(input: {
+    filterText?: string | undefined;
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+    limit: number;
+    cursor?: string | null | undefined;
+  }): {
+    groups: Array<{ projectId: string; name: string; referenceCount: number }>;
+    nextCursor: string | null;
+  } {
+    const { fromIso, toIso } = referenceTimeBounds(input);
+    const conditions = ["a.project_id IS NOT NULL", REFERENCE_MEDIA_PREDICATE];
+    const params: SQLInputValue[] = [];
+    if (fromIso) {
+      conditions.push("a.created_at >= ?");
+      params.push(fromIso);
+    }
+    if (toIso) {
+      conditions.push("a.created_at <= ?");
+      params.push(toIso);
+    }
+    if (input.filterText) {
+      conditions.push("p.name LIKE ? COLLATE NOCASE");
+      params.push(`%${input.filterText}%`);
+    }
+    const cursor = decodeReferenceCursor(input.cursor);
+    if (cursor && cursor.length === 2) {
+      const cursorName = cursor[0] ?? "";
+      const cursorId = cursor[1] ?? "";
+      conditions.push("(p.name > ? OR (p.name = ? AND p.id > ?))");
+      params.push(cursorName, cursorName, cursorId);
+    }
+    const limit = Math.max(1, Math.min(50, input.limit));
+    const rows = db
+      .prepare(
+        `
+          SELECT p.id AS project_id, p.name AS name, COUNT(a.id) AS reference_count
+          FROM assets a
+          JOIN projects p ON p.id = a.project_id
+          WHERE ${conditions.join(" AND ")}
+          GROUP BY p.id, p.name
+          ORDER BY p.name ASC, p.id ASC
+          LIMIT ?
+        `,
+      )
+      .all(...params, limit + 1) as Array<{
+      project_id: string;
+      name: string;
+      reference_count: number;
+    }>;
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
+    return {
+      groups: page.map((row) => ({
+        projectId: row.project_id,
+        name: row.name,
+        referenceCount: row.reference_count,
+      })),
+      nextCursor:
+        hasMore && last ? encodeReferenceCursor([last.name, last.project_id]) : null,
+    };
+  }
+
+  // Project level: in-range media assets for one project.
+  // Keyset paginated on (created_at desc, id desc); filterText matches the
+  // file name (which embeds the asset id, the displayed name).
+  function listReferenceProjectAssets(input: {
+    projectId: string;
+    filterText?: string | undefined;
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+    limit: number;
+    cursor?: string | null | undefined;
+  }): {
+    files: Array<{
+      id: string;
+      displayName: string;
+      relativePath: string;
+      mimeType: string | null;
+      sizeBytes: number | null;
+      mtimeMs: number | null;
+    }>;
+    nextCursor: string | null;
+  } {
+    const { fromIso, toIso } = referenceTimeBounds(input);
+    const conditions = ["project_id = ?", REFERENCE_MEDIA_PREDICATE_FILE];
+    const params: SQLInputValue[] = [input.projectId];
+    if (fromIso) {
+      conditions.push("created_at >= ?");
+      params.push(fromIso);
+    }
+    if (toIso) {
+      conditions.push("created_at <= ?");
+      params.push(toIso);
+    }
+    if (input.filterText) {
+      conditions.push("object_path LIKE ? COLLATE NOCASE");
+      params.push(`%${input.filterText}%`);
+    }
+    const cursor = decodeReferenceCursor(input.cursor);
+    if (cursor && cursor.length === 2) {
+      const cursorTime = cursor[0] ?? "";
+      const cursorId = cursor[1] ?? "";
+      conditions.push("(created_at < ? OR (created_at = ? AND id < ?))");
+      params.push(cursorTime, cursorTime, cursorId);
+    }
+    const limit = Math.max(1, Math.min(50, input.limit));
+    const rows = db
+      .prepare(
+        `
+          SELECT id, object_path, mime_type, byte_size, file_path, created_at
+          FROM assets
+          WHERE ${conditions.join(" AND ")}
+          ORDER BY created_at DESC, id DESC
+          LIMIT ?
+        `,
+      )
+      .all(...params, limit + 1) as Array<{
+      id: string;
+      object_path: string;
+      mime_type: string | null;
+      byte_size: number | null;
+      file_path: string;
+      created_at: string;
+    }>;
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
+    return {
+      files: page.map((row) => {
+        const mtime = Date.parse(row.created_at);
+        return {
+          id: row.id,
+          displayName: row.object_path.split("/").at(-1) ?? row.id,
+          relativePath: dataRelativePath(row.file_path),
+          mimeType: row.mime_type,
+          sizeBytes: row.byte_size,
+          mtimeMs: Number.isNaN(mtime) ? null : mtime,
+        };
+      }),
+      nextCursor:
+        hasMore && last
+          ? encodeReferenceCursor([last.created_at, last.id])
+          : null,
+    };
+  }
+
   function resetAllData() {
     db.close();
     rmSync(dataRoot, { force: true, recursive: true });
@@ -3667,6 +3858,8 @@ export function createLocalStore(options: {
       const row = getAssetRow(assetId);
       return row ? assetObjectFromRow(row) : null;
     },
+    listReferenceProjectGroups,
+    listReferenceProjectAssets,
     resetAllData,
   };
 }

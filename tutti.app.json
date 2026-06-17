@@ -15,6 +15,9 @@
   "cli": {
     "manifest": "tutti.cli.json"
   },
+  "references": {
+    "listEndpoint": "/tutti/references/list"
+  },
   "localizationInfo": {
     "defaultLocale": "en",
     "additionalLocales": [
