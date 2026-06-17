@@ -75,6 +75,7 @@ import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
 import { createProjectOperations } from "./http/project-operations.js";
 import { registerProjectRoutes } from "./http/projects.js";
+import { registerReferenceRoutes } from "./http/references.js";
 import { registerSettingsRoutes } from "./http/settings.js";
 import { createSkillOperations } from "./http/skill-operations.js";
 import { registerSkillRoutes } from "./http/skills.js";
@@ -1136,6 +1137,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   };
 
   void registerHealthRoutes(app, env);
+  void registerReferenceRoutes(app, { store });
   void registerProjectRoutes(app, {
     localUser,
     projectOperations,

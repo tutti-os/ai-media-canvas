@@ -384,6 +384,9 @@ export function createManifest({ version }) {
     cli: {
       manifest: "tutti.cli.json",
     },
+    references: {
+      listEndpoint: "/tutti/references/list",
+    },
     localizationInfo: {
       defaultLocale: "en",
       additionalLocales: Object.entries(MANIFEST_LOCALIZATIONS).map(
