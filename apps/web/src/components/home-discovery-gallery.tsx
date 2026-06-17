@@ -111,9 +111,12 @@ export function HomeDiscoveryGallery({
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {visibleCases.map((item) => (
-          <article
+          <button
             key={item.id}
-            className="group overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
+            type="button"
+            aria-label={`${t("discovery.sendToPrompt")}：${item.title}`}
+            onClick={() => onCaseSelect(item)}
+            className="group overflow-hidden rounded-2xl border border-border bg-card text-left shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99]"
           >
             <div className="relative aspect-[4/4.6] overflow-hidden bg-muted">
               <img
@@ -122,6 +125,13 @@ export function HomeDiscoveryGallery({
                 loading="lazy"
                 className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
               />
+              <span
+                aria-hidden="true"
+                className="absolute right-3 top-3 inline-flex h-8 translate-y-0 items-center gap-1.5 rounded-full bg-white/90 px-3 text-xs font-medium text-foreground opacity-100 shadow-sm backdrop-blur-sm transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100 sm:translate-y-1 sm:opacity-0"
+              >
+                <SendHorizontal aria-hidden="true" className="size-3.5" />
+                {t("discovery.sendToPrompt")}
+              </span>
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent p-4">
                 <span className="inline-flex rounded-full bg-white/12 px-2 py-1 text-[11px] text-white/85 backdrop-blur-sm">
                   {item.categoryLabel}
@@ -148,16 +158,8 @@ export function HomeDiscoveryGallery({
                   {item.prompt}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => onCaseSelect(item)}
-                className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-              >
-                <SendHorizontal aria-hidden="true" className="size-3.5" />
-                {t("discovery.sendToPrompt")}
-              </button>
             </div>
-          </article>
+          </button>
         ))}
       </div>
     </section>

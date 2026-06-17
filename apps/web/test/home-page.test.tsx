@@ -141,7 +141,15 @@ describe("Home page", () => {
 
     await screen.findByText("灵感发现");
 
-    await user.click(screen.getAllByRole("button", { name: "做同款" })[0]);
+    expect(
+      screen.queryByRole("button", { name: "做同款" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "做同款：The ART & Cultural Arts Center",
+      }),
+    );
 
     expect(
       screen.getByPlaceholderText("让 AI Media Canvas 帮你设计..."),
