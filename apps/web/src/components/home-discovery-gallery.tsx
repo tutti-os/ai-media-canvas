@@ -116,7 +116,7 @@ export function HomeDiscoveryGallery({
             type="button"
             aria-label={`${t("discovery.sendToPrompt")}：${item.title}`}
             onClick={() => onCaseSelect(item)}
-            className="group overflow-hidden rounded-2xl border border-border bg-card text-left shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99]"
+            className="group cursor-pointer overflow-hidden rounded-2xl border border-border bg-card text-left shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99]"
           >
             <div className="relative aspect-[4/4.6] overflow-hidden bg-muted">
               <img

@@ -145,11 +145,13 @@ describe("Home page", () => {
       screen.queryByRole("button", { name: "做同款" }),
     ).not.toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole("button", {
-        name: "做同款：The ART & Cultural Arts Center",
-      }),
-    );
+    const inspirationCard = screen.getByRole("button", {
+      name: "做同款：The ART & Cultural Arts Center",
+    });
+
+    expect(inspirationCard).toHaveClass("cursor-pointer");
+
+    await user.click(inspirationCard);
 
     expect(
       screen.getByPlaceholderText("让 AI Media Canvas 帮你设计..."),
