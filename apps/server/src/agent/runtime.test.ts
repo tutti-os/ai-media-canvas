@@ -22,11 +22,14 @@ vi.mock("./backends/index.js", () => ({
   createAgentBackend: createAgentBackendMock,
 }));
 
-import { clearProviders } from "../generation/providers/registry.js";
+import {
+  clearProviders,
+  registerImageProvider,
+} from "../generation/providers/registry.js";
 import { createLocalStore } from "../local/store.js";
 import { createLocalUserClient } from "../local/user-client.js";
 import { AIMC_SYSTEM_PROMPT } from "./prompts/aimc-main.js";
-import { createAgentRunService } from "./runtime.js";
+import { buildUserMessage, createAgentRunService } from "./runtime.js";
 
 const tempDirs: string[] = [];
 
@@ -39,6 +42,71 @@ afterEach(() => {
 });
 
 describe("createAgentRunService", () => {
+  it("drops unavailable image generation preference models from user context", () => {
+    registerImageProvider({
+      name: "codex-imagegen",
+      models: [
+        {
+          id: "codex/gpt-image-2",
+          displayName: "GPT Image 2",
+          description: "Codex image generation",
+        },
+      ],
+      async generate() {
+        throw new Error("not used");
+      },
+    });
+
+    const message = buildUserMessage(
+      "生成一张海报",
+      [],
+      {
+        mode: "manual",
+        models: ["black-forest-labs/flux-kontext-pro", "codex/gpt-image-2"],
+      },
+      [],
+    );
+
+    expect(message.text).toContain("codex/gpt-image-2");
+    expect(message.text).not.toContain("black-forest-labs/flux-kontext-pro");
+    expect(message.text).toContain(
+      '<human_image_generation_preference mode="manual" count="1">',
+    );
+  });
+
+  it("drops unavailable image model mentions from user context", () => {
+    registerImageProvider({
+      name: "codex-imagegen",
+      models: [
+        {
+          id: "codex/gpt-image-2",
+          displayName: "GPT Image 2",
+          description: "Codex image generation",
+        },
+      ],
+      async generate() {
+        throw new Error("not used");
+      },
+    });
+
+    const message = buildUserMessage("生成一张海报", [], undefined, [
+      {
+        mentionType: "image-model",
+        id: "black-forest-labs/flux-kontext-pro",
+        label: "Flux Kontext Pro",
+      },
+      {
+        mentionType: "image-model",
+        id: "codex/gpt-image-2",
+        label: "GPT Image 2",
+      },
+    ]);
+
+    expect(message.text).toContain("codex/gpt-image-2");
+    expect(message.text).not.toContain("black-forest-labs/flux-kontext-pro");
+    expect(message.text).toContain('<human_image_model_mentions count="1">');
+  });
+
   it("prepends saved session messages and avoids duplicating the current user prompt", async () => {
     let capturedInput: unknown;
     const agentFactory = vi.fn(() => ({
@@ -104,6 +172,82 @@ describe("createAgentRunService", () => {
         { content: "继续" },
       ],
     });
+  });
+
+  it("blocks server-deepagent Codex image jobs without delegation consent", async () => {
+    registerImageProvider({
+      name: "codex-imagegen",
+      models: [
+        {
+          id: "codex/gpt-image-2",
+          displayName: "GPT Image 2",
+          description: "Codex image generation",
+        },
+      ],
+      async generate() {
+        throw new Error("not used");
+      },
+    });
+
+    let capturedSubmitImageJob:
+      | ((input: {
+          aspectRatio: string;
+          model: string;
+          prompt: string;
+          title: string;
+        }) => Promise<unknown>)
+      | undefined;
+    const agentFactory = vi.fn((agentOptions) => {
+      capturedSubmitImageJob = agentOptions.submitImageJob;
+      return {
+        stream: vi.fn(),
+        streamEvents: vi.fn(() => (async function* () {})()),
+      };
+    });
+
+    const runs = createAgentRunService({
+      agentFactory,
+      createUserClient: vi.fn(),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "anthropic:claude-sonnet-4",
+        codexImagegenEnabled: true,
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {} as never,
+      loadSessionMessages: async () => [],
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "Generate image",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "anthropic:claude-sonnet-4",
+        runtimeKind: "server-deepagent",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the agent factory.
+    }
+
+    expect(capturedSubmitImageJob).toBeTypeOf("function");
+    await expect(
+      capturedSubmitImageJob?.({
+        aspectRatio: "1:1",
+        model: "codex/gpt-image-2",
+        prompt: "poster",
+        title: "poster",
+      }),
+    ).rejects.toThrow("codex_imagegen_confirmation_required");
   });
 
   it("uses saved session messages when a local thread id is present without persistence", async () => {
@@ -401,7 +545,15 @@ describe("createAgentRunService", () => {
     expect(localAgentRuntimeRunMock).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "default",
+        mcpServers: [
+          expect.objectContaining({
+            name: "aimc",
+            startupTimeoutMs: 2 * 60_000,
+            toolTimeoutMs: 30 * 60_000,
+          }),
+        ],
         provider: "codex",
+        timeoutMs: 30 * 60_000,
       }),
     );
   });
@@ -879,6 +1031,173 @@ describe("createAgentRunService", () => {
       }),
     ).rejects.toThrow(/aspectRatio/i);
     expect(createJob).not.toHaveBeenCalled();
+  });
+
+  it("syncs one-time Codex imagegen consent from the local tool gateway into job submission", async () => {
+    let capturedGatewaySession:
+      | {
+          codexImagegenConsentBudget?: number;
+          onWorkspaceSettingsStateChange?: (state: {
+            codexImagegenConsentBudget?: number;
+          }) => void;
+          submitImageJob?: (input: {
+            aspectRatio: string;
+            model: string;
+            prompt: string;
+            title: string;
+          }) => Promise<unknown>;
+        }
+      | undefined;
+    const createSession = vi.fn((input) => {
+      capturedGatewaySession = input;
+      return { token: "tool-token" };
+    });
+    const createJob = vi.fn(async () => ({ id: "job-1" }));
+
+    const runs = createAgentRunService({
+      createUserClient: () => ({
+        from(table: string) {
+          let isUpdate = false;
+          return {
+            table,
+            select() {
+              return this;
+            },
+            eq() {
+              if (isUpdate) {
+                return Promise.resolve({ error: null });
+              }
+              return this;
+            },
+            limit() {
+              return this;
+            },
+            async maybeSingle() {
+              if (table === "canvases") {
+                return {
+                  data: {
+                    content: { elements: [], appState: {}, files: {} },
+                    project_id: "project-1",
+                  },
+                  error: null,
+                };
+              }
+              if (table === "projects") {
+                return {
+                  data: { brand_kit_id: null },
+                  error: null,
+                };
+              }
+              return { data: null, error: null };
+            },
+            update() {
+              isUpdate = true;
+              return this;
+            },
+            async single() {
+              if (table === "canvases") {
+                return {
+                  data: {
+                    content: { elements: [], appState: {}, files: {} },
+                    project_id: "project-1",
+                  },
+                  error: null,
+                };
+              }
+              if (table === "projects") {
+                return {
+                  data: { brand_kit_id: null },
+                  error: null,
+                };
+              }
+              return { data: { id: "workspace-1" }, error: null };
+            },
+          };
+        },
+      }),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "claude:default",
+        codexImagegenEnabled: true,
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {
+        createJob,
+        getJobAdmin: vi.fn(async () => ({
+          result: {
+            asset_id: "asset-1",
+            signed_url: "http://127.0.0.1:3001/local-assets/asset-1",
+            mime_type: "image/png",
+            width: 1024,
+            height: 1024,
+          },
+          status: "succeeded",
+        })),
+      } as never,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession,
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "conversation-1",
+        prompt: "Generate image",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        codexImagegenDelegation: "ask",
+        model: "claude:default",
+        runtimeKind: "local-agent",
+        runtimeProvider: "claude",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the local tool gateway session is created.
+    }
+
+    expect(capturedGatewaySession?.codexImagegenConsentBudget).toBe(0);
+    expect(capturedGatewaySession?.onWorkspaceSettingsStateChange).toBeTypeOf(
+      "function",
+    );
+    capturedGatewaySession?.onWorkspaceSettingsStateChange?.({
+      codexImagegenConsentBudget: 1,
+    });
+
+    await expect(
+      capturedGatewaySession?.submitImageJob?.({
+        aspectRatio: "1:1",
+        model: "codex/gpt-image-2",
+        prompt: "A red square",
+        title: "red square",
+      }),
+    ).resolves.toMatchObject({
+      jobId: "job-1",
+      imageUrl: "http://127.0.0.1:3001/local-assets/asset-1",
+    });
+    expect(createJob).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "user-1" }),
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          caller_provider: "claude",
+          codex_imagegen_consent: "allow-once",
+          codex_imagegen_delegation_allowed: true,
+          model: "codex/gpt-image-2",
+        }),
+      }),
+    );
   });
 
   it("uses the run effective env when validating agent image job providers", async () => {

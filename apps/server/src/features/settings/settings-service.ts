@@ -1,8 +1,8 @@
 import type { WorkspaceSettings } from "@aimc/shared";
 
 import {
-  createDefaultLocalAgentModelDiscovery,
   type LocalAgentModelDiscovery,
+  createDefaultLocalAgentModelDiscovery,
   resolveLocalAgentDefaultModel,
 } from "../../agent/local-agent-models.js";
 import type { AuthenticatedUser } from "../../auth/types.js";
@@ -43,6 +43,7 @@ export const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   kieBaseUrl: "",
   volcesApiKey: "",
   volcesBaseUrl: "",
+  codexImagegenDelegation: "ask",
 };
 
 export type SettingsServiceOptions = {
@@ -120,6 +121,11 @@ export function normalizeWorkspaceSettings(
     kieBaseUrl: input.kieBaseUrl?.trim() ?? "",
     volcesApiKey: input.volcesApiKey?.trim() ?? "",
     volcesBaseUrl: input.volcesBaseUrl?.trim() ?? "",
+    codexImagegenDelegation:
+      input.codexImagegenDelegation === "always" ||
+      input.codexImagegenDelegation === "never"
+        ? input.codexImagegenDelegation
+        : "ask",
   };
 }
 

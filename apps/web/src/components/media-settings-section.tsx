@@ -10,6 +10,14 @@ import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
 
 interface MediaSettingsSectionProps {
   settings: WorkspaceSettings;
@@ -24,7 +32,7 @@ type StringSettingsKey = Exclude<
         ? Key
         : never;
   }[keyof WorkspaceSettings],
-  undefined
+  "codexImagegenDelegation" | undefined
 >;
 
 type MediaProviderCard = {
@@ -41,6 +49,12 @@ type MediaProviderCard = {
     apiKeyUrl?: string;
   }>;
 };
+
+const CODEX_IMAGEGEN_DELEGATION_OPTIONS = [
+  "ask",
+  "always",
+  "never",
+] as const satisfies readonly WorkspaceSettings["codexImagegenDelegation"][];
 
 const GOOGLE_AI_STUDIO_API_KEYS_URL = "https://aistudio.google.com/app/apikey";
 const KIE_API_KEYS_URL = "https://kie.ai/api-key";
@@ -219,6 +233,10 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
   },
 ];
 
+const MEDIA_PROVIDER_FIELD_KEYS = MEDIA_PROVIDER_CARDS.flatMap((card) =>
+  card.fields.map((field) => field.key),
+);
+
 function applyMediaFieldDefaults(
   settings: WorkspaceSettings,
 ): WorkspaceSettings {
@@ -237,14 +255,80 @@ function applyMediaFieldDefaults(
     : settings;
 }
 
+function getCodexImagegenDelegation(settings: WorkspaceSettings) {
+  return CODEX_IMAGEGEN_DELEGATION_OPTIONS.includes(
+    settings.codexImagegenDelegation,
+  )
+    ? settings.codexImagegenDelegation
+    : "ask";
+}
+
+function hasMediaProviderCardChanges(
+  card: MediaProviderCard,
+  current: WorkspaceSettings,
+  initial: WorkspaceSettings,
+) {
+  return card.fields.some((field) => current[field.key] !== initial[field.key]);
+}
+
+function mergeMediaSettingsPreservingDirtyFields(
+  current: WorkspaceSettings,
+  previousBaseline: WorkspaceSettings,
+  nextBaseline: WorkspaceSettings,
+) {
+  const merged: WorkspaceSettings = { ...nextBaseline };
+
+  if (
+    getCodexImagegenDelegation(current) !==
+    getCodexImagegenDelegation(previousBaseline)
+  ) {
+    merged.codexImagegenDelegation = current.codexImagegenDelegation;
+  }
+
+  for (const key of MEDIA_PROVIDER_FIELD_KEYS) {
+    if (current[key] !== previousBaseline[key]) {
+      merged[key] = current[key];
+    }
+  }
+
+  return merged;
+}
+
+function applyMediaSaveScope(
+  baseline: WorkspaceSettings,
+  current: WorkspaceSettings,
+  scope: string,
+) {
+  const next: WorkspaceSettings = { ...baseline };
+
+  if (scope === "codex-imagegen") {
+    next.codexImagegenDelegation = current.codexImagegenDelegation;
+    return next;
+  }
+
+  const card = MEDIA_PROVIDER_CARDS.find((item) => item.id === scope);
+  if (!card) return next;
+
+  for (const field of card.fields) {
+    next[field.key] = current[field.key];
+  }
+
+  return next;
+}
+
 export function MediaSettingsSection({
   settings: initialSettings,
   onSave,
 }: MediaSettingsSectionProps) {
   const { t } = useAppTranslation("settings");
-  const [settings, setSettings] = useState(() =>
-    applyMediaFieldDefaults(initialSettings),
+  const initialMediaSettings = useMemo(
+    () => applyMediaFieldDefaults(initialSettings),
+    [initialSettings],
   );
+  const [baselineSettings, setBaselineSettings] = useState(
+    () => initialMediaSettings,
+  );
+  const [settings, setSettings] = useState(() => initialMediaSettings);
   const [savingCard, setSavingCard] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -252,15 +336,21 @@ export function MediaSettingsSection({
   } | null>(null);
 
   useEffect(() => {
-    setSettings(applyMediaFieldDefaults(initialSettings));
-  }, [initialSettings]);
+    setBaselineSettings((previousBaseline) => {
+      setSettings((current) =>
+        mergeMediaSettingsPreservingDirtyFields(
+          current,
+          previousBaseline,
+          initialMediaSettings,
+        ),
+      );
+      return initialMediaSettings;
+    });
+  }, [initialMediaSettings]);
 
-  const normalizedInitial = useMemo(
-    () => JSON.stringify(applyMediaFieldDefaults(initialSettings)),
-    [initialSettings],
-  );
-  const normalizedCurrent = JSON.stringify(settings);
-  const hasChanges = normalizedInitial !== normalizedCurrent;
+  const codexImagegenDelegation = getCodexImagegenDelegation(settings);
+  const codexHasChanges =
+    codexImagegenDelegation !== getCodexImagegenDelegation(baselineSettings);
 
   function updateField<Key extends keyof WorkspaceSettings>(
     key: Key,
@@ -272,9 +362,23 @@ export function MediaSettingsSection({
   async function handleSave(scope: string) {
     setSavingCard(scope);
     setFeedback(null);
+    const baselineAtSubmit = baselineSettings;
+    const scopedSettings = applyMediaSaveScope(
+      baselineAtSubmit,
+      settings,
+      scope,
+    );
 
     try {
-      await onSave(settings);
+      await onSave(scopedSettings);
+      setBaselineSettings(scopedSettings);
+      setSettings((current) =>
+        mergeMediaSettingsPreservingDirtyFields(
+          current,
+          baselineAtSubmit,
+          scopedSettings,
+        ),
+      );
       setFeedback({
         type: "success",
         message: t("media.feedback.updated"),
@@ -298,18 +402,70 @@ export function MediaSettingsSection({
         </p>
       </div>
 
-      <div className="rounded-2xl border bg-card/50 p-4 text-sm text-muted-foreground">
-        <p>
-          {t("media.providerNotes.replicate", {
-            provider: "Replicate",
-          })}
+      <section className="rounded-xl border bg-card/60 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-semibold">
+              {t("media.codexImagegen.title")}
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t("media.codexImagegen.description")}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-start gap-2">
+            <Select
+              value={codexImagegenDelegation}
+              onValueChange={(value) => {
+                if (
+                  CODEX_IMAGEGEN_DELEGATION_OPTIONS.includes(
+                    value as WorkspaceSettings["codexImagegenDelegation"],
+                  )
+                ) {
+                  updateField(
+                    "codexImagegenDelegation",
+                    value as WorkspaceSettings["codexImagegenDelegation"],
+                  );
+                }
+              }}
+            >
+              <SelectTrigger
+                aria-label={t("media.codexImagegen.title")}
+                className="h-9 w-[180px] bg-background"
+              >
+                <SelectValue>
+                  {t(
+                    `media.codexImagegen.options.${codexImagegenDelegation}.label`,
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {CODEX_IMAGEGEN_DELEGATION_OPTIONS.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {t(`media.codexImagegen.options.${value}.label`)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!codexHasChanges || savingCard !== null}
+              onClick={() => void handleSave("codex-imagegen")}
+            >
+              {savingCard === "codex-imagegen"
+                ? t("media.actions.saving")
+                : t("media.actions.save")}
+            </Button>
+          </div>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+          {t(
+            `media.codexImagegen.options.${codexImagegenDelegation}.description`,
+          )}
         </p>
-        <p className="mt-2">
-          {t("media.providerNotes.volces", {
-            provider: "Volces",
-          })}
-        </p>
-      </div>
+      </section>
 
       <div className="space-y-4">
         {MEDIA_PROVIDER_CARDS.map((card) => {
@@ -317,6 +473,11 @@ export function MediaSettingsSection({
             (field) =>
               !field.defaultValue &&
               String(settings[field.key] ?? "").trim().length > 0,
+          );
+          const cardHasChanges = hasMediaProviderCardChanges(
+            card,
+            settings,
+            baselineSettings,
           );
 
           return (
@@ -408,7 +569,7 @@ export function MediaSettingsSection({
                 <Button
                   type="button"
                   size="sm"
-                  disabled={!hasChanges || savingCard !== null}
+                  disabled={!cardHasChanges || savingCard !== null}
                   onClick={() => void handleSave(card.id)}
                 >
                   {savingCard === card.id

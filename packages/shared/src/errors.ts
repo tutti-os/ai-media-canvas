@@ -7,6 +7,8 @@ export const errorCodeValues = [
   "run_failed",
   "repeated_canvas_layout_failures",
   "tool_failed",
+  "codex_imagegen_confirmation_required",
+  "codex_imagegen_disabled_by_user",
 ] as const;
 
 export const errorCodeSchema = z.enum(errorCodeValues);

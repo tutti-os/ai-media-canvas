@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   type StreamEvent,
   type ToolArtifact,
+  type WorkspaceSettings,
   imageArtifactSchema,
   videoArtifactSchema,
 } from "@aimc/shared";
@@ -13,6 +14,12 @@ import type { UserDataClient } from "../../auth/request.js";
 import type { ServerEnv } from "../../config/env.js";
 import { insertImageElement } from "../../features/canvas/canvas-element-writer.js";
 import { refreshGenerationProviders } from "../../features/settings/settings-service.js";
+import {
+  type CodexImagegenDelegationSetting,
+  evaluateCodexImagegenDelegation,
+} from "../../generation/codex-imagegen-delegation.js";
+import { resolveImageProviderName } from "../../generation/providers/registry.js";
+import { createPipelineLogger } from "../../ws/logger.js";
 import { createBrandKitTool } from "../tools/brand-kit.js";
 import {
   type SubmitImageJobFn,
@@ -30,7 +37,13 @@ import {
   type SubmitVideoJobFn,
   createVideoGenerateTool,
 } from "../tools/video-generate.js";
-import { createPipelineLogger } from "../../ws/logger.js";
+import {
+  type ApplyWorkspaceSettingsPatch,
+  type ReadWorkspaceSettings,
+  buildWorkspaceSettingsSnapshot,
+  createGetWorkspaceSettingsTool,
+  createUpdateWorkspaceSettingsTool,
+} from "../tools/workspace-settings.js";
 
 type StructuredToolLike = {
   description: string;
@@ -60,9 +73,21 @@ type LocalToolGatewaySession = {
   canvasId?: string;
   connectionId?: string;
   runId: string;
+  runtimeProvider?: string;
   sessionId?: string;
   runtimeEnv: ServerEnv;
+  delegationConsent?: {
+    codexImagegen?: "allow-once";
+  };
+  codexImagegenConsentBudget?: number;
+  onWorkspaceSettingsStateChange?: (state: {
+    codexImagegenConsentBudget?: number;
+    codexImagegenDelegation?: CodexImagegenDelegationSetting;
+  }) => void;
   sandboxDir?: string;
+  workspaceSettings?: {
+    codexImagegenDelegation?: CodexImagegenDelegationSetting;
+  };
   layoutInspectionState?: CanvasLayoutInspectionState;
   submitImageJob?: SubmitImageJobFn;
   submitVideoJob?: SubmitVideoJobFn;
@@ -74,6 +99,10 @@ type CreateLocalToolGatewayOptions = {
   connectionPublisher?: {
     pushToCanvas: (canvasId: string, event: StreamEvent) => void;
   };
+  patchWorkspaceSettings?: (input: {
+    patch: Pick<WorkspaceSettings, "codexImagegenDelegation">;
+    userId?: string;
+  }) => Promise<{ codexImagegenDelegation: CodexImagegenDelegationSetting }>;
 };
 
 const TOOL_NAME_ALIASES = new Map<string, string>([
@@ -97,6 +126,24 @@ function summarizeToolInput(args: Record<string, unknown>) {
       ? { inputImageCount: args.inputImages.length }
       : {}),
   };
+}
+
+const CODEX_IMAGEGEN_MODEL_ID = "codex/gpt-image-2";
+
+function needsCodexImagegenNotice(session: LocalToolGatewaySession) {
+  const setting = session.workspaceSettings?.codexImagegenDelegation ?? "ask";
+  return (
+    session.runtimeProvider !== undefined &&
+    session.runtimeProvider !== "codex" &&
+    setting === "ask" &&
+    (session.codexImagegenConsentBudget ?? 0) <= 0
+  );
+}
+
+function parseRequestedImageModel(args: Record<string, unknown>) {
+  return typeof args.model === "string" && args.model.length > 0
+    ? args.model
+    : undefined;
 }
 
 function summarizeToolResult(result: LocalToolGatewayCallResult) {
@@ -419,6 +466,68 @@ export function createLocalToolGatewayService(
     const createUserClient = options.createUserClient as (
       accessToken: string,
     ) => UserDataClient;
+    const getWorkspaceSettings: ReadWorkspaceSettings = async () => {
+      const setting =
+        session.workspaceSettings?.codexImagegenDelegation ?? "ask";
+      const consentBudget = session.codexImagegenConsentBudget ?? 0;
+      const callerProvider = session.runtimeProvider;
+      return buildWorkspaceSettingsSnapshot({
+        ...(callerProvider ? { callerProvider } : {}),
+        codexImagegenDelegation: setting,
+        consentBudget,
+      });
+    };
+    const applyWorkspaceSettingsPatch: ApplyWorkspaceSettingsPatch = async ({
+      patch,
+    }) => {
+      let summary: string | undefined;
+
+      if (patch.codexImagegenDelegation === "allow-once") {
+        session.codexImagegenConsentBudget = Math.max(
+          1,
+          session.codexImagegenConsentBudget ?? 0,
+        );
+        session.onWorkspaceSettingsStateChange?.({
+          codexImagegenConsentBudget: session.codexImagegenConsentBudget,
+        });
+      } else if (patch.codexImagegenDelegation === "deny") {
+        session.codexImagegenConsentBudget = 0;
+        session.onWorkspaceSettingsStateChange?.({
+          codexImagegenConsentBudget: session.codexImagegenConsentBudget,
+        });
+        summary =
+          "Codex image generation delegation was denied for the current task. Do not call Codex image generation for this task.";
+      } else if (patch.codexImagegenDelegation !== undefined) {
+        if (!options.patchWorkspaceSettings) {
+          throw new Error(
+            "Workspace settings are not available for this tool session.",
+          );
+        }
+        const settings = await options.patchWorkspaceSettings({
+          patch: {
+            codexImagegenDelegation: patch.codexImagegenDelegation,
+          },
+          ...(session.userId ? { userId: session.userId } : {}),
+        });
+        session.workspaceSettings = {
+          ...(session.workspaceSettings ?? {}),
+          codexImagegenDelegation: settings.codexImagegenDelegation,
+        };
+        session.onWorkspaceSettingsStateChange?.({
+          codexImagegenDelegation: settings.codexImagegenDelegation,
+        });
+      }
+
+      return buildWorkspaceSettingsSnapshot({
+        ...(session.runtimeProvider
+          ? { callerProvider: session.runtimeProvider }
+          : {}),
+        codexImagegenDelegation:
+          session.workspaceSettings?.codexImagegenDelegation ?? "ask",
+        consentBudget: session.codexImagegenConsentBudget ?? 0,
+        ...(summary ? { summary } : {}),
+      });
+    };
     const layoutInspectionState = session.layoutInspectionState ?? {};
     const sessionAccessToken = session.accessToken;
     const persistSessionImage = sessionAccessToken
@@ -451,6 +560,7 @@ export function createLocalToolGatewayService(
       }) as unknown as StructuredToolLike,
       createImageGenerateTool({
         layoutInspectionState,
+        codexImagegenConfirmationRequired: needsCodexImagegenNotice(session),
         ...(persistSessionImage ? { persistImage: persistSessionImage } : {}),
         ...(session.submitImageJob
           ? { submitImageJob: session.submitImageJob }
@@ -461,6 +571,12 @@ export function createLocalToolGatewayService(
         ...(session.submitVideoJob
           ? { submitVideoJob: session.submitVideoJob }
           : {}),
+      }) as unknown as StructuredToolLike,
+      createGetWorkspaceSettingsTool({
+        readSettings: getWorkspaceSettings,
+      }) as unknown as StructuredToolLike,
+      createUpdateWorkspaceSettingsTool({
+        applyPatch: applyWorkspaceSettingsPatch,
       }) as unknown as StructuredToolLike,
     ];
 
@@ -514,6 +630,9 @@ export function createLocalToolGatewayService(
       const token = randomUUID();
       sessions.set(token, {
         ...input,
+        codexImagegenConsentBudget:
+          input.codexImagegenConsentBudget ??
+          (input.delegationConsent?.codexImagegen === "allow-once" ? 1 : 0),
         layoutInspectionState: input.layoutInspectionState ?? {},
       });
       return { token };
@@ -570,6 +689,53 @@ export function createLocalToolGatewayService(
       }
 
       try {
+        let consumeCodexImagegenConsentAfterSuccess = false;
+        if (canonicalName === "generate_image") {
+          const requestedModel = parseRequestedImageModel(args);
+          if (requestedModel) {
+            let imageProvider: string | undefined;
+            try {
+              imageProvider = resolveImageProviderName(requestedModel);
+            } catch {
+              imageProvider = undefined;
+            }
+            if (!imageProvider) {
+              // Let the image tool surface its normal validation/provider error.
+            } else {
+              const decision = evaluateCodexImagegenDelegation({
+                imageProvider,
+                setting:
+                  session.workspaceSettings?.codexImagegenDelegation ?? "ask",
+                consentBudget: session.codexImagegenConsentBudget ?? 0,
+                ...(session.runtimeProvider
+                  ? { callerProvider: session.runtimeProvider }
+                  : {}),
+              });
+              if (decision.status === "blocked") {
+                const isConfirmationRequired =
+                  decision.reason === "needs_confirmation";
+                const summary = isConfirmationRequired
+                  ? "Codex image generation needs explicit user confirmation before this non-Codex agent can use it."
+                  : "Codex image generation delegation is disabled for this non-Codex agent in workspace settings.";
+                return {
+                  isError: false,
+                  output: {
+                    status: isConfirmationRequired
+                      ? "requires_user_confirmation"
+                      : "blocked_by_workspace_settings",
+                    requiresUserConfirmation: isConfirmationRequired,
+                    message: summary,
+                    requestedProvider: session.runtimeProvider,
+                    model: requestedModel,
+                  },
+                  outputSummary: summary,
+                };
+              }
+              consumeCodexImagegenConsentAfterSuccess =
+                decision.consumesConsent;
+            }
+          }
+        }
         const createUserClient = options.createUserClient as (
           accessToken: string,
         ) => UserDataClient;
@@ -577,6 +743,16 @@ export function createLocalToolGatewayService(
           canonicalName,
           await toolInstance.invoke(args, toolOptionsForSession(session)),
         );
+        if (
+          consumeCodexImagegenConsentAfterSuccess &&
+          !result.isError &&
+          result.output
+        ) {
+          session.codexImagegenConsentBudget = Math.max(
+            0,
+            (session.codexImagegenConsentBudget ?? 0) - 1,
+          );
+        }
         log.info("call_result", summarizeToolResult(result));
         if (
           canonicalName === "generate_image" &&

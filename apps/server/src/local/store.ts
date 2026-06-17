@@ -78,6 +78,7 @@ const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   kieBaseUrl: "",
   volcesApiKey: "",
   volcesBaseUrl: "",
+  codexImagegenDelegation: "ask",
 };
 const EMPTY_TUTTI_MANAGED_CONNECTION: TuttiManagedConnection = {
   connected: false,
@@ -107,6 +108,12 @@ function normalizeAgentModelSourceForStore(
     source === "api-provider"
     ? source
     : undefined;
+}
+
+function normalizeCodexImagegenDelegationForStore(
+  value: string | undefined,
+): WorkspaceSettings["codexImagegenDelegation"] {
+  return value === "always" || value === "never" ? value : "ask";
 }
 
 function normalizeTuttiManagedProviders(
@@ -333,7 +340,8 @@ export function createLocalStore(options: {
       google_vertex_video_location TEXT NOT NULL DEFAULT '',
       replicate_api_token TEXT NOT NULL DEFAULT '',
       volces_api_key TEXT NOT NULL DEFAULT '',
-      volces_base_url TEXT NOT NULL DEFAULT ''
+      volces_base_url TEXT NOT NULL DEFAULT '',
+      codex_imagegen_delegation TEXT NOT NULL DEFAULT 'ask'
     );
     CREATE TABLE IF NOT EXISTS tutti_managed_model_connection (
       workspace_id TEXT PRIMARY KEY,
@@ -361,6 +369,7 @@ export function createLocalStore(options: {
       name TEXT NOT NULL,
       is_primary INTEGER NOT NULL DEFAULT 0,
       content TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -522,6 +531,7 @@ export function createLocalStore(options: {
   `);
 
   ensureWorkspaceSettingsSchema();
+  ensureCanvasSchema();
   ensureAgentRunSchema();
   ensureBackgroundJobSchema();
   seedBaseData();
@@ -604,6 +614,7 @@ export function createLocalStore(options: {
       ["kie_base_url", "TEXT NOT NULL DEFAULT ''"],
       ["volces_api_key", "TEXT NOT NULL DEFAULT ''"],
       ["volces_base_url", "TEXT NOT NULL DEFAULT ''"],
+      ["codex_imagegen_delegation", "TEXT NOT NULL DEFAULT 'ask'"],
     ];
 
     for (const [columnName, columnSql] of missingColumns) {
@@ -617,6 +628,19 @@ export function createLocalStore(options: {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_settings_workspace_id
       ON workspace_settings(workspace_id)
     `);
+  }
+
+  function ensureCanvasSchema() {
+    const columns = db
+      .prepare(`PRAGMA table_info(canvases)`)
+      .all() as Array<{ name: string }>;
+    const columnNames = new Set(columns.map((column) => column.name));
+
+    if (!columnNames.has("revision")) {
+      db.exec(
+        `ALTER TABLE canvases ADD COLUMN revision INTEGER NOT NULL DEFAULT 0`,
+      );
+    }
   }
 
   function ensureAgentRunSchema() {
@@ -879,7 +903,8 @@ export function createLocalStore(options: {
             kie_api_key,
             kie_base_url,
             volces_api_key,
-            volces_base_url
+            volces_base_url,
+            codex_imagegen_delegation
           FROM workspace_settings
           WHERE workspace_id = ?
         `,
@@ -905,6 +930,7 @@ export function createLocalStore(options: {
           kie_base_url: string;
           volces_api_key: string;
           volces_base_url: string;
+          codex_imagegen_delegation: string;
         }
       | undefined;
 
@@ -962,6 +988,9 @@ export function createLocalStore(options: {
       kieBaseUrl: row.kie_base_url ?? "",
       volcesApiKey: row.volces_api_key ?? "",
       volcesBaseUrl: row.volces_base_url ?? "",
+      codexImagegenDelegation: normalizeCodexImagegenDelegationForStore(
+        row.codex_imagegen_delegation ?? undefined,
+      ),
     };
   }
 
@@ -975,6 +1004,9 @@ export function createLocalStore(options: {
         ? normalizeAgentModelSourceForStore(settings.defaultModelSource)
         : undefined,
       providerModels: normalizeProviderModelsForStore(settings.providerModels),
+      codexImagegenDelegation: normalizeCodexImagegenDelegationForStore(
+        settings.codexImagegenDelegation,
+      ),
     };
 
     if (workspaceSettingsHasLegacyIdColumn) {
@@ -1001,8 +1033,9 @@ export function createLocalStore(options: {
             kie_api_key,
             kie_base_url,
             volces_api_key,
-            volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            volces_base_url,
+            codex_imagegen_delegation
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             workspace_id = excluded.workspace_id,
             default_model = excluded.default_model,
@@ -1023,7 +1056,8 @@ export function createLocalStore(options: {
             kie_api_key = excluded.kie_api_key,
             kie_base_url = excluded.kie_base_url,
             volces_api_key = excluded.volces_api_key,
-            volces_base_url = excluded.volces_base_url
+            volces_base_url = excluded.volces_base_url,
+            codex_imagegen_delegation = excluded.codex_imagegen_delegation
         `,
       ).run(
         1,
@@ -1047,6 +1081,7 @@ export function createLocalStore(options: {
         normalizedSettings.kieBaseUrl,
         normalizedSettings.volcesApiKey,
         normalizedSettings.volcesBaseUrl,
+        normalizedSettings.codexImagegenDelegation,
       );
     } else {
       db.prepare(
@@ -1071,8 +1106,9 @@ export function createLocalStore(options: {
             kie_api_key,
             kie_base_url,
             volces_api_key,
-            volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            volces_base_url,
+            codex_imagegen_delegation
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(workspace_id) DO UPDATE SET
             default_model = excluded.default_model,
             default_model_source = excluded.default_model_source,
@@ -1092,7 +1128,8 @@ export function createLocalStore(options: {
             kie_api_key = excluded.kie_api_key,
             kie_base_url = excluded.kie_base_url,
             volces_api_key = excluded.volces_api_key,
-            volces_base_url = excluded.volces_base_url
+            volces_base_url = excluded.volces_base_url,
+            codex_imagegen_delegation = excluded.codex_imagegen_delegation
         `,
       ).run(
         LOCAL_WORKSPACE_ID,
@@ -1115,6 +1152,7 @@ export function createLocalStore(options: {
         normalizedSettings.kieBaseUrl,
         normalizedSettings.volcesApiKey,
         normalizedSettings.volcesBaseUrl,
+        normalizedSettings.codexImagegenDelegation,
       );
     }
 
@@ -1645,7 +1683,8 @@ export function createLocalStore(options: {
     const row = db
       .prepare(
         `
-          SELECT canvases.id, canvases.name, canvases.project_id, canvases.content
+          SELECT canvases.id, canvases.name, canvases.project_id, canvases.content,
+            canvases.revision
           FROM canvases
           INNER JOIN projects ON projects.id = canvases.project_id
           WHERE canvases.id = ? AND projects.archived_at IS NULL
@@ -1658,6 +1697,7 @@ export function createLocalStore(options: {
           name: string;
           project_id: string;
           content: string;
+          revision: number;
         }
       | undefined;
     if (!row) return null;
@@ -1665,6 +1705,7 @@ export function createLocalStore(options: {
       id: row.id,
       name: row.name,
       projectId: row.project_id,
+      revision: row.revision ?? 0,
       content: parseJson<CanvasContent>(row.content, {
         elements: [],
         appState: {},
@@ -1677,13 +1718,48 @@ export function createLocalStore(options: {
     return !!getCanvas(canvasId);
   }
 
-  function saveCanvas(canvasId: string, content: CanvasContent) {
+  function saveCanvas(
+    canvasId: string,
+    content: CanvasContent,
+    options: { baseRevision?: number } = {},
+  ):
+    | { ok: true; revision: number }
+    | { ok: false; reason: "canvas_not_found" | "revision_conflict" } {
     const existing = getCanvas(canvasId);
-    if (!existing) return false;
+    if (!existing) return { ok: false, reason: "canvas_not_found" };
     const timestamp = nowIso();
-    db.prepare(
-      `UPDATE canvases SET content = ?, updated_at = ? WHERE id = ?`,
-    ).run(JSON.stringify(content), timestamp, canvasId);
+
+    const result =
+      options.baseRevision === undefined
+        ? db
+            .prepare(
+              `
+                UPDATE canvases
+                SET content = ?, updated_at = ?, revision = revision + 1
+                WHERE id = ?
+              `,
+            )
+            .run(JSON.stringify(content), timestamp, canvasId)
+        : db
+            .prepare(
+              `
+                UPDATE canvases
+                SET content = ?, updated_at = ?, revision = revision + 1
+                WHERE id = ? AND revision = ?
+              `,
+            )
+            .run(
+              JSON.stringify(content),
+              timestamp,
+              canvasId,
+              options.baseRevision,
+            );
+
+    if (result.changes === 0) {
+      if (!getCanvas(canvasId)) return { ok: false, reason: "canvas_not_found" };
+      return { ok: false, reason: "revision_conflict" };
+    }
+
     db.prepare(
       `
         UPDATE projects
@@ -1691,7 +1767,10 @@ export function createLocalStore(options: {
         WHERE id = (SELECT project_id FROM canvases WHERE id = ?)
       `,
     ).run(timestamp, canvasId);
-    return true;
+    const row = db
+      .prepare(`SELECT revision FROM canvases WHERE id = ? LIMIT 1`)
+      .get(canvasId) as { revision: number } | undefined;
+    return { ok: true, revision: row?.revision ?? existing.revision + 1 };
   }
 
   function listSessions(canvasId: string): ChatSessionSummary[] | null {

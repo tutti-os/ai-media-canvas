@@ -16,7 +16,7 @@ import {
   summarizeModelSchemaForTool,
 } from "./model-schema-summary.js";
 
-const DEFAULT_MODEL = "black-forest-labs/flux-kontext-pro";
+const DEFAULT_MODEL = "codex/gpt-image-2";
 
 /**
  * Build the zod schema dynamically from the models available in the registry.
@@ -94,7 +94,7 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .array(z.string())
       .optional()
       .describe(
-        "Reference image URLs for editing/transformation. Google models accept up to 14, Flux models accept 1. Imagen 4 and Recraft V3 are text-only.",
+        "Reference image URLs for editing/transformation. Only use models whose schema supports inputImages; respect each selected model's limits.",
       ),
     size: z
       .string()
@@ -495,12 +495,17 @@ export function createImageGenerateTool(deps?: {
   layoutInspectionState?: CanvasLayoutInspectionState;
   /** Override for testing — defaults to querying the provider registry. */
   availableModels?: AvailableModel[];
+  codexImagegenConfirmationRequired?: boolean;
 }) {
   const models = deps?.availableModels ?? getAvailableImageModels();
 
   const modelSummary = models.length
     ? models.map((m) => `${m.displayName} (${m.id})`).join(", ")
     : "No models available";
+
+  const confirmationNotice = deps?.codexImagegenConfirmationRequired
+    ? " Before calling this tool with model codex/gpt-image-2, non-Codex agents must call get_workspace_settings. If codexImagegen.confirmationRequired is true, ask the user whether to delegate image generation to Codex, then call update_workspace_settings with patch.codexImagegenDelegation=allow-once for one current-task call, patch.codexImagegenDelegation=always for a durable allow, or patch.codexImagegenDelegation=deny before retrying or stopping. Do not call generate_image with codex/gpt-image-2 until that consent state has been written."
+    : "";
 
   return tool(
     async (input: ImageGenerateInput, config) => {
@@ -520,7 +525,7 @@ export function createImageGenerateTool(deps?: {
     },
     {
       name: "generate_image",
-      description: `Generate an image using AI. Available models: ${modelSummary}. Returns the generated image URL. When creating multiple exploration images, leave placementX and placementY unset unless exact positioning is necessary so the canvas can auto-place results without overlap.`,
+      description: `Generate an image using AI. Available models: ${modelSummary}. Returns the generated image URL. When creating multiple exploration images, leave placementX and placementY unset unless exact positioning is necessary so the canvas can auto-place results without overlap.${confirmationNotice}`,
       schema: buildImageGenerateSchema(models),
     },
   );

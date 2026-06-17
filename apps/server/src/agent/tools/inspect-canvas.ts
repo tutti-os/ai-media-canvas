@@ -27,7 +27,7 @@ const inspectCanvasSchema = z.object({
 });
 
 type CanvasElement = Record<string, unknown>;
-type CanvasClient = {
+export type CanvasClient = {
   from(table: "canvases"): {
     select(columns: string): {
       eq(

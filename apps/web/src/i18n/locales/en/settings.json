@@ -133,16 +133,30 @@
         "summary": "ByteDance / Volcengine's official channel. Use this for Doubao Seedream models served through Ark."
       }
     },
+    "codexImagegen": {
+      "description": "Set whether other agents can use Codex Image 2.0 when no direct image generation model is available.",
+      "options": {
+        "always": {
+          "description": "Use Codex automatically for future matching image requests.",
+          "label": "Use by default"
+        },
+        "ask": {
+          "description": "Ask before delegating each matching image request.",
+          "label": "Ask each time"
+        },
+        "never": {
+          "description": "Do not delegate image generation to Codex.",
+          "label": "Do not use"
+        }
+      },
+      "title": "Codex image permission"
+    },
     "description": "Configure image and video providers by platform. If the same model family exists on multiple platforms later, AIMC keeps them separate by provider-scoped model IDs so you can choose the route explicitly.",
     "feedback": {
       "updated": "Local media provider settings updated.",
       "updateFailed": "Failed to update local media provider settings. Please try again."
     },
     "localStorageNote": "These values are stored in the local sqlite settings database and reused by the matching media providers.",
-    "providerNotes": {
-      "replicate": "{{provider}} is a third-party hosting platform.",
-      "volces": "{{provider}} is the ByteDance / Volcengine official channel."
-    },
     "status": {
       "configured": "Configured",
       "notConfigured": "Not configured"

@@ -33,6 +33,9 @@ export const imageGenerationPayloadSchema = z.object({
   input_images: z.array(z.string().min(1)).optional(),
   size: z.string().min(1).optional(),
   seed: z.number().int().optional(),
+  caller_provider: z.string().min(1).optional(),
+  codex_imagegen_consent: z.enum(["allow-once"]).optional(),
+  codex_imagegen_delegation_allowed: z.boolean().optional(),
 });
 export type ImageGenerationPayload = z.infer<
   typeof imageGenerationPayloadSchema
@@ -69,6 +72,9 @@ export const createImageJobRequestSchema = z.object({
   input_images: z.array(z.string().min(1)).optional(),
   size: z.string().min(1).optional(),
   seed: z.number().int().optional(),
+  caller_provider: z.string().min(1).optional(),
+  codex_imagegen_consent: z.enum(["allow-once"]).optional(),
+  codex_imagegen_delegation_allowed: z.boolean().optional(),
 });
 export type CreateImageJobRequest = z.infer<typeof createImageJobRequestSchema>;
 

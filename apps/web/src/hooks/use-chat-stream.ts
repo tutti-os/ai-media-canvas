@@ -52,6 +52,13 @@ const mergeToolArtifacts = (
  * Used by both the main send flow and the reconnection resume flow,
  * eliminating the ~70 lines of duplicated event-handling code.
  */
+function isCodexImagegenConfirmationFailure(event: StreamEvent) {
+  return (
+    event.type === "tool.failed" &&
+    event.error.code === "codex_imagegen_confirmation_required"
+  );
+}
+
 export function useChatStream(updateSessionMessages: MessageUpdater) {
   /**
    * Apply a single StreamEvent to the assistant message identified by assistantId
@@ -178,6 +185,9 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
           break;
 
         case "tool.failed":
+          if (isCodexImagegenConfirmationFailure(event)) {
+            break;
+          }
           update((prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
@@ -430,6 +440,9 @@ export function materializeAssistantBlocksFromEvents(
       }
 
       case "tool.failed": {
+        if (isCodexImagegenConfirmationFailure(event)) {
+          break;
+        }
         const existingBlock = blocks.find(
           (block) =>
             block.type === "tool" && block.toolCallId === event.toolCallId,

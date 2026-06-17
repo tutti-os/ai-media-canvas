@@ -2,10 +2,23 @@ import { resolve } from "node:path";
 
 import type { LocalAgentMcpServerConfig } from "@tutti-os/agent-acp-kit";
 
+type AimcLocalAgentMcpServerConfig = LocalAgentMcpServerConfig & {
+  startupTimeoutMs?: number;
+  toolTimeoutMs?: number;
+};
+
 export function createAimcToolsMcpServerConfig(input: {
   gatewayBaseUrl: string;
   gatewayToken: string;
-}): LocalAgentMcpServerConfig {
+  startupTimeoutMs?: number;
+  toolTimeoutMs?: number;
+}): AimcLocalAgentMcpServerConfig {
+  const timeoutConfig = {
+    ...(input.startupTimeoutMs
+      ? { startupTimeoutMs: input.startupTimeoutMs }
+      : {}),
+    ...(input.toolTimeoutMs ? { toolTimeoutMs: input.toolTimeoutMs } : {}),
+  };
   const packagedMcpServerPath = process.env.AIMC_TOOLS_MCP_PATH?.trim();
   if (packagedMcpServerPath) {
     return {
@@ -13,6 +26,7 @@ export function createAimcToolsMcpServerConfig(input: {
       type: "stdio",
       command: process.execPath,
       args: [packagedMcpServerPath],
+      ...timeoutConfig,
       env: {
         AIMC_TOOL_GATEWAY_URL: input.gatewayBaseUrl,
         AIMC_TOOL_TOKEN: input.gatewayToken,
@@ -27,6 +41,7 @@ export function createAimcToolsMcpServerConfig(input: {
     type: "stdio",
     command: "pnpm",
     args: ["--dir", serverRoot, "exec", "tsx", mcpServerPath],
+    ...timeoutConfig,
     env: {
       AIMC_TOOL_GATEWAY_URL: input.gatewayBaseUrl,
       AIMC_TOOL_TOKEN: input.gatewayToken,

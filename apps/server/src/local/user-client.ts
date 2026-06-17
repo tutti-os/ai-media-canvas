@@ -1,3 +1,5 @@
+import type { CanvasContent } from "@aimc/shared";
+
 import type { LocalStore } from "./store.js";
 
 const LOCAL_WORKSPACE_ID = "local-workspace";
@@ -127,10 +129,10 @@ class LocalQueryBuilder {
       };
     }
 
-    const ok = this.store.saveCanvas(canvasId, content as any);
+    const result = this.store.saveCanvas(canvasId, content as CanvasContent);
     return {
       data: null,
-      error: ok ? null : { message: "Canvas not found." },
+      error: result.ok ? null : { message: "Canvas not found." },
     };
   }
 

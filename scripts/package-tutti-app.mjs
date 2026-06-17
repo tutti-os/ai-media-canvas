@@ -142,7 +142,7 @@ const CLI_COMMANDS = [
     path: ["agent", "run"],
     summary: "Start an agent run",
     description:
-      "Start an AI Media Canvas agent run for a session and conversation. Poll events with aimc agent events --run-id <runId>. For local agents, pass --runtime-kind local-agent --runtime-provider codex or --runtime-provider claude; when model is omitted the provider default is used. If model is provided with a local provider, use a matching provider-prefixed model such as codex:default or claude:default from aimc models list.",
+      "Start an AI Media Canvas agent run for a session and conversation. Poll events with aimc agent events --run-id <runId>. For local agents, pass --runtime-kind local-agent --runtime-provider codex or --runtime-provider claude; when model is omitted the provider default is used. If model is provided with a local provider, use a matching provider-prefixed model such as codex:default or claude:default from aimc models list. If a non-Codex local agent needs Codex image generation and the user selected only this time, pass --codex-imagegen-consent allow-once on the follow-up run.",
     properties: {
       "session-id": { type: "string", description: "Chat session id." },
       "conversation-id": {
@@ -168,6 +168,11 @@ const CLI_COMMANDS = [
         type: "string",
         description:
           "Optional local agent provider id such as codex or claude. Requires runtime-kind=local-agent.",
+      },
+      "codex-imagegen-consent": {
+        type: "string",
+        description:
+          "Optional one-time consent for a follow-up run after the user allowed a non-Codex agent to use Codex image generation. Only allow-once is accepted.",
       },
     },
     required: ["session-id", "conversation-id", "prompt"],
@@ -197,10 +202,24 @@ const CLI_COMMANDS = [
     required: ["run-id"],
   },
   {
+    path: ["agent", "consent"],
+    summary: "Record durable Codex image consent",
+    description:
+      "Record a structured Codex image generation consent decision for an agent run after the user explicitly responds. The always decision updates the durable workspace setting. For allow-once, pass --codex-imagegen-consent allow-once on the follow-up agent run or generation image command.",
+    properties: {
+      "run-id": { type: "string", description: "Agent run id." },
+      decision: {
+        type: "string",
+        description: "Consent decision: allow-once, always, or deny.",
+      },
+    },
+    required: ["run-id", "decision"],
+  },
+  {
     path: ["generation", "image"],
     summary: "Queue image generation",
     description:
-      "Queue an image generation job. Use aimc models image to inspect available model ids first, pass one with --model, and use jobs get or jobs list to monitor status.",
+      "Queue an image generation job. Use aimc models image to inspect available model ids first, pass one with --model, and use jobs get or jobs list to monitor status. Direct user calls may use --direct-user true. Otherwise this command is treated as an external CLI/agent call; when a non-Codex agent calls Codex image generation on the user's behalf, ask for confirmation first unless settings get shows codexImagegenDelegation=always; pass --caller-provider and --codex-imagegen-consent allow-once after a one-time user approval.",
     properties: {
       prompt: { type: "string", description: "Image prompt." },
       model: {
@@ -221,6 +240,21 @@ const CLI_COMMANDS = [
       "input-images": {
         type: "string",
         description: "Optional comma-separated input image URLs.",
+      },
+      "caller-provider": {
+        type: "string",
+        description:
+          "Optional agent provider id when an agent is proxying this direct image generation call, for example claude. Omit for direct user generation.",
+      },
+      "codex-imagegen-consent": {
+        type: "string",
+        description:
+          "Optional one-time consent after the user allowed a non-Codex caller to use Codex image generation. Only allow-once is accepted.",
+      },
+      "direct-user": {
+        type: "boolean",
+        description:
+          "Set true only when this is a direct user image generation command, not an agent proxy call.",
       },
     },
     required: ["prompt", "model"],
@@ -313,6 +347,24 @@ const CLI_COMMANDS = [
     path: ["models", "video"],
     summary: "List video models",
     description: "List video generation models available to generation video.",
+  },
+  {
+    path: ["settings", "get"],
+    summary: "Get workspace settings",
+    description:
+      "Return workspace settings, including settings.codexImagegenDelegation. Values: ask means a non-Codex agent must ask before using Codex image generation; always means it may use Codex by default; never means it must not use Codex image generation.",
+  },
+  {
+    path: ["settings", "update"],
+    summary: "Update workspace settings",
+    description:
+      "Patch workspace settings. Use --codex-imagegen-delegation always after the user chooses 'always call', --codex-imagegen-delegation never only for a durable opt-out, and ask to restore prompting.",
+    properties: {
+      "codex-imagegen-delegation": {
+        type: "string",
+        description: "Codex image delegation setting: ask, always, or never.",
+      },
+    },
   },
   {
     path: ["skills", "list"],
@@ -567,6 +619,23 @@ When those variables are absent during local direct startup, it falls back to
 Treat \`TUTTI_APP_PACKAGE_DIR\` as read-only. Use \`TUTTI_APP_DATA_DIR\` for
 durable data, \`TUTTI_APP_RUNTIME_DIR\` for scratch files, and
 \`TUTTI_APP_LOG_DIR\` for additional logs if future changes add them.
+
+## Codex Image Generation Consent
+
+When the current agent provider is not Codex, do not silently call
+\`aimc generation image --model codex/gpt-image-2\` on the user's behalf unless
+\`aimc settings get\` reports \`settings.codexImagegenDelegation\` as
+\`always\`. If the setting is \`ask\`, ask the user for consent in the user's
+language and convert the answer into a structured decision.
+
+After one-time approval, call the image command with \`--caller-provider
+<provider>\` and \`--codex-imagegen-consent allow-once\`. After durable
+approval, first call
+\`aimc settings update --codex-imagegen-delegation always\`, then continue.
+If the user denies delegation, do not call Codex for that task.
+
+Only pass \`--direct-user true\` when the user is directly invoking image
+generation rather than asking an agent to proxy the request.
 `;
 }
 
@@ -660,9 +729,7 @@ export async function validatePackageRoot(root) {
 
 function validateCliManifest(manifest) {
   if (manifest.schemaVersion !== "tutti.app.cli.v1") {
-    throw new Error(
-      "tutti.cli.json must use schemaVersion tutti.app.cli.v1.",
-    );
+    throw new Error("tutti.cli.json must use schemaVersion tutti.app.cli.v1.");
   }
   if (!isCliPathSegment(manifest.scope)) {
     throw new Error(
