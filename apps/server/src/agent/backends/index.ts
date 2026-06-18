@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import type { AnyBackendProtocol } from "deepagents";
 
 import type { ServerEnv } from "../../config/env.js";
@@ -7,7 +9,11 @@ import { createProductionBackendFactory } from "./prod.js";
 
 type AgentBackendEnv = Pick<
   ServerEnv,
-  "agentBackendMode" | "agentFilesRoot" | "skillsRoot"
+  | "agentBackendMode"
+  | "agentFilesRoot"
+  | "appDataDir"
+  | "dataRoot"
+  | "skillsRoot"
 >;
 
 export type AgentBackendResult = {
@@ -36,7 +42,12 @@ export function createAgentBackend(
     );
   }
 
+  const appDataDir = env.appDataDir ?? env.dataRoot;
+
   return createProductionBackendFactory(canvasId, {
+    ...(appDataDir
+      ? { sandboxRoot: join(appDataDir, "ai-media-canvas-sandbox") }
+      : {}),
     ...(env.skillsRoot ? { skillsRoot: env.skillsRoot } : {}),
     ...(options?.workspaceSkills
       ? { workspaceSkills: options.workspaceSkills }

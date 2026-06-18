@@ -111,7 +111,13 @@ export type LocalAgentRuntimeProviderDeps = {
     managed: boolean;
     runId: string;
     runtimeProvider: AgentRuntimeProvider;
-  }) => Promise<string>;
+  }) => Promise<
+    | string
+    | {
+        runDir: string;
+        useManagedAgentInvocation: boolean;
+      }
+  >;
   loadCanvasSummaryForRuntime: LoadCanvasSummaryForRuntime;
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
   localAgentRuntime: Pick<

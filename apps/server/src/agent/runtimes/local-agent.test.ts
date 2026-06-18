@@ -1,9 +1,17 @@
+import { closeSync, mkdtempSync, openSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentRuntimeProvider } from "@aimc/shared";
-import type { LocalAgentProviderPlugin } from "@tutti-os/agent-acp-kit";
+import {
+  type LocalAgentProviderPlugin,
+  MANAGED_AGENT_INVOCATION_CREDENTIAL_ENV,
+} from "@tutti-os/agent-acp-kit";
 
 import {
+  createLocalAgentRunDirectory,
   createLocalAgentRuntimeProvider,
   isManagedAgentWorkspaceCwd,
 } from "./local-agent.js";
@@ -82,6 +90,48 @@ async function collect<T>(stream: AsyncIterable<T>) {
 }
 
 describe("createLocalAgentRuntimeProvider", () => {
+  it("falls back to app data for managed local-agent run directories when /workspace is unavailable", async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "aimc-local-agent-runs-"));
+    try {
+      const blockedManagedRunsDir = join(tempRoot, "blocked");
+      closeSync(openSync(blockedManagedRunsDir, "w"));
+
+      const result = await createLocalAgentRunDirectory({
+        appDataDir: join(tempRoot, "app-data"),
+        managed: true,
+        managedRunsDir: blockedManagedRunsDir,
+        runId: "run-1",
+        runtimeProvider: "codex",
+      });
+
+      expect(result).toEqual({
+        runDir: join(tempRoot, "app-data", ".aimc-agent-runs", "codex-run-1"),
+        useManagedAgentInvocation: false,
+      });
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("uses app data for regular local-agent run directories", async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "aimc-local-agent-runs-"));
+    try {
+      const result = await createLocalAgentRunDirectory({
+        appDataDir: join(tempRoot, "app-data"),
+        managed: false,
+        runId: "run-1",
+        runtimeProvider: "codex",
+      });
+
+      expect(result).toEqual({
+        runDir: join(tempRoot, "app-data", ".aimc-agent-runs", "codex-run-1"),
+        useManagedAgentInvocation: false,
+      });
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("passes managed agent invocation only to the SDK run input", async () => {
     const localAgentRuntimeRun = vi.fn(async function* () {
       yield {
@@ -135,6 +185,107 @@ describe("createLocalAgentRuntimeProvider", () => {
     expect(params).not.toHaveProperty("env");
     expect(params).not.toHaveProperty("mcpServers");
     expect(context.run.managedAgentInvocationCredential).toBeUndefined();
+  });
+
+  it("uses managed credential env when managed cwd falls back outside /workspace", async () => {
+    const localAgentRuntimeRun = vi.fn(async function* () {
+      yield {
+        type: "done" as const,
+        status: "completed" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+    const createRunDirectory = vi.fn(async () => {
+      return {
+        runDir: "/data/.aimc-agent-runs/codex-run-1",
+        useManagedAgentInvocation: false,
+      };
+    });
+    const context = createRuntimeContext({
+      managedAgentInvocationCredential: "credential-run-1",
+    });
+    const provider = createLocalAgentRuntimeProvider(
+      {
+        buildAttachmentDataMap: vi.fn(() => ({})),
+        buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
+        createRunDirectory,
+        loadCanvasSummaryForRuntime: vi.fn(async () => null),
+        localAgentRuntime: { run: localAgentRuntimeRun },
+        now: () => "2026-06-17T00:00:00.000Z",
+        toolGateway: {
+          createSession: vi.fn(() => ({ token: "tool-token" })),
+          revokeSession: vi.fn(),
+        } as never,
+        toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+      },
+      createProviderPlugin("codex"),
+    );
+
+    await collect(provider.streamRun(context));
+
+    const params = localAgentRuntimeRun.mock.calls[0]?.[0];
+    expect(params).toMatchObject({
+      cwd: "/data/.aimc-agent-runs/codex-run-1",
+      env: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_ENV]: "credential-run-1",
+      },
+    });
+    expect(params).not.toHaveProperty("managedAgentInvocation");
+    expect(params).not.toHaveProperty("mcpServers");
+  });
+
+  it("passes CODEX_HOME to managed codex SDK runs", async () => {
+    const localAgentRuntimeRun = vi.fn(async function* () {
+      yield {
+        type: "done" as const,
+        status: "completed" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+    const context = createRuntimeContext({
+      managedAgentInvocationCredential: "credential-run-1",
+    });
+    context.runtimeEnv = {
+      ...context.runtimeEnv,
+      codexImagegenCodexHome: "/workspace/.codex-home",
+    };
+    const provider = createLocalAgentRuntimeProvider(
+      {
+        buildAttachmentDataMap: vi.fn(() => ({})),
+        buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
+        createRunDirectory: vi.fn(
+          async () => "/workspace/.aimc-agent-runs/codex-run-1",
+        ),
+        loadCanvasSummaryForRuntime: vi.fn(async () => null),
+        localAgentRuntime: { run: localAgentRuntimeRun },
+        now: () => "2026-06-17T00:00:00.000Z",
+        toolGateway: {
+          createSession: vi.fn(() => ({ token: "tool-token" })),
+          revokeSession: vi.fn(),
+        } as never,
+        toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+      },
+      createProviderPlugin("codex"),
+    );
+
+    await collect(provider.streamRun(context));
+
+    const params = localAgentRuntimeRun.mock.calls[0]?.[0];
+    expect(params).toMatchObject({
+      cwd: "/workspace/.aimc-agent-runs/codex-run-1",
+      env: {
+        CODEX_HOME: "/workspace/.codex-home",
+      },
+      managedAgentInvocation: {
+        credential: "credential-run-1",
+        cwd: "/workspace/.aimc-agent-runs/codex-run-1",
+      },
+    });
+    expect(params.env).not.toHaveProperty(
+      MANAGED_AGENT_INVOCATION_CREDENTIAL_ENV,
+    );
   });
 
   it("keeps credentialless local-agent runs on the regular tmp cwd without managed env", async () => {

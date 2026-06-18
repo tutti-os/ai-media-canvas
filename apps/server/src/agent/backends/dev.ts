@@ -12,7 +12,10 @@ import type { WorkspaceSkillEntry } from "../workspace-skills.js";
 import type { AgentBackendResult } from "./index.js";
 import { createWorkspaceSkillsFilesystemBackend } from "./workspace-skills.js";
 
-type AgentBackendEnv = Pick<ServerEnv, "agentFilesRoot" | "skillsRoot">;
+type AgentBackendEnv = Pick<
+  ServerEnv,
+  "agentFilesRoot" | "appDataDir" | "dataRoot" | "skillsRoot"
+>;
 
 const DEFAULT_DEV_SANDBOX_ROOT = "/tmp/ai-media-canvas-sandbox-dev";
 
@@ -37,8 +40,14 @@ export function createDevelopmentBackend(
     );
   }
 
+  const appDataDir = env.appDataDir ?? env.dataRoot;
+  const sandboxRoot = resolve(
+    appDataDir
+      ? join(appDataDir, "ai-media-canvas-sandbox-dev")
+      : DEFAULT_DEV_SANDBOX_ROOT,
+  );
   const runId = crypto.randomUUID();
-  const sandboxDir = join(resolve(DEFAULT_DEV_SANDBOX_ROOT), runId);
+  const sandboxDir = join(sandboxRoot, runId);
   mkdirSync(sandboxDir, { recursive: true });
   const realSandboxDir = realpathSync(sandboxDir);
 
