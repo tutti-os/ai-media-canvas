@@ -107,8 +107,10 @@ function CanvasPageContent() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
-  // Default chat open on desktop, closed on mobile/tablet to avoid blocking canvas
+  const shouldOpenChatFromUrl = Boolean(initialPrompt || initialSessionId);
+  // Default chat open on desktop; keep chat-led entries visible on narrow screens.
   const [chatOpen, setChatOpen] = useState(() => {
+    if (shouldOpenChatFromUrl) return true;
     if (typeof window === "undefined") return true;
     return window.innerWidth >= 1024;
   });
