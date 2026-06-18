@@ -3854,6 +3854,120 @@ export function createLocalStore(options: {
     };
   }
 
+  // Search: recursive across the whole app, flat ranked list of media file
+  // references. Unlike the list protocol there is no parentGroupId; query and
+  // file-type `extensions`/`includeOther` filters combine, and either alone is a
+  // valid query. Keyset paginated on (created_at desc, id desc).
+  function searchReferenceAssets(input: {
+    query?: string | undefined;
+    extensions?: string[] | undefined;
+    includeOther?: boolean | undefined;
+    knownExtensions?: string[] | undefined;
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+    limit: number;
+    cursor?: string | null | undefined;
+  }): {
+    files: Array<{
+      id: string;
+      displayName: string;
+      relativePath: string;
+      mimeType: string | null;
+      sizeBytes: number | null;
+      mtimeMs: number | null;
+      projectName: string;
+    }>;
+    nextCursor: string | null;
+  } {
+    const { fromIso, toIso } = referenceTimeBounds(input);
+    const conditions = ["a.project_id IS NOT NULL", REFERENCE_MEDIA_PREDICATE];
+    const params: SQLInputValue[] = [];
+    if (input.query) {
+      conditions.push("a.object_path LIKE ? COLLATE NOCASE");
+      params.push(`%${input.query}%`);
+    }
+    // Build the OR group of file-type categories. Each known extension maps to a
+    // suffix match; `other` matches anything whose extension is not recognized.
+    const extensions = input.extensions ?? [];
+    const includeOther = input.includeOther ?? false;
+    if (extensions.length > 0 || includeOther) {
+      const orClauses: string[] = [];
+      for (const ext of extensions) {
+        orClauses.push("a.object_path LIKE ? COLLATE NOCASE");
+        params.push(`%.${ext}`);
+      }
+      if (includeOther) {
+        const known = input.knownExtensions ?? [];
+        const notClauses = known.map(() => "a.object_path LIKE ? COLLATE NOCASE");
+        for (const ext of known) {
+          params.push(`%.${ext}`);
+        }
+        orClauses.push(
+          notClauses.length > 0 ? `NOT (${notClauses.join(" OR ")})` : "1=1",
+        );
+      }
+      conditions.push(`(${orClauses.join(" OR ")})`);
+    }
+    if (fromIso) {
+      conditions.push("a.created_at >= ?");
+      params.push(fromIso);
+    }
+    if (toIso) {
+      conditions.push("a.created_at <= ?");
+      params.push(toIso);
+    }
+    const cursor = decodeReferenceCursor(input.cursor);
+    if (cursor && cursor.length === 2) {
+      const cursorTime = cursor[0] ?? "";
+      const cursorId = cursor[1] ?? "";
+      conditions.push("(a.created_at < ? OR (a.created_at = ? AND a.id < ?))");
+      params.push(cursorTime, cursorTime, cursorId);
+    }
+    const limit = Math.max(1, Math.min(50, input.limit));
+    const rows = db
+      .prepare(
+        `
+          SELECT a.id, a.object_path, a.mime_type, a.byte_size, a.file_path,
+                 a.created_at, p.name AS project_name
+          FROM assets a
+          JOIN projects p ON p.id = a.project_id
+          WHERE ${conditions.join(" AND ")}
+          ORDER BY a.created_at DESC, a.id DESC
+          LIMIT ?
+        `,
+      )
+      .all(...params, limit + 1) as Array<{
+      id: string;
+      object_path: string;
+      mime_type: string | null;
+      byte_size: number | null;
+      file_path: string;
+      created_at: string;
+      project_name: string;
+    }>;
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
+    return {
+      files: page.map((row) => {
+        const mtime = Date.parse(row.created_at);
+        return {
+          id: row.id,
+          displayName: row.object_path.split("/").at(-1) ?? row.id,
+          relativePath: dataRelativePath(row.file_path),
+          mimeType: row.mime_type,
+          sizeBytes: row.byte_size,
+          mtimeMs: Number.isNaN(mtime) ? null : mtime,
+          projectName: row.project_name,
+        };
+      }),
+      nextCursor:
+        hasMore && last
+          ? encodeReferenceCursor([last.created_at, last.id])
+          : null,
+    };
+  }
+
   function resetAllData() {
     db.close();
     rmSync(dataRoot, { force: true, recursive: true });
@@ -3939,6 +4053,7 @@ export function createLocalStore(options: {
     },
     listReferenceProjectGroups,
     listReferenceProjectAssets,
+    searchReferenceAssets,
     resetAllData,
   };
 }
