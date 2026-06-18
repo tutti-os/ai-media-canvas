@@ -16,13 +16,13 @@ const PROJECT_GROUP_PREFIX = "project:";
 // Global Tutti file-type category ids -> file extensions (no leading dot).
 // `other` is handled specially: it matches files with no recognized extension.
 // Contract: app_factory_reference/references/manifest-contract.md (search).
+// `document` includes spreadsheets; audio/code/archive extensions are not listed
+// and therefore resolve to `other`.
 const CATEGORY_EXTENSIONS: Record<string, readonly string[]> = {
   image: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif", "heic", "tiff", "ico"],
-  document: ["pdf", "doc", "docx", "txt", "md", "rtf", "odt", "pages"],
-  spreadsheet: ["xls", "xlsx", "csv", "tsv", "ods", "numbers"],
-  code: ["js", "ts", "tsx", "jsx", "py", "go", "rs", "java", "c", "cpp", "h", "json", "html", "css", "sh", "rb", "php"],
-  media: ["mp4", "mov", "webm", "mkv", "avi", "m4v", "mp3", "wav", "flac", "aac", "ogg", "m4a"],
-  archive: ["zip", "tar", "gz", "rar", "7z", "bz2"],
+  video: ["mp4", "mov", "webm", "mkv", "avi", "m4v"],
+  document: ["pdf", "doc", "docx", "txt", "md", "markdown", "rtf", "odt", "pages", "key", "ppt", "pptx", "xls", "xlsx", "csv", "tsv", "ods", "numbers"],
+  webpage: ["html", "htm", "mhtml", "url", "webloc"],
 };
 const KNOWN_EXTENSIONS = Array.from(
   new Set(Object.values(CATEGORY_EXTENSIONS).flat()),

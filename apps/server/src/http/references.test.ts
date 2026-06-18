@@ -288,7 +288,7 @@ describe("POST /tutti/references/search", () => {
     // would return the png image plus every video.
     const pngAsVideo = await searchReferences(app, {
       query: "png",
-      filters: ["media"],
+      filters: ["video"],
     });
     await app.close();
 
@@ -302,7 +302,7 @@ describe("POST /tutti/references/search", () => {
     const app = buildApp({ env: { dataRoot } });
 
     const result = await searchReferences(app, {
-      filters: ["image", "media"],
+      filters: ["image", "video"],
     });
     await app.close();
 
@@ -329,8 +329,8 @@ describe("POST /tutti/references/search", () => {
     const { dataRoot } = await seedStore();
     const app = buildApp({ env: { dataRoot } });
 
-    // No spreadsheets exist; the app only exposes image/video media.
-    const result = await searchReferences(app, { filters: ["spreadsheet"] });
+    // No documents exist; the app only exposes image/video media.
+    const result = await searchReferences(app, { filters: ["document"] });
     await app.close();
 
     expect(result.items).toEqual([]);
