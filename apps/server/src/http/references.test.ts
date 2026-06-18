@@ -273,6 +273,30 @@ describe("POST /tutti/references/search", () => {
     }
   });
 
+  it("returns the intersection of query and type filters", async () => {
+    const { dataRoot } = await seedStore();
+    const app = buildApp({ env: { dataRoot } });
+
+    // object_path is "<scope>/<uuid>.<ext>"; uuids are hex, so they never
+    // contain "png"/"mp4" and the query only matches via the extension token.
+    // query "png" matches the image; narrowing by `image` keeps it.
+    const pngAsImage = await searchReferences(app, {
+      query: "png",
+      filters: ["image"],
+    });
+    // Same query, incompatible type -> empty. If query/type were OR'd this
+    // would return the png image plus every video.
+    const pngAsVideo = await searchReferences(app, {
+      query: "png",
+      filters: ["media"],
+    });
+    await app.close();
+
+    expect(pngAsImage.items).toHaveLength(1);
+    expect(displayNames(pngAsImage)[0]).toMatch(/\.png$/);
+    expect(pngAsVideo.items).toEqual([]);
+  });
+
   it("combines categories with OR semantics", async () => {
     const { dataRoot } = await seedStore();
     const app = buildApp({ env: { dataRoot } });
