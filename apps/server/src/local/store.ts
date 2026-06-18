@@ -3775,6 +3775,141 @@ export function createLocalStore(options: {
     };
   }
 
+  // Recursive search across every project's in-range media assets. Unlike the
+  // list endpoint's per-group filterText, this spans the whole reference tree
+  // and returns a flat, relevance-ordered list. A match on the file name ranks
+  // above a match on only the owning project name. Keyset paginated on
+  // (match_rank desc, created_at desc, id desc) so the ranking stays stable
+  // across pages.
+  function searchReferenceAssets(input: {
+    query: string;
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+    limit: number;
+    cursor?: string | null | undefined;
+  }): {
+    files: Array<{
+      id: string;
+      displayName: string;
+      relativePath: string;
+      mimeType: string | null;
+      sizeBytes: number | null;
+      mtimeMs: number | null;
+      projectName: string;
+      score: number;
+    }>;
+    nextCursor: string | null;
+  } {
+    const query = input.query.trim();
+    if (!query) {
+      return { files: [], nextCursor: null };
+    }
+    const like = `%${query}%`;
+    const { fromIso, toIso } = referenceTimeBounds(input);
+    // Compute match_rank once in an inner query, then filter/paginate on the
+    // alias in the outer query. This keeps the rank expression (and its LIKE
+    // bindings) from being repeated across the keyset cursor predicate.
+    //   match_rank: 3 = file name + project match, 2 = file name, 1 = project.
+    const innerConditions = [
+      "a.project_id IS NOT NULL",
+      REFERENCE_MEDIA_PREDICATE,
+      "(a.object_path LIKE ? COLLATE NOCASE OR p.name LIKE ? COLLATE NOCASE)",
+    ];
+    // Inner SELECT rank expression (3 LIKEs), then the WHERE match (2 LIKEs).
+    const params: SQLInputValue[] = [like, like, like, like, like];
+    if (fromIso) {
+      innerConditions.push("a.created_at >= ?");
+      params.push(fromIso);
+    }
+    if (toIso) {
+      innerConditions.push("a.created_at <= ?");
+      params.push(toIso);
+    }
+    let cursorClause = "";
+    const cursor = decodeReferenceCursor(input.cursor);
+    if (cursor && cursor.length === 3) {
+      const cursorRank = Number.parseInt(cursor[0] ?? "", 10);
+      const cursorTime = cursor[1] ?? "";
+      const cursorId = cursor[2] ?? "";
+      if (Number.isFinite(cursorRank)) {
+        cursorClause =
+          "WHERE (match_rank < ? OR (match_rank = ? AND created_at < ?) OR (match_rank = ? AND created_at = ? AND id < ?))";
+        params.push(
+          cursorRank,
+          cursorRank,
+          cursorTime,
+          cursorRank,
+          cursorTime,
+          cursorId,
+        );
+      }
+    }
+    const limit = Math.max(1, Math.min(50, input.limit));
+    const rows = db
+      .prepare(
+        `
+          SELECT id, object_path, mime_type, byte_size, file_path,
+                 created_at, project_name, match_rank
+          FROM (
+            SELECT a.id AS id, a.object_path AS object_path,
+                   a.mime_type AS mime_type, a.byte_size AS byte_size,
+                   a.file_path AS file_path, a.created_at AS created_at,
+                   p.name AS project_name,
+                   CASE
+                     WHEN a.object_path LIKE ? COLLATE NOCASE AND p.name LIKE ? COLLATE NOCASE THEN 3
+                     WHEN a.object_path LIKE ? COLLATE NOCASE THEN 2
+                     ELSE 1
+                   END AS match_rank
+            FROM assets a
+            JOIN projects p ON p.id = a.project_id
+            WHERE ${innerConditions.join(" AND ")}
+          )
+          ${cursorClause}
+          ORDER BY match_rank DESC, created_at DESC, id DESC
+          LIMIT ?
+        `,
+      )
+      .all(...params, limit + 1) as Array<{
+      id: string;
+      object_path: string;
+      mime_type: string | null;
+      byte_size: number | null;
+      file_path: string;
+      created_at: string;
+      project_name: string;
+      match_rank: number;
+    }>;
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
+    // Map the discrete match_rank to a 0..1 score Tutti uses to preserve order.
+    const scoreForRank = (rank: number): number =>
+      rank >= 3 ? 0.9 : rank === 2 ? 0.6 : 0.3;
+    return {
+      files: page.map((row) => {
+        const mtime = Date.parse(row.created_at);
+        return {
+          id: row.id,
+          displayName: row.object_path.split("/").at(-1) ?? row.id,
+          relativePath: dataRelativePath(row.file_path),
+          mimeType: row.mime_type,
+          sizeBytes: row.byte_size,
+          mtimeMs: Number.isNaN(mtime) ? null : mtime,
+          projectName: row.project_name,
+          score: scoreForRank(row.match_rank),
+        };
+      }),
+      nextCursor:
+        hasMore && last
+          ? encodeReferenceCursor([
+              String(last.match_rank),
+              last.created_at,
+              last.id,
+            ])
+          : null,
+    };
+  }
+
   function resetAllData() {
     db.close();
     rmSync(dataRoot, { force: true, recursive: true });
@@ -3860,6 +3995,7 @@ export function createLocalStore(options: {
     },
     listReferenceProjectGroups,
     listReferenceProjectAssets,
+    searchReferenceAssets,
     resetAllData,
   };
 }

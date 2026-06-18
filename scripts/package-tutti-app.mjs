@@ -386,6 +386,7 @@ export function createManifest({ version }) {
     },
     references: {
       listEndpoint: "/tutti/references/list",
+      searchEndpoint: "/tutti/references/search",
     },
     localizationInfo: {
       defaultLocale: "en",
@@ -567,6 +568,27 @@ When those variables are absent during local direct startup, it falls back to
 Treat \`TUTTI_APP_PACKAGE_DIR\` as read-only. Use \`TUTTI_APP_DATA_DIR\` for
 durable data, \`TUTTI_APP_RUNTIME_DIR\` for scratch files, and
 \`TUTTI_APP_LOG_DIR\` for additional logs if future changes add them.
+
+## Reference Protocol
+
+The app exposes its project-attributed media assets to the Tutti reference
+picker through two JSON \`POST\` endpoints declared in \`tutti.app.json\` under
+\`references\`:
+
+- \`/tutti/references/list\`: navigable two-level tree. The root returns one
+  group per project; \`parentGroupId\` \`project:<id>\` returns that project's
+  image and video assets as file references. \`filterText\` filters only the
+  direct children of the requested level.
+- \`/tutti/references/search\`: recursive search across every project. It takes a
+  required \`query\` and returns a flat, relevance-ordered list of file
+  references (no group items). File-name matches outrank project-name-only
+  matches; each hit carries \`score\` and \`parentGroupLabel\` (the owning project
+  name) so users can tell same-named files apart.
+
+Both endpoints return file references with an \`app-data-relative\` \`location\`
+(never a host absolute path), accept an optional \`timeRange\` filtered on the
+asset \`mtimeMs\`, and paginate with an opaque \`cursor\`/\`nextCursor\`. Assets with
+no owning project are intentionally not exposed.
 `;
 }
 

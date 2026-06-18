@@ -149,6 +149,10 @@ test("createManifest returns the Tutti package manifest contract", () => {
     cli: {
       manifest: "tutti.cli.json",
     },
+    references: {
+      listEndpoint: "/tutti/references/list",
+      searchEndpoint: "/tutti/references/search",
+    },
     localizationInfo: {
       defaultLocale: "en",
       additionalLocales: [

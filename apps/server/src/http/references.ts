@@ -5,10 +5,13 @@ import type { LocalStore } from "../local/store.js";
 
 // Tutti workspace app reference protocol.
 // Contract: app_factory_reference/references/manifest-contract.md
-//   POST /tutti/references/list
+//   POST /tutti/references/list   - two-level navigable tree
+//   POST /tutti/references/search - recursive, flat, relevance-ranked search
 // v1 exposes project-attributed media assets as a two-level tree:
 //   root            -> one group per project (displayName = project name)
 //   group "project:<id>" -> file references (displayName = file name)
+// Search spans every project and returns a flat ranked list, tagging each hit
+// with its owning project name as parentGroupLabel.
 // Assets without a project (project_id IS NULL) are intentionally not exposed.
 
 const PROJECT_GROUP_PREFIX = "project:";
@@ -31,6 +34,16 @@ const listRequestSchema = z
   })
   .passthrough();
 
+const searchRequestSchema = z
+  .object({
+    query: z.string().min(1),
+    limit: z.number().int().optional(),
+    cursor: z.string().nullish(),
+    kinds: z.array(z.string()).optional(),
+    timeRange: timeRangeSchema,
+  })
+  .passthrough();
+
 type FileReferenceItem = {
   type: "reference";
   reference: {
@@ -40,6 +53,8 @@ type FileReferenceItem = {
     sizeBytes?: number;
     mtimeMs?: number;
     mimeType?: string;
+    score?: number;
+    parentGroupLabel?: string;
   };
 };
 
@@ -121,5 +136,51 @@ export async function registerReferenceRoutes(
 
     // Unknown group id -> empty, navigable result.
     return reply.code(200).send({ items: [], nextCursor: null });
+  });
+
+  app.post("/tutti/references/search", async (request, reply) => {
+    const parsed = searchRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: "invalid_request", detail: parsed.error.message });
+    }
+
+    const body = parsed.data;
+    const query = body.query.trim();
+    if (!query) {
+      // Tutti trims before sending, but stay defensive: empty query -> no hits.
+      return reply.code(200).send({ items: [], nextCursor: null });
+    }
+    // Tutti clamps limit to 1..50; default to the max when omitted.
+    const limit =
+      typeof body.limit === "number"
+        ? Math.max(1, Math.min(50, body.limit))
+        : 50;
+    const timeRange = body.timeRange;
+
+    const { files, nextCursor } = store.searchReferenceAssets({
+      query,
+      fromMs: timeRange?.fromMs,
+      toMs: timeRange?.toMs,
+      limit,
+      cursor: body.cursor,
+    });
+
+    // Search returns a flat, relevance-ordered list of file references only.
+    const items: FileReferenceItem[] = files.map((file) => ({
+      type: "reference",
+      reference: {
+        kind: "file",
+        displayName: file.displayName,
+        location: { type: "app-data-relative", path: file.relativePath },
+        ...(file.sizeBytes != null ? { sizeBytes: file.sizeBytes } : {}),
+        ...(file.mtimeMs != null ? { mtimeMs: file.mtimeMs } : {}),
+        ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+        score: file.score,
+        parentGroupLabel: file.projectName,
+      },
+    }));
+    return reply.code(200).send({ items, nextCursor });
   });
 }
