@@ -36,6 +36,25 @@ async function listReferences(
   return response.json() as ListResponse;
 }
 
+async function searchReferences(
+  app: ReturnType<typeof buildApp>,
+  payload: Record<string, unknown>,
+): Promise<ListResponse> {
+  const response = await app.inject({
+    method: "POST",
+    url: "/tutti/references/search",
+    payload,
+  });
+  expect(response.statusCode).toBe(200);
+  return response.json() as ListResponse;
+}
+
+function displayNames(result: ListResponse): string[] {
+  return result.items.map(
+    (item) => (item.reference as { displayName: string }).displayName,
+  );
+}
+
 describe("POST /tutti/references/list", () => {
   const dataRoots: string[] = [];
 
@@ -170,5 +189,144 @@ describe("POST /tutti/references/list", () => {
     const secondId = (secondPage.items[0]?.reference as { displayName: string })
       .displayName;
     expect(firstId).not.toBe(secondId);
+  });
+});
+
+describe("POST /tutti/references/search", () => {
+  const dataRoots: string[] = [];
+
+  afterEach(async () => {
+    createAgentRunServiceMock.mockClear();
+    await Promise.all(
+      dataRoots
+        .splice(0)
+        .map((dataRoot) =>
+          rm(dataRoot, { force: true, recursive: true, maxRetries: 3 }),
+        ),
+    );
+  });
+
+  // Two projects, each with one image + one video, plus an excluded non-media
+  // file and an unassigned (project-less) media asset that must never surface.
+  async function seedStore() {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-search-"));
+    dataRoots.push(dataRoot);
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const projectA = store.createProject({ name: "Campaign A" });
+    const projectB = store.createProject({ name: "Campaign B" });
+    const upload = (
+      projectId: string | undefined,
+      fileName: string,
+      mimeType: string,
+    ) =>
+      store.uploadFile({
+        bucket: "project-assets",
+        fileName,
+        fileBuffer: Buffer.from(fileName),
+        mimeType,
+        ...(projectId ? { projectId } : {}),
+      });
+    upload(projectA.id, "a-hero.png", "image/png");
+    upload(projectA.id, "a-promo.mp4", "video/mp4");
+    upload(projectB.id, "b-hero.jpg", "image/jpeg");
+    upload(projectB.id, "b-promo.mov", "video/quicktime");
+    upload(projectA.id, "plan.json", "application/json"); // non-media, excluded
+    upload(undefined, "stray.png", "image/png"); // unassigned, excluded
+    return { dataRoot, projectA, projectB };
+  }
+
+  it("searches media references recursively across all projects", async () => {
+    const { dataRoot } = await seedStore();
+    const app = buildApp({ env: { dataRoot } });
+
+    const result = await searchReferences(app, {});
+    await app.close();
+
+    // 2 images + 2 videos; json and unassigned excluded.
+    expect(result.items).toHaveLength(4);
+    for (const item of result.items) {
+      const reference = item.reference as {
+        kind: string;
+        location: { type: string; path: string };
+        parentGroupLabel?: string;
+      };
+      expect(reference.kind).toBe("file");
+      expect(reference.location.type).toBe("app-data-relative");
+      // Flattened search labels each result with its owning project.
+      expect(reference.parentGroupLabel).toMatch(/^Campaign [AB]$/);
+    }
+  });
+
+  it("filters to images only via the image category id (filter-only)", async () => {
+    const { dataRoot } = await seedStore();
+    const app = buildApp({ env: { dataRoot } });
+
+    const result = await searchReferences(app, { filters: ["image"] });
+    await app.close();
+
+    expect(result.items).toHaveLength(2);
+    for (const name of displayNames(result)) {
+      expect(name).toMatch(/\.(png|jpg|jpeg)$/);
+    }
+  });
+
+  it("combines categories with OR semantics", async () => {
+    const { dataRoot } = await seedStore();
+    const app = buildApp({ env: { dataRoot } });
+
+    const result = await searchReferences(app, {
+      filters: ["image", "media"],
+    });
+    await app.close();
+
+    expect(result.items).toHaveLength(4);
+  });
+
+  it("ignores unknown category ids", async () => {
+    const { dataRoot } = await seedStore();
+    const app = buildApp({ env: { dataRoot } });
+
+    // Only an unknown id -> no effective filter -> all media returned.
+    const unknownOnly = await searchReferences(app, { filters: ["bogus"] });
+    // Known + unknown -> behaves as the known filter alone.
+    const mixed = await searchReferences(app, {
+      filters: ["image", "bogus"],
+    });
+    await app.close();
+
+    expect(unknownOnly.items).toHaveLength(4);
+    expect(mixed.items).toHaveLength(2);
+  });
+
+  it("returns nothing for a category that matches no exposed assets", async () => {
+    const { dataRoot } = await seedStore();
+    const app = buildApp({ env: { dataRoot } });
+
+    // No spreadsheets exist; the app only exposes image/video media.
+    const result = await searchReferences(app, { filters: ["spreadsheet"] });
+    await app.close();
+
+    expect(result.items).toEqual([]);
+  });
+
+  it("paginates flat search results via opaque cursor", async () => {
+    const { dataRoot } = await seedStore();
+    const app = buildApp({ env: { dataRoot } });
+
+    const firstPage = await searchReferences(app, { limit: 1 });
+    expect(firstPage.items).toHaveLength(1);
+    expect(firstPage.nextCursor).toBeTruthy();
+
+    const secondPage = await searchReferences(app, {
+      limit: 1,
+      cursor: firstPage.nextCursor,
+    });
+    await app.close();
+
+    expect(secondPage.items).toHaveLength(1);
+    expect(displayNames(firstPage)[0]).not.toBe(displayNames(secondPage)[0]);
   });
 });

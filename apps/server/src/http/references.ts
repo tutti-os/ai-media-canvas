@@ -13,6 +13,45 @@ import type { LocalStore } from "../local/store.js";
 
 const PROJECT_GROUP_PREFIX = "project:";
 
+// Global Tutti file-type category ids -> file extensions (no leading dot).
+// `other` is handled specially: it matches files with no recognized extension.
+// Contract: app_factory_reference/references/manifest-contract.md (search).
+const CATEGORY_EXTENSIONS: Record<string, readonly string[]> = {
+  image: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif", "heic", "tiff", "ico"],
+  document: ["pdf", "doc", "docx", "txt", "md", "rtf", "odt", "pages"],
+  spreadsheet: ["xls", "xlsx", "csv", "tsv", "ods", "numbers"],
+  code: ["js", "ts", "tsx", "jsx", "py", "go", "rs", "java", "c", "cpp", "h", "json", "html", "css", "sh", "rb", "php"],
+  media: ["mp4", "mov", "webm", "mkv", "avi", "m4v", "mp3", "wav", "flac", "aac", "ogg", "m4a"],
+  archive: ["zip", "tar", "gz", "rar", "7z", "bz2"],
+};
+const KNOWN_EXTENSIONS = Array.from(
+  new Set(Object.values(CATEGORY_EXTENSIONS).flat()),
+);
+
+// Resolve requested category ids into concrete extensions. Unknown ids are
+// ignored; `other` requests files whose extension is not recognized.
+function resolveFilters(filters: string[] | undefined): {
+  extensions: string[];
+  includeOther: boolean;
+} {
+  if (!filters || filters.length === 0) {
+    return { extensions: [], includeOther: false };
+  }
+  const extensions = new Set<string>();
+  let includeOther = false;
+  for (const id of filters) {
+    if (id === "other") {
+      includeOther = true;
+      continue;
+    }
+    const exts = CATEGORY_EXTENSIONS[id];
+    if (exts) {
+      for (const ext of exts) extensions.add(ext);
+    }
+  }
+  return { extensions: Array.from(extensions), includeOther };
+}
+
 const timeRangeSchema = z
   .object({
     fromMs: z.number().finite().optional(),
@@ -31,6 +70,17 @@ const listRequestSchema = z
   })
   .passthrough();
 
+const searchRequestSchema = z
+  .object({
+    query: z.string().optional(),
+    limit: z.number().int().optional(),
+    cursor: z.string().nullish(),
+    kinds: z.array(z.string()).optional(),
+    filters: z.array(z.string()).optional(),
+    timeRange: timeRangeSchema,
+  })
+  .passthrough();
+
 type FileReferenceItem = {
   type: "reference";
   reference: {
@@ -40,6 +90,7 @@ type FileReferenceItem = {
     sizeBytes?: number;
     mtimeMs?: number;
     mimeType?: string;
+    parentGroupLabel?: string;
   };
 };
 
@@ -121,5 +172,49 @@ export async function registerReferenceRoutes(
 
     // Unknown group id -> empty, navigable result.
     return reply.code(200).send({ items: [], nextCursor: null });
+  });
+
+  // Recursive search across the whole app. `query` and file-type `filters`
+  // combine; either alone is valid ("filter-only" search returns recency order).
+  app.post("/tutti/references/search", async (request, reply) => {
+    const parsed = searchRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: "invalid_request", detail: parsed.error.message });
+    }
+
+    const body = parsed.data;
+    const limit =
+      typeof body.limit === "number"
+        ? Math.max(1, Math.min(50, body.limit))
+        : 50;
+    const query = body.query?.trim() || undefined;
+    const timeRange = body.timeRange;
+    const { extensions, includeOther } = resolveFilters(body.filters);
+
+    const { files, nextCursor } = store.searchReferenceAssets({
+      query,
+      extensions,
+      includeOther,
+      knownExtensions: KNOWN_EXTENSIONS,
+      fromMs: timeRange?.fromMs,
+      toMs: timeRange?.toMs,
+      limit,
+      cursor: body.cursor,
+    });
+    const items: FileReferenceItem[] = files.map((file) => ({
+      type: "reference",
+      reference: {
+        kind: "file",
+        displayName: file.displayName,
+        location: { type: "app-data-relative", path: file.relativePath },
+        ...(file.sizeBytes != null ? { sizeBytes: file.sizeBytes } : {}),
+        ...(file.mtimeMs != null ? { mtimeMs: file.mtimeMs } : {}),
+        ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+        ...(file.projectName ? { parentGroupLabel: file.projectName } : {}),
+      },
+    }));
+    return reply.code(200).send({ items, nextCursor });
   });
 }
