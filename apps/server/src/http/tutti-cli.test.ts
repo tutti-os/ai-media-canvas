@@ -49,6 +49,48 @@ describe("registerTuttiCliRoutes", () => {
     });
   });
 
+  it("unwraps Tutti app CLI invoke envelope input before routing", async () => {
+    const projectOperations = {
+      createProject: vi.fn(async (input) => ({
+        project: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: input.name,
+        },
+      })),
+      getProject: vi.fn(),
+      listProjects: vi.fn(),
+    };
+    const app = buildTestApp({ projectOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/projects/create",
+      payload: {
+        schemaVersion: "tutti.app.cli.invoke.v1",
+        commandId: "ai-media-canvas.projects.create",
+        appId: "ai-media-canvas",
+        scope: "aimc",
+        path: ["projects", "create"],
+        workspaceId: "workspace-1",
+        input: {
+          name: "Codex image generation test",
+          description: "Temporary canvas for a sample image generation.",
+        },
+        outputMode: "json",
+        context: {
+          source: "cli",
+          workspaceID: "workspace-1",
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(projectOperations.createProject).toHaveBeenCalledWith({
+      name: "Codex image generation test",
+      description: "Temporary canvas for a sample image generation.",
+    });
+  });
+
   it("maps hyphenated agent run flags to the shared run request", async () => {
     const agentOperations = {
       cancelRun: vi.fn(),
@@ -263,6 +305,47 @@ describe("registerTuttiCliRoutes", () => {
         prompt: "A launch poster",
         model: "codex/gpt-image-2",
         "direct-user": true,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(jobOperations.createImageJob).toHaveBeenCalledWith({
+      prompt: "A launch poster",
+      model: "codex/gpt-image-2",
+    });
+  });
+
+  it("unwraps Tutti app CLI invoke envelopes for generation image commands", async () => {
+    const jobOperations = {
+      createImageJob: vi.fn(async (input) => ({
+        job: {
+          id: "job-1",
+          payload: input,
+          status: "queued",
+        },
+      })),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/image",
+      payload: {
+        schemaVersion: "tutti.app.cli.invoke.v1",
+        commandId: "ai-media-canvas.generation.image",
+        appId: "ai-media-canvas",
+        scope: "aimc",
+        path: ["generation", "image"],
+        workspaceId: "workspace-1",
+        input: {
+          prompt: "A launch poster",
+          model: "codex/gpt-image-2",
+          "direct-user": true,
+        },
+        outputMode: "json",
+        context: {
+          source: "cli",
+        },
       },
     });
 

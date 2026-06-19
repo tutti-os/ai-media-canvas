@@ -144,7 +144,7 @@ export async function registerTuttiCliRoutes(
     const register = (routePath: string) =>
       app.post(routePath, async (request, reply) => {
         try {
-          const result = await handler(request.body);
+          const result = await handler(readCliInputBody(request.body));
           return sendCliJson(reply, result, statusCode);
         } catch (error) {
           return sendCliRouteError(error, reply);
@@ -475,6 +475,42 @@ function parseRequiredString(body: unknown, key: string) {
     throw new Error(`Missing required input: ${key}`);
   }
   return value;
+}
+
+function readCliInputBody(body: unknown) {
+  if (!isRecord(body) || !isCliInvokeEnvelope(body)) {
+    return body;
+  }
+
+  return body.input ?? {};
+}
+
+function isCliInvokeEnvelope(body: Record<string, unknown>) {
+  const keys = Object.keys(body);
+  if (!Object.hasOwn(body, "input")) {
+    return false;
+  }
+  if (body.schemaVersion === "tutti.app.cli.invoke.v1") {
+    return true;
+  }
+  if (
+    Object.hasOwn(body, "commandId") &&
+    Object.hasOwn(body, "appId") &&
+    Object.hasOwn(body, "scope") &&
+    Object.hasOwn(body, "path")
+  ) {
+    return true;
+  }
+  return (
+    keys.length > 0 &&
+    keys.every(
+      (key) => key === "input" || key === "outputMode" || key === "context",
+    )
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function splitCsv(value: string) {
