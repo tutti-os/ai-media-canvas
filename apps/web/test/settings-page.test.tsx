@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1437,6 +1443,78 @@ describe("SettingsPage", () => {
     );
     await userEvent.type(screen.getByLabelText("OpenAI API Key"), "sk-updated");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("closes the settings dialog after a successful media provider save", async () => {
+    const onOpenChange = vi.fn();
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    updateWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-agnes",
+        agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(
+      <SettingsDialog
+        open
+        onOpenChange={onOpenChange}
+        initialTab="media"
+      />,
+    );
+
+    await userEvent.type(
+      await screen.findByLabelText("Agnes API Key"),
+      "sk-agnes",
+    );
+    const agnesSection = screen
+      .getByRole("heading", { name: "Agnes" })
+      .closest("section");
+    expect(agnesSection).not.toBeNull();
+    await userEvent.click(
+      within(agnesSection as HTMLElement).getByRole("button", {
+        name: "Save",
+      }),
+    );
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });

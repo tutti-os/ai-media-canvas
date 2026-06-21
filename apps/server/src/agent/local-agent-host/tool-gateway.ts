@@ -303,10 +303,13 @@ function normalizeToolResult(
           typeof parsedRecord.message === "string"
         ? parsedRecord.message
         : undefined;
+  const isActionableCapabilityRequired =
+    parsedRecord.error === "media_provider_configuration_required" ||
+    parsedRecord.errorCode === "media_provider_configuration_required";
   const artifacts = buildArtifacts(toolName, parsedRecord);
 
   const result: LocalToolGatewayCallResult = {
-    isError: Boolean(errorMessage),
+    isError: Boolean(errorMessage) && !isActionableCapabilityRequired,
     output: parsedRecord,
   };
   const summary = errorMessage ?? outputSummary;

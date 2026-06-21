@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   cloneElement,
@@ -245,7 +245,7 @@ describe("HomePrompt", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders a configuration banner above the prompt when agent and media models are missing", async () => {
+  it("does not render a persistent configuration banner when agent and media models are missing", async () => {
     agentModelRequirementMock.mockReturnValue({
       model: null,
       isAgentModelConfigured: false,
@@ -267,21 +267,19 @@ describe("HomePrompt", () => {
 
     render(<HomePrompt onSubmit={vi.fn()} />);
 
+    await waitFor(() => expect(fetchWorkspaceSettingsMock).toHaveBeenCalled());
     expect(
-      await screen.findByText("未配置 Agent 模型、图片模型、视频模型"),
-    ).toBeInTheDocument();
+      screen.queryByText("未配置 Agent 模型、图片模型、视频模型"),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByText(/Agnes 提供免费的文本、生图、生视频模型能力/),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "配置 Agent" }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "配置 Agent" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "配置媒体模型" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "去连接" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("uses provider settings instead of model catalog entries when deciding media configuration", async () => {
+  it("does not render a persistent media banner when media providers are missing", async () => {
     fetchImageModelsMock.mockResolvedValueOnce({
       models: [{ id: "agnes-image", displayName: "Agnes Image" }],
     });
@@ -302,9 +300,10 @@ describe("HomePrompt", () => {
 
     render(<HomePrompt onSubmit={vi.fn()} />);
 
+    await waitFor(() => expect(fetchWorkspaceSettingsMock).toHaveBeenCalled());
     expect(
-      await screen.findByText("未配置 图片模型、视频模型"),
-    ).toBeInTheDocument();
+      screen.queryByText("未配置 图片模型、视频模型"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders tooltip labels for prompt toolbar icon buttons", () => {
