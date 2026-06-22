@@ -224,6 +224,73 @@ describe("POST /tutti/references/list", () => {
     }
   });
 
+  it("lists generated canvas assets under the owning project", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-canvas-"));
+    dataRoots.push(dataRoot);
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = store.createProject({ name: "Canvas Outputs" });
+    const generated = store.uploadFile({
+      bucket: "project-assets",
+      fileName: "agent-output.png",
+      fileBuffer: Buffer.from("generated"),
+      mimeType: "image/png",
+    });
+    const stray = store.uploadFile({
+      bucket: "project-assets",
+      fileName: "stray.png",
+      fileBuffer: Buffer.from("stray"),
+      mimeType: "image/png",
+    });
+    store.saveCanvas(project.primaryCanvas.id, {
+      elements: [
+        {
+          id: "generated-element",
+          type: "image",
+          fileId: "generated-file",
+          isDeleted: false,
+          customData: {
+            source: "generated",
+            assetId: generated.asset.id,
+          },
+        } as never,
+      ],
+      appState: {},
+      files: {
+        "generated-file": {
+          id: "generated-file",
+          assetId: generated.asset.id,
+          mimeType: "image/png",
+        },
+      },
+    });
+    const app = buildApp({ env: { dataRoot } });
+
+    const root = await listReferences(app, {});
+    const projectFiles = await listReferences(app, {
+      parentGroupId: `project:${project.id}`,
+    });
+    const unassignedFiles = await listReferences(app, {
+      parentGroupId: "unassigned",
+    });
+    await app.close();
+
+    expect(findGroup(root, project.id)).toMatchObject({
+      type: "group",
+      id: `project:${project.id}`,
+      referenceCount: 1,
+    });
+    expect(findUnassignedGroup(root)).toMatchObject({
+      type: "group",
+      id: "unassigned",
+      referenceCount: 1,
+    });
+    expect(displayNames(projectFiles)).toEqual([`${generated.asset.id}.png`]);
+    expect(displayNames(unassignedFiles)).toEqual([`${stray.asset.id}.png`]);
+  });
+
   it("does not expose project thumbnail snapshots as app references", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-thumb-"));
     dataRoots.push(dataRoot);
