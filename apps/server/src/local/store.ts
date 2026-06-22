@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 
@@ -225,7 +232,12 @@ type BackgroundJobRow = {
   remote_updated_at: string | null;
 };
 
-type AgentRunStatus = "accepted" | "canceled" | "completed" | "failed" | "running";
+type AgentRunStatus =
+  | "accepted"
+  | "canceled"
+  | "completed"
+  | "failed"
+  | "running";
 
 type AgentRunEventRow = {
   created_at: string;
@@ -586,9 +598,7 @@ export function createLocalStore(options: {
     workspaceSettingsHasLegacyIdColumn = columnNames.has("id");
 
     if (!columnNames.has("workspace_id")) {
-      db.exec(
-        `ALTER TABLE workspace_settings ADD COLUMN workspace_id TEXT`,
-      );
+      db.exec(`ALTER TABLE workspace_settings ADD COLUMN workspace_id TEXT`);
       db.prepare(
         `UPDATE workspace_settings SET workspace_id = ? WHERE workspace_id IS NULL`,
       ).run(LOCAL_WORKSPACE_ID);
@@ -631,9 +641,9 @@ export function createLocalStore(options: {
   }
 
   function ensureCanvasSchema() {
-    const columns = db
-      .prepare(`PRAGMA table_info(canvases)`)
-      .all() as Array<{ name: string }>;
+    const columns = db.prepare(`PRAGMA table_info(canvases)`).all() as Array<{
+      name: string;
+    }>;
     const columnNames = new Set(columns.map((column) => column.name));
 
     if (!columnNames.has("revision")) {
@@ -663,9 +673,9 @@ export function createLocalStore(options: {
       db.exec(`ALTER TABLE chat_messages ADD COLUMN last_run_event_id TEXT`);
     }
 
-    const columns = db
-      .prepare(`PRAGMA table_info(agent_runs)`)
-      .all() as Array<{ name: string }>;
+    const columns = db.prepare(`PRAGMA table_info(agent_runs)`).all() as Array<{
+      name: string;
+    }>;
     const columnNames = new Set(columns.map((column) => column.name));
 
     if (!columnNames.has("runtime_kind")) {
@@ -945,7 +955,9 @@ export function createLocalStore(options: {
       >;
       providerModels = {
         openai: Array.isArray(parsed.openai)
-          ? parsed.openai.filter((value): value is string => typeof value === "string")
+          ? parsed.openai.filter(
+              (value): value is string => typeof value === "string",
+            )
           : [],
         anthropic: Array.isArray(parsed.anthropic)
           ? parsed.anthropic.filter(
@@ -953,13 +965,19 @@ export function createLocalStore(options: {
             )
           : [],
         agnes: Array.isArray(parsed.agnes)
-          ? parsed.agnes.filter((value): value is string => typeof value === "string")
+          ? parsed.agnes.filter(
+              (value): value is string => typeof value === "string",
+            )
           : [],
         google: Array.isArray(parsed.google)
-          ? parsed.google.filter((value): value is string => typeof value === "string")
+          ? parsed.google.filter(
+              (value): value is string => typeof value === "string",
+            )
           : [],
         vertex: Array.isArray(parsed.vertex)
-          ? parsed.vertex.filter((value): value is string => typeof value === "string")
+          ? parsed.vertex.filter(
+              (value): value is string => typeof value === "string",
+            )
           : [],
       };
     } catch {
@@ -1185,10 +1203,7 @@ export function createLocalStore(options: {
       connected: true,
       grantRef: row.grant_ref,
       ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
-      providers: parseJson<TuttiManagedProviderId[]>(
-        row.providers_json,
-        [],
-      ),
+      providers: parseJson<TuttiManagedProviderId[]>(row.providers_json, []),
       models: parseJson<TuttiManagedModel[]>(row.models_json, []),
     });
   }
@@ -1249,9 +1264,7 @@ export function createLocalStore(options: {
           WHERE id = ?
         `,
       )
-      .get(assetId) as
-      | (AssetRow & { file_path: string })
-      | undefined;
+      .get(assetId) as (AssetRow & { file_path: string }) | undefined;
   }
 
   function assetObjectFromRow(row: AssetRow): AssetObject {
@@ -1369,9 +1382,7 @@ export function createLocalStore(options: {
 
   function findAssetReference(assetId: string) {
     const thumbnailReference = db
-      .prepare(
-        `SELECT id FROM projects WHERE thumbnail_asset_id = ? LIMIT 1`,
-      )
+      .prepare(`SELECT id FROM projects WHERE thumbnail_asset_id = ? LIMIT 1`)
       .get(assetId) as { id: string } | undefined;
     if (thumbnailReference) {
       return { kind: "project_thumbnail", id: thumbnailReference.id };
@@ -1387,9 +1398,7 @@ export function createLocalStore(options: {
     }
 
     const brandKitCoverReference = db
-      .prepare(
-        `SELECT id FROM brand_kits WHERE cover_asset_id = ? LIMIT 1`,
-      )
+      .prepare(`SELECT id FROM brand_kits WHERE cover_asset_id = ? LIMIT 1`)
       .get(assetId) as { id: string } | undefined;
     if (brandKitCoverReference) {
       return { kind: "brand_kit_cover", id: brandKitCoverReference.id };
@@ -1405,9 +1414,7 @@ export function createLocalStore(options: {
     }
 
     const canvasReference = db
-      .prepare(
-        `SELECT id FROM canvases WHERE content LIKE ? LIMIT 1`,
-      )
+      .prepare(`SELECT id FROM canvases WHERE content LIKE ? LIMIT 1`)
       .get(`%"id":"${assetId}"%`) as { id: string } | undefined;
     if (canvasReference) {
       return { kind: "canvas_content", id: canvasReference.id };
@@ -1452,9 +1459,7 @@ export function createLocalStore(options: {
     updated_at: string;
   }): ProjectSummary {
     const canvas = db
-      .prepare(
-        `SELECT id, name, is_primary FROM canvases WHERE id = ? LIMIT 1`,
-      )
+      .prepare(`SELECT id, name, is_primary FROM canvases WHERE id = ? LIMIT 1`)
       .get(row.primary_canvas_id) as
       | { id: string; name: string; is_primary: number }
       | undefined;
@@ -1626,7 +1631,9 @@ export function createLocalStore(options: {
   function updateProject(
     projectId: string,
     input: ProjectUpdateRequest,
-  ): { ok: true } | { ok: false; reason: "project_not_found" | "brand_kit_not_found" } {
+  ):
+    | { ok: true }
+    | { ok: false; reason: "project_not_found" | "brand_kit_not_found" } {
     const existing = getProject(projectId);
     if (!existing) return { ok: false, reason: "project_not_found" };
     const patch: string[] = [];
@@ -1645,24 +1652,26 @@ export function createLocalStore(options: {
     patch.push("updated_at = ?");
     values.push(nowIso());
     values.push(projectId);
-    db.prepare(
-      `UPDATE projects SET ${patch.join(", ")} WHERE id = ?`,
-    ).run(...values);
+    db.prepare(`UPDATE projects SET ${patch.join(", ")} WHERE id = ?`).run(
+      ...values,
+    );
     return { ok: true };
   }
 
   function archiveProject(projectId: string) {
     const existing = getProject(projectId);
     if (!existing) return false;
-    db.prepare(`UPDATE projects SET archived_at = ?, updated_at = ? WHERE id = ?`).run(
-      nowIso(),
-      nowIso(),
-      projectId,
-    );
+    db.prepare(
+      `UPDATE projects SET archived_at = ?, updated_at = ? WHERE id = ?`,
+    ).run(nowIso(), nowIso(), projectId);
     return true;
   }
 
-  function saveProjectThumbnail(projectId: string, buffer: Buffer, mimeType: string) {
+  function saveProjectThumbnail(
+    projectId: string,
+    buffer: Buffer,
+    mimeType: string,
+  ) {
     const existing = getProject(projectId);
     if (!existing) return null;
     const stored = writeAssetFile({
@@ -1756,7 +1765,8 @@ export function createLocalStore(options: {
             );
 
     if (result.changes === 0) {
-      if (!getCanvas(canvasId)) return { ok: false, reason: "canvas_not_found" };
+      if (!getCanvas(canvasId))
+        return { ok: false, reason: "canvas_not_found" };
       return { ok: false, reason: "revision_conflict" };
     }
 
@@ -1812,7 +1822,10 @@ export function createLocalStore(options: {
     return !!row;
   }
 
-  function createSession(canvasId: string, title?: string): ChatSessionSummary | null {
+  function createSession(
+    canvasId: string,
+    title?: string,
+  ): ChatSessionSummary | null {
     if (!hasCanvas(canvasId)) return null;
     const timestamp = nowIso();
     const id = randomUUID();
@@ -1838,9 +1851,11 @@ export function createLocalStore(options: {
   }
 
   function updateSessionTitle(sessionId: string, title: string) {
-    const result = db.prepare(
-      `UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?`,
-    ).run(title, nowIso(), sessionId);
+    const result = db
+      .prepare(
+        `UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?`,
+      )
+      .run(title, nowIso(), sessionId);
     return result.changes > 0;
   }
 
@@ -1857,9 +1872,9 @@ export function createLocalStore(options: {
         `,
       )
       .all(sessionId) as Array<{
-        canvas_id: string | null;
-        id: string;
-      }>;
+      canvas_id: string | null;
+      id: string;
+    }>;
 
     for (const run of activeRuns) {
       updateAgentRun({
@@ -2187,10 +2202,9 @@ export function createLocalStore(options: {
     const coverAssetId = db
       .prepare(`SELECT cover_asset_id FROM brand_kits WHERE id = ?`)
       .get(kitId) as { cover_asset_id: string | null } | undefined;
-    db.prepare(`UPDATE projects SET brand_kit_id = NULL, updated_at = ? WHERE brand_kit_id = ?`).run(
-      nowIso(),
-      kitId,
-    );
+    db.prepare(
+      `UPDATE projects SET brand_kit_id = NULL, updated_at = ? WHERE brand_kit_id = ?`,
+    ).run(nowIso(), kitId);
     db.prepare(`DELETE FROM brand_kit_assets WHERE kit_id = ?`).run(kitId);
     db.prepare(`DELETE FROM brand_kits WHERE id = ?`).run(kitId);
     const ownedAssetIds = new Set(
@@ -2238,7 +2252,9 @@ export function createLocalStore(options: {
             bucket: originalFileAsset.bucket,
             buffer: readFileSync(originalFileAsset.file_path),
             mimeType: originalFileAsset.mime_type ?? "application/octet-stream",
-            fileName: originalFileAsset.object_path.split("/").at(-1) ?? asset.display_name,
+            fileName:
+              originalFileAsset.object_path.split("/").at(-1) ??
+              asset.display_name,
             scope: "brand-kit",
           });
           duplicatedFileAssetId = duplicatedFile.asset.id;
@@ -2269,14 +2285,12 @@ export function createLocalStore(options: {
       .prepare(`SELECT cover_asset_id FROM brand_kits WHERE id = ?`)
       .get(kitId) as { cover_asset_id: string | null } | undefined;
     const duplicatedCoverAssetId = sourceCoverAssetId?.cover_asset_id
-      ? copiedAssetIds.get(sourceCoverAssetId.cover_asset_id) ?? null
+      ? (copiedAssetIds.get(sourceCoverAssetId.cover_asset_id) ?? null)
       : null;
     if (duplicatedCoverAssetId) {
-      db.prepare(`UPDATE brand_kits SET cover_asset_id = ?, updated_at = ? WHERE id = ?`).run(
-        duplicatedCoverAssetId,
-        nowIso(),
-        duplicated.id,
-      );
+      db.prepare(
+        `UPDATE brand_kits SET cover_asset_id = ?, updated_at = ? WHERE id = ?`,
+      ).run(duplicatedCoverAssetId, nowIso(), duplicated.id);
     }
     return getBrandKit(duplicated.id);
   }
@@ -2356,11 +2370,9 @@ export function createLocalStore(options: {
       .get(assetId, kitId) as { file_asset_id: string | null } | undefined;
     if (!row) return false;
     if (row.file_asset_id) {
-      db.prepare(`UPDATE brand_kits SET cover_asset_id = NULL, updated_at = ? WHERE id = ? AND cover_asset_id = ?`).run(
-        nowIso(),
-        kitId,
-        row.file_asset_id,
-      );
+      db.prepare(
+        `UPDATE brand_kits SET cover_asset_id = NULL, updated_at = ? WHERE id = ? AND cover_asset_id = ?`,
+      ).run(nowIso(), kitId, row.file_asset_id);
     }
     db.prepare(`DELETE FROM brand_kit_assets WHERE id = ? AND kit_id = ?`).run(
       assetId,
@@ -2406,11 +2418,9 @@ export function createLocalStore(options: {
       timestamp,
     );
     if (!existing.cover_url && assetType === "logo") {
-      db.prepare(`UPDATE brand_kits SET cover_asset_id = ?, updated_at = ? WHERE id = ?`).run(
-        stored.asset.id,
-        timestamp,
-        kitId,
-      );
+      db.prepare(
+        `UPDATE brand_kits SET cover_asset_id = ?, updated_at = ? WHERE id = ?`,
+      ).run(stored.asset.id, timestamp, kitId);
     }
     const detail = getBrandKit(kitId);
     return detail?.assets.find((asset) => asset.id === assetId) ?? null;
@@ -2598,7 +2608,9 @@ export function createLocalStore(options: {
   function deriveSkillDescription(skillContent: string) {
     const frontmatter = parseSkillFrontmatter(skillContent);
     if (frontmatter.description) return frontmatter.description;
-    const match = /## Description\s+([\s\S]*?)(?:\n## |\n# |$)/i.exec(skillContent);
+    const match = /## Description\s+([\s\S]*?)(?:\n## |\n# |$)/i.exec(
+      skillContent,
+    );
     return match?.[1]?.trim() || "Imported local skill.";
   }
 
@@ -2612,12 +2624,14 @@ export function createLocalStore(options: {
     if (/^SKILL\.md$/i.test(basename) && parts.length > 1) {
       return titleCaseSkillName(parts.at(-2) ?? "Imported Skill");
     }
-    return filePath
-      .split("/")
-      .at(-1)
-      ?.replace(/\.[^.]+$/, "")
-      .replace(/[-_]+/g, " ")
-      .replace(/\b\w/g, (char) => char.toUpperCase()) || "Imported Skill";
+    return (
+      filePath
+        .split("/")
+        .at(-1)
+        ?.replace(/\.[^.]+$/, "")
+        .replace(/[-_]+/g, " ")
+        .replace(/\b\w/g, (char) => char.toUpperCase()) || "Imported Skill"
+    );
   }
 
   function parseSkillFrontmatter(skillContent: string) {
@@ -2666,10 +2680,11 @@ export function createLocalStore(options: {
     const skillId = randomUUID();
     const slug = nextAvailableSlug(
       (
-        db.prepare(`SELECT slug FROM skills WHERE slug = ? OR slug LIKE ?`).all(
-          slugify(input.name),
-          `${slugify(input.name)}-%`,
-        ) as Array<{ slug: string }>
+        db
+          .prepare(`SELECT slug FROM skills WHERE slug = ? OR slug LIKE ?`)
+          .all(slugify(input.name), `${slugify(input.name)}-%`) as Array<{
+          slug: string;
+        }>
       ).map((row) => row.slug),
       slugify(input.name),
     );
@@ -2760,7 +2775,8 @@ export function createLocalStore(options: {
       return null;
     }
     return insertSkillRecord({
-      name: input.name?.trim() || deriveSkillName(skillContent, skillFile.filePath),
+      name:
+        input.name?.trim() || deriveSkillName(skillContent, skillFile.filePath),
       description:
         input.description?.trim() || deriveSkillDescription(skillContent),
       category: input.category ?? "custom",
@@ -2792,11 +2808,9 @@ export function createLocalStore(options: {
       .prepare(`SELECT id FROM skills WHERE id = ? AND installed = 1 LIMIT 1`)
       .get(skillId) as { id: string } | undefined;
     if (!row) return null;
-    db.prepare(`UPDATE skills SET enabled = ?, updated_at = ? WHERE id = ?`).run(
-      input.enabled ? 1 : 0,
-      nowIso(),
-      skillId,
-    );
+    db.prepare(
+      `UPDATE skills SET enabled = ?, updated_at = ? WHERE id = ?`,
+    ).run(input.enabled ? 1 : 0, nowIso(), skillId);
     return getSkillDetail(skillId);
   }
 
@@ -2947,7 +2961,8 @@ export function createLocalStore(options: {
       input.runId,
     );
     const run = getAgentRun(input.runId);
-    const assistantMessageId = input.assistantMessageId ?? run?.assistant_message_id;
+    const assistantMessageId =
+      input.assistantMessageId ?? run?.assistant_message_id;
     if (assistantMessageId) {
       db.prepare(
         `
@@ -3055,15 +3070,19 @@ export function createLocalStore(options: {
     }
 
     const current = db
-      .prepare(`SELECT COALESCE(MAX(seq), 0) AS max_seq FROM agent_run_events WHERE run_id = ?`)
+      .prepare(
+        `SELECT COALESCE(MAX(seq), 0) AS max_seq FROM agent_run_events WHERE run_id = ?`,
+      )
       .get(input.runId) as { max_seq: number | null };
     const nextSeq = (current.max_seq ?? 0) + 1;
     const nextCanvasSeq = input.canvasId
-      ? ((db
-          .prepare(
-            `SELECT COALESCE(MAX(canvas_seq), 0) AS max_seq FROM agent_run_events WHERE canvas_id = ?`,
-          )
-          .get(input.canvasId) as { max_seq: number | null }).max_seq ?? 0) + 1
+      ? ((
+          db
+            .prepare(
+              `SELECT COALESCE(MAX(canvas_seq), 0) AS max_seq FROM agent_run_events WHERE canvas_id = ?`,
+            )
+            .get(input.canvasId) as { max_seq: number | null }
+        ).max_seq ?? 0) + 1
       : null;
     const timestamp = nowIso();
     const eventId = `${input.runId}:${nextSeq}`;
@@ -3096,9 +3115,17 @@ export function createLocalStore(options: {
             END
         WHERE run_id = ?
       `,
-    ).run(eventId, input.event.type, input.event.type, input.event.type, input.runId);
+    ).run(
+      eventId,
+      input.event.type,
+      input.event.type,
+      input.event.type,
+      input.runId,
+    );
     return {
-      ...(input.canvasId && nextCanvasSeq != null ? { canvasSeq: nextCanvasSeq } : {}),
+      ...(input.canvasId && nextCanvasSeq != null
+        ? { canvasSeq: nextCanvasSeq }
+        : {}),
       eventId,
       seq: nextSeq,
     };
@@ -3152,10 +3179,10 @@ export function createLocalStore(options: {
         `,
       )
       .all(canvasId, cursor) as Array<
-        AgentRunEventRow & {
-          canvas_seq: number | null;
-        }
-      >;
+      AgentRunEventRow & {
+        canvas_seq: number | null;
+      }
+    >;
     return rows.map((row) => ({
       createdAt: row.created_at,
       event: parseJson<StreamEvent>(row.payload, {
@@ -3175,7 +3202,9 @@ export function createLocalStore(options: {
     }));
   }
 
-  function recoverInterruptedAgentRuns(message = "Server restarted during an active agent run.") {
+  function recoverInterruptedAgentRuns(
+    message = "Server restarted during an active agent run.",
+  ) {
     const interruptedRuns = db
       .prepare(
         `
@@ -3185,9 +3214,9 @@ export function createLocalStore(options: {
         `,
       )
       .all() as Array<{
-        canvas_id: string | null;
-        id: string;
-      }>;
+      canvas_id: string | null;
+      id: string;
+    }>;
 
     for (const run of interruptedRuns) {
       updateAgentRun({
@@ -3208,7 +3237,10 @@ export function createLocalStore(options: {
           `,
         )
         .get(run.id) as { type: string } | undefined;
-      if (lastEvent && ["run.completed", "run.failed", "run.canceled"].includes(lastEvent.type)) {
+      if (
+        lastEvent &&
+        ["run.completed", "run.failed", "run.canceled"].includes(lastEvent.type)
+      ) {
         continue;
       }
 
@@ -3346,8 +3378,9 @@ export function createLocalStore(options: {
 
   function cancelBackgroundJob(jobId: string) {
     const updatedAt = nowIso();
-    const result = db.prepare(
-      `
+    const result = db
+      .prepare(
+        `
         UPDATE background_jobs
         SET status = 'canceled',
             updated_at = ?,
@@ -3357,7 +3390,8 @@ export function createLocalStore(options: {
         WHERE id = ?
           AND status IN ('queued', 'running', 'failed')
       `,
-    ).run(updatedAt, updatedAt, jobId);
+      )
+      .run(updatedAt, updatedAt, jobId);
 
     if (result.changes === 0) {
       return null;
@@ -3405,8 +3439,9 @@ export function createLocalStore(options: {
     const claimed: BackgroundJob[] = [];
     for (const row of rows) {
       const updatedAt = nowIso();
-      const result = db.prepare(
-        `
+      const result = db
+        .prepare(
+          `
           UPDATE background_jobs
           SET status = 'running',
               attempt_count = CASE
@@ -3433,14 +3468,15 @@ export function createLocalStore(options: {
               )
             )
         `,
-      ).run(
-        updatedAt,
-        updatedAt,
-        updatedAt,
-        input.workerId,
-        row.id,
-        staleCutoff,
-      );
+        )
+        .run(
+          updatedAt,
+          updatedAt,
+          updatedAt,
+          input.workerId,
+          row.id,
+          staleCutoff,
+        );
       if (result.changes > 0) {
         const claimedRow = getBackgroundJobRow(row.id);
         if (claimedRow) {
@@ -3664,9 +3700,12 @@ export function createLocalStore(options: {
   }
 
   // --- Tutti reference protocol (project-scoped asset browsing) ---------------
-  // Only project-attributed media assets are exposed; unassigned assets and
-  // non-media files (e.g. generated video plan JSON) are intentionally excluded.
+  // Project-attributed media assets are exposed under their project. Unassigned
+  // media assets are exposed under a special group. Non-media files (e.g.
+  // generated video plan JSON) are intentionally excluded.
   // Project-scoped assets are UI thumbnails/snapshots, not reusable outputs.
+  const UNASSIGNED_REFERENCE_GROUP_ID = "unassigned";
+  const UNASSIGNED_REFERENCE_GROUP_LABEL = "项目外资源";
   const REFERENCE_MEDIA_PREDICATE =
     "((a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%') AND a.object_path NOT LIKE 'project/%')";
   const REFERENCE_MEDIA_PREDICATE_FILE =
@@ -3705,8 +3744,11 @@ export function createLocalStore(options: {
     return relative(dataRoot, filePath).split("\\").join("/");
   }
 
-  // Root level: one group per project that owns >=1 in-range media asset.
-  // Keyset paginated on (project name, project id).
+  // Root level: one group per active project plus one special group for
+  // unassigned media assets when any exist. referenceCount only includes
+  // in-range reusable media assets; projects with no reusable outputs remain
+  // navigable empty groups so newly created projects are visible in Tutti.
+  // Keyset paginated on (group name, group id).
   function listReferenceProjectGroups(input: {
     filterText?: string | undefined;
     fromMs?: number | undefined;
@@ -3714,46 +3756,100 @@ export function createLocalStore(options: {
     limit: number;
     cursor?: string | null | undefined;
   }): {
-    groups: Array<{ projectId: string; name: string; referenceCount: number }>;
+    groups: Array<{
+      projectId: string | null;
+      name: string;
+      referenceCount: number;
+    }>;
     nextCursor: string | null;
   } {
     const { fromIso, toIso } = referenceTimeBounds(input);
-    const conditions = ["a.project_id IS NOT NULL", REFERENCE_MEDIA_PREDICATE];
+    const joinConditions = ["a.project_id = p.id", REFERENCE_MEDIA_PREDICATE];
+    const joinParams: SQLInputValue[] = [];
+    const unassignedConditions = [
+      "a.project_id IS NULL",
+      REFERENCE_MEDIA_PREDICATE,
+    ];
+    const unassignedParams: SQLInputValue[] = [];
+    const conditions = ["p.archived_at IS NULL"];
     const params: SQLInputValue[] = [];
     if (fromIso) {
-      conditions.push("a.created_at >= ?");
-      params.push(fromIso);
+      joinConditions.push("a.created_at >= ?");
+      joinParams.push(fromIso);
+      unassignedConditions.push("a.created_at >= ?");
+      unassignedParams.push(fromIso);
     }
     if (toIso) {
-      conditions.push("a.created_at <= ?");
-      params.push(toIso);
+      joinConditions.push("a.created_at <= ?");
+      joinParams.push(toIso);
+      unassignedConditions.push("a.created_at <= ?");
+      unassignedParams.push(toIso);
     }
     if (input.filterText) {
       conditions.push("p.name LIKE ? COLLATE NOCASE");
       params.push(`%${input.filterText}%`);
+      unassignedConditions.push("? LIKE ? COLLATE NOCASE");
+      unassignedParams.push(
+        UNASSIGNED_REFERENCE_GROUP_LABEL,
+        `%${input.filterText}%`,
+      );
     }
+    const cursorConditions: string[] = [];
+    const cursorParams: SQLInputValue[] = [];
     const cursor = decodeReferenceCursor(input.cursor);
     if (cursor && cursor.length === 2) {
       const cursorName = cursor[0] ?? "";
       const cursorId = cursor[1] ?? "";
-      conditions.push("(p.name > ? OR (p.name = ? AND p.id > ?))");
-      params.push(cursorName, cursorName, cursorId);
+      cursorConditions.push("(name > ? OR (name = ? AND group_id > ?))");
+      cursorParams.push(cursorName, cursorName, cursorId);
     }
     const limit = Math.max(1, Math.min(50, input.limit));
+    const outerWhere =
+      cursorConditions.length > 0
+        ? `WHERE ${cursorConditions.join(" AND ")}`
+        : "";
     const rows = db
       .prepare(
         `
-          SELECT p.id AS project_id, p.name AS name, COUNT(a.id) AS reference_count
-          FROM assets a
-          JOIN projects p ON p.id = a.project_id
-          WHERE ${conditions.join(" AND ")}
-          GROUP BY p.id, p.name
-          ORDER BY p.name ASC, p.id ASC
+          SELECT group_id, project_id, name, reference_count
+          FROM (
+            SELECT
+              'project:' || p.id AS group_id,
+              p.id AS project_id,
+              p.name AS name,
+              COUNT(a.id) AS reference_count
+            FROM projects p
+            LEFT JOIN assets a ON ${joinConditions.join(" AND ")}
+            WHERE ${conditions.join(" AND ")}
+            GROUP BY p.id, p.name
+
+            UNION ALL
+
+            SELECT
+              ? AS group_id,
+              NULL AS project_id,
+              ? AS name,
+              COUNT(a.id) AS reference_count
+            FROM assets a
+            WHERE ${unassignedConditions.join(" AND ")}
+            HAVING COUNT(a.id) > 0
+          )
+          ${outerWhere}
+          ORDER BY name ASC, group_id ASC
           LIMIT ?
         `,
       )
-      .all(...params, limit + 1) as Array<{
-      project_id: string;
+      .all(
+        ...joinParams,
+        ...params,
+        UNASSIGNED_REFERENCE_GROUP_ID,
+        UNASSIGNED_REFERENCE_GROUP_LABEL,
+        ...unassignedParams,
+        ...cursorParams,
+        limit + 1,
+      ) as Array<{
+      group_id: string;
+      project_id: string | null;
       name: string;
       reference_count: number;
     }>;
@@ -3767,7 +3863,9 @@ export function createLocalStore(options: {
         referenceCount: row.reference_count,
       })),
       nextCursor:
-        hasMore && last ? encodeReferenceCursor([last.name, last.project_id]) : null,
+        hasMore && last
+          ? encodeReferenceCursor([last.name, last.group_id])
+          : null,
     };
   }
 
@@ -3855,6 +3953,86 @@ export function createLocalStore(options: {
     };
   }
 
+  function listReferenceUnassignedAssets(input: {
+    filterText?: string | undefined;
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+    limit: number;
+    cursor?: string | null | undefined;
+  }): {
+    files: Array<{
+      id: string;
+      displayName: string;
+      relativePath: string;
+      mimeType: string | null;
+      sizeBytes: number | null;
+      mtimeMs: number | null;
+    }>;
+    nextCursor: string | null;
+  } {
+    const { fromIso, toIso } = referenceTimeBounds(input);
+    const conditions = ["project_id IS NULL", REFERENCE_MEDIA_PREDICATE_FILE];
+    const params: SQLInputValue[] = [];
+    if (fromIso) {
+      conditions.push("created_at >= ?");
+      params.push(fromIso);
+    }
+    if (toIso) {
+      conditions.push("created_at <= ?");
+      params.push(toIso);
+    }
+    if (input.filterText) {
+      conditions.push("object_path LIKE ? COLLATE NOCASE");
+      params.push(`%${input.filterText}%`);
+    }
+    const cursor = decodeReferenceCursor(input.cursor);
+    if (cursor && cursor.length === 2) {
+      const cursorTime = cursor[0] ?? "";
+      const cursorId = cursor[1] ?? "";
+      conditions.push("(created_at < ? OR (created_at = ? AND id < ?))");
+      params.push(cursorTime, cursorTime, cursorId);
+    }
+    const limit = Math.max(1, Math.min(50, input.limit));
+    const rows = db
+      .prepare(
+        `
+          SELECT id, object_path, mime_type, byte_size, file_path, created_at
+          FROM assets
+          WHERE ${conditions.join(" AND ")}
+          ORDER BY created_at DESC, id DESC
+          LIMIT ?
+        `,
+      )
+      .all(...params, limit + 1) as Array<{
+      id: string;
+      object_path: string;
+      mime_type: string | null;
+      byte_size: number | null;
+      file_path: string;
+      created_at: string;
+    }>;
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
+    return {
+      files: page.map((row) => {
+        const mtime = Date.parse(row.created_at);
+        return {
+          id: row.id,
+          displayName: row.object_path.split("/").at(-1) ?? row.id,
+          relativePath: dataRelativePath(row.file_path),
+          mimeType: row.mime_type,
+          sizeBytes: row.byte_size,
+          mtimeMs: Number.isNaN(mtime) ? null : mtime,
+        };
+      }),
+      nextCursor:
+        hasMore && last
+          ? encodeReferenceCursor([last.created_at, last.id])
+          : null,
+    };
+  }
+
   // Search: recursive across the whole app, flat ranked list of media file
   // references. Unlike the list protocol there is no parentGroupId; query and
   // file-type `extensions`/`includeOther` filters combine, and either alone is a
@@ -3876,12 +4054,12 @@ export function createLocalStore(options: {
       mimeType: string | null;
       sizeBytes: number | null;
       mtimeMs: number | null;
-      projectName: string;
+      projectName: string | null;
     }>;
     nextCursor: string | null;
   } {
     const { fromIso, toIso } = referenceTimeBounds(input);
-    const conditions = ["a.project_id IS NOT NULL", REFERENCE_MEDIA_PREDICATE];
+    const conditions = [REFERENCE_MEDIA_PREDICATE];
     const params: SQLInputValue[] = [];
     if (input.query) {
       conditions.push("a.object_path LIKE ? COLLATE NOCASE");
@@ -3899,7 +4077,9 @@ export function createLocalStore(options: {
       }
       if (includeOther) {
         const known = input.knownExtensions ?? [];
-        const notClauses = known.map(() => "a.object_path LIKE ? COLLATE NOCASE");
+        const notClauses = known.map(
+          () => "a.object_path LIKE ? COLLATE NOCASE",
+        );
         for (const ext of known) {
           params.push(`%.${ext}`);
         }
@@ -3931,7 +4111,7 @@ export function createLocalStore(options: {
           SELECT a.id, a.object_path, a.mime_type, a.byte_size, a.file_path,
                  a.created_at, p.name AS project_name
           FROM assets a
-          JOIN projects p ON p.id = a.project_id
+          LEFT JOIN projects p ON p.id = a.project_id
           WHERE ${conditions.join(" AND ")}
           ORDER BY a.created_at DESC, a.id DESC
           LIMIT ?
@@ -3944,7 +4124,7 @@ export function createLocalStore(options: {
       byte_size: number | null;
       file_path: string;
       created_at: string;
-      project_name: string;
+      project_name: string | null;
     }>;
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
@@ -4054,6 +4234,7 @@ export function createLocalStore(options: {
     },
     listReferenceProjectGroups,
     listReferenceProjectAssets,
+    listReferenceUnassignedAssets,
     searchReferenceAssets,
     resetAllData,
   };
