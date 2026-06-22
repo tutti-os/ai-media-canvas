@@ -154,6 +154,41 @@ describe("POST /tutti/references/list", () => {
     }
   });
 
+  it("does not expose project thumbnail snapshots as app references", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-thumb-"));
+    dataRoots.push(dataRoot);
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = store.createProject({ name: "Thumbnail Guard" });
+    const image = store.uploadFile({
+      bucket: "project-assets",
+      fileName: "usable.png",
+      fileBuffer: Buffer.from("image"),
+      mimeType: "image/png",
+      projectId: project.id,
+    });
+    store.saveProjectThumbnail(project.id, Buffer.from("blank"), "image/webp");
+    store.saveProjectThumbnail(project.id, Buffer.from("current"), "image/webp");
+    const app = buildApp({ env: { dataRoot } });
+
+    const root = await listReferences(app, {});
+    const files = await listReferences(app, {
+      parentGroupId: `project:${project.id}`,
+    });
+    const search = await searchReferences(app, {});
+    await app.close();
+
+    expect(root.items[0]).toMatchObject({
+      type: "group",
+      id: `project:${project.id}`,
+      referenceCount: 1,
+    });
+    expect(displayNames(files)).toEqual([`${image.asset.id}.png`]);
+    expect(displayNames(search)).toEqual([`${image.asset.id}.png`]);
+  });
+
   it("returns an empty result for an unknown group id", async () => {
     const { dataRoot } = await seedStore();
     const app = buildApp({ env: { dataRoot } });

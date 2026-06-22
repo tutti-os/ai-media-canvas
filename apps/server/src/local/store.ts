@@ -3666,10 +3666,11 @@ export function createLocalStore(options: {
   // --- Tutti reference protocol (project-scoped asset browsing) ---------------
   // Only project-attributed media assets are exposed; unassigned assets and
   // non-media files (e.g. generated video plan JSON) are intentionally excluded.
+  // Project-scoped assets are UI thumbnails/snapshots, not reusable outputs.
   const REFERENCE_MEDIA_PREDICATE =
-    "(a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%')";
+    "((a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%') AND a.object_path NOT LIKE 'project/%')";
   const REFERENCE_MEDIA_PREDICATE_FILE =
-    "(mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')";
+    "((mime_type LIKE 'image/%' OR mime_type LIKE 'video/%') AND object_path NOT LIKE 'project/%')";
 
   function referenceTimeBounds(timeRange?: {
     fromMs?: number | undefined;
