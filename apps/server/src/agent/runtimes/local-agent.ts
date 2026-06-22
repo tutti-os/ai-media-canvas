@@ -379,24 +379,6 @@ export function createLocalAgentRuntimeProvider(
         ...(run.userId ? { userId: run.userId } : {}),
       });
 
-      const history = await loadNormalizedSessionHistory({
-        currentPrompt: enrichedPrompt,
-        ...(deps.loadSessionMessages
-          ? { loadSessionMessages: deps.loadSessionMessages }
-          : {}),
-        sessionId: run.sessionId,
-      });
-      const skillManifest =
-        mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills);
-      const resume = mapResumeContext(run.resumeContext);
-      const mcpServers = managed
-        ? undefined
-        : [
-            createAimcToolsMcpServerConfig({
-              gatewayBaseUrl: deps.toolGatewayBaseUrl,
-              gatewayToken: gatewaySession.token,
-            }),
-          ];
       const messageId = run.assistantMessageId ?? `message_${run.runId}`;
       let terminalEmitted = false;
       let lastError: Extract<AgentEvent, { type: "error" }> | undefined;
@@ -404,6 +386,24 @@ export function createLocalAgentRuntimeProvider(
       rlog.lap("local_agent_runtime_start", { provider: runtimeProvider });
 
       try {
+        const history = await loadNormalizedSessionHistory({
+          currentPrompt: enrichedPrompt,
+          ...(deps.loadSessionMessages
+            ? { loadSessionMessages: deps.loadSessionMessages }
+            : {}),
+          sessionId: run.sessionId,
+        });
+        const skillManifest =
+          mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills);
+        const resume = mapResumeContext(run.resumeContext);
+        const mcpServers = [
+          createAimcToolsMcpServerConfig({
+            gatewayBaseUrl: deps.toolGatewayBaseUrl,
+            gatewayToken: gatewaySession.token,
+            requireSandboxEntrypoint: Boolean(managedAgentInvocation),
+          }),
+        ];
+
         yield {
           type: "run.started",
           runId: run.runId,
@@ -424,7 +424,7 @@ export function createLocalAgentRuntimeProvider(
           model: stripLocalAgentProviderPrefix(resolvedModel, runtimeProvider),
           runtimeKind: "local-agent",
           runtimeProvider,
-          ...(mcpServers ? { mcpServers } : {}),
+          mcpServers,
           ...(resume ? { resume } : {}),
           signal: run.controller.signal,
           skillManifest,

@@ -2,7 +2,7 @@ import { closeSync, mkdtempSync, openSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentRuntimeProvider } from "@aimc/shared";
 import {
@@ -89,6 +89,15 @@ async function collect<T>(stream: AsyncIterable<T>) {
   return items;
 }
 
+function expectOrdinaryEnvOmitsToolToken(env?: Record<string, string>) {
+  expect(env ?? {}).not.toHaveProperty("AIMC_TOOL_TOKEN");
+  expect(JSON.stringify(env ?? {})).not.toContain("tool-token");
+}
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("createLocalAgentRuntimeProvider", () => {
   it("falls back to app data for managed local-agent run directories when /workspace is unavailable", async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-local-agent-runs-"));
@@ -133,6 +142,7 @@ describe("createLocalAgentRuntimeProvider", () => {
   });
 
   it("passes managed agent invocation only to the SDK run input", async () => {
+    vi.stubEnv("AIMC_TOOLS_MCP_PATH", "/package/server/tools-mcp.js");
     const localAgentRuntimeRun = vi.fn(async function* () {
       yield {
         type: "done" as const,
@@ -147,6 +157,7 @@ describe("createLocalAgentRuntimeProvider", () => {
     const context = createRuntimeContext({
       managedAgentInvocationCredential: "credential-run-1",
     });
+    const revokeSession = vi.fn();
     const provider = createLocalAgentRuntimeProvider(
       {
         buildAttachmentDataMap: vi.fn(() => ({})),
@@ -157,7 +168,7 @@ describe("createLocalAgentRuntimeProvider", () => {
         now: () => "2026-06-17T00:00:00.000Z",
         toolGateway: {
           createSession: vi.fn(() => ({ token: "tool-token" })),
-          revokeSession: vi.fn(),
+          revokeSession,
         } as never,
         toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
       },
@@ -181,10 +192,24 @@ describe("createLocalAgentRuntimeProvider", () => {
         credential: "credential-run-1",
         cwd: "/workspace/.aimc-agent-runs/codex-run-1",
       },
+      mcpServers: [
+        {
+          name: "aimc",
+          type: "stdio",
+          executionSide: "sandbox",
+          command: "node",
+          args: ["/package/server/tools-mcp.js"],
+          env: {
+            AIMC_TOOL_GATEWAY_URL: "http://127.0.0.1:3001/api/local-tools",
+            AIMC_TOOL_TOKEN: "tool-token",
+          },
+        },
+      ],
     });
     expect(params).not.toHaveProperty("env");
-    expect(params).not.toHaveProperty("mcpServers");
+    expectOrdinaryEnvOmitsToolToken(params?.env);
     expect(context.run.managedAgentInvocationCredential).toBeUndefined();
+    expect(revokeSession).toHaveBeenCalledWith("tool-token");
   });
 
   it("uses managed credential env when managed cwd falls back outside /workspace", async () => {
@@ -230,12 +255,20 @@ describe("createLocalAgentRuntimeProvider", () => {
       env: {
         [MANAGED_AGENT_INVOCATION_CREDENTIAL_ENV]: "credential-run-1",
       },
+      mcpServers: [
+        expect.objectContaining({
+          name: "aimc",
+          type: "stdio",
+          command: "pnpm",
+        }),
+      ],
     });
     expect(params).not.toHaveProperty("managedAgentInvocation");
-    expect(params).not.toHaveProperty("mcpServers");
+    expectOrdinaryEnvOmitsToolToken(params?.env);
   });
 
   it("passes CODEX_HOME to managed codex SDK runs", async () => {
+    vi.stubEnv("AIMC_TOOLS_MCP_PATH", "/package/server/tools-mcp.js");
     const localAgentRuntimeRun = vi.fn(async function* () {
       yield {
         type: "done" as const,
@@ -286,6 +319,54 @@ describe("createLocalAgentRuntimeProvider", () => {
     expect(params.env).not.toHaveProperty(
       MANAGED_AGENT_INVOCATION_CREDENTIAL_ENV,
     );
+    expect(params).toMatchObject({
+      mcpServers: [
+        expect.objectContaining({
+          name: "aimc",
+          type: "stdio",
+          executionSide: "sandbox",
+        }),
+      ],
+    });
+    expectOrdinaryEnvOmitsToolToken(params?.env);
+  });
+
+  it("rejects managed agent invocation without a packaged MCP entrypoint", async () => {
+    const localAgentRuntimeRun = vi.fn();
+    const revokeSession = vi.fn();
+    const provider = createLocalAgentRuntimeProvider(
+      {
+        buildAttachmentDataMap: vi.fn(() => ({})),
+        buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
+        createRunDirectory: vi.fn(
+          async () => "/workspace/.aimc-agent-runs/codex-run-1",
+        ),
+        loadCanvasSummaryForRuntime: vi.fn(async () => null),
+        localAgentRuntime: { run: localAgentRuntimeRun },
+        now: () => "2026-06-17T00:00:00.000Z",
+        toolGateway: {
+          createSession: vi.fn(() => ({ token: "tool-token" })),
+          revokeSession,
+        } as never,
+        toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+      },
+      createProviderPlugin("codex"),
+    );
+
+    await expect(
+      collect(
+        provider.streamRun(
+          createRuntimeContext({
+            managedAgentInvocationCredential: "credential-run-1",
+          }),
+        ),
+      ),
+    ).rejects.toThrow(
+      "AIMC_TOOLS_MCP_PATH is required for managed local-agent MCP sandbox execution.",
+    );
+
+    expect(localAgentRuntimeRun).not.toHaveBeenCalled();
+    expect(revokeSession).toHaveBeenCalledWith("tool-token");
   });
 
   it("keeps credentialless local-agent runs on the regular tmp cwd without managed env", async () => {
@@ -331,6 +412,39 @@ describe("createLocalAgentRuntimeProvider", () => {
       }),
     );
     expect(localAgentRuntimeRun.mock.calls[0]?.[0]).not.toHaveProperty("env");
+  });
+
+  it("revokes tool gateway token when local-agent run fails", async () => {
+    const localAgentRuntimeRun = vi.fn(async function* () {
+      yield {
+        type: "status" as const,
+        status: "running" as const,
+      };
+      throw new Error("local-agent-boom");
+    });
+    const revokeSession = vi.fn();
+    const provider = createLocalAgentRuntimeProvider(
+      {
+        buildAttachmentDataMap: vi.fn(() => ({})),
+        buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
+        createRunDirectory: vi.fn(async () => "/tmp/aimc-local-agent-run"),
+        loadCanvasSummaryForRuntime: vi.fn(async () => null),
+        localAgentRuntime: { run: localAgentRuntimeRun },
+        now: () => "2026-06-17T00:00:00.000Z",
+        toolGateway: {
+          createSession: vi.fn(() => ({ token: "tool-token" })),
+          revokeSession,
+        } as never,
+        toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+      },
+      createProviderPlugin("codex"),
+    );
+
+    await expect(
+      collect(provider.streamRun(createRuntimeContext())),
+    ).rejects.toThrow("local-agent-boom");
+
+    expect(revokeSession).toHaveBeenCalledWith("tool-token");
   });
 
   it("rejects managed agent runs outside /workspace", async () => {
