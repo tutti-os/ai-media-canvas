@@ -513,12 +513,18 @@ describe("ChatSidebar", () => {
     const getManagedAgentInvocationCredential = vi
       .fn()
       .mockResolvedValueOnce({
-        connId: "ignored-conn-1",
-        credential: "credential-run-1",
+        ok: true,
+        value: {
+          connId: "ignored-conn-1",
+          credential: "credential-run-1",
+        },
       })
       .mockResolvedValueOnce({
-        connId: "ignored-conn-2",
-        credential: "credential-run-2",
+        ok: true,
+        value: {
+          connId: "ignored-conn-2",
+          credential: "credential-run-2",
+        },
       });
     (
       window as Window & {

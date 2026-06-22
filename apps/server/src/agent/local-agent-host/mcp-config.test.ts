@@ -18,7 +18,7 @@ describe("createAimcToolsMcpServerConfig", () => {
     expect(config).toMatchObject({
       name: "aimc",
       type: "stdio",
-      executionSide: "sandbox",
+      executionSide: "vm",
       command: "node",
       args: ["/package/server/tools-mcp.js"],
       env: {
@@ -46,7 +46,7 @@ describe("createAimcToolsMcpServerConfig", () => {
     expect(config).not.toHaveProperty("executionSide");
   });
 
-  it("requires a packaged MCP entrypoint for managed sandbox execution", () => {
+  it("requires a packaged MCP entrypoint for managed VM execution", () => {
     expect(() =>
       createAimcToolsMcpServerConfig({
         gatewayBaseUrl: "http://127.0.0.1:4000/api/tools",
@@ -54,7 +54,7 @@ describe("createAimcToolsMcpServerConfig", () => {
         requireSandboxEntrypoint: true,
       }),
     ).toThrow(
-      "AIMC_TOOLS_MCP_PATH is required for managed local-agent MCP sandbox execution.",
+      "AIMC_TOOLS_MCP_PATH is required for managed local-agent MCP VM execution.",
     );
   });
 });

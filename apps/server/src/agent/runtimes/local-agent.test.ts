@@ -196,7 +196,7 @@ describe("createLocalAgentRuntimeProvider", () => {
         {
           name: "aimc",
           type: "stdio",
-          executionSide: "sandbox",
+          executionSide: "vm",
           command: "node",
           args: ["/package/server/tools-mcp.js"],
           env: {
@@ -324,7 +324,7 @@ describe("createLocalAgentRuntimeProvider", () => {
         expect.objectContaining({
           name: "aimc",
           type: "stdio",
-          executionSide: "sandbox",
+          executionSide: "vm",
         }),
       ],
     });
@@ -362,7 +362,7 @@ describe("createLocalAgentRuntimeProvider", () => {
         ),
       ),
     ).rejects.toThrow(
-      "AIMC_TOOLS_MCP_PATH is required for managed local-agent MCP sandbox execution.",
+      "AIMC_TOOLS_MCP_PATH is required for managed local-agent MCP VM execution.",
     );
 
     expect(localAgentRuntimeRun).not.toHaveBeenCalled();

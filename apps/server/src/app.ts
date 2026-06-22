@@ -839,7 +839,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     connectionPublisher: connectionManager,
     createUserClient,
   });
-  const localToolGatewayBaseUrl = `http://127.0.0.1:${env.port}/api/agent-tools`;
+  const localToolGatewayBaseUrl =
+    env.localToolGatewayBaseUrl ??
+    `http://127.0.0.1:${env.port}/api/agent-tools`;
   const localAuth: RequestAuthenticator = {
     async authenticate(request) {
       const authorization = request.headers.authorization;

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import type { LocalAgentMcpStdioServerConfig } from "@tutti-os/agent-acp-kit";
 
 export type AimcToolsMcpServerConfig = LocalAgentMcpStdioServerConfig & {
-  executionSide?: "sandbox";
+  executionSide?: "vm";
   type: "stdio";
 };
 
@@ -17,7 +17,7 @@ export function createAimcToolsMcpServerConfig(input: {
     return {
       name: "aimc",
       type: "stdio",
-      executionSide: "sandbox",
+      executionSide: "vm",
       command: "node",
       args: [packagedMcpServerPath],
       env: {
@@ -29,7 +29,7 @@ export function createAimcToolsMcpServerConfig(input: {
 
   if (input.requireSandboxEntrypoint) {
     throw new Error(
-      "AIMC_TOOLS_MCP_PATH is required for managed local-agent MCP sandbox execution.",
+      "AIMC_TOOLS_MCP_PATH is required for managed local-agent MCP VM execution.",
     );
   }
 
