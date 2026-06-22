@@ -185,6 +185,15 @@ export default interface Resources {
     "assistant": {
       "title": "AI Media Canvas 助手"
     },
+    "capabilityRequired": {
+      "configureMedia": "去连接",
+      "continueAfterSave": "媒体模型已保存，发送“继续”即可重试刚才的生成。",
+      "continueDraft": "继续",
+      "imageDescription": "连接后，我会继续按你的描述生成图片。",
+      "imageTitle": "先连接图片生成能力",
+      "videoDescription": "连接后，我会继续按你的描述生成视频。",
+      "videoTitle": "先连接视频生成能力"
+    },
     "conversation": "对话",
     "input": {
       "ariaLabel": "输入消息",

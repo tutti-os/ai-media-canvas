@@ -73,12 +73,26 @@ vi.mock("../src/components/settings-dialog", () => ({
   SettingsDialog: ({
     open,
     onOpenChange,
+    initialTab,
+    onSaved,
   }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    initialTab?: "general" | "agent" | "media";
+    onSaved?: () => void;
   }) => {
-    settingsDialogSpy({ open, onOpenChange });
-    return open ? <div>Mock Settings Dialog</div> : null;
+    settingsDialogSpy({ initialTab, onOpenChange, onSaved, open });
+    return open ? (
+      <div>
+        Mock Settings Dialog
+        <button type="button" onClick={() => onOpenChange(false)}>
+          Mock Close Settings
+        </button>
+        <button type="button" onClick={onSaved}>
+          Mock Save Settings
+        </button>
+      </div>
+    ) : null;
   },
 }));
 
@@ -1053,6 +1067,126 @@ describe("ChatSidebar", () => {
     expect(settingsDialogSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({ open: true }),
     );
+  });
+
+  it("prompts the user to continue after saving media settings from a capability card", async () => {
+    fetchMessagesMock.mockResolvedValue({
+      messages: [
+        {
+          id: "assistant-media-required",
+          role: "assistant",
+          content: "",
+          createdAt: "2026-03-24T00:00:00.000Z",
+          toolActivities: null,
+          contentBlocks: [
+            {
+              type: "tool",
+              toolCallId: "tool-media-required",
+              toolName: "generate_image",
+              status: "completed",
+              output: {
+                error: "media_provider_configuration_required",
+                errorCode: "media_provider_configuration_required",
+                capabilityRequired: {
+                  kind: "media_provider_configuration_required",
+                  capability: "image_generation",
+                },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "去连接" }),
+    );
+    expect(settingsDialogSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ initialTab: "media", open: true }),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Mock Save Settings" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "媒体模型已保存，发送“继续”即可重试刚才的生成。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "输入消息" })).toHaveValue(
+      "继续",
+    );
+  });
+
+  it("does not prompt to continue after a later unrelated settings save", async () => {
+    fetchMessagesMock.mockResolvedValue({
+      messages: [
+        {
+          id: "assistant-media-required",
+          role: "assistant",
+          content: "",
+          createdAt: "2026-03-24T00:00:00.000Z",
+          toolActivities: null,
+          contentBlocks: [
+            {
+              type: "tool",
+              toolCallId: "tool-media-required",
+              toolName: "generate_image",
+              status: "completed",
+              output: {
+                error: "media_provider_configuration_required",
+                errorCode: "media_provider_configuration_required",
+                capabilityRequired: {
+                  kind: "media_provider_configuration_required",
+                  capability: "image_generation",
+                },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "去连接" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Mock Close Settings" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Mock Save Settings" }),
+    );
+
+    expect(
+      screen.queryByText("媒体模型已保存，发送“继续”即可重试刚才的生成。"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "输入消息" })).toHaveValue("");
   });
 
   it("replays durable run events on reconnect to recover missed media insertions", async () => {

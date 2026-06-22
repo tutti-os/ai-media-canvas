@@ -10,7 +10,6 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -18,10 +17,6 @@ import {
 import { AgentModelSelector } from "@/components/agent-model-selector";
 import { ImageAttachmentBar } from "@/components/image-attachment-bar";
 import { ImageModelPreferencePopover } from "@/components/image-model-preference";
-import {
-  type MissingModelConfiguration,
-  ModelConfigurationBanner,
-} from "@/components/model-configuration-banner";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { useAgentModelRequirement } from "@/hooks/use-agent-model-requirement";
 import type {
@@ -142,29 +137,12 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const { preference: videoPreference } = useVideoModelPreference();
     const agentRequirement = useAgentModelRequirement();
     const {
-      isAgentModelConfigured,
       model: agentModel,
       modelSource: agentModelSource,
       ensureAgentModelConfigured,
     } = agentRequirement;
     const { missingImageModel, missingVideoModel } =
       useMediaModelConfigurationStatus();
-    const isAgentModelConfigurationLoaded =
-      agentRequirement.isAgentModelConfigurationLoaded ?? true;
-    const missingModelConfiguration = useMemo(() => {
-      const missing: MissingModelConfiguration[] = [];
-      if (isAgentModelConfigurationLoaded && !isAgentModelConfigured) {
-        missing.push("agent");
-      }
-      if (missingImageModel) missing.push("image");
-      if (missingVideoModel) missing.push("video");
-      return missing;
-    }, [
-      isAgentModelConfigurationLoaded,
-      isAgentModelConfigured,
-      missingImageModel,
-      missingVideoModel,
-    ]);
     const seedImageMentions =
       selectedSeed?.inputMentions.filter(
         (mention) => mention.type === "image",
@@ -270,12 +248,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       setSettingsOpen(true);
     }, []);
 
-    const handleOpenAgentSettings = useCallback(() => {
-      setModelPopoverOpen(false);
-      setSettingsInitialTab("agent");
-      setSettingsOpen(true);
-    }, []);
-
     const handlePaste = useCallback(
       (event: React.ClipboardEvent) => {
         if (!onAddFiles) return;
@@ -300,11 +272,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
 
     return (
       <div className="space-y-2">
-        <ModelConfigurationBanner
-          missing={missingModelConfiguration}
-          onConfigureAgent={handleOpenAgentSettings}
-          onConfigureMedia={handleOpenMediaSettings}
-        />
         <div className="overflow-visible rounded-xl border-[0.5px] border-border bg-muted shadow-[0_4px_8px_rgba(0,0,0,0.04)] sm:rounded-2xl">
           {attachments && onRemoveAttachment ? (
             <ImageAttachmentBar

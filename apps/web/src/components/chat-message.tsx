@@ -25,6 +25,7 @@ type ChatMessageProps = {
   role: "user" | "assistant";
   contentBlocks: ContentBlock[];
   isStreaming?: boolean;
+  onOpenMediaSettings?: (() => void) | undefined;
 };
 
 function stableStringHash(value: string) {
@@ -65,6 +66,38 @@ function assistantBlockKey(block: ContentBlock) {
   return mentionBlockKey(block);
 }
 
+function getMediaCapabilityKey(block: ContentBlock) {
+  if (block.type !== "tool") return null;
+
+  const output = block.output as Record<string, unknown> | undefined;
+  const raw = output?.capabilityRequired;
+  if (!raw || typeof raw !== "object") return null;
+
+  const capability = (raw as { capability?: unknown }).capability;
+  if (
+    capability !== "image_generation" &&
+    capability !== "video_generation"
+  ) {
+    return null;
+  }
+
+  return capability;
+}
+
+function getFirstMediaCapabilityToolIds(contentBlocks: ContentBlock[]) {
+  const seen = new Set<string>();
+  const firstToolIds = new Set<string>();
+
+  for (const block of contentBlocks) {
+    const capability = getMediaCapabilityKey(block);
+    if (!capability || seen.has(capability)) continue;
+    seen.add(capability);
+    firstToolIds.add((block as ToolBlock).toolCallId);
+  }
+
+  return firstToolIds;
+}
+
 /**
  * Top-level chat message component.
  *
@@ -77,7 +110,12 @@ function assistantBlockKey(block: ContentBlock) {
  * each independently memoized for fine-grained update control.
  */
 export const ChatMessage = React.memo(
-  function ChatMessage({ role, contentBlocks, isStreaming }: ChatMessageProps) {
+  function ChatMessage({
+    role,
+    contentBlocks,
+    isStreaming,
+    onOpenMediaSettings,
+  }: ChatMessageProps) {
     const isUser = role === "user";
 
     if (isUser) {
@@ -88,6 +126,7 @@ export const ChatMessage = React.memo(
       <AssistantMessage
         contentBlocks={contentBlocks}
         isStreaming={isStreaming ?? false}
+        onOpenMediaSettings={onOpenMediaSettings}
       />
     );
   },
@@ -97,7 +136,8 @@ export const ChatMessage = React.memo(
     return (
       prev.role === next.role &&
       prev.contentBlocks === next.contentBlocks &&
-      prev.isStreaming === next.isStreaming
+      prev.isStreaming === next.isStreaming &&
+      prev.onOpenMediaSettings === next.onOpenMediaSettings
     );
   },
 );
@@ -220,11 +260,17 @@ const UserMessage = React.memo(function UserMessage({
 const AssistantMessage = React.memo(function AssistantMessage({
   contentBlocks,
   isStreaming,
+  onOpenMediaSettings,
 }: {
   contentBlocks: ContentBlock[];
   isStreaming: boolean;
+  onOpenMediaSettings?: (() => void) | undefined;
 }) {
   const lastBlock = contentBlocks[contentBlocks.length - 1];
+  const firstMediaCapabilityToolIds = useMemo(
+    () => getFirstMediaCapabilityToolIds(contentBlocks),
+    [contentBlocks],
+  );
 
   const pendingAfterBlock = useMemo(() => {
     if (!isStreaming) return false;
@@ -263,7 +309,21 @@ const AssistantMessage = React.memo(function AssistantMessage({
         }
 
         if (block.type === "tool") {
-          return <ToolBlockView key={block.toolCallId} block={block} />;
+          const capability = getMediaCapabilityKey(block);
+          if (
+            capability &&
+            !firstMediaCapabilityToolIds.has(block.toolCallId)
+          ) {
+            return null;
+          }
+
+          return (
+            <ToolBlockView
+              key={block.toolCallId}
+              block={block}
+              onOpenMediaSettings={onOpenMediaSettings}
+            />
+          );
         }
 
         // ImageBlock -- skip in assistant messages (user-side only)

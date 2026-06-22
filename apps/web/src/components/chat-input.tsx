@@ -15,15 +15,10 @@ import type { MessageMention } from "@aimc/shared";
 import { useAgentModelRequirement } from "../hooks/use-agent-model-requirement";
 import type { ImageAttachmentState } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
-import { useMediaModelConfigurationStatus } from "../hooks/use-media-model-configuration-status";
 import { AgentModelSelector } from "./agent-model-selector";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
-import {
-  type MissingModelConfiguration,
-  ModelConfigurationBanner,
-} from "./model-configuration-banner";
 import { SettingsDialog } from "./settings-dialog";
 
 type ChatInputProps = {
@@ -44,6 +39,8 @@ type ChatInputProps = {
 export type ChatInputHandle = {
   /** Remove the @query text from input after picker selection */
   clearAtQuery: () => void;
+  focus: () => void;
+  setDraft: (value: string) => void;
 };
 
 function PromptToolbarTooltip({ label }: { label: string }) {
@@ -80,33 +77,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { preference } = useImageModelPreference();
     const agentRequirement = useAgentModelRequirement();
-    const { missingImageModel, missingVideoModel } =
-      useMediaModelConfigurationStatus();
     const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsInitialTab, setSettingsInitialTab] = useState<
       "agent" | "media"
     >("agent");
     const { t } = useAppTranslation("chat");
-    const isAgentModelConfigurationLoaded =
-      agentRequirement.isAgentModelConfigurationLoaded ?? true;
-    const missingModelConfiguration = useMemo(() => {
-      const missing: MissingModelConfiguration[] = [];
-      if (
-        isAgentModelConfigurationLoaded &&
-        !agentRequirement.isAgentModelConfigured
-      ) {
-        missing.push("agent");
-      }
-      if (missingImageModel) missing.push("image");
-      if (missingVideoModel) missing.push("video");
-      return missing;
-    }, [
-      agentRequirement.isAgentModelConfigured,
-      isAgentModelConfigurationLoaded,
-      missingImageModel,
-      missingVideoModel,
-    ]);
 
     useImperativeHandle(ref, () => ({
       clearAtQuery() {
@@ -114,6 +90,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           const lastAtIdx = prev.lastIndexOf("@");
           if (lastAtIdx === -1) return prev;
           return prev.slice(0, lastAtIdx);
+        });
+      },
+      focus() {
+        textareaRef.current?.focus();
+      },
+      setDraft(nextValue) {
+        setValue(nextValue);
+        window.requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.style.height = "auto";
+            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+            textareaRef.current.focus();
+          }
         });
       },
     }));
@@ -147,12 +136,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const handleOpenMediaSettings = useCallback(() => {
       setModelPopoverOpen(false);
       setSettingsInitialTab("media");
-      setSettingsOpen(true);
-    }, []);
-
-    const handleOpenAgentSettings = useCallback(() => {
-      setModelPopoverOpen(false);
-      setSettingsInitialTab("agent");
       setSettingsOpen(true);
     }, []);
 
@@ -277,13 +260,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     return (
       <div className="px-2 pb-2">
-        <div className="mb-2">
-          <ModelConfigurationBanner
-            missing={missingModelConfiguration}
-            onConfigureAgent={handleOpenAgentSettings}
-            onConfigureMedia={handleOpenMediaSettings}
-          />
-        </div>
         <div
           className="flex min-h-[120px] flex-col justify-between gap-2 rounded-xl border-[0.5px] border-border bg-card p-2 transition-[border] focus-within:border-border"
           onDrop={handleDrop}

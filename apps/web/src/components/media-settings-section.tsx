@@ -22,6 +22,7 @@ import {
 interface MediaSettingsSectionProps {
   settings: WorkspaceSettings;
   onSave: (settings: WorkspaceSettings) => Promise<void>;
+  onSaved?: (() => void) | undefined;
 }
 
 type StringSettingsKey = Exclude<
@@ -319,6 +320,7 @@ function applyMediaSaveScope(
 export function MediaSettingsSection({
   settings: initialSettings,
   onSave,
+  onSaved,
 }: MediaSettingsSectionProps) {
   const { t } = useAppTranslation("settings");
   const initialMediaSettings = useMemo(
@@ -383,6 +385,7 @@ export function MediaSettingsSection({
         type: "success",
         message: t("media.feedback.updated"),
       });
+      onSaved?.();
     } catch {
       setFeedback({
         type: "error",

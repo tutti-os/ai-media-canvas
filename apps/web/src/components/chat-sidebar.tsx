@@ -58,6 +58,7 @@ import { ChatTemplates } from "./chat-templates";
 import { ErrorBoundary } from "./error-boundary";
 import { SessionSelector } from "./session-selector";
 import { SettingsDialog } from "./settings-dialog";
+import type { SettingsTab } from "./settings-panel";
 import { useToast } from "./toast";
 
 type ChatSidebarProps = {
@@ -588,9 +589,33 @@ export function ChatSidebar({
   const agentModelSourceRef = useRef(agentModelSource);
   agentModelSourceRef.current = agentModelSource;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] =
+    useState<SettingsTab>("agent");
+  const mediaSettingsOpenedFromCapabilityRef = useRef(false);
   const panelRootRef = useRef<HTMLDivElement | null>(null);
 
   const { toast: showToast } = useToast();
+
+  const openSettings = useCallback((tab: SettingsTab = "agent") => {
+    if (tab !== "media") {
+      mediaSettingsOpenedFromCapabilityRef.current = false;
+    }
+    setSettingsInitialTab(tab);
+    setSettingsOpen(true);
+  }, []);
+
+  const openMediaSettings = useCallback(() => {
+    mediaSettingsOpenedFromCapabilityRef.current = true;
+    openSettings("media");
+  }, [openSettings]);
+
+  const handleSettingsSaved = useCallback(() => {
+    if (!mediaSettingsOpenedFromCapabilityRef.current) return;
+    mediaSettingsOpenedFromCapabilityRef.current = false;
+    chatInputRef.current?.setDraft(t("capabilityRequired.continueDraft"));
+    chatInputRef.current?.focus();
+    showToast(t("capabilityRequired.continueAfterSave"), "success");
+  }, [showToast, t]);
 
   // ── Sidebar resize ──
   const SIDEBAR_MIN = 300;
@@ -826,7 +851,7 @@ export function ChatSidebar({
         if (activeSessionIdRef.current === currentSessionId) {
           setStreaming(false);
         }
-        setSettingsOpen(true);
+        openSettings("agent");
         return;
       }
 
@@ -1185,6 +1210,7 @@ export function ChatSidebar({
       buildAutoTitleSource,
       activeSessionIdRef,
       ensureAgentModelConfigured,
+      openSettings,
       imageModelMentionItems,
       setStreaming,
       showToast,
@@ -1646,7 +1672,7 @@ export function ChatSidebar({
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => openSettings("agent")}
             className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             aria-label={t("actions.openSettings")}
             title={t("actions.openSettings")}
@@ -1712,6 +1738,7 @@ export function ChatSidebar({
                 key={msg.id}
                 role={msg.role}
                 contentBlocks={msg.contentBlocks}
+                onOpenMediaSettings={openMediaSettings}
                 isStreaming={
                   streaming &&
                   msg.role === "assistant" &&
@@ -1755,7 +1782,12 @@ export function ChatSidebar({
         />
       </div>
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        initialTab={settingsInitialTab}
+        onSaved={handleSettingsSaved}
+      />
     </>
   );
 

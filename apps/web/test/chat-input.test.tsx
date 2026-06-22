@@ -131,7 +131,7 @@ describe("ChatInput", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders a configuration banner above the input when agent and media models are missing", async () => {
+  it("does not render a persistent configuration banner when agent and media models are missing", () => {
     agentModelRequirementMock.mockReturnValue({
       model: null,
       isAgentModelConfigured: false,
@@ -154,20 +154,17 @@ describe("ChatInput", () => {
     render(<ChatInput onSend={vi.fn()} />);
 
     expect(
-      await screen.findByText("未配置 Agent 模型、图片模型、视频模型"),
-    ).toBeInTheDocument();
+      screen.queryByText("未配置 Agent 模型、图片模型、视频模型"),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByText(/Agnes 提供免费的文本、生图、生视频模型能力/),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "配置 Agent" }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "配置 Agent" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "配置媒体模型" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "去连接" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("uses provider settings instead of model catalog entries when deciding media configuration", async () => {
+  it("does not render a persistent media banner when media providers are missing", () => {
     fetchImageModelsMock.mockResolvedValueOnce({
       models: [{ id: "agnes-image", displayName: "Agnes Image" }],
     });
@@ -189,7 +186,7 @@ describe("ChatInput", () => {
     render(<ChatInput onSend={vi.fn()} />);
 
     expect(
-      await screen.findByText("未配置 图片模型、视频模型"),
-    ).toBeInTheDocument();
+      screen.queryByText("未配置 图片模型、视频模型"),
+    ).not.toBeInTheDocument();
   });
 });

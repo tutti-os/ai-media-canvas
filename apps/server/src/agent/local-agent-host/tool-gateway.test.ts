@@ -375,6 +375,97 @@ describe("createLocalToolGatewayService", () => {
     });
   });
 
+  it("returns media capability requirements as actionable tool output", async () => {
+    const gateway = createLocalToolGatewayService({
+      createUserClient: () => createUserClientWithElements([]),
+    });
+    const session = gateway.createSession({
+      accessToken: "access-token",
+      canvasId: "canvas-1",
+      runId: "run-1",
+      runtimeEnv: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+    });
+
+    await expect(
+      gateway.callTool(session.token, "generate_image", {
+        model: "agnes-image/seedream-v4",
+        prompt: "A glass AI speaker on a white desk",
+      }),
+    ).resolves.toMatchObject({
+      isError: false,
+      output: {
+        error: "media_provider_configuration_required",
+        errorCode: "media_provider_configuration_required",
+        capabilityRequired: {
+          action: {
+            tab: "media",
+            type: "open_settings",
+          },
+          capability: "image_generation",
+          kind: "media_provider_configuration_required",
+        },
+      },
+    });
+  });
+
+  it("returns actionable setup guidance for multiple image generations without provider keys", async () => {
+    const pushToCanvas = vi.fn();
+    const gateway = createLocalToolGatewayService({
+      connectionPublisher: { pushToCanvas },
+      createUserClient: () => createUserClientWithElements([]),
+    });
+    const session = gateway.createSession({
+      accessToken: "access-token",
+      canvasId: "canvas-1",
+      runId: "run-1",
+      runtimeEnv: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+    });
+
+    const prompts = [
+      "A glass AI speaker on a white desk",
+      "A ceramic AI speaker on a walnut desk",
+    ];
+    const results = await Promise.all(
+      prompts.map((prompt) =>
+        gateway.callTool(session.token, "generate_image", {
+          model: "agnes-image/seedream-v4",
+          prompt,
+        }),
+      ),
+    );
+
+    for (const result of results) {
+      expect(result).toMatchObject({
+        isError: false,
+        output: {
+          error: "media_provider_configuration_required",
+          errorCode: "media_provider_configuration_required",
+          capabilityRequired: {
+            action: {
+              tab: "media",
+              type: "open_settings",
+            },
+            capability: "image_generation",
+            kind: "media_provider_configuration_required",
+          },
+        },
+      });
+    }
+    expect(pushToCanvas).not.toHaveBeenCalled();
+  });
+
   it("keeps Codex imagegen visible but marks confirmation requirements for non-Codex agents", () => {
     registerCodexImagegenTestProvider();
     const gateway = createLocalToolGatewayService({
@@ -397,6 +488,55 @@ describe("createLocalToolGatewayService", () => {
       "non-Codex agents must call get_workspace_settings",
     );
     expect(JSON.stringify(tool?.inputSchema)).toContain("codex/gpt-image-2");
+  });
+
+  it("lets unavailable media models reach the image tool for capability guidance", async () => {
+    registerCodexImagegenTestProvider();
+    const pushToCanvas = vi.fn();
+    const gateway = createLocalToolGatewayService({
+      connectionPublisher: { pushToCanvas },
+      createUserClient: () => createUserClientWithElements([]),
+    });
+    const session = gateway.createSession({
+      accessToken: "access-token",
+      canvasId: "canvas-1",
+      runId: "run-1",
+      runtimeEnv: baseRuntimeEnv(),
+      runtimeProvider: "claude",
+      workspaceSettings: {
+        codexImagegenDelegation: "never",
+      },
+    });
+    const tool = gateway
+      .getManifest(session.token)
+      .find((item) => item.name === "generate_image");
+    const inputSchema = tool?.inputSchema as {
+      properties?: Record<string, { enum?: string[]; type?: string }>;
+    };
+
+    expect(inputSchema.properties?.model).toMatchObject({ type: "string" });
+    expect(inputSchema.properties?.model?.enum).toBeUndefined();
+    await expect(
+      gateway.callTool(session.token, "generate_image", {
+        model: "agnes-image/agnes-image-2.1-flash",
+        prompt: "A glass AI speaker on a white desk",
+      }),
+    ).resolves.toMatchObject({
+      isError: false,
+      output: {
+        error: "media_provider_configuration_required",
+        errorCode: "media_provider_configuration_required",
+        capabilityRequired: {
+          action: {
+            tab: "media",
+            type: "open_settings",
+          },
+          capability: "image_generation",
+          kind: "media_provider_configuration_required",
+        },
+      },
+    });
+    expect(pushToCanvas).not.toHaveBeenCalled();
   });
 
   it("requires confirmation before non-Codex agents call Codex imagegen", async () => {
