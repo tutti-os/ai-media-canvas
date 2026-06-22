@@ -8,20 +8,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ImageModelPreferencePopover } from "../src/components/image-model-preference";
 import { i18n } from "../src/i18n";
 
-const {
-  fetchImageModelsMock,
-  fetchVideoModelsMock,
-  fetchWorkspaceSettingsMock,
-} = vi.hoisted(() => ({
+const { fetchImageModelsMock, fetchVideoModelsMock } = vi.hoisted(() => ({
   fetchImageModelsMock: vi.fn(),
   fetchVideoModelsMock: vi.fn(),
-  fetchWorkspaceSettingsMock: vi.fn(),
 }));
 
 vi.mock("../src/lib/server-api", () => ({
   fetchImageModels: fetchImageModelsMock,
   fetchVideoModels: fetchVideoModelsMock,
-  fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
 }));
 
 function OpenPopover({
@@ -66,34 +60,6 @@ describe("ImageModelPreferencePopover", () => {
         },
       ],
     });
-    fetchWorkspaceSettingsMock.mockResolvedValue({
-      settings: {
-        defaultModel: "local:assistant",
-        providerModels: {
-          openai: [],
-          anthropic: [],
-          agnes: [],
-          google: [],
-          vertex: [],
-        },
-        openAIApiKey: "",
-        openAIApiBase: "",
-        anthropicApiKey: "",
-        anthropicBaseUrl: "",
-        agnesApiKey: "",
-        agnesBaseUrl: "",
-        agnesDefaultModel: "",
-        googleApiKey: "",
-        googleVertexProject: "",
-        googleVertexLocation: "",
-        googleVertexVideoLocation: "",
-        replicateApiToken: "",
-        kieApiKey: "",
-        kieBaseUrl: "",
-        volcesApiKey: "",
-        volcesBaseUrl: "",
-      },
-    });
   });
 
   afterEach(() => {
@@ -102,12 +68,12 @@ describe("ImageModelPreferencePopover", () => {
     vi.unstubAllGlobals();
   });
 
-  it("hides provider models when the matching media provider is not configured in settings", async () => {
+  it("shows provider models returned by the backend model endpoint", async () => {
     render(<OpenPopover />);
 
     await waitFor(() => expect(fetchImageModelsMock).toHaveBeenCalledTimes(1));
 
-    expect(screen.queryByText("Agnes Image 2.1 Flash")).not.toBeInTheDocument();
+    expect(screen.getByText("Agnes Image 2.1 Flash")).toBeInTheDocument();
   });
 
   it("shows Codex imagegen models returned by the backend capability check", async () => {
@@ -133,6 +99,8 @@ describe("ImageModelPreferencePopover", () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     const onOpenSettings = vi.fn();
+    fetchImageModelsMock.mockResolvedValueOnce({ models: [] });
+    fetchVideoModelsMock.mockResolvedValueOnce({ models: [] });
 
     render(<OpenPopover onClose={onClose} onOpenSettings={onOpenSettings} />);
 

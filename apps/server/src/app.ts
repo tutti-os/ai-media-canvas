@@ -1264,6 +1264,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     chatOperations,
     env,
     jobOperations,
+    localCanvasClient: createLocalUserClient(store),
     tuttiManagedCredentials,
     projectOperations,
     settingsService,

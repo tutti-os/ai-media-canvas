@@ -8,6 +8,7 @@ import { fetchTuttiManagedConnection } from "./server-api";
 
 type TuttiManagedGrantResult = {
   code: string;
+  contextToken?: string;
   expiresAt?: string;
   providers?: TuttiManagedProviderId[];
   models?: TuttiManagedModel[];
@@ -87,7 +88,7 @@ export async function requestTuttiManagedGrant(): Promise<TuttiManagedGrantCreat
   });
 
   return {
-    contextToken: context.contextToken,
+    contextToken: result.contextToken ?? context.contextToken,
     grantCode: result.code,
     nonce,
     state,

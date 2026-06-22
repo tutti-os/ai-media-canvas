@@ -16,14 +16,22 @@ test("Tutti CLI generation commands require explicit models", () => {
   );
   const guide = renderCommandsGuide();
 
-  assert.deepEqual(imageCommand?.inputSchema.required, ["prompt", "model"]);
-  assert.deepEqual(videoCommand?.inputSchema.required, ["prompt", "model"]);
+  assert.deepEqual(imageCommand?.inputSchema.required, [
+    "prompt",
+    "model",
+    "project-id",
+  ]);
+  assert.deepEqual(videoCommand?.inputSchema.required, [
+    "prompt",
+    "model",
+    "project-id",
+  ]);
   assert.match(
     guide,
-    /`aimc generation image --prompt <required> --model <required>/,
+    /`aimc generation image --prompt <required> --model <required> --project-id <required>/,
   );
   assert.match(
     guide,
-    /`aimc generation video --prompt <required> --model <required>/,
+    /`aimc generation video --prompt <required> --model <required> --project-id <required>/,
   );
 });

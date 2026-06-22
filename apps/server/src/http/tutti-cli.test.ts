@@ -218,6 +218,33 @@ describe("registerTuttiCliRoutes", () => {
       url: "/tutti/cli/generation/image",
       payload: {
         prompt: "A launch poster",
+        "project-id": "project-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(jobOperations.createImageJob).not.toHaveBeenCalled();
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "application_error",
+        message: "Invalid command input.",
+      },
+    });
+  });
+
+  it("requires generation image commands to pass a project id", async () => {
+    const jobOperations = {
+      createImageJob: vi.fn(),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/image",
+      payload: {
+        prompt: "A launch poster",
+        model: "agnes-image/agnes-image-2.1-flash",
       },
     });
 
@@ -257,6 +284,32 @@ describe("registerTuttiCliRoutes", () => {
     });
   });
 
+  it("requires generation video commands to pass a project id", async () => {
+    const jobOperations = {
+      createVideoJob: vi.fn(),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/video",
+      payload: {
+        prompt: "A launch video",
+        model: "google-official/veo-3.1-generate-preview",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(jobOperations.createVideoJob).not.toHaveBeenCalled();
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "application_error",
+        message: "Invalid command input.",
+      },
+    });
+  });
+
   it("forwards explicit generation models to job operations", async () => {
     const jobOperations = {
       createImageJob: vi.fn(async (input) => ({
@@ -275,6 +328,7 @@ describe("registerTuttiCliRoutes", () => {
       payload: {
         prompt: "A launch poster",
         model: "agnes-image/agnes-image-2.1-flash",
+        "project-id": "project-1",
       },
     });
 
@@ -282,6 +336,8 @@ describe("registerTuttiCliRoutes", () => {
     expect(jobOperations.createImageJob).toHaveBeenCalledWith({
       prompt: "A launch poster",
       model: "agnes-image/agnes-image-2.1-flash",
+      project_id: "project-1",
+      canvas_id: "canvas-1",
       caller_provider: "external-cli",
     });
   });
@@ -304,6 +360,7 @@ describe("registerTuttiCliRoutes", () => {
       payload: {
         prompt: "A launch poster",
         model: "codex/gpt-image-2",
+        "project-id": "project-1",
         "direct-user": true,
       },
     });
@@ -312,6 +369,8 @@ describe("registerTuttiCliRoutes", () => {
     expect(jobOperations.createImageJob).toHaveBeenCalledWith({
       prompt: "A launch poster",
       model: "codex/gpt-image-2",
+      project_id: "project-1",
+      canvas_id: "canvas-1",
     });
   });
 
@@ -340,6 +399,7 @@ describe("registerTuttiCliRoutes", () => {
         input: {
           prompt: "A launch poster",
           model: "codex/gpt-image-2",
+          "project-id": "project-1",
           "direct-user": true,
         },
         outputMode: "json",
@@ -353,6 +413,8 @@ describe("registerTuttiCliRoutes", () => {
     expect(jobOperations.createImageJob).toHaveBeenCalledWith({
       prompt: "A launch poster",
       model: "codex/gpt-image-2",
+      project_id: "project-1",
+      canvas_id: "canvas-1",
     });
   });
 
@@ -374,6 +436,7 @@ describe("registerTuttiCliRoutes", () => {
       payload: {
         prompt: "A launch poster",
         model: "codex/gpt-image-2",
+        "project-id": "project-1",
         "caller-provider": "claude",
         "codex-imagegen-consent": "allow-once",
       },
@@ -383,9 +446,107 @@ describe("registerTuttiCliRoutes", () => {
     expect(jobOperations.createImageJob).toHaveBeenCalledWith({
       prompt: "A launch poster",
       model: "codex/gpt-image-2",
+      project_id: "project-1",
+      canvas_id: "canvas-1",
       caller_provider: "claude",
       codex_imagegen_consent: "allow-once",
       codex_imagegen_delegation_allowed: true,
+    });
+  });
+
+  it("prefers an explicit canvas id over the project primary canvas for image generation", async () => {
+    const jobOperations = {
+      createImageJob: vi.fn(async (input) => ({
+        job: {
+          id: "job-1",
+          payload: input,
+          status: "queued",
+        },
+      })),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/image",
+      payload: {
+        prompt: "A launch poster",
+        model: "codex/gpt-image-2",
+        "project-id": "project-1",
+        "canvas-id": "canvas-explicit",
+        "direct-user": true,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(jobOperations.createImageJob).toHaveBeenCalledWith({
+      prompt: "A launch poster",
+      model: "codex/gpt-image-2",
+      project_id: "project-1",
+      canvas_id: "canvas-explicit",
+    });
+  });
+
+  it("uses the project primary canvas for video generation when canvas id is omitted", async () => {
+    const jobOperations = {
+      createVideoJob: vi.fn(async (input) => ({
+        job: {
+          id: "job-video-1",
+          payload: input,
+          status: "queued",
+        },
+      })),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/video",
+      payload: {
+        prompt: "A launch video",
+        model: "google-official/veo-3.1-generate-preview",
+        "project-id": "project-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(jobOperations.createVideoJob).toHaveBeenCalledWith({
+      prompt: "A launch video",
+      model: "google-official/veo-3.1-generate-preview",
+      project_id: "project-1",
+      canvas_id: "canvas-1",
+    });
+  });
+
+  it("prefers an explicit canvas id over the project primary canvas for video generation", async () => {
+    const jobOperations = {
+      createVideoJob: vi.fn(async (input) => ({
+        job: {
+          id: "job-video-1",
+          payload: input,
+          status: "queued",
+        },
+      })),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/video",
+      payload: {
+        prompt: "A launch video",
+        model: "google-official/veo-3.1-generate-preview",
+        "project-id": "project-1",
+        "canvas-id": "canvas-explicit",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(jobOperations.createVideoJob).toHaveBeenCalledWith({
+      prompt: "A launch video",
+      model: "google-official/veo-3.1-generate-preview",
+      project_id: "project-1",
+      canvas_id: "canvas-explicit",
     });
   });
 
@@ -546,7 +707,24 @@ function buildTestApp(overrides: Record<string, unknown> = {}) {
     projectOperations: {
       createProject: vi.fn(),
       getProject: vi.fn(),
-      listProjects: vi.fn(),
+      listProjects: vi.fn(async () => ({
+        projects: [
+          {
+            id: "project-1",
+            name: "Project 1",
+            slug: "project-1",
+            description: null,
+            thumbnailUrl: null,
+            primaryCanvas: {
+              id: "canvas-1",
+              name: "Canvas",
+              isPrimary: true,
+            },
+            createdAt: "2026-06-10T00:00:00.000Z",
+            updatedAt: "2026-06-10T00:00:00.000Z",
+          },
+        ],
+      })),
       ...(overrides.projectOperations as object | undefined),
     } as never,
     skillOperations: {

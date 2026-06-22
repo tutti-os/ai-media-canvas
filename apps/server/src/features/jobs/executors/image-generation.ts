@@ -9,6 +9,8 @@ import { validateImageGenerationParams } from "../../../generation/model-schemas
 import { resolveImageProviderName } from "../../../generation/providers/registry.js";
 import { GenerationError } from "../../../generation/utils.js";
 import type { LocalStore } from "../../../local/store.js";
+import { createLocalUserClient } from "../../../local/user-client.js";
+import { completeImageGenerationNode } from "../../canvas/canvas-element-writer.js";
 import { refreshGenerationProviders } from "../../settings/settings-service.js";
 
 export async function executeImageGenerationJob(
@@ -71,6 +73,23 @@ export async function executeImageGenerationJob(
     mimeType,
     ...(job.project_id ? { projectId: job.project_id } : {}),
   });
+  if (job.canvas_id) {
+    try {
+      await completeImageGenerationNode(createLocalUserClient(store), {
+        canvasId: job.canvas_id,
+        jobId: job.id,
+        assetId: stored.asset.id,
+        signedUrl: stored.url,
+        objectPath: stored.asset.objectPath,
+        mimeType: stored.asset.mimeType ?? mimeType,
+        width: generated.width,
+        height: generated.height,
+        title: payload.prompt.slice(0, 60),
+      });
+    } catch (error) {
+      console.warn("[image-generation] canvas image insert failed:", error);
+    }
+  }
   return {
     asset_id: stored.asset.id,
     signed_url: stored.url,
