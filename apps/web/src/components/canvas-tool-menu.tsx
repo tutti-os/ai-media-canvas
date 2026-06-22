@@ -16,6 +16,7 @@ import {
   Video,
 } from "lucide-react";
 import {
+  type FocusEvent,
   type MouseEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
@@ -51,10 +52,10 @@ import {
   isExcalidrawContextMenuTarget,
 } from "../lib/excalidraw-context-menu";
 import { toRuntimeAssetUrl } from "../lib/local-assets";
-import { formatModelDisplayName } from "./chat/utils";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
+import { formatModelDisplayName } from "./chat/utils";
 
 type ToolType =
   | "hand"
@@ -197,11 +198,26 @@ type CanvasToolExcalidrawApi = {
   updateScene(scene: Record<string, unknown>): void;
 };
 
-function ToolbarTooltip({ label }: { label: string }) {
-  return (
-    <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+function ToolbarTooltip({
+  label,
+  anchorRect,
+}: {
+  label: string;
+  anchorRect: DOMRect | null;
+}) {
+  if (!anchorRect || typeof document === "undefined") return null;
+
+  return createPortal(
+    <span
+      className="pointer-events-none fixed z-[260] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background shadow-lg"
+      style={{
+        left: anchorRect.left + anchorRect.width / 2,
+        top: anchorRect.top - 8,
+      }}
+    >
       {label}
-    </span>
+    </span>,
+    document.body,
   );
 }
 
@@ -218,12 +234,36 @@ function ToolbarButton({
   onMouseDown?: (event: MouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
 }) {
+  const [tooltipRect, setTooltipRect] = useState<DOMRect | null>(null);
+
+  const showTooltip = useCallback((target: HTMLButtonElement) => {
+    setTooltipRect(target.getBoundingClientRect());
+  }, []);
+
+  const handlePointerEnter = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      showTooltip(event.currentTarget);
+    },
+    [showTooltip],
+  );
+
+  const handleFocus = useCallback(
+    (event: FocusEvent<HTMLButtonElement>) => {
+      showTooltip(event.currentTarget);
+    },
+    [showTooltip],
+  );
+
   return (
     <button
       type="button"
       aria-label={label}
       onClick={onClick}
       onMouseDown={onMouseDown}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={() => setTooltipRect(null)}
+      onFocus={handleFocus}
+      onBlur={() => setTooltipRect(null)}
       className={`group relative flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
         active
           ? "bg-foreground/[0.08] text-foreground"
@@ -231,7 +271,7 @@ function ToolbarButton({
       }`}
     >
       {children}
-      <ToolbarTooltip label={label} />
+      <ToolbarTooltip label={label} anchorRect={tooltipRect} />
     </button>
   );
 }
@@ -1078,57 +1118,58 @@ export function CanvasToolMenu({
   return (
     <>
       <div
-        className="absolute bottom-[72px] z-30 flex max-w-[calc(100%_-_32px)] items-center gap-0.5 overflow-x-auto rounded-xl p-1 bg-card/75 backdrop-blur-lg border border-border shadow-card transition-[left,transform,bottom] duration-200 @min-[900px]/canvas:bottom-5"
+        className="pointer-events-none absolute right-4 bottom-[72px] z-30 flex justify-center transition-[left,bottom] duration-200 @min-[900px]/canvas:bottom-5"
         style={{
-          left: leftPanelOpen ? "calc(140px + 50%)" : "50%",
-          transform: "translateX(-50%)",
+          left: leftPanelOpen ? "280px" : "16px",
         }}
       >
-        {/* Standard Excalidraw tools */}
-        {TOOL_GROUPS.map(({ id, tool }) => {
-          if (tool === null) {
+        <div className="pointer-events-auto flex w-[min(max-content,100%)] shrink-0 items-center gap-0.5 overflow-x-auto rounded-xl border border-border bg-card/75 p-1 shadow-card [scrollbar-width:none] backdrop-blur-lg [&::-webkit-scrollbar]:hidden">
+          {/* Standard Excalidraw tools */}
+          {TOOL_GROUPS.map(({ id, tool }) => {
+            if (tool === null) {
+              return (
+                <div key={id} className="mx-0.5 h-6 w-px shrink-0 bg-border" />
+              );
+            }
+
+            const Icon = TOOL_ICONS[tool];
+            const isActive = activeTool === tool;
+
             return (
-              <div key={id} className="mx-0.5 h-6 w-px shrink-0 bg-border" />
+              <ToolbarButton
+                key={tool}
+                label={t(TOOL_LABEL_KEYS[tool])}
+                active={isActive}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleToolChange(tool);
+                }}
+              >
+                <Icon className="size-[16px]" />
+              </ToolbarButton>
             );
-          }
+          })}
 
-          const Icon = TOOL_ICONS[tool];
-          const isActive = activeTool === tool;
+          {/* Separator before AI tools */}
+          <div className="mx-0.5 h-6 w-px shrink-0 bg-border" />
 
-          return (
-            <ToolbarButton
-              key={tool}
-              label={t(TOOL_LABEL_KEYS[tool])}
-              active={isActive}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                handleToolChange(tool);
-              }}
-            >
-              <Icon className="size-[16px]" />
-            </ToolbarButton>
-          );
-        })}
+          {/* AI Image -- creates a generator node on canvas */}
+          <ToolbarButton
+            label={t("tools.generateImage")}
+            active={Boolean(activeGeneratorId)}
+            onClick={handleCreateImageGenerator}
+          >
+            <ImageGeneratorIcon />
+          </ToolbarButton>
 
-        {/* Separator before AI tools */}
-        <div className="mx-0.5 h-6 w-px shrink-0 bg-border" />
-
-        {/* AI Image -- creates a generator node on canvas */}
-        <ToolbarButton
-          label={t("tools.generateImage")}
-          active={Boolean(activeGeneratorId)}
-          onClick={handleCreateImageGenerator}
-        >
-          <ImageGeneratorIcon />
-        </ToolbarButton>
-
-        <ToolbarButton
-          label={t("tools.generateVideo")}
-          active={Boolean(activeVideoGenId)}
-          onClick={handleCreateVideoGenerator}
-        >
-          <Video className="size-[16px]" />
-        </ToolbarButton>
+          <ToolbarButton
+            label={t("tools.generateVideo")}
+            active={Boolean(activeVideoGenId)}
+            onClick={handleCreateVideoGenerator}
+          >
+            <Video className="size-[16px]" />
+          </ToolbarButton>
+        </div>
       </div>
 
       {/* Image Generator Panel -- floats below the selected generator node */}
