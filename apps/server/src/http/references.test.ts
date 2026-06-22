@@ -55,6 +55,10 @@ function displayNames(result: ListResponse): string[] {
   );
 }
 
+function findGroup(result: ListResponse, projectId: string) {
+  return result.items.find((item) => item.id === `project:${projectId}`);
+}
+
 describe("POST /tutti/references/list", () => {
   const dataRoots: string[] = [];
 
@@ -116,13 +120,39 @@ describe("POST /tutti/references/list", () => {
     const root = await listReferences(app, {});
     await app.close();
 
-    expect(root.items).toHaveLength(1);
-    expect(root.items[0]).toMatchObject({
+    expect(findGroup(root, project.id)).toMatchObject({
       type: "group",
       id: `project:${project.id}`,
       displayName: "Campaign A",
       referenceCount: 2, // image + video; json and unassigned excluded
     });
+  });
+
+  it("lists projects without reusable media as empty root groups", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-empty-project-"));
+    dataRoots.push(dataRoot);
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = store.createProject({ name: "Fresh Project" });
+    store.saveProjectThumbnail(project.id, Buffer.from("thumb"), "image/webp");
+    const app = buildApp({ env: { dataRoot } });
+
+    const root = await listReferences(app, {});
+    const files = await listReferences(app, {
+      parentGroupId: `project:${project.id}`,
+    });
+    await app.close();
+
+    expect(findGroup(root, project.id)).toMatchObject({
+      type: "group",
+      id: `project:${project.id}`,
+      displayName: "Fresh Project",
+      referenceCount: 0,
+    });
+    expect(files.items).toEqual([]);
+    expect(files.nextCursor).toBeNull();
   });
 
   it("lists a project's media assets as app-data-relative file references", async () => {
@@ -170,7 +200,11 @@ describe("POST /tutti/references/list", () => {
       projectId: project.id,
     });
     store.saveProjectThumbnail(project.id, Buffer.from("blank"), "image/webp");
-    store.saveProjectThumbnail(project.id, Buffer.from("current"), "image/webp");
+    store.saveProjectThumbnail(
+      project.id,
+      Buffer.from("current"),
+      "image/webp",
+    );
     const app = buildApp({ env: { dataRoot } });
 
     const root = await listReferences(app, {});
@@ -180,7 +214,7 @@ describe("POST /tutti/references/list", () => {
     const search = await searchReferences(app, {});
     await app.close();
 
-    expect(root.items[0]).toMatchObject({
+    expect(findGroup(root, project.id)).toMatchObject({
       type: "group",
       id: `project:${project.id}`,
       referenceCount: 1,

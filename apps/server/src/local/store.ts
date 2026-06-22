@@ -3705,7 +3705,9 @@ export function createLocalStore(options: {
     return relative(dataRoot, filePath).split("\\").join("/");
   }
 
-  // Root level: one group per project that owns >=1 in-range media asset.
+  // Root level: one group per active project. referenceCount only includes
+  // in-range reusable media assets; projects with no reusable outputs remain
+  // navigable empty groups so newly created projects are visible in Tutti.
   // Keyset paginated on (project name, project id).
   function listReferenceProjectGroups(input: {
     filterText?: string | undefined;
@@ -3718,15 +3720,17 @@ export function createLocalStore(options: {
     nextCursor: string | null;
   } {
     const { fromIso, toIso } = referenceTimeBounds(input);
-    const conditions = ["a.project_id IS NOT NULL", REFERENCE_MEDIA_PREDICATE];
+    const joinConditions = ["a.project_id = p.id", REFERENCE_MEDIA_PREDICATE];
+    const joinParams: SQLInputValue[] = [];
+    const conditions = ["p.archived_at IS NULL"];
     const params: SQLInputValue[] = [];
     if (fromIso) {
-      conditions.push("a.created_at >= ?");
-      params.push(fromIso);
+      joinConditions.push("a.created_at >= ?");
+      joinParams.push(fromIso);
     }
     if (toIso) {
-      conditions.push("a.created_at <= ?");
-      params.push(toIso);
+      joinConditions.push("a.created_at <= ?");
+      joinParams.push(toIso);
     }
     if (input.filterText) {
       conditions.push("p.name LIKE ? COLLATE NOCASE");
@@ -3744,15 +3748,15 @@ export function createLocalStore(options: {
       .prepare(
         `
           SELECT p.id AS project_id, p.name AS name, COUNT(a.id) AS reference_count
-          FROM assets a
-          JOIN projects p ON p.id = a.project_id
+          FROM projects p
+          LEFT JOIN assets a ON ${joinConditions.join(" AND ")}
           WHERE ${conditions.join(" AND ")}
           GROUP BY p.id, p.name
           ORDER BY p.name ASC, p.id ASC
           LIMIT ?
         `,
       )
-      .all(...params, limit + 1) as Array<{
+      .all(...joinParams, ...params, limit + 1) as Array<{
       project_id: string;
       name: string;
       reference_count: number;
