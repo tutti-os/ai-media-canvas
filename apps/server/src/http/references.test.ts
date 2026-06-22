@@ -59,6 +59,10 @@ function findGroup(result: ListResponse, projectId: string) {
   return result.items.find((item) => item.id === `project:${projectId}`);
 }
 
+function findUnassignedGroup(result: ListResponse) {
+  return result.items.find((item) => item.id === "unassigned");
+}
+
 describe("POST /tutti/references/list", () => {
   const dataRoots: string[] = [];
 
@@ -103,14 +107,18 @@ describe("POST /tutti/references/list", () => {
       mimeType: "application/json",
       projectId: project.id,
     });
-    // Unassigned media asset: must not surface anywhere.
-    store.uploadFile({
+    const unassigned = store.uploadFile({
       bucket: "project-assets",
       fileName: "stray.png",
       fileBuffer: Buffer.from("stray"),
       mimeType: "image/png",
     });
-    return { dataRoot, project, assetIds: [image.asset.id, video.asset.id] };
+    return {
+      dataRoot,
+      project,
+      assetIds: [image.asset.id, video.asset.id],
+      unassignedAssetId: unassigned.asset.id,
+    };
   }
 
   it("lists projects as root groups with exact media reference counts", async () => {
@@ -124,8 +132,40 @@ describe("POST /tutti/references/list", () => {
       type: "group",
       id: `project:${project.id}`,
       displayName: "Campaign A",
-      referenceCount: 2, // image + video; json and unassigned excluded
+      referenceCount: 2, // image + video; json excluded
     });
+    expect(findUnassignedGroup(root)).toMatchObject({
+      type: "group",
+      id: "unassigned",
+      displayName: "项目外资源",
+      referenceCount: 1,
+    });
+  });
+
+  it("lists unassigned media assets under a special root group", async () => {
+    const { dataRoot, unassignedAssetId } = await seedStore();
+    const app = buildApp({ env: { dataRoot } });
+
+    const files = await listReferences(app, { parentGroupId: "unassigned" });
+    await app.close();
+
+    expect(files.items).toHaveLength(1);
+    expect(files.items[0]).toMatchObject({
+      type: "reference",
+      reference: {
+        kind: "file",
+        displayName: `${unassignedAssetId}.png`,
+        location: {
+          type: "app-data-relative",
+        },
+        mimeType: "image/png",
+      },
+    });
+    const reference = files.items[0]?.reference as {
+      location: { path: string };
+    };
+    expect(reference.location.path).toMatch(/^assets\//);
+    expect(reference.location.path).not.toContain("..");
   });
 
   it("lists projects without reusable media as empty root groups", async () => {
@@ -276,7 +316,7 @@ describe("POST /tutti/references/search", () => {
   });
 
   // Two projects, each with one image + one video, plus an excluded non-media
-  // file and an unassigned (project-less) media asset that must never surface.
+  // file and an unassigned (project-less) media asset.
   async function seedStore() {
     const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-search-"));
     dataRoots.push(dataRoot);
@@ -303,7 +343,7 @@ describe("POST /tutti/references/search", () => {
     upload(projectB.id, "b-hero.jpg", "image/jpeg");
     upload(projectB.id, "b-promo.mov", "video/quicktime");
     upload(projectA.id, "plan.json", "application/json"); // non-media, excluded
-    upload(undefined, "stray.png", "image/png"); // unassigned, excluded
+    upload(undefined, "stray.png", "image/png");
     return { dataRoot, projectA, projectB };
   }
 
@@ -314,8 +354,8 @@ describe("POST /tutti/references/search", () => {
     const result = await searchReferences(app, {});
     await app.close();
 
-    // 2 images + 2 videos; json and unassigned excluded.
-    expect(result.items).toHaveLength(4);
+    // 2 project images + 2 project videos + 1 unassigned image; json excluded.
+    expect(result.items).toHaveLength(5);
     for (const item of result.items) {
       const reference = item.reference as {
         kind: string;
@@ -324,8 +364,11 @@ describe("POST /tutti/references/search", () => {
       };
       expect(reference.kind).toBe("file");
       expect(reference.location.type).toBe("app-data-relative");
-      // Flattened search labels each result with its owning project.
-      expect(reference.parentGroupLabel).toMatch(/^Campaign [AB]$/);
+      // Flattened search labels each result with its owning project or the
+      // special unassigned group.
+      expect(reference.parentGroupLabel).toMatch(
+        /^Campaign [AB]$|^项目外资源$/,
+      );
     }
   });
 
@@ -336,7 +379,7 @@ describe("POST /tutti/references/search", () => {
     const result = await searchReferences(app, { filters: ["image"] });
     await app.close();
 
-    expect(result.items).toHaveLength(2);
+    expect(result.items).toHaveLength(3);
     for (const name of displayNames(result)) {
       expect(name).toMatch(/\.(png|jpg|jpeg)$/);
     }
@@ -361,7 +404,7 @@ describe("POST /tutti/references/search", () => {
     });
     await app.close();
 
-    expect(pngAsImage.items).toHaveLength(1);
+    expect(pngAsImage.items).toHaveLength(2);
     expect(displayNames(pngAsImage)[0]).toMatch(/\.png$/);
     expect(pngAsVideo.items).toEqual([]);
   });
@@ -375,7 +418,7 @@ describe("POST /tutti/references/search", () => {
     });
     await app.close();
 
-    expect(result.items).toHaveLength(4);
+    expect(result.items).toHaveLength(5);
   });
 
   it("ignores unknown category ids", async () => {
@@ -390,8 +433,8 @@ describe("POST /tutti/references/search", () => {
     });
     await app.close();
 
-    expect(unknownOnly.items).toHaveLength(4);
-    expect(mixed.items).toHaveLength(2);
+    expect(unknownOnly.items).toHaveLength(5);
+    expect(mixed.items).toHaveLength(3);
   });
 
   it("returns nothing for a category that matches no exposed assets", async () => {

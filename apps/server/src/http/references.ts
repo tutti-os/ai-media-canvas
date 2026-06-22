@@ -12,6 +12,8 @@ import type { LocalStore } from "../local/store.js";
 // Assets without a project (project_id IS NULL) are intentionally not exposed.
 
 const PROJECT_GROUP_PREFIX = "project:";
+const UNASSIGNED_GROUP_ID = "unassigned";
+const UNASSIGNED_GROUP_LABEL = "项目外资源";
 
 // Global Tutti file-type category ids -> file extensions (no leading dot).
 // `other` is handled specially: it matches files with no recognized extension.
@@ -19,9 +21,40 @@ const PROJECT_GROUP_PREFIX = "project:";
 // `document` includes spreadsheets; audio/code/archive extensions are not listed
 // and therefore resolve to `other`.
 const CATEGORY_EXTENSIONS: Record<string, readonly string[]> = {
-  image: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif", "heic", "tiff", "ico"],
+  image: [
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "webp",
+    "bmp",
+    "svg",
+    "avif",
+    "heic",
+    "tiff",
+    "ico",
+  ],
   video: ["mp4", "mov", "webm", "mkv", "avi", "m4v"],
-  document: ["pdf", "doc", "docx", "txt", "md", "markdown", "rtf", "odt", "pages", "key", "ppt", "pptx", "xls", "xlsx", "csv", "tsv", "ods", "numbers"],
+  document: [
+    "pdf",
+    "doc",
+    "docx",
+    "txt",
+    "md",
+    "markdown",
+    "rtf",
+    "odt",
+    "pages",
+    "key",
+    "ppt",
+    "pptx",
+    "xls",
+    "xlsx",
+    "csv",
+    "tsv",
+    "ods",
+    "numbers",
+  ],
   webpage: ["html", "htm", "mhtml", "url", "webloc"],
 };
 const KNOWN_EXTENSIONS = Array.from(
@@ -135,9 +168,34 @@ export async function registerReferenceRoutes(
       });
       const items: GroupItem[] = groups.map((group) => ({
         type: "group",
-        id: `${PROJECT_GROUP_PREFIX}${group.projectId}`,
+        id:
+          group.projectId == null
+            ? UNASSIGNED_GROUP_ID
+            : `${PROJECT_GROUP_PREFIX}${group.projectId}`,
         displayName: group.name,
         referenceCount: group.referenceCount,
+      }));
+      return reply.code(200).send({ items, nextCursor });
+    }
+
+    if (body.parentGroupId === UNASSIGNED_GROUP_ID) {
+      const { files, nextCursor } = store.listReferenceUnassignedAssets({
+        filterText,
+        fromMs: timeRange?.fromMs,
+        toMs: timeRange?.toMs,
+        limit,
+        cursor: body.cursor,
+      });
+      const items: FileReferenceItem[] = files.map((file) => ({
+        type: "reference",
+        reference: {
+          kind: "file",
+          displayName: file.displayName,
+          location: { type: "app-data-relative", path: file.relativePath },
+          ...(file.sizeBytes != null ? { sizeBytes: file.sizeBytes } : {}),
+          ...(file.mtimeMs != null ? { mtimeMs: file.mtimeMs } : {}),
+          ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+        },
       }));
       return reply.code(200).send({ items, nextCursor });
     }
@@ -212,7 +270,7 @@ export async function registerReferenceRoutes(
         ...(file.sizeBytes != null ? { sizeBytes: file.sizeBytes } : {}),
         ...(file.mtimeMs != null ? { mtimeMs: file.mtimeMs } : {}),
         ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-        ...(file.projectName ? { parentGroupLabel: file.projectName } : {}),
+        parentGroupLabel: file.projectName ?? UNASSIGNED_GROUP_LABEL,
       },
     }));
     return reply.code(200).send({ items, nextCursor });
