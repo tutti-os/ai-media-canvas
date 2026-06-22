@@ -3706,10 +3706,113 @@ export function createLocalStore(options: {
   // Project-scoped assets are UI thumbnails/snapshots, not reusable outputs.
   const UNASSIGNED_REFERENCE_GROUP_ID = "unassigned";
   const UNASSIGNED_REFERENCE_GROUP_LABEL = "项目外资源";
-  const REFERENCE_MEDIA_PREDICATE =
-    "((a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%') AND a.object_path NOT LIKE 'project/%')";
-  const REFERENCE_MEDIA_PREDICATE_FILE =
-    "((mime_type LIKE 'image/%' OR mime_type LIKE 'video/%') AND object_path NOT LIKE 'project/%')";
+  const REFERENCE_MEDIA_TYPE_PREDICATE =
+    "(a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%')";
+  const REFERENCE_MEDIA_TYPE_PREDICATE_FILE =
+    "(mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')";
+  const REFERENCE_MEDIA_PREDICATE = `(${REFERENCE_MEDIA_TYPE_PREDICATE} AND a.object_path NOT LIKE 'project/%')`;
+  const REFERENCE_MEDIA_PREDICATE_FILE = `(${REFERENCE_MEDIA_TYPE_PREDICATE_FILE} AND object_path NOT LIKE 'project/%')`;
+
+  function referenceString(value: unknown) {
+    return typeof value === "string" && value.trim() ? value : null;
+  }
+
+  function referenceRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+
+  function addReferenceAssetId(ids: Set<string>, value: unknown) {
+    const direct = referenceString(value);
+    if (direct) {
+      ids.add(direct);
+      return;
+    }
+  }
+
+  function addReferenceAssetIdFromUrl(ids: Set<string>, value: unknown) {
+    const url = referenceString(value);
+    if (!url) return;
+    const match = /(?:^|\/)local-assets\/([^/?#]+)/.exec(url);
+    if (match?.[1]) ids.add(match[1]);
+  }
+
+  function collectGeneratedCanvasAssetIds(content: CanvasContent) {
+    const ids = new Set<string>();
+    const files = referenceRecord(content.files) ?? {};
+    for (const element of content.elements ?? []) {
+      const item = referenceRecord(element);
+      if (!item || item.isDeleted === true) continue;
+      const customData = referenceRecord(item.customData);
+      if (!customData) continue;
+      const isGenerated =
+        customData.source === "generated" ||
+        (customData.isVideo === true && typeof customData.assetId === "string");
+      if (!isGenerated) continue;
+
+      addReferenceAssetId(ids, customData.assetId);
+      addReferenceAssetIdFromUrl(ids, customData.storageUrl);
+      addReferenceAssetIdFromUrl(ids, customData.videoUrl);
+
+      const fileId = referenceString(item.fileId);
+      const file = fileId ? referenceRecord(files[fileId]) : null;
+      if (file) {
+        addReferenceAssetId(ids, file.assetId);
+        addReferenceAssetIdFromUrl(ids, file.storageUrl);
+      }
+    }
+    return ids;
+  }
+
+  function listGeneratedCanvasAssetIds(projectId?: string) {
+    const ids = new Set<string>();
+    const conditions = projectId ? "WHERE project_id = ?" : "";
+    const params: SQLInputValue[] = projectId ? [projectId] : [];
+    const rows = db
+      .prepare(`SELECT content FROM canvases ${conditions}`)
+      .all(...params) as Array<{ content: string }>;
+    for (const row of rows) {
+      const content = parseJson<CanvasContent>(row.content, {
+        elements: [],
+        appState: {},
+        files: {},
+      });
+      for (const id of collectGeneratedCanvasAssetIds(content)) ids.add(id);
+    }
+    return Array.from(ids);
+  }
+
+  function countAdditionalCanvasGeneratedReferenceAssets(input: {
+    projectId: string;
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+  }) {
+    const assetIds = listGeneratedCanvasAssetIds(input.projectId);
+    if (assetIds.length === 0) return 0;
+    const { fromIso, toIso } = referenceTimeBounds(input);
+    const placeholders = assetIds.map(() => "?").join(", ");
+    const conditions = [
+      `id IN (${placeholders})`,
+      REFERENCE_MEDIA_TYPE_PREDICATE_FILE,
+      "(project_id IS NULL OR project_id != ? OR object_path LIKE 'project/%')",
+    ];
+    const params: SQLInputValue[] = [...assetIds, input.projectId];
+    if (fromIso) {
+      conditions.push("created_at >= ?");
+      params.push(fromIso);
+    }
+    if (toIso) {
+      conditions.push("created_at <= ?");
+      params.push(toIso);
+    }
+    const row = db
+      .prepare(
+        `SELECT COUNT(DISTINCT id) AS count FROM assets WHERE ${conditions.join(" AND ")}`,
+      )
+      .get(...params) as { count: number } | undefined;
+    return row?.count ?? 0;
+  }
 
   function referenceTimeBounds(timeRange?: {
     fromMs?: number | undefined;
@@ -3766,6 +3869,7 @@ export function createLocalStore(options: {
     const { fromIso, toIso } = referenceTimeBounds(input);
     const joinConditions = ["a.project_id = p.id", REFERENCE_MEDIA_PREDICATE];
     const joinParams: SQLInputValue[] = [];
+    const assignedGeneratedAssetIds = listGeneratedCanvasAssetIds();
     const unassignedConditions = [
       "a.project_id IS NULL",
       REFERENCE_MEDIA_PREDICATE,
@@ -3793,6 +3897,12 @@ export function createLocalStore(options: {
         UNASSIGNED_REFERENCE_GROUP_LABEL,
         `%${input.filterText}%`,
       );
+    }
+    if (assignedGeneratedAssetIds.length > 0) {
+      unassignedConditions.push(
+        `a.id NOT IN (${assignedGeneratedAssetIds.map(() => "?").join(", ")})`,
+      );
+      unassignedParams.push(...assignedGeneratedAssetIds);
     }
     const cursorConditions: string[] = [];
     const cursorParams: SQLInputValue[] = [];
@@ -3860,7 +3970,15 @@ export function createLocalStore(options: {
       groups: page.map((row) => ({
         projectId: row.project_id,
         name: row.name,
-        referenceCount: row.reference_count,
+        referenceCount:
+          row.reference_count +
+          (row.project_id
+            ? countAdditionalCanvasGeneratedReferenceAssets({
+                projectId: row.project_id,
+                fromMs: input.fromMs,
+                toMs: input.toMs,
+              })
+            : 0),
       })),
       nextCursor:
         hasMore && last
@@ -3891,8 +4009,18 @@ export function createLocalStore(options: {
     nextCursor: string | null;
   } {
     const { fromIso, toIso } = referenceTimeBounds(input);
-    const conditions = ["project_id = ?", REFERENCE_MEDIA_PREDICATE_FILE];
+    const generatedAssetIds = listGeneratedCanvasAssetIds(input.projectId);
+    const ownershipClauses = [
+      `(project_id = ? AND ${REFERENCE_MEDIA_PREDICATE_FILE})`,
+    ];
     const params: SQLInputValue[] = [input.projectId];
+    if (generatedAssetIds.length > 0) {
+      ownershipClauses.push(
+        `(id IN (${generatedAssetIds.map(() => "?").join(", ")}) AND ${REFERENCE_MEDIA_TYPE_PREDICATE_FILE})`,
+      );
+      params.push(...generatedAssetIds);
+    }
+    const conditions = [`(${ownershipClauses.join(" OR ")})`];
     if (fromIso) {
       conditions.push("created_at >= ?");
       params.push(fromIso);
@@ -3973,6 +4101,13 @@ export function createLocalStore(options: {
     const { fromIso, toIso } = referenceTimeBounds(input);
     const conditions = ["project_id IS NULL", REFERENCE_MEDIA_PREDICATE_FILE];
     const params: SQLInputValue[] = [];
+    const assignedGeneratedAssetIds = listGeneratedCanvasAssetIds();
+    if (assignedGeneratedAssetIds.length > 0) {
+      conditions.push(
+        `id NOT IN (${assignedGeneratedAssetIds.map(() => "?").join(", ")})`,
+      );
+      params.push(...assignedGeneratedAssetIds);
+    }
     if (fromIso) {
       conditions.push("created_at >= ?");
       params.push(fromIso);
