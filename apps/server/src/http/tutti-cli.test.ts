@@ -311,6 +311,7 @@ describe("registerTuttiCliRoutes", () => {
       prompt: "A launch poster",
       model: "agnes-image/agnes-image-2.1-flash",
       project_id: "project-1",
+      canvas_id: "canvas-1",
       caller_provider: "external-cli",
     });
   });
@@ -343,6 +344,7 @@ describe("registerTuttiCliRoutes", () => {
       prompt: "A launch poster",
       model: "codex/gpt-image-2",
       project_id: "project-1",
+      canvas_id: "canvas-1",
     });
   });
 
@@ -386,6 +388,7 @@ describe("registerTuttiCliRoutes", () => {
       prompt: "A launch poster",
       model: "codex/gpt-image-2",
       project_id: "project-1",
+      canvas_id: "canvas-1",
     });
   });
 
@@ -418,9 +421,43 @@ describe("registerTuttiCliRoutes", () => {
       prompt: "A launch poster",
       model: "codex/gpt-image-2",
       project_id: "project-1",
+      canvas_id: "canvas-1",
       caller_provider: "claude",
       codex_imagegen_consent: "allow-once",
       codex_imagegen_delegation_allowed: true,
+    });
+  });
+
+  it("prefers an explicit canvas id over the project primary canvas for image generation", async () => {
+    const jobOperations = {
+      createImageJob: vi.fn(async (input) => ({
+        job: {
+          id: "job-1",
+          payload: input,
+          status: "queued",
+        },
+      })),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/image",
+      payload: {
+        prompt: "A launch poster",
+        model: "codex/gpt-image-2",
+        "project-id": "project-1",
+        "canvas-id": "canvas-explicit",
+        "direct-user": true,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(jobOperations.createImageJob).toHaveBeenCalledWith({
+      prompt: "A launch poster",
+      model: "codex/gpt-image-2",
+      project_id: "project-1",
+      canvas_id: "canvas-explicit",
     });
   });
 
@@ -581,7 +618,24 @@ function buildTestApp(overrides: Record<string, unknown> = {}) {
     projectOperations: {
       createProject: vi.fn(),
       getProject: vi.fn(),
-      listProjects: vi.fn(),
+      listProjects: vi.fn(async () => ({
+        projects: [
+          {
+            id: "project-1",
+            name: "Project 1",
+            slug: "project-1",
+            description: null,
+            thumbnailUrl: null,
+            primaryCanvas: {
+              id: "canvas-1",
+              name: "Canvas",
+              isPrimary: true,
+            },
+            createdAt: "2026-06-10T00:00:00.000Z",
+            updatedAt: "2026-06-10T00:00:00.000Z",
+          },
+        ],
+      })),
       ...(overrides.projectOperations as object | undefined),
     } as never,
     skillOperations: {

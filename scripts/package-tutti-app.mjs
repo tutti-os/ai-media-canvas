@@ -219,7 +219,7 @@ const CLI_COMMANDS = [
     path: ["generation", "image"],
     summary: "Queue image generation",
     description:
-      "Queue an image generation job under a project. Create or choose a project first, pass its id with --project-id, use aimc models image to inspect available model ids, pass one with --model, and use jobs get or jobs list to monitor status. Direct user calls may use --direct-user true. Otherwise this command is treated as an external CLI/agent call; when a non-Codex agent calls Codex image generation on the user's behalf, ask for confirmation first unless settings get shows codexImagegenDelegation=always; pass --caller-provider and --codex-imagegen-consent allow-once after a one-time user approval.",
+      "Queue an image generation job under a project. Create or choose a project first, pass its id with --project-id; when --canvas-id is omitted, the app uses the project's primary canvas and auto-places the generation node in available space. Use aimc models image to inspect available model ids, pass one with --model, and use jobs get or jobs list to monitor status. Direct user calls may use --direct-user true. Otherwise this command is treated as an external CLI/agent call; when a non-Codex agent calls Codex image generation on the user's behalf, ask for confirmation first unless settings get shows codexImagegenDelegation=always; pass --caller-provider and --codex-imagegen-consent allow-once after a one-time user approval.",
     properties: {
       prompt: { type: "string", description: "Image prompt." },
       model: {
@@ -230,9 +230,13 @@ const CLI_COMMANDS = [
       "project-id": {
         type: "string",
         description:
-          "Project id that owns the generated asset. Create one first with aimc projects create when needed.",
+          "Project id that owns the generated asset and whose primary canvas receives the generation node when --canvas-id is omitted. Create one first with aimc projects create when needed.",
       },
-      "canvas-id": { type: "string", description: "Optional canvas id." },
+      "canvas-id": {
+        type: "string",
+        description:
+          "Optional canvas id. Omit to use the project's primary canvas.",
+      },
       "session-id": { type: "string", description: "Optional session id." },
       "aspect-ratio": { type: "string", description: "Optional aspect ratio." },
       quality: {
