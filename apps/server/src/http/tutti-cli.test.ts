@@ -284,6 +284,32 @@ describe("registerTuttiCliRoutes", () => {
     });
   });
 
+  it("requires generation video commands to pass a project id", async () => {
+    const jobOperations = {
+      createVideoJob: vi.fn(),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/video",
+      payload: {
+        prompt: "A launch video",
+        model: "google-official/veo-3.1-generate-preview",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(jobOperations.createVideoJob).not.toHaveBeenCalled();
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "application_error",
+        message: "Invalid command input.",
+      },
+    });
+  });
+
   it("forwards explicit generation models to job operations", async () => {
     const jobOperations = {
       createImageJob: vi.fn(async (input) => ({
@@ -456,6 +482,69 @@ describe("registerTuttiCliRoutes", () => {
     expect(jobOperations.createImageJob).toHaveBeenCalledWith({
       prompt: "A launch poster",
       model: "codex/gpt-image-2",
+      project_id: "project-1",
+      canvas_id: "canvas-explicit",
+    });
+  });
+
+  it("uses the project primary canvas for video generation when canvas id is omitted", async () => {
+    const jobOperations = {
+      createVideoJob: vi.fn(async (input) => ({
+        job: {
+          id: "job-video-1",
+          payload: input,
+          status: "queued",
+        },
+      })),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/video",
+      payload: {
+        prompt: "A launch video",
+        model: "google-official/veo-3.1-generate-preview",
+        "project-id": "project-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(jobOperations.createVideoJob).toHaveBeenCalledWith({
+      prompt: "A launch video",
+      model: "google-official/veo-3.1-generate-preview",
+      project_id: "project-1",
+      canvas_id: "canvas-1",
+    });
+  });
+
+  it("prefers an explicit canvas id over the project primary canvas for video generation", async () => {
+    const jobOperations = {
+      createVideoJob: vi.fn(async (input) => ({
+        job: {
+          id: "job-video-1",
+          payload: input,
+          status: "queued",
+        },
+      })),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/video",
+      payload: {
+        prompt: "A launch video",
+        model: "google-official/veo-3.1-generate-preview",
+        "project-id": "project-1",
+        "canvas-id": "canvas-explicit",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(jobOperations.createVideoJob).toHaveBeenCalledWith({
+      prompt: "A launch video",
+      model: "google-official/veo-3.1-generate-preview",
       project_id: "project-1",
       canvas_id: "canvas-explicit",
     });

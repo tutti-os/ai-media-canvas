@@ -272,15 +272,23 @@ const CLI_COMMANDS = [
     path: ["generation", "video"],
     summary: "Queue video generation",
     description:
-      "Queue a video generation job. Use aimc models video to inspect available model ids first, pass one with --model, and use jobs get or jobs list to monitor status.",
+      "Queue a video generation job under a project. Create or choose a project first, pass its id with --project-id; when --canvas-id is omitted, the app uses the project's primary canvas and auto-places the generation node in available space. Use aimc models video to inspect available model ids first, pass one with --model, and use jobs get or jobs list to monitor status.",
     properties: {
       prompt: { type: "string", description: "Video prompt." },
       model: {
         type: "string",
         description: "Required video model id from aimc models video.",
       },
-      "project-id": { type: "string", description: "Optional project id." },
-      "canvas-id": { type: "string", description: "Optional canvas id." },
+      "project-id": {
+        type: "string",
+        description:
+          "Project id that owns the generated asset and whose primary canvas receives the generation node when --canvas-id is omitted. Create one first with aimc projects create when needed.",
+      },
+      "canvas-id": {
+        type: "string",
+        description:
+          "Optional canvas id. Omit to use the project's primary canvas.",
+      },
       "session-id": { type: "string", description: "Optional session id." },
       duration: {
         type: "integer",
@@ -306,7 +314,7 @@ const CLI_COMMANDS = [
         description: "Optional audio generation flag.",
       },
     },
-    required: ["prompt", "model"],
+    required: ["prompt", "model", "project-id"],
     timeoutMs: 60000,
   },
   {

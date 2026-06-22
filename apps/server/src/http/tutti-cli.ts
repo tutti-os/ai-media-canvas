@@ -13,7 +13,10 @@ import {
 } from "@aimc/shared";
 
 import type { ServerEnv } from "../config/env.js";
-import { insertImageGenerationNode } from "../features/canvas/canvas-element-writer.js";
+import {
+  insertImageGenerationNode,
+  insertVideoGenerationNode,
+} from "../features/canvas/canvas-element-writer.js";
 import { CanvasServiceError } from "../features/canvas/canvas-service.js";
 import { ChatServiceError } from "../features/chat/chat-service.js";
 import { JobServiceError } from "../features/jobs/job-service.js";
@@ -105,7 +108,7 @@ const generationImageCliBodySchema = z.object({
 const generationVideoCliBodySchema = z.object({
   prompt: z.string().min(1),
   model: z.string().min(1),
-  "project-id": z.string().min(1).optional(),
+  "project-id": z.string().min(1),
   "canvas-id": z.string().min(1).optional(),
   "session-id": z.string().min(1).optional(),
   duration: z.number().int().positive().optional(),
@@ -358,14 +361,16 @@ export async function registerTuttiCliRoutes(
     "/tutti/cli/generation/video",
     async (body) => {
       const payload = generationVideoCliBodySchema.parse(body);
-      return options.jobOperations.createVideoJob(
+      const projectId = payload["project-id"];
+      const canvasId =
+        payload["canvas-id"] ??
+        (await resolvePrimaryCanvasId(options.projectOperations, projectId));
+      const result = await options.jobOperations.createVideoJob(
         createVideoJobRequestSchema.parse({
           prompt: payload.prompt,
           model: payload.model,
-          ...(payload["project-id"]
-            ? { project_id: payload["project-id"] }
-            : {}),
-          ...(payload["canvas-id"] ? { canvas_id: payload["canvas-id"] } : {}),
+          project_id: projectId,
+          canvas_id: canvasId,
           ...(payload["session-id"]
             ? { session_id: payload["session-id"] }
             : {}),
@@ -389,6 +394,15 @@ export async function registerTuttiCliRoutes(
             : {}),
         }),
       );
+      await insertCliVideoGenerationNode({
+        canvasId,
+        payload,
+        result,
+        ...(options.localCanvasClient
+          ? { localCanvasClient: options.localCanvasClient }
+          : {}),
+      });
+      return result;
     },
     201,
   );
@@ -515,6 +529,31 @@ async function insertCliImageGenerationNode(input: {
     model: input.payload.model,
     aspectRatio: input.payload["aspect-ratio"] ?? "1:1",
     ...(input.payload.quality ? { quality: input.payload.quality } : {}),
+    ...(input.payload["input-images"]
+      ? { inputImages: splitCsv(input.payload["input-images"]) }
+      : {}),
+  });
+}
+
+async function insertCliVideoGenerationNode(input: {
+  canvasId: string;
+  localCanvasClient?: CanvasWriterClient;
+  payload: z.infer<typeof generationVideoCliBodySchema>;
+  result: unknown;
+}) {
+  if (!input.localCanvasClient) return;
+  const jobId = readJobId(input.result);
+  if (!jobId) return;
+  await insertVideoGenerationNode(input.localCanvasClient, {
+    canvasId: input.canvasId,
+    jobId,
+    prompt: input.payload.prompt,
+    model: input.payload.model,
+    aspectRatio: input.payload["aspect-ratio"] ?? "16:9",
+    ...(input.payload.duration ? { duration: input.payload.duration } : {}),
+    ...(input.payload.resolution
+      ? { resolution: input.payload.resolution }
+      : {}),
     ...(input.payload["input-images"]
       ? { inputImages: splitCsv(input.payload["input-images"]) }
       : {}),
