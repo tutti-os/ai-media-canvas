@@ -87,7 +87,7 @@ const jobListCliBodySchema = z.object({
 const generationImageCliBodySchema = z.object({
   prompt: z.string().min(1),
   model: z.string().min(1),
-  "project-id": z.string().min(1).optional(),
+  "project-id": z.string().min(1),
   "canvas-id": z.string().min(1).optional(),
   "session-id": z.string().min(1).optional(),
   "aspect-ratio": z.string().min(1).optional(),

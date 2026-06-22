@@ -219,7 +219,7 @@ const CLI_COMMANDS = [
     path: ["generation", "image"],
     summary: "Queue image generation",
     description:
-      "Queue an image generation job. Use aimc models image to inspect available model ids first, pass one with --model, and use jobs get or jobs list to monitor status. Direct user calls may use --direct-user true. Otherwise this command is treated as an external CLI/agent call; when a non-Codex agent calls Codex image generation on the user's behalf, ask for confirmation first unless settings get shows codexImagegenDelegation=always; pass --caller-provider and --codex-imagegen-consent allow-once after a one-time user approval.",
+      "Queue an image generation job under a project. Create or choose a project first, pass its id with --project-id, use aimc models image to inspect available model ids, pass one with --model, and use jobs get or jobs list to monitor status. Direct user calls may use --direct-user true. Otherwise this command is treated as an external CLI/agent call; when a non-Codex agent calls Codex image generation on the user's behalf, ask for confirmation first unless settings get shows codexImagegenDelegation=always; pass --caller-provider and --codex-imagegen-consent allow-once after a one-time user approval.",
     properties: {
       prompt: { type: "string", description: "Image prompt." },
       model: {
@@ -227,7 +227,11 @@ const CLI_COMMANDS = [
         description:
           "Required image model id from aimc models image, for example agnes-image/agnes-image-2.1-flash.",
       },
-      "project-id": { type: "string", description: "Optional project id." },
+      "project-id": {
+        type: "string",
+        description:
+          "Project id that owns the generated asset. Create one first with aimc projects create when needed.",
+      },
       "canvas-id": { type: "string", description: "Optional canvas id." },
       "session-id": { type: "string", description: "Optional session id." },
       "aspect-ratio": { type: "string", description: "Optional aspect ratio." },
@@ -257,7 +261,7 @@ const CLI_COMMANDS = [
           "Set true only when this is a direct user image generation command, not an agent proxy call.",
       },
     },
-    required: ["prompt", "model"],
+    required: ["prompt", "model", "project-id"],
     timeoutMs: 60000,
   },
   {

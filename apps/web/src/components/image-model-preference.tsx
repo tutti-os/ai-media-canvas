@@ -14,15 +14,10 @@ import {
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import { useAppTranslation } from "../i18n";
-import { isMediaProviderConfigured } from "../lib/media-provider-configuration";
 import { formatProviderLabel } from "../lib/provider-labels";
 import type { ImageModelInfo } from "../lib/server-api";
 import type { VideoModelInfo } from "../lib/server-api";
-import {
-  fetchImageModels,
-  fetchVideoModels,
-  fetchWorkspaceSettings,
-} from "../lib/server-api";
+import { fetchImageModels, fetchVideoModels } from "../lib/server-api";
 
 type PopoverCollisionSide = "flip" | "none" | "shift";
 
@@ -56,31 +51,14 @@ export function ImageModelPreferencePopover({
     let cancelled = false;
     async function refreshModels() {
       try {
-        const [imageData, videoData, settingsData] = await Promise.all([
+        const [imageData, videoData] = await Promise.all([
           fetchImageModels(),
           fetchVideoModels(),
-          fetchWorkspaceSettings(),
         ]);
         if (cancelled) return;
 
-        setModels(
-          imageData.models.filter((model) =>
-            isMediaProviderConfigured(
-              model.provider,
-              "image",
-              settingsData.settings,
-            ),
-          ),
-        );
-        setVideoModels(
-          videoData.models.filter((model) =>
-            isMediaProviderConfigured(
-              model.provider,
-              "video",
-              settingsData.settings,
-            ),
-          ),
-        );
+        setModels(imageData.models);
+        setVideoModels(videoData.models);
       } catch {
         if (cancelled) return;
         setModels([]);

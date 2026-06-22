@@ -49,6 +49,7 @@ describe("Tutti managed credential bridge", () => {
   it("uses window.tuttiExternal to request a managed credential grant", async () => {
     const requestPermission = vi.fn().mockResolvedValue({
       code: "grant-code",
+      contextToken: "grant-context-token",
       providers: ["openai"],
     });
     setHostBridge({
@@ -77,7 +78,7 @@ describe("Tutti managed credential bridge", () => {
     expect(hasTuttiManagedCredentialBridge()).toBe(true);
 
     await expect(requestTuttiManagedGrant()).resolves.toMatchObject({
-      contextToken: "context-token",
+      contextToken: "grant-context-token",
       grantCode: "grant-code",
       nonce: "nonce-1",
       state: "state-1",
@@ -88,6 +89,40 @@ describe("Tutti managed credential bridge", () => {
       providers: ["agnes", "openai", "anthropic"],
       scopes: ["managed_models.models.read", "managed_models.credentials.use"],
       state: "state-1",
+    });
+  });
+
+  it("falls back to app context token when the host grant response omits one", async () => {
+    const requestPermission = vi.fn().mockResolvedValue({
+      code: "grant-code",
+      providers: ["openai"],
+    });
+    setHostBridge({
+      app: {
+        getContext: vi.fn().mockResolvedValue({
+          appId: "app-1",
+          contextToken: "context-token",
+          installationId: "install-1",
+          workspaceId: "workspace-1",
+        }),
+      },
+      permissions: { request: requestPermission },
+    });
+    vi.mocked(fetchTuttiManagedConnection).mockResolvedValue({
+      connection: {
+        connected: false,
+        providers: [],
+        models: [],
+      },
+      connectChallenge: {
+        nonce: "nonce-1",
+        state: "state-1",
+      },
+    });
+
+    await expect(requestTuttiManagedGrant()).resolves.toMatchObject({
+      contextToken: "context-token",
+      grantCode: "grant-code",
     });
   });
 

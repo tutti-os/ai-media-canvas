@@ -218,6 +218,33 @@ describe("registerTuttiCliRoutes", () => {
       url: "/tutti/cli/generation/image",
       payload: {
         prompt: "A launch poster",
+        "project-id": "project-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(jobOperations.createImageJob).not.toHaveBeenCalled();
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "application_error",
+        message: "Invalid command input.",
+      },
+    });
+  });
+
+  it("requires generation image commands to pass a project id", async () => {
+    const jobOperations = {
+      createImageJob: vi.fn(),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/generation/image",
+      payload: {
+        prompt: "A launch poster",
+        model: "agnes-image/agnes-image-2.1-flash",
       },
     });
 
@@ -275,6 +302,7 @@ describe("registerTuttiCliRoutes", () => {
       payload: {
         prompt: "A launch poster",
         model: "agnes-image/agnes-image-2.1-flash",
+        "project-id": "project-1",
       },
     });
 
@@ -282,6 +310,7 @@ describe("registerTuttiCliRoutes", () => {
     expect(jobOperations.createImageJob).toHaveBeenCalledWith({
       prompt: "A launch poster",
       model: "agnes-image/agnes-image-2.1-flash",
+      project_id: "project-1",
       caller_provider: "external-cli",
     });
   });
@@ -304,6 +333,7 @@ describe("registerTuttiCliRoutes", () => {
       payload: {
         prompt: "A launch poster",
         model: "codex/gpt-image-2",
+        "project-id": "project-1",
         "direct-user": true,
       },
     });
@@ -312,6 +342,7 @@ describe("registerTuttiCliRoutes", () => {
     expect(jobOperations.createImageJob).toHaveBeenCalledWith({
       prompt: "A launch poster",
       model: "codex/gpt-image-2",
+      project_id: "project-1",
     });
   });
 
@@ -340,6 +371,7 @@ describe("registerTuttiCliRoutes", () => {
         input: {
           prompt: "A launch poster",
           model: "codex/gpt-image-2",
+          "project-id": "project-1",
           "direct-user": true,
         },
         outputMode: "json",
@@ -353,6 +385,7 @@ describe("registerTuttiCliRoutes", () => {
     expect(jobOperations.createImageJob).toHaveBeenCalledWith({
       prompt: "A launch poster",
       model: "codex/gpt-image-2",
+      project_id: "project-1",
     });
   });
 
@@ -374,6 +407,7 @@ describe("registerTuttiCliRoutes", () => {
       payload: {
         prompt: "A launch poster",
         model: "codex/gpt-image-2",
+        "project-id": "project-1",
         "caller-provider": "claude",
         "codex-imagegen-consent": "allow-once",
       },
@@ -383,6 +417,7 @@ describe("registerTuttiCliRoutes", () => {
     expect(jobOperations.createImageJob).toHaveBeenCalledWith({
       prompt: "A launch poster",
       model: "codex/gpt-image-2",
+      project_id: "project-1",
       caller_provider: "claude",
       codex_imagegen_consent: "allow-once",
       codex_imagegen_delegation_allowed: true,
