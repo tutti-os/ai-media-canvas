@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -129,6 +129,18 @@ describe("ChatInput", () => {
     expect(
       screen.getByRole("button", { name: "图片/视频模型" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows a cancel button while a response is running", () => {
+    const onCancel = vi.fn();
+
+    render(<ChatInput onSend={vi.fn()} onCancel={onCancel} isRunning />);
+
+    const cancelButton = screen.getByRole("button", { name: "取消生成" });
+    expect(cancelButton).toBeInTheDocument();
+
+    fireEvent.click(cancelButton);
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
   it("does not render a persistent configuration banner when agent and media models are missing", () => {

@@ -38,6 +38,7 @@
   "input": {
     "ariaLabel": "Message input",
     "attachImages": "Attach images",
+    "cancel": "Cancel generation",
     "modelPreference": "Image/Video model",
     "placeholder": "Start with an idea, or type \"@\" to mention",
     "send": "Send message"

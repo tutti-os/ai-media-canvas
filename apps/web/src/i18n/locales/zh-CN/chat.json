@@ -38,6 +38,7 @@
   "input": {
     "ariaLabel": "输入消息",
     "attachImages": "添加图片",
+    "cancel": "取消生成",
     "modelPreference": "图片/视频模型",
     "placeholder": "从一个想法开始，或输入 “@” 提及内容",
     "send": "发送消息"

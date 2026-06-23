@@ -282,6 +282,7 @@ export async function insertImageGenerationNode(
     model: string;
     prompt: string;
     quality?: string;
+    runId?: string;
     title?: string;
   },
   placement?: Placement,
@@ -297,6 +298,7 @@ export async function insertImageGenerationNode(
       aspectRatio: input.aspectRatio,
       quality: input.quality ?? "hd",
       jobId: input.jobId,
+      ...(input.runId ? { runId: input.runId } : {}),
       ...(input.inputImages ? { inputImages: input.inputImages } : {}),
       ...(input.title ? { title: input.title } : {}),
     },
@@ -316,6 +318,7 @@ export async function insertVideoGenerationNode(
     model: string;
     prompt: string;
     resolution?: string;
+    runId?: string;
     title?: string;
   },
   placement?: Placement,
@@ -332,6 +335,7 @@ export async function insertVideoGenerationNode(
       duration: input.duration ?? 5,
       resolution: input.resolution ?? "720p",
       jobId: input.jobId,
+      ...(input.runId ? { runId: input.runId } : {}),
       ...(input.inputImages ? { inputImages: input.inputImages } : {}),
       ...(input.title ? { title: input.title } : {}),
     },

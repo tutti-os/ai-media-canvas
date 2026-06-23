@@ -64,6 +64,7 @@
     "arrow": "Arrow (A)",
     "ellipse": "Ellipse (O)",
     "freedraw": "Draw (P)",
+    "generateCanceled": "Generation canceled",
     "generateFailed": "Generation failed",
     "generateImage": "Generate image with AI",
     "generateVideo": "Generate video with AI",

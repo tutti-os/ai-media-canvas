@@ -292,6 +292,28 @@ describe("ChatSidebar", () => {
     );
   });
 
+  it("cancels the active run from the composer stop button", async () => {
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "please stop later{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByRole("button", { name: "取消生成" }));
+
+    expect(mockWs.cancelRun).toHaveBeenCalledWith("run_123");
+  });
+
   it("filters stored manual image model preferences to currently available models", async () => {
     fetchImageModelsMock.mockResolvedValueOnce({
       models: [
