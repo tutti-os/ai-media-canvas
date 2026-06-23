@@ -64,6 +64,7 @@
     "arrow": "箭头 (A)",
     "ellipse": "椭圆 (O)",
     "freedraw": "画笔 (P)",
+    "generateCanceled": "生成已取消",
     "generateFailed": "生成失败",
     "generateImage": "AI 生成图片",
     "generateVideo": "AI 生成视频",

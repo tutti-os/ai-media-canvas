@@ -26,6 +26,7 @@ import {
   insertImageOnCanvas,
   insertVideoOnCanvas,
 } from "../../lib/canvas-elements";
+import { cancelGeneratingCanvasElementsForRun } from "../../lib/canvas-generation-cancel";
 import { resolveCanvasImageFiles } from "../../lib/canvas-file-serialization";
 import { SHOW_BRAND_KIT_ENTRY_POINTS } from "../../lib/feature-flags";
 import {
@@ -84,6 +85,7 @@ function isCanvasImageElement(
 
 function CanvasPageContent() {
   const { t } = useAppTranslation("errors");
+  const { t: tCanvas } = useAppTranslation("canvas");
   const searchParams = useSearchParams();
   const canvasId = searchParams.get("id");
   const initialSessionId = searchParams.get("session") ?? undefined;
@@ -176,6 +178,14 @@ function CanvasPageContent() {
 
   const handleStreamEvent = useCallback(
     (event: StreamEvent) => {
+      if (event.type === "run.canceled") {
+        cancelGeneratingCanvasElementsForRun(
+          excalidrawApiRef.current,
+          event.runId,
+          tCanvas("tools.generateCanceled"),
+        );
+        return;
+      }
       if (event.type !== "tool.completed") return;
       const output = event.output as
         | {
@@ -265,7 +275,7 @@ function CanvasPageContent() {
       });
       fallbackSubscriptionsRef.current.push(subscription);
     },
-    [handleImageGenerated],
+    [handleImageGenerated, tCanvas],
   );
 
   useEffect(() => {

@@ -74,6 +74,7 @@ export default interface Resources {
       "arrow": "箭头 (A)",
       "ellipse": "椭圆 (O)",
       "freedraw": "画笔 (P)",
+      "generateCanceled": "生成已取消",
       "generateFailed": "生成失败",
       "generateImage": "AI 生成图片",
       "generateVideo": "AI 生成视频",
@@ -198,9 +199,19 @@ export default interface Resources {
     "input": {
       "ariaLabel": "输入消息",
       "attachImages": "添加图片",
+      "cancel": "取消生成",
       "modelPreference": "图片/视频模型",
       "placeholder": "从一个想法开始，或输入 “@” 提及内容",
       "send": "发送消息"
+    },
+    "media": {
+      "generationCanceled": "已取消",
+      "imageGenerating": "图片生成中...",
+      "imageGenerationCanceled": "图片生成已取消",
+      "imageGenerationFailed": "图片生成失败",
+      "videoGenerating": "视频生成中...",
+      "videoGenerationCanceled": "视频生成已取消",
+      "videoGenerationFailed": "视频生成失败"
     },
     "mediaModelPreference": {
       "configure": "配置媒体模型",
