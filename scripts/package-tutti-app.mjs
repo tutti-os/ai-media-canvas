@@ -427,8 +427,8 @@ const MANIFEST_LOCALIZATIONS = {
   "zh-CN": {
     file: "locales/zh-CN/manifest.json",
     metadata: {
-      name: "AI 媒体画布",
-      description: "本地优先的 AI 图像与视频生成画布。",
+      name: "AI Canvas",
+      description: "在画布上生成和整理 AI 图片、视频。",
       tags: ["生成式 AI", "本地优先", "媒体画布"],
     },
   },
@@ -439,8 +439,8 @@ export function createManifest({ version }) {
     schemaVersion: "tutti.app.manifest.v1",
     appId: "ai-media-canvas",
     version,
-    name: "AI Media Canvas",
-    description: "Local-first AI canvas for image and video generation.",
+    name: "AI Canvas",
+    description: "Generate and organize AI images and videos on a canvas.",
     icon: {
       type: "asset",
       src: "icon.png",
@@ -454,6 +454,7 @@ export function createManifest({ version }) {
     },
     references: {
       listEndpoint: "/tutti/references/list",
+      searchEndpoint: "/tutti/references/search",
     },
     localizationInfo: {
       defaultLocale: "en",

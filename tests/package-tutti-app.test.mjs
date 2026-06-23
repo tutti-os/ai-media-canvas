@@ -136,8 +136,8 @@ test("createManifest returns the Tutti package manifest contract", () => {
     schemaVersion: "tutti.app.manifest.v1",
     appId: "ai-media-canvas",
     version: "1.2.3",
-    name: "AI Media Canvas",
-    description: "Local-first AI canvas for image and video generation.",
+    name: "AI Canvas",
+    description: "Generate and organize AI images and videos on a canvas.",
     icon: {
       type: "asset",
       src: "icon.png",
@@ -148,6 +148,10 @@ test("createManifest returns the Tutti package manifest contract", () => {
     },
     cli: {
       manifest: "tutti.cli.json",
+    },
+    references: {
+      listEndpoint: "/tutti/references/list",
+      searchEndpoint: "/tutti/references/search",
     },
     localizationInfo: {
       defaultLocale: "en",
