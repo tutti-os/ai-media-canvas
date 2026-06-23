@@ -89,6 +89,151 @@ describe("generation executors", () => {
     expect(readFileSync(asset.filePath)).toEqual(imageBytes);
   });
 
+  it("inserts completed image jobs into their bound canvas", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-job-image-canvas-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const imageBytes = Buffer.from("fake-image-binary");
+    registerImageProvider({
+      name: "test-image",
+      models: [
+        {
+          id: "test/image-model",
+          displayName: "Test Image",
+          description: "Test image provider",
+        },
+      ],
+      async generate() {
+        return {
+          url: `data:image/png;base64,${imageBytes.toString("base64")}`,
+          mimeType: "image/png",
+          width: 1024,
+          height: 768,
+        };
+      },
+    });
+
+    const project = store.createProject({ name: "Executor Canvas Project" });
+    const job = store.createBackgroundJob({
+      jobType: "image_generation",
+      queueName: "image_generation_jobs",
+      projectId: project.id,
+      canvasId: project.primaryCanvas.id,
+      payload: {
+        prompt: "A dramatic sky",
+        model: "test/image-model",
+        aspect_ratio: "4:3",
+      },
+    });
+
+    const result = await executeImageGenerationJob(store, job);
+    const canvas = store.getCanvas(project.primaryCanvas.id);
+
+    expect(canvas?.content.elements).toHaveLength(1);
+    expect(canvas?.content.elements[0]).toMatchObject({
+      type: "image",
+      customData: {
+        assetId: result.asset_id,
+        jobId: job.id,
+        source: "generated",
+      },
+    });
+  });
+
+  it("rejects proxied Codex image jobs without persisted delegation consent", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-job-image-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    registerImageProvider({
+      name: "codex-imagegen",
+      models: [
+        {
+          id: "codex/gpt-image-2",
+          displayName: "GPT Image 2",
+          description: "Codex image generation",
+        },
+      ],
+      async generate() {
+        throw new Error("not used");
+      },
+    });
+
+    const project = store.createProject({ name: "Executor Image Project" });
+    const job = store.createBackgroundJob({
+      jobType: "image_generation",
+      queueName: "image_generation_jobs",
+      projectId: project.id,
+      payload: {
+        prompt: "A dramatic sky",
+        model: "codex/gpt-image-2",
+        caller_provider: "claude",
+      },
+    });
+
+    await expect(executeImageGenerationJob(store, job)).rejects.toMatchObject({
+      code: "codex_imagegen_confirmation_required",
+    });
+  });
+
+  it("allows proxied Codex image jobs with server-approved delegation metadata", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-job-image-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const imageBytes = Buffer.from("approved-codex-image");
+    registerImageProvider({
+      name: "codex-imagegen",
+      models: [
+        {
+          id: "codex/gpt-image-2",
+          displayName: "GPT Image 2",
+          description: "Codex image generation",
+        },
+      ],
+      async generate() {
+        return {
+          url: `data:image/png;base64,${imageBytes.toString("base64")}`,
+          mimeType: "image/png",
+          width: 8,
+          height: 8,
+        };
+      },
+    });
+
+    const project = store.createProject({ name: "Executor Image Project" });
+    const job = store.createBackgroundJob({
+      jobType: "image_generation",
+      queueName: "image_generation_jobs",
+      projectId: project.id,
+      payload: {
+        prompt: "A dramatic sky",
+        model: "codex/gpt-image-2",
+        caller_provider: "claude",
+        codex_imagegen_delegation_allowed: true,
+      },
+    });
+
+    await expect(executeImageGenerationJob(store, job)).resolves.toMatchObject({
+      mime_type: "image/png",
+      width: 8,
+      height: 8,
+    });
+  });
+
   it("persists generated video bytes locally and returns AIMC-compatible fields", async () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-job-video-"));
     tempDirs.push(dataRoot);

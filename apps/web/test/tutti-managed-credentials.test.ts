@@ -16,28 +16,38 @@ vi.mock("../src/lib/server-api", () => ({
 }));
 
 type HostBridge = {
-  agent?: {
-    getManagedAgentInvocationCredential?: ReturnType<typeof vi.fn>;
-  };
-  appContext?: {
-    get?: () => Promise<{
+  app?: {
+    getContext?: () => Promise<{
       appId?: string;
       contextToken?: string;
       installationId?: string;
       workspaceId?: string;
     }>;
   };
-  managedCredentials?: {
-    requestGrant?: ReturnType<typeof vi.fn>;
+  permissions?: {
+    request?: ReturnType<typeof vi.fn>;
   };
-  workspace?: {
-    openSettings?: ReturnType<typeof vi.fn>;
+  settings?: {
+    open?: ReturnType<typeof vi.fn>;
+  };
+};
+
+type AgentBridge = {
+  agent?: {
+    getManagedAgentInvocationCredential?: ReturnType<typeof vi.fn>;
   };
 };
 
 function setHostBridge(bridge: HostBridge) {
   const hostWindow = window as Window & {
-    tutti?: HostBridge;
+    tuttiExternal?: HostBridge;
+  };
+  hostWindow.tuttiExternal = bridge;
+}
+
+function setAgentBridge(bridge: AgentBridge) {
+  const hostWindow = window as Window & {
+    tutti?: AgentBridge;
   };
   hostWindow.tutti = bridge;
 }
@@ -45,27 +55,30 @@ function setHostBridge(bridge: HostBridge) {
 describe("Tutti managed credential bridge", () => {
   afterEach(() => {
     const hostWindow = window as Window & {
-      tutti?: HostBridge;
+      tutti?: AgentBridge;
+      tuttiExternal?: HostBridge;
     };
     hostWindow.tutti = undefined;
+    hostWindow.tuttiExternal = undefined;
     vi.clearAllMocks();
   });
 
-  it("uses window.tutti to request a managed credential grant", async () => {
-    const requestGrant = vi.fn().mockResolvedValue({
-      grantCode: "grant-code",
+  it("uses window.tuttiExternal to request a managed credential grant", async () => {
+    const requestPermission = vi.fn().mockResolvedValue({
+      code: "grant-code",
+      contextToken: "grant-context-token",
       providers: ["openai"],
     });
     setHostBridge({
-      appContext: {
-        get: vi.fn().mockResolvedValue({
+      app: {
+        getContext: vi.fn().mockResolvedValue({
           appId: "app-1",
           contextToken: "context-token",
           installationId: "install-1",
           workspaceId: "workspace-1",
         }),
       },
-      managedCredentials: { requestGrant },
+      permissions: { request: requestPermission },
     });
     vi.mocked(fetchTuttiManagedConnection).mockResolvedValue({
       connection: {
@@ -82,19 +95,18 @@ describe("Tutti managed credential bridge", () => {
     expect(hasTuttiManagedCredentialBridge()).toBe(true);
 
     await expect(requestTuttiManagedGrant()).resolves.toMatchObject({
-      contextToken: "context-token",
+      contextToken: "grant-context-token",
       grantCode: "grant-code",
       nonce: "nonce-1",
       state: "state-1",
     });
-    expect(requestGrant).toHaveBeenCalledWith(
-      expect.objectContaining({
-        appId: "app-1",
-        contextToken: "context-token",
-        installationId: "install-1",
-        workspaceId: "workspace-1",
-      }),
-    );
+    expect(requestPermission).toHaveBeenCalledWith({
+      nonce: "nonce-1",
+      permission: "managed-ai-models",
+      providers: ["agnes", "openai", "anthropic"],
+      scopes: ["managed_models.models.read", "managed_models.credentials.use"],
+      state: "state-1",
+    });
   });
 
   it("uses only the managed agent invocation credential from the bridge", async () => {
@@ -105,7 +117,7 @@ describe("Tutti managed credential bridge", () => {
         credential: " run-credential-1 ",
       },
     });
-    setHostBridge({
+    setAgentBridge({
       agent: {
         getManagedAgentInvocationCredential:
           getManagedAgentInvocationCredentialMock,
@@ -119,17 +131,50 @@ describe("Tutti managed credential bridge", () => {
     expect(getManagedAgentInvocationCredentialMock).toHaveBeenCalledTimes(1);
   });
 
-  it("opens Tutti managed model settings through window.tutti", async () => {
+  it("falls back to app context token when the host grant response omits one", async () => {
+    const requestPermission = vi.fn().mockResolvedValue({
+      code: "grant-code",
+      providers: ["openai"],
+    });
+    setHostBridge({
+      app: {
+        getContext: vi.fn().mockResolvedValue({
+          appId: "app-1",
+          contextToken: "context-token",
+          installationId: "install-1",
+          workspaceId: "workspace-1",
+        }),
+      },
+      permissions: { request: requestPermission },
+    });
+    vi.mocked(fetchTuttiManagedConnection).mockResolvedValue({
+      connection: {
+        connected: false,
+        providers: [],
+        models: [],
+      },
+      connectChallenge: {
+        nonce: "nonce-1",
+        state: "state-1",
+      },
+    });
+
+    await expect(requestTuttiManagedGrant()).resolves.toMatchObject({
+      contextToken: "context-token",
+      grantCode: "grant-code",
+    });
+  });
+
+  it("opens Tutti managed model settings through window.tuttiExternal", async () => {
     const openSettings = vi.fn().mockResolvedValue(undefined);
     setHostBridge({
-      workspace: { openSettings },
+      settings: { open: openSettings },
     });
 
     await openTuttiManagedModelSettings("openai");
 
     expect(openSettings).toHaveBeenCalledWith({
-      section: "apps",
-      pane: "managed-models",
+      tab: "models",
       provider: "openai",
     });
   });

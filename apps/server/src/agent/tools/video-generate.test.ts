@@ -43,6 +43,31 @@ describe("runVideoGenerate", () => {
     clearProviders();
   });
 
+  it("returns a capability card output when video generation has no provider", async () => {
+    clearProviders();
+
+    const result = await runVideoGenerate({
+      title: "Storyboard motion",
+      prompt: "Animate this scene",
+      model: AGNES_VIDEO_MODEL,
+    });
+
+    expect(result.summary).toBe("media_provider_configuration_required");
+    expect(result.error).toBe("media_provider_configuration_required");
+    expect(result.capabilityRequired).toMatchObject({
+      kind: "media_provider_configuration_required",
+      capability: "video_generation",
+      titleKey: "capabilityRequired.videoTitle",
+      descriptionKey: "capabilityRequired.videoDescription",
+      action: {
+        type: "open_settings",
+        tab: "media",
+        labelKey: "capabilityRequired.configureMedia",
+      },
+    });
+    expect(JSON.stringify(result.capabilityRequired)).not.toContain("连接");
+  });
+
   it("resolves attachment asset ids before validating and submitting video jobs", async () => {
     registerAgnesVideoProvider();
     const submitVideoJob = vi.fn(async () => ({

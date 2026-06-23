@@ -98,6 +98,7 @@ function CanvasPageContent() {
     id: string;
     name: string;
     projectId: string;
+    revision: number;
     content: {
       elements: Record<string, unknown>[];
       appState: Record<string, unknown>;
@@ -106,8 +107,10 @@ function CanvasPageContent() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
-  // Default chat open on desktop, closed on mobile/tablet to avoid blocking canvas
+  const shouldOpenChatFromUrl = Boolean(initialPrompt || initialSessionId);
+  // Default chat open on desktop; keep chat-led entries visible on narrow screens.
   const [chatOpen, setChatOpen] = useState(() => {
+    if (shouldOpenChatFromUrl) return true;
     if (typeof window === "undefined") return true;
     return window.innerWidth >= 1024;
   });
@@ -315,6 +318,23 @@ function CanvasPageContent() {
         elements: resolved.elements,
         captureUpdate: "NONE",
       });
+      setCanvasData((current) =>
+        current && current.id === canvas.id
+          ? {
+              ...current,
+              revision: canvas.revision,
+              content: {
+                elements: canvas.content.elements ?? [],
+                appState: canvas.content.appState ?? {},
+                files:
+                  ((canvas.content as Record<string, unknown>).files as Record<
+                    string,
+                    Record<string, unknown>
+                  >) ?? {},
+              },
+            }
+          : current,
+      );
     } catch (err) {
       console.warn("Failed to sync canvas:", err);
     }
@@ -377,6 +397,7 @@ function CanvasPageContent() {
           id: c.id,
           name: c.name,
           projectId: c.projectId,
+          revision: c.revision,
           content: {
             elements: c.content.elements ?? [],
             appState: c.content.appState ?? {},
@@ -450,11 +471,13 @@ function CanvasPageContent() {
           key={canvasData.id}
           canvasId={canvasData.id}
           projectId={canvasData.projectId}
+          initialRevision={canvasData.revision}
           initialContent={canvasData.content}
           onApiReady={handleApiReady}
           ws={ws}
           leftPanelOpen={layersOpen || filesOpen}
           onSelectionChange={setSelectedCanvasElements}
+          onSaveConflict={handleCanvasSync}
         />
         <CanvasEmptyHint
           excalidrawApi={excalidrawApi}

@@ -59,6 +59,7 @@ import { ChatTemplates } from "./chat-templates";
 import { ErrorBoundary } from "./error-boundary";
 import { SessionSelector } from "./session-selector";
 import { SettingsDialog } from "./settings-dialog";
+import type { SettingsTab } from "./settings-panel";
 import { useToast } from "./toast";
 
 type ChatSidebarProps = {
@@ -271,6 +272,31 @@ function buildGeneratedMediaArtifact(
   };
 }
 
+function filterImageGenerationPreference(
+  preference: ImageGenerationPreference | undefined,
+  availableModelIds: Set<string>,
+): ImageGenerationPreference | undefined {
+  if (preference?.mode !== "manual" || preference.models.length === 0) {
+    return undefined;
+  }
+
+  const models = preference.models.filter((model) =>
+    availableModelIds.has(model),
+  );
+  return models.length > 0 ? { mode: "manual", models } : undefined;
+}
+
+function filterMessageMentions(
+  mentions: MessageMention[],
+  availableImageModelIds: Set<string>,
+): MessageMention[] {
+  return mentions.filter(
+    (mention) =>
+      mention.mentionType !== "image-model" ||
+      availableImageModelIds.has(mention.id),
+  );
+}
+
 function getGenerationJobErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -392,15 +418,19 @@ export function ChatSidebar({
     );
   }, []);
 
+  const canvasArtifactUrls = useCallback(() => {
+    return new Set(
+      (onRequestCanvasImages ? onRequestCanvasImages() : [])
+        .flatMap((item) => [item.url, runtimeCanvasImageUrl(item)])
+        .filter(
+          (url): url is string => typeof url === "string" && url.length > 0,
+        ),
+    );
+  }, [onRequestCanvasImages]);
+
   const recoverMediaArtifactsFromBlocks = useCallback(
     (contentBlocks: ContentBlock[]) => {
-      const canvasUrls = new Set(
-        (onRequestCanvasImages ? onRequestCanvasImages() : [])
-          .flatMap((item) => [item.url, runtimeCanvasImageUrl(item)])
-          .filter(
-            (url): url is string => typeof url === "string" && url.length > 0,
-          ),
-      );
+      const canvasUrls = canvasArtifactUrls();
 
       for (const block of contentBlocks) {
         if (
@@ -418,6 +448,7 @@ export function ChatSidebar({
           if (replayedArtifactKeysRef.current.has(replayKey)) continue;
           if (hasBackendInsertedElement(block)) {
             replayedArtifactKeysRef.current.add(replayKey);
+            onCanvasSync?.();
             continue;
           }
           if (canvasUrls.has(artifactUrl)) {
@@ -431,9 +462,10 @@ export function ChatSidebar({
     },
     [
       artifactReplayKey,
+      canvasArtifactUrls,
       hasBackendInsertedElement,
       onImageGenerated,
-      onRequestCanvasImages,
+      onCanvasSync,
     ],
   );
 
@@ -558,8 +590,33 @@ export function ChatSidebar({
   const agentModelSourceRef = useRef(agentModelSource);
   agentModelSourceRef.current = agentModelSource;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] =
+    useState<SettingsTab>("agent");
+  const mediaSettingsOpenedFromCapabilityRef = useRef(false);
+  const panelRootRef = useRef<HTMLDivElement | null>(null);
 
   const { toast: showToast } = useToast();
+
+  const openSettings = useCallback((tab: SettingsTab = "agent") => {
+    if (tab !== "media") {
+      mediaSettingsOpenedFromCapabilityRef.current = false;
+    }
+    setSettingsInitialTab(tab);
+    setSettingsOpen(true);
+  }, []);
+
+  const openMediaSettings = useCallback(() => {
+    mediaSettingsOpenedFromCapabilityRef.current = true;
+    openSettings("media");
+  }, [openSettings]);
+
+  const handleSettingsSaved = useCallback(() => {
+    if (!mediaSettingsOpenedFromCapabilityRef.current) return;
+    mediaSettingsOpenedFromCapabilityRef.current = false;
+    chatInputRef.current?.setDraft(t("capabilityRequired.continueDraft"));
+    chatInputRef.current?.focus();
+    showToast(t("capabilityRequired.continueAfterSave"), "success");
+  }, [showToast, t]);
 
   // ── Sidebar resize ──
   const SIDEBAR_MIN = 300;
@@ -645,6 +702,56 @@ export function ChatSidebar({
     },
     [clampWidth],
   );
+
+  useEffect(() => {
+    if (!open) return;
+
+    const isNodeInsidePanel = (node: Node | null) =>
+      node !== null &&
+      panelRootRef.current !== null &&
+      panelRootRef.current.contains(node);
+
+    const hasSelectionInsidePanel = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) return false;
+      return (
+        isNodeInsidePanel(selection.anchorNode) ||
+        isNodeInsidePanel(selection.focusNode)
+      );
+    };
+
+    const isInsidePanel = (target: EventTarget | null) =>
+      (target instanceof Node && isNodeInsidePanel(target)) ||
+      hasSelectionInsidePanel();
+
+    const isolateEvent = (event: Event) => {
+      if (!isInsidePanel(event.target)) return;
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
+    const isolateKeyEvent = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        ["a", "c", "v", "x"].includes(key)
+      ) {
+        isolateEvent(event);
+      }
+    };
+
+    window.addEventListener("keydown", isolateKeyEvent, true);
+    window.addEventListener("copy", isolateEvent, true);
+    window.addEventListener("cut", isolateEvent, true);
+    window.addEventListener("paste", isolateEvent, true);
+    return () => {
+      window.removeEventListener("keydown", isolateKeyEvent, true);
+      window.removeEventListener("copy", isolateEvent, true);
+      window.removeEventListener("cut", isolateEvent, true);
+      window.removeEventListener("paste", isolateEvent, true);
+    };
+  }, [open]);
 
   // ── Auto-scroll to bottom ──
   const scrollToBottom = useCallback(() => {
@@ -738,6 +845,7 @@ export function ChatSidebar({
       if (!ws.connected) {
         return false;
       }
+
       void (async () => {
         inFlightSessionIdsRef.current.add(currentSessionId);
         if (activeSessionIdRef.current === currentSessionId) {
@@ -749,7 +857,7 @@ export function ChatSidebar({
           if (activeSessionIdRef.current === currentSessionId) {
             setStreaming(false);
           }
-          setSettingsOpen(true);
+          openSettings("agent");
           return;
         }
 
@@ -784,13 +892,23 @@ export function ChatSidebar({
             ];
           }
         }
+        const availableImageModelIds = new Set(
+          imageModelMentionItems.map((item) => item.id),
+        );
         const currentImageGenerationPreference =
-          imageGenerationPreferenceOverride ??
-          activeImageGenerationPreferenceRef.current;
+          filterImageGenerationPreference(
+            imageGenerationPreferenceOverride ??
+              activeImageGenerationPreferenceRef.current,
+            availableImageModelIds,
+          );
         const currentVideoGenerationPreference =
           videoGenerationPreferenceOverride ??
           activeVideoGenerationPreferenceRef.current;
-        const currentMentions = mentionsOverride ?? messageMentionsRef.current;
+        const currentMentions = filterMessageMentions(
+          mentionsOverride ?? messageMentionsRef.current,
+          availableImageModelIds,
+        );
+        const agentPromptText = text;
 
         // Add user message locally
         const imageBlocks: ContentBlock[] = currentAttachments.map((a) => ({
@@ -944,7 +1062,9 @@ export function ChatSidebar({
             onStreamEvent?.(event);
 
             // Fire canvas insertion callbacks for image/video artifacts.
-            // Skip if the backend already inserted the element (elementId in output).
+            // Backend-inserted artifacts should already arrive through canvas.sync.
+            // Verify after sync has had a chance to land; if the canvas still does
+            // not contain the artifact, fall back to client-side insertion.
             const backendInserted =
               event.type === "tool.completed" &&
               event.output &&
@@ -953,12 +1073,13 @@ export function ChatSidebar({
             if (
               event.type === "tool.completed" &&
               event.artifacts &&
-              event.toolName !== "screenshot_canvas" &&
-              !backendInserted
+              event.toolName !== "screenshot_canvas"
             ) {
               for (const artifact of event.artifacts) {
-                if (onImageGenerated) {
-                  onImageGenerated(artifact);
+                if (backendInserted) {
+                  onCanvasSync?.();
+                } else if (onImageGenerated) {
+                  onImageGenerated?.(artifact);
                 }
               }
             }
@@ -993,7 +1114,7 @@ export function ChatSidebar({
           const runPayload = {
             sessionId: currentSessionId,
             conversationId: canvasId,
-            prompt: text,
+            prompt: agentPromptText,
             canvasId,
             ...(currentAttachments.length > 0
               ? { attachments: currentAttachments }
@@ -1108,6 +1229,8 @@ export function ChatSidebar({
       buildAutoTitleSource,
       activeSessionIdRef,
       ensureAgentModelConfigured,
+      openSettings,
+      imageModelMentionItems,
       setStreaming,
       showToast,
     ],
@@ -1325,8 +1448,7 @@ export function ChatSidebar({
         if (
           evt.type === "tool.completed" &&
           evt.artifacts &&
-          evt.toolName !== "screenshot_canvas" &&
-          !backendInserted
+          evt.toolName !== "screenshot_canvas"
         ) {
           for (const artifact of evt.artifacts) {
             const replayKey = artifactReplayKey(
@@ -1335,7 +1457,11 @@ export function ChatSidebar({
             );
             if (replayedArtifactKeysRef.current.has(replayKey)) continue;
             replayedArtifactKeysRef.current.add(replayKey);
-            onImageGenerated?.(artifact);
+            if (backendInserted) {
+              onCanvasSync?.();
+            } else {
+              onImageGenerated?.(artifact);
+            }
           }
         }
 
@@ -1565,7 +1691,7 @@ export function ChatSidebar({
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => openSettings("agent")}
             className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             aria-label={t("actions.openSettings")}
             title={t("actions.openSettings")}
@@ -1631,6 +1757,7 @@ export function ChatSidebar({
                 key={msg.id}
                 role={msg.role}
                 contentBlocks={msg.contentBlocks}
+                onOpenMediaSettings={openMediaSettings}
                 isStreaming={
                   streaming &&
                   msg.role === "assistant" &&
@@ -1674,7 +1801,12 @@ export function ChatSidebar({
         />
       </div>
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        initialTab={settingsInitialTab}
+        onSaved={handleSettingsSaved}
+      />
     </>
   );
 
@@ -1697,6 +1829,7 @@ export function ChatSidebar({
         />
         {/* Chat panel — full screen on mobile, fixed-width drawer on tablet */}
         <div
+          ref={panelRootRef}
           className={
             breakpoint === "mobile"
               ? "fixed inset-0 z-50 flex flex-col bg-card animate-in slide-in-from-right duration-250"
@@ -1713,6 +1846,7 @@ export function ChatSidebar({
   // ── Desktop: inline side-by-side with resize handle ──
   return (
     <div
+      ref={panelRootRef}
       className="relative z-[120] flex h-full shrink-0"
       style={{ width: sidebarWidth }}
       {...eventIsolationProps}

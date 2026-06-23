@@ -197,6 +197,44 @@ describe("Canvas page", () => {
     expect(screen.queryByText(/品牌套件/)).not.toBeInTheDocument();
   });
 
+  it("keeps chat collapsed on narrow canvases without a chat entry signal", async () => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(500);
+
+    render(<CanvasPage />);
+
+    await screen.findByText("Canvas Editor");
+
+    expect(latestChatSidebarPropsRef.current?.open).toBe(false);
+  });
+
+  it("opens chat on narrow canvases created from the home prompt", async () => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(500);
+    searchParamsRef.current = new URLSearchParams({
+      id: "canvas-1",
+      prompt: "Make a launch poster",
+    });
+
+    render(<CanvasPage />);
+
+    await screen.findByText("Canvas Editor");
+
+    expect(latestChatSidebarPropsRef.current?.open).toBe(true);
+  });
+
+  it("opens chat on narrow canvases with an active session in the URL", async () => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(500);
+    searchParamsRef.current = new URLSearchParams({
+      id: "canvas-1",
+      session: "session-1",
+    });
+
+    render(<CanvasPage />);
+
+    await screen.findByText("Canvas Editor");
+
+    expect(latestChatSidebarPropsRef.current?.open).toBe(true);
+  });
+
   it("polls late video generation jobs from chat stream events", async () => {
     render(<CanvasPage />);
 

@@ -3,7 +3,7 @@
 import { AimcLogo } from "@/components/icons/aimc-logo";
 
 /**
- * Full-screen loading screen with animated AI Media Canvas logo.
+ * Full-screen loading screen with animated AI Canvas logo.
  * Uses the same traced vector logo as the brand lockup so loading stays
  * visually consistent with the product chrome.
  */

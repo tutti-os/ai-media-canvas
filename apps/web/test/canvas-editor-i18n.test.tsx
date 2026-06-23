@@ -5,8 +5,9 @@ import { act, cleanup, render } from "@testing-library/react";
 import type { ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { excalidrawPropsRef } = vi.hoisted(() => ({
+const { excalidrawPropsRef, exportToBlobMock } = vi.hoisted(() => ({
   excalidrawPropsRef: { current: null as Record<string, unknown> | null },
+  exportToBlobMock: vi.fn(),
 }));
 
 vi.mock("next/dynamic", () => ({
@@ -23,7 +24,18 @@ vi.mock("next-themes", () => ({
   useTheme: () => ({ resolvedTheme: "light" }),
 }));
 
+vi.mock("@excalidraw/excalidraw", () => ({
+  exportToBlob: exportToBlobMock,
+}));
+
 vi.mock("../src/lib/server-api", () => ({
+  ApiApplicationError: class ApiApplicationError extends Error {
+    code: string;
+    constructor(code: string, message: string) {
+      super(message);
+      this.code = code;
+    }
+  },
   saveCanvas: vi.fn(),
   uploadThumbnail: vi.fn(),
 }));
@@ -31,7 +43,7 @@ vi.mock("../src/lib/server-api", () => ({
 import { CanvasEditor } from "../src/components/canvas-editor";
 import { ToastProvider } from "../src/components/toast";
 import { i18n } from "../src/i18n";
-import { saveCanvas } from "../src/lib/server-api";
+import { saveCanvas, uploadThumbnail } from "../src/lib/server-api";
 
 const initialContent = {
   appState: {},
@@ -43,7 +55,13 @@ describe("CanvasEditor i18n", () => {
   beforeEach(async () => {
     vi.useRealTimers();
     vi.mocked(saveCanvas).mockClear();
-    vi.mocked(saveCanvas).mockResolvedValue(undefined);
+    vi.mocked(saveCanvas).mockResolvedValue({ revision: 1 });
+    vi.mocked(uploadThumbnail).mockClear();
+    vi.mocked(uploadThumbnail).mockResolvedValue(undefined);
+    exportToBlobMock.mockReset();
+    exportToBlobMock.mockResolvedValue(
+      new Blob(["thumbnail"], { type: "image/webp" }),
+    );
     excalidrawPropsRef.current = null;
     await i18n.changeLanguage("zh-CN");
   });
@@ -235,5 +253,137 @@ describe("CanvasEditor i18n", () => {
     });
 
     expect(saveCanvas).not.toHaveBeenCalled();
+  });
+
+  it("still schedules a thumbnail export for remote canvas sync updates", async () => {
+    vi.useFakeTimers();
+    const canvasApi = {
+      addFiles: vi.fn(),
+      getAppState: vi.fn(() => ({})),
+      getFiles: vi.fn(() => ({})),
+      getSceneElements: vi.fn(() => [
+        {
+          id: "shape-1",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          isDeleted: false,
+        },
+      ]),
+      onChange: vi.fn(() => () => {}),
+      updateScene: vi.fn(),
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasEditor
+          canvasId="canvas-1"
+          projectId="project-1"
+          initialContent={{
+            appState: {},
+            elements: [
+              {
+                id: "shape-1",
+                type: "rectangle",
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+              },
+            ],
+            files: {},
+          }}
+        />
+      </ToastProvider>,
+    );
+
+    await act(async () => {
+      (excalidrawPropsRef.current?.excalidrawAPI as (api: unknown) => void)(
+        canvasApi,
+      );
+    });
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+    });
+    vi.mocked(saveCanvas).mockClear();
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("aimc:canvas-remote-sync", {
+          detail: { canvasId: "canvas-1" },
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(saveCanvas).not.toHaveBeenCalled();
+    expect(exportToBlobMock).toHaveBeenCalledTimes(1);
+    expect(uploadThumbnail).toHaveBeenCalledWith("project-1", expect.any(Blob));
+  });
+
+  it("does not export a new thumbnail when the scene content is unchanged", async () => {
+    vi.useFakeTimers();
+    const sceneElements = [
+      {
+        id: "shape-1",
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        isDeleted: false,
+      },
+    ];
+    const canvasApi = {
+      addFiles: vi.fn(),
+      getAppState: vi.fn(() => ({})),
+      getFiles: vi.fn(() => ({})),
+      getSceneElements: vi.fn(() => sceneElements),
+      onChange: vi.fn(() => () => {}),
+      updateScene: vi.fn(),
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasEditor
+          canvasId="canvas-1"
+          projectId="project-1"
+          initialContent={{
+            appState: {},
+            elements: sceneElements,
+            files: {},
+          }}
+        />
+      </ToastProvider>,
+    );
+
+    await act(async () => {
+      (excalidrawPropsRef.current?.excalidrawAPI as (api: unknown) => void)(
+        canvasApi,
+      );
+    });
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+    });
+
+    const onChange = excalidrawPropsRef.current?.onChange as (
+      elements: unknown[],
+      appState: unknown,
+    ) => void;
+
+    await act(async () => {
+      onChange(sceneElements, {});
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(exportToBlobMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      onChange(sceneElements, { selectedElementIds: { "shape-1": true } });
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(exportToBlobMock).toHaveBeenCalledTimes(1);
   });
 });

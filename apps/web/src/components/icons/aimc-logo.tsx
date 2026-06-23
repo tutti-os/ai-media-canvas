@@ -1,7 +1,7 @@
 import type { SVGProps } from "react";
 
 /**
- * AI Media Canvas brand logo — six-corner cloud with sparkle and sweep cutout.
+ * AI Canvas brand logo — six-corner cloud with sparkle and sweep cutout.
  *
  * Traced from the selected concept so the mark stays crisp at small sizes and
  * can be reused for loading states without raster blur.

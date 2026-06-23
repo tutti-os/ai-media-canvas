@@ -4,27 +4,38 @@ import type { AnyBackendProtocol, BackendFactory } from "deepagents";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { createBrandKitTool } from "./brand-kit.js";
 import {
-  createInspectCanvasTool,
-  type CanvasLayoutInspectionState,
-} from "./inspect-canvas.js";
-import { createManipulateCanvasTool } from "./manipulate-canvas.js";
-import {
-  createImageGenerateTool,
   type PersistImageFn,
   type SubmitImageJobFn,
+  createImageGenerateTool,
 } from "./image-generate.js";
+import {
+  type CanvasClient,
+  type CanvasLayoutInspectionState,
+  createInspectCanvasTool,
+} from "./inspect-canvas.js";
+import { createManipulateCanvasTool } from "./manipulate-canvas.js";
+import { createPersistSandboxFileTool } from "./persist-sandbox-file.js";
 import { createProjectSearchTool } from "./project-search.js";
 import { createScreenshotCanvasTool } from "./screenshot-canvas.js";
 import {
-  createVideoGenerateTool,
   type SubmitVideoJobFn,
+  createVideoGenerateTool,
 } from "./video-generate.js";
-import { createPersistSandboxFileTool } from "./persist-sandbox-file.js";
+import {
+  type ApplyWorkspaceSettingsPatch,
+  type ReadWorkspaceSettings,
+  createGetWorkspaceSettingsTool,
+  createUpdateWorkspaceSettingsTool,
+} from "./workspace-settings.js";
 
 export { createImageGenerateTool } from "./image-generate.js";
 export { createVideoGenerateTool } from "./video-generate.js";
 export { createInspectCanvasTool } from "./inspect-canvas.js";
 export { createManipulateCanvasTool } from "./manipulate-canvas.js";
+export {
+  createGetWorkspaceSettingsTool,
+  createUpdateWorkspaceSettingsTool,
+} from "./workspace-settings.js";
 
 // ---------------------------------------------------------------------------
 // deepagents 内置工具参考 (由 FilesystemMiddleware 自动注入)
@@ -57,13 +68,15 @@ export { createManipulateCanvasTool } from "./manipulate-canvas.js";
 export function createMainAgentTools(
   backend: AnyBackendProtocol | BackendFactory,
   deps: {
-    createUserClient: (accessToken: string) => any;
+    createUserClient: (accessToken: string) => CanvasClient;
     brandKitId?: string | null;
     connectionManager?: ConnectionManager;
+    getWorkspaceSettings?: ReadWorkspaceSettings;
     persistImage?: PersistImageFn;
     sandboxDir?: string;
     submitImageJob?: SubmitImageJobFn;
     submitVideoJob?: SubmitVideoJobFn;
+    updateWorkspaceSettings?: ApplyWorkspaceSettingsPatch;
   },
 ) {
   const layoutInspectionState: CanvasLayoutInspectionState = {};
@@ -91,17 +104,35 @@ export function createMainAgentTools(
   if (deps.brandKitId) {
     tools.push(createBrandKitTool(deps, deps.brandKitId));
   }
+  if (deps.getWorkspaceSettings) {
+    tools.push(
+      createGetWorkspaceSettingsTool({
+        readSettings: deps.getWorkspaceSettings,
+      }),
+    );
+  }
+  if (deps.updateWorkspaceSettings) {
+    tools.push(
+      createUpdateWorkspaceSettingsTool({
+        applyPatch: deps.updateWorkspaceSettings,
+      }),
+    );
+  }
   if (deps.connectionManager) {
-    tools.push(createScreenshotCanvasTool({
-      connectionManager: deps.connectionManager,
-      ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
-    }));
+    tools.push(
+      createScreenshotCanvasTool({
+        connectionManager: deps.connectionManager,
+        ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
+      }),
+    );
   }
   return tools;
 }
 
 /** @deprecated Use createMainAgentTools and provider-specific runtime adapters instead */
-export function createPhaseATools(backend: AnyBackendProtocol | BackendFactory) {
+export function createPhaseATools(
+  backend: AnyBackendProtocol | BackendFactory,
+) {
   return [
     createProjectSearchTool(backend),
     createImageGenerateTool(),

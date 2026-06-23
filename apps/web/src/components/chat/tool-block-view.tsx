@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { ImageArtifact, ToolBlock, VideoArtifact } from "@aimc/shared";
+import { useAppTranslation } from "../../i18n";
 import { toRuntimeAssetUrl } from "../../lib/local-assets";
 import { ChatImage } from "./image-lightbox";
 import {
@@ -139,9 +140,12 @@ function findSidebarRect(el: HTMLElement | null): DOMRect | null {
 
 export const ToolBlockView = React.memo(function ToolBlockView({
   block,
+  onOpenMediaSettings,
 }: {
   block: ToolBlock;
+  onOpenMediaSettings?: (() => void) | undefined;
 }) {
+  const { t } = useAppTranslation("chat");
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelRight, setPanelRight] = useState(416);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -171,6 +175,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const isVideoTool = canonicalToolName === "generate_video";
   const isMediaTool = isImageTool || isVideoTool;
   const outputData = block.output as Record<string, unknown> | undefined;
+  const capabilityRequired = getMediaCapabilityRequired(outputData);
   const isDeferredMediaJob =
     isMediaTool &&
     isCompleted &&
@@ -182,6 +187,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
     config.showCard &&
     isCompleted &&
     !isDeferredMediaJob &&
+    !capabilityRequired &&
     (block.outputSummary || hasOutput);
   const shouldShowImageArtifactCard =
     isCompleted &&
@@ -194,11 +200,16 @@ export const ToolBlockView = React.memo(function ToolBlockView({
     !isDeferredMediaJob &&
     (isFailed || isCompleted) &&
     !imageArtifact &&
-    !videoArtifact
+    !videoArtifact &&
+    !capabilityRequired
       ? ((outputData?.error as string | undefined) ?? block.outputSummary)
       : undefined;
   const inputData = block.input as Record<string, unknown> | undefined;
   const modelName = inputData?.model as string | undefined;
+  const headerLabel =
+    isMediaTool && modelName && !capabilityRequired
+      ? formatModelDisplayName(modelName)
+      : config.label;
   const aspectRatio =
     (inputData?.aspectRatio as string) ?? (isVideoTool ? "16:9" : "1:1");
 
@@ -236,9 +247,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
           </svg>
         )}
         <span className="font-medium text-muted-foreground truncate">
-          {isMediaTool && modelName
-            ? formatModelDisplayName(modelName)
-            : config.label}
+          {headerLabel}
         </span>
       </div>
 
@@ -254,6 +263,24 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       {/* Layer 2b-err: Media generation failed */}
       {isMediaTool && mediaError && (
         <MediaErrorCard isVideoTool={isVideoTool} error={mediaError} />
+      )}
+
+      {isMediaTool && capabilityRequired && (
+        <MediaCapabilityRequiredCard
+          capability={capabilityRequired.capability}
+          title={
+            capabilityRequired.capability === "video_generation"
+              ? t("capabilityRequired.videoTitle")
+              : t("capabilityRequired.imageTitle")
+          }
+          description={
+            capabilityRequired.capability === "video_generation"
+              ? t("capabilityRequired.videoDescription")
+              : t("capabilityRequired.imageDescription")
+          }
+          actionLabel={t("capabilityRequired.configureMedia")}
+          onAction={onOpenMediaSettings}
+        />
       )}
 
       {/* Layer 2b: Image generation card with inline preview */}
@@ -322,6 +349,73 @@ export const ToolBlockView = React.memo(function ToolBlockView({
     </div>
   );
 });
+
+type MediaCapabilityRequired = {
+  capability: "image_generation" | "video_generation";
+};
+
+function getMediaCapabilityRequired(
+  output: Record<string, unknown> | undefined,
+): MediaCapabilityRequired | null {
+  const raw = output?.capabilityRequired;
+  if (!raw || typeof raw !== "object") return null;
+
+  const capability = (raw as { capability?: unknown }).capability;
+  if (
+    capability !== "image_generation" &&
+    capability !== "video_generation"
+  ) {
+    return null;
+  }
+
+  return { capability };
+}
+
+const MediaCapabilityRequiredCard = React.memo(
+  function MediaCapabilityRequiredCard({
+    capability,
+    title,
+    description,
+    actionLabel,
+    onAction,
+  }: {
+    capability: "image_generation" | "video_generation";
+    title: string;
+    description: string;
+    actionLabel: string;
+    onAction?: (() => void) | undefined;
+  }) {
+    return (
+      <div className="w-full max-w-sm rounded-xl border-[0.5px] border-border bg-muted/30 p-3">
+        <div className="flex items-start gap-2.5">
+          <div className="mt-0.5 shrink-0 rounded-lg bg-background p-1.5 text-muted-foreground">
+            <ToolIcon
+              type={capability === "video_generation" ? "video" : "image"}
+              className="h-4 w-4"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-foreground">
+              {title}
+            </div>
+            <div className="mt-0.5 text-[12px] text-muted-foreground">
+              {description}
+            </div>
+            {onAction && (
+              <button
+                type="button"
+                onClick={onAction}
+                className="mt-2 inline-flex h-7 items-center rounded-md border-[0.5px] border-border bg-background px-2.5 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                {actionLabel}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  },
+);
 
 /* ------------------------------------------------------------------ */
 /*  MediaShimmer — shimmer placeholder during media generation         */

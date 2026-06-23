@@ -131,16 +131,23 @@ export async function saveCanvas(
     appState: Record<string, unknown>;
     files: Record<string, Record<string, unknown>>;
   },
-): Promise<void> {
+  options: { baseRevision?: number } = {},
+): Promise<{ revision: number }> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/canvases/${canvasId}`,
     {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({
+        content,
+        ...(options.baseRevision === undefined
+          ? {}
+          : { baseRevision: options.baseRevision }),
+      }),
     },
   );
   if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { revision: number };
 }
 
 export async function uploadThumbnail(

@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -979,6 +985,9 @@ describe("SettingsPage", () => {
   });
 
   it("shows the Media tab with Replicate and Volces provider cards", async () => {
+    updateWorkspaceSettingsMock.mockImplementation(async (settings) => ({
+      settings,
+    }));
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "openai:gpt-4.1",
@@ -1011,6 +1020,10 @@ describe("SettingsPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Replicate" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("Codex image permission")).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Codex image permission" }),
+    ).toHaveTextContent("Ask each time");
     expect(screen.getByRole("heading", { name: "Volces" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Agnes" })).toBeInTheDocument();
     expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
@@ -1051,6 +1064,32 @@ describe("SettingsPage", () => {
     expect(
       screen.getByRole("link", { name: "Get OpenAI API Key" }),
     ).toHaveAttribute("href", "https://platform.openai.com/api-keys");
+
+    await userEvent.clear(screen.getByDisplayValue("sk-local-agnes"));
+    await userEvent.type(screen.getByLabelText("Agnes API Key"), "sk-updated");
+    const saveButtonsAfterAgnesEdit = screen.getAllByRole("button", {
+      name: "Save",
+    });
+    expect(saveButtonsAfterAgnesEdit[0]).toBeDisabled();
+    expect(saveButtonsAfterAgnesEdit[1]).toBeEnabled();
+
+    await userEvent.click(
+      screen.getByRole("combobox", { name: "Codex image permission" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Use by default" }),
+    );
+    await userEvent.click(screen.getAllByRole("button", { name: "Save" })[0]);
+
+    await waitFor(() =>
+      expect(updateWorkspaceSettingsMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          agnesApiKey: "sk-local-agnes",
+          codexImagegenDelegation: "always",
+        }),
+      ),
+    );
+    expect(screen.getByLabelText("Agnes API Key")).toHaveValue("sk-updated");
   });
 
   it("localizes Media settings copy in Chinese", async () => {
@@ -1095,6 +1134,10 @@ describe("SettingsPage", () => {
     expect(
       screen.getByRole("link", { name: "获取 Agnes API Key" }),
     ).toHaveAttribute("href", "https://platform.agnes-ai.com/settings/apiKeys");
+    expect(screen.getByText("Codex 生图权限")).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Codex 生图权限" }),
+    ).toHaveTextContent("每次询问");
     expect(
       screen.getByRole("link", { name: "获取 Kie.ai API Key" }),
     ).toHaveAttribute("href", "https://kie.ai/api-key");
@@ -1151,6 +1194,9 @@ describe("SettingsPage", () => {
     expect(
       screen.getByRole("button", { name: /Claude Code/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Codex image permission"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Custom model id")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Claude Code/i }));
@@ -1397,6 +1443,78 @@ describe("SettingsPage", () => {
     );
     await userEvent.type(screen.getByLabelText("OpenAI API Key"), "sk-updated");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("closes the settings dialog after a successful media provider save", async () => {
+    const onOpenChange = vi.fn();
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    updateWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-agnes",
+        agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(
+      <SettingsDialog
+        open
+        onOpenChange={onOpenChange}
+        initialTab="media"
+      />,
+    );
+
+    await userEvent.type(
+      await screen.findByLabelText("Agnes API Key"),
+      "sk-agnes",
+    );
+    const agnesSection = screen
+      .getByRole("heading", { name: "Agnes" })
+      .closest("section");
+    expect(agnesSection).not.toBeNull();
+    await userEvent.click(
+      within(agnesSection as HTMLElement).getByRole("button", {
+        name: "Save",
+      }),
+    );
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });

@@ -4,9 +4,11 @@ import type {
   ImageAttachment,
   ImageGenerationPreference,
   MessageMention,
+  RunCreateRequest,
   RuntimeKind,
   StreamEvent,
   VideoGenerationPreference,
+  WorkspaceSettings,
 } from "@aimc/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { AIMessage, HumanMessage } from "@langchain/core/messages";
@@ -25,6 +27,10 @@ import type { AimcAgentFactory } from "../deep-agent.js";
 import type { createLocalToolGatewayService } from "../local-agent-host/tool-gateway.js";
 import type { SubmitImageJobFn } from "../tools/image-generate.js";
 import type { SubmitVideoJobFn } from "../tools/video-generate.js";
+import type {
+  ApplyWorkspaceSettingsPatch,
+  ReadWorkspaceSettings,
+} from "../tools/workspace-settings.js";
 import type { WorkspaceSkillEntry } from "../workspace-skills.js";
 
 export type RuntimeRunRecord = {
@@ -36,6 +42,7 @@ export type RuntimeRunRecord = {
   consumed: boolean;
   controller: AbortController;
   conversationId: string;
+  delegationConsent?: RunCreateRequest["delegationConsent"];
   envOverride?: ServerEnv | undefined;
   imageGenerationPreference?: ImageGenerationPreference | undefined;
   managedAgentInvocationCredential?: string | undefined;
@@ -55,6 +62,8 @@ export type RuntimeRunRecord = {
   runId: string;
   runtimeKind?: RuntimeKind | undefined;
   runtimeProvider?: AgentRuntimeProvider | undefined;
+  codexImagegenDelegation?: WorkspaceSettings["codexImagegenDelegation"];
+  codexImagegenConsentBudget?: number;
   sessionId: string;
   status: "accepted" | "running" | "completed" | "failed" | "canceled";
   threadId?: string | undefined;
@@ -69,8 +78,10 @@ export type RuntimeExecutionContext = {
   rlog: ReturnType<typeof createPipelineLogger>;
   run: RuntimeRunRecord;
   runtimeEnv: ServerEnv;
+  getWorkspaceSettings?: ReadWorkspaceSettings;
   submitImageJob?: SubmitImageJobFn;
   submitVideoJob?: SubmitVideoJobFn;
+  updateWorkspaceSettings?: ApplyWorkspaceSettingsPatch;
   workspaceSkills: WorkspaceSkillEntry[];
 };
 

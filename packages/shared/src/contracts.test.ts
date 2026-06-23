@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canvasGetResponseSchema,
+  canvasSaveRequestSchema,
+  codexImagegenDelegationSchema,
   modelListRequestSchema,
   runCreateRequestSchema,
   workspaceSettingsSchema,
@@ -58,6 +61,17 @@ describe("runCreateRequestSchema", () => {
     if (result.success) {
       expect(result.data.managedAgentInvocationCredential).toBe("bearer-run-1");
     }
+  });
+
+  it("accepts one-time Codex image delegation consent", () => {
+    const result = runCreateRequestSchema.safeParse({
+      ...baseRunCreateRequest,
+      delegationConsent: {
+        codexImagegen: "allow-once",
+      },
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it("rejects malformed local provider ids", () => {
@@ -131,34 +145,88 @@ describe("modelListRequestSchema", () => {
 });
 
 describe("workspaceSettingsSchema", () => {
+  const baseWorkspaceSettings = {
+    defaultModel: "",
+    providerModels: {
+      openai: [],
+      anthropic: [],
+      agnes: [],
+      google: [],
+      vertex: [],
+    },
+    openAIApiKey: "",
+    openAIApiBase: "",
+    anthropicApiKey: "",
+    anthropicBaseUrl: "",
+    agnesApiKey: "",
+    agnesBaseUrl: "",
+    agnesDefaultModel: "",
+    googleApiKey: "",
+    googleVertexProject: "",
+    googleVertexLocation: "",
+    googleVertexVideoLocation: "",
+    replicateApiToken: "",
+    volcesApiKey: "",
+    volcesBaseUrl: "",
+    kieApiKey: "",
+    kieBaseUrl: "",
+  };
+
+  it("defaults Codex image delegation to ask", () => {
+    const result = workspaceSettingsSchema.parse(baseWorkspaceSettings);
+
+    expect(result.codexImagegenDelegation).toBe("ask");
+  });
+
+  it("accepts Codex image delegation choices", () => {
+    expect(codexImagegenDelegationSchema.safeParse("ask").success).toBe(true);
+    expect(codexImagegenDelegationSchema.safeParse("always").success).toBe(
+      true,
+    );
+    expect(codexImagegenDelegationSchema.safeParse("never").success).toBe(true);
+    expect(codexImagegenDelegationSchema.safeParse("sometimes").success).toBe(
+      false,
+    );
+  });
+
   it("accepts Kie media provider settings", () => {
     const result = workspaceSettingsSchema.safeParse({
-      defaultModel: "",
-      providerModels: {
-        openai: [],
-        anthropic: [],
-        agnes: [],
-        google: [],
-        vertex: [],
-      },
-      openAIApiKey: "",
-      openAIApiBase: "",
-      anthropicApiKey: "",
-      anthropicBaseUrl: "",
-      agnesApiKey: "",
-      agnesBaseUrl: "",
-      agnesDefaultModel: "",
-      googleApiKey: "",
-      googleVertexProject: "",
-      googleVertexLocation: "",
-      googleVertexVideoLocation: "",
-      replicateApiToken: "",
-      volcesApiKey: "",
-      volcesBaseUrl: "",
+      ...baseWorkspaceSettings,
       kieApiKey: "local-kie-key",
       kieBaseUrl: "https://api.kie.ai",
     });
 
     expect(result.success).toBe(true);
+  });
+});
+
+describe("canvas contracts", () => {
+  it("carries canvas revisions through fetch and save requests", () => {
+    expect(
+      canvasGetResponseSchema.parse({
+        canvas: {
+          id: "canvas_1",
+          name: "Main Canvas",
+          projectId: "project_1",
+          revision: 2,
+          content: {
+            elements: [],
+            appState: {},
+            files: {},
+          },
+        },
+      }).canvas.revision,
+    ).toBe(2);
+
+    expect(
+      canvasSaveRequestSchema.parse({
+        baseRevision: 2,
+        content: {
+          elements: [],
+          appState: {},
+          files: {},
+        },
+      }).baseRevision,
+    ).toBe(2);
   });
 });

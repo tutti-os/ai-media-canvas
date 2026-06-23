@@ -37,6 +37,7 @@
       "storyboard-video": "Film & Storyboard",
       "ui-design": "UI Design"
     },
+    "sendToPrompt": "Make similar",
     "title": "Inspiration"
   },
   "examples": {
@@ -131,7 +132,7 @@
     "attachImages": "Attach images",
     "clear": "Clear",
     "modelPreference": "Image/Video model",
-    "placeholder": "Ask AI Media Canvas to design...",
+    "placeholder": "Ask AI Canvas to design...",
     "submit": "Submit prompt"
   },
   "recentProjects": {

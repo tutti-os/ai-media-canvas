@@ -197,6 +197,124 @@ describe("createLocalStore", () => {
     ).toBe("canceled");
   });
 
+  it("rejects stale canvas saves so old clients cannot overwrite newer content", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const project = store.createProject({ name: "Canvas revisions" });
+    const initial = store.getCanvas(project.primaryCanvas.id);
+    expect(initial?.revision).toBe(0);
+    const initialRevision = initial?.revision ?? 0;
+
+    expect(
+      store.saveCanvas(
+        project.primaryCanvas.id,
+        {
+          elements: [
+            {
+              id: "server-image",
+              type: "image",
+              isDeleted: false,
+            },
+          ],
+          appState: {},
+          files: {},
+        },
+        { baseRevision: initialRevision },
+      ),
+    ).toEqual({ ok: true, revision: 1 });
+
+    expect(
+      store.saveCanvas(
+        project.primaryCanvas.id,
+        {
+          elements: [],
+          appState: {},
+          files: {},
+        },
+        { baseRevision: initialRevision },
+      ),
+    ).toEqual({ ok: false, reason: "revision_conflict" });
+
+    expect(store.getCanvas(project.primaryCanvas.id)?.content.elements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "server-image",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps server batch writes when an older frontend batch save arrives", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const project = store.createProject({ name: "Canvas batch revisions" });
+    const canvasId = project.primaryCanvas.id;
+    const initialRevision = store.getCanvas(canvasId)?.revision ?? 0;
+
+    expect(
+      store.saveCanvas(canvasId, {
+        elements: [{ id: "server-image-1", type: "image", isDeleted: false }],
+        appState: {},
+        files: {},
+      }),
+    ).toEqual({ ok: true, revision: 1 });
+    expect(
+      store.saveCanvas(canvasId, {
+        elements: [
+          { id: "server-image-1", type: "image", isDeleted: false },
+          { id: "server-image-2", type: "image", isDeleted: false },
+        ],
+        appState: {},
+        files: {},
+      }),
+    ).toEqual({ ok: true, revision: 2 });
+
+    expect(
+      store.saveCanvas(
+        canvasId,
+        {
+          elements: [{ id: "frontend-stale", type: "rectangle" }],
+          appState: {},
+          files: {},
+        },
+        { baseRevision: initialRevision },
+      ),
+    ).toEqual({ ok: false, reason: "revision_conflict" });
+
+    expect(store.getCanvas(canvasId)?.content.elements).toEqual([
+      expect.objectContaining({ id: "server-image-1" }),
+      expect.objectContaining({ id: "server-image-2" }),
+    ]);
+
+    expect(
+      store.saveCanvas(
+        canvasId,
+        {
+          elements: [
+            { id: "server-image-1", type: "image", isDeleted: false },
+            { id: "server-image-2", type: "image", isDeleted: false },
+            { id: "frontend-current", type: "rectangle" },
+          ],
+          appState: {},
+          files: {},
+        },
+        { baseRevision: 2 },
+      ),
+    ).toEqual({ ok: true, revision: 3 });
+  });
+
   it("reclaims stale running background jobs without incrementing attempts", () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
     tempDirs.push(dataRoot);
@@ -810,6 +928,7 @@ license: MIT
       kieBaseUrl: "",
       volcesApiKey: "volces-local-key",
       volcesBaseUrl: "https://volces.example.com/api/v3",
+      codexImagegenDelegation: "ask",
     });
 
     const reopenedStore = createLocalStore({
@@ -842,6 +961,7 @@ license: MIT
       kieBaseUrl: "",
       volcesApiKey: "volces-local-key",
       volcesBaseUrl: "https://volces.example.com/api/v3",
+      codexImagegenDelegation: "ask",
     });
   });
 
@@ -890,6 +1010,7 @@ license: MIT
       kieBaseUrl: "",
       volcesApiKey: "",
       volcesBaseUrl: "",
+      codexImagegenDelegation: "ask",
     });
   });
 
@@ -939,6 +1060,7 @@ license: MIT
         kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
+        codexImagegenDelegation: "ask",
       }),
     ).toEqual({
       defaultModel: "agnes:agnes-2.0-flash",
@@ -965,6 +1087,7 @@ license: MIT
       kieBaseUrl: "",
       volcesApiKey: "",
       volcesBaseUrl: "",
+      codexImagegenDelegation: "ask",
     });
   });
 });

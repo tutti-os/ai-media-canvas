@@ -170,6 +170,18 @@ function normalizeWorkspaceSkillPathsForLocalAgent(prompt: string) {
   return prompt.replaceAll("/workspace-skills/", "workspace-skills/");
 }
 
+const DEFAULT_LOCAL_AGENT_TIMEOUT_MS = 30 * 60_000;
+const DEFAULT_LOCAL_AGENT_MCP_STARTUP_TIMEOUT_MS = 2 * 60_000;
+
+function resolveLocalAgentTimeoutMs(runtimeEnv: {
+  codexImagegenTimeoutMs?: number;
+}) {
+  return Math.max(
+    runtimeEnv.codexImagegenTimeoutMs ?? 0,
+    DEFAULT_LOCAL_AGENT_TIMEOUT_MS,
+  );
+}
+
 function buildLocalAgentProviderEnv(input: {
   managedCredentialEnv?: Record<string, string>;
   runtimeEnv: RuntimeExecutionContext["runtimeEnv"];
@@ -289,10 +301,12 @@ export function createLocalAgentRuntimeProvider(
             ].join("\n")
           : undefined;
       const prompt = [
-        "You are the local agent runtime for AI Media Canvas.",
+        "You are the local agent runtime for AI Canvas.",
         "If the user wants a finished visual asset, call generate_image or generate_video.",
         "Use inspect_canvas before precise canvas edits, and use manipulate_canvas for deterministic canvas updates.",
         "Do not claim an image or canvas update happened unless the tool actually succeeded.",
+        "Ask clarifying questions or confirmation requests in normal assistant text. Do not use provider-native interactive question tools such as AskUserQuestion.",
+        "Before a non-Codex agent calls generate_image with model codex/gpt-image-2, it must call get_workspace_settings. If codexImagegen.confirmationRequired is true, explain in normal assistant text that no image generation model is directly available for this agent and ask whether to delegate this image generation task to Codex. After the user answers, call update_workspace_settings with patch.codexImagegenDelegation=allow-once for a one-time allow, always for a durable allow, or deny before stopping.",
         "Workspace skill files are materialized under the current working directory; when reading them with shell or file tools, use relative paths such as `workspace-skills/<slug>/SKILL.md` and never `/workspace-skills/<slug>/SKILL.md`.",
         handoffSection,
         normalizedPrompt,
@@ -371,8 +385,28 @@ export function createLocalAgentRuntimeProvider(
         ...(run.canvasId ? { canvasId: run.canvasId } : {}),
         ...(run.connectionId ? { connectionId: run.connectionId } : {}),
         runId: run.runId,
+        runtimeProvider,
         sessionId: run.sessionId,
         runtimeEnv,
+        ...(run.delegationConsent
+          ? { delegationConsent: run.delegationConsent }
+          : {}),
+        codexImagegenConsentBudget: run.codexImagegenConsentBudget ?? 0,
+        onWorkspaceSettingsStateChange: (state) => {
+          if (state.codexImagegenConsentBudget !== undefined) {
+            run.codexImagegenConsentBudget = state.codexImagegenConsentBudget;
+          }
+          if (state.codexImagegenDelegation !== undefined) {
+            run.codexImagegenDelegation = state.codexImagegenDelegation;
+          }
+        },
+        ...(run.codexImagegenDelegation
+          ? {
+              workspaceSettings: {
+                codexImagegenDelegation: run.codexImagegenDelegation,
+              },
+            }
+          : {}),
         sandboxDir: runDir,
         ...(submitImageJob ? { submitImageJob } : {}),
         ...(submitVideoJob ? { submitVideoJob } : {}),
@@ -401,6 +435,8 @@ export function createLocalAgentRuntimeProvider(
             gatewayBaseUrl: deps.toolGatewayBaseUrl,
             gatewayToken: gatewaySession.token,
             requireSandboxEntrypoint: Boolean(managedAgentInvocation),
+            startupTimeoutMs: DEFAULT_LOCAL_AGENT_MCP_STARTUP_TIMEOUT_MS,
+            toolTimeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
           }),
         ];
 
@@ -428,6 +464,7 @@ export function createLocalAgentRuntimeProvider(
           ...(resume ? { resume } : {}),
           signal: run.controller.signal,
           skillManifest,
+          timeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
         })) {
           if (event.type === "error") {
             lastError = event;

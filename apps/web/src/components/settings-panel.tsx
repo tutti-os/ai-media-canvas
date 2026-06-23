@@ -139,6 +139,7 @@ export function SettingsPanel({
           <MediaSettingsSection
             settings={workspaceSettings}
             onSave={handleWorkspaceSettingsSave}
+            onSaved={onSaved}
           />
         );
     }

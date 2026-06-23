@@ -69,7 +69,7 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
     name: "Canvas Director",
     slug: "canvas-director",
     description: "帮助 Agent 先梳理画布结构、镜头顺序和版式层级，再给出下一步操作建议。",
-    author: "AI Media Canvas",
+    author: "AI Canvas",
     version: "1.0.0",
     category: "design",
     iconName: null,
@@ -97,7 +97,7 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
         "Agent: 先给出结构方案，再说明每一栏适合放什么内容。",
       ],
     ),
-    createdBy: "AI Media Canvas",
+    createdBy: "AI Canvas",
     sourceUrl: null,
     packageName: "@aimc/canvas-director",
     metadata: { scope: "bundled", tags: ["layout", "hierarchy"] },
@@ -107,7 +107,7 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
     name: "Brand Keeper",
     slug: "brand-keeper",
     description: "让 Agent 在输出建议时主动参考本地 Brand Kit 里的字体、颜色和 Logo 资产。",
-    author: "AI Media Canvas",
+    author: "AI Canvas",
     version: "1.0.0",
     category: "writing",
     iconName: null,
@@ -127,7 +127,7 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
         "Agent: 先说明当前品牌调性，再给出标题风格建议。",
       ],
     ),
-    createdBy: "AI Media Canvas",
+    createdBy: "AI Canvas",
     sourceUrl: null,
     packageName: "@aimc/brand-keeper",
     metadata: { scope: "bundled", tags: ["brand", "tone"] },
@@ -137,7 +137,7 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
     name: "Prompt Polisher",
     slug: "prompt-polisher",
     description: "把模糊需求整理成更适合本地图片生成面板使用的结构化提示。",
-    author: "AI Media Canvas",
+    author: "AI Canvas",
     version: "1.0.0",
     category: "generation",
     iconName: null,
@@ -157,7 +157,7 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
         "Agent: 先补齐风格、场景、标题气质，再给出可直接投喂的 prompt。",
       ],
     ),
-    createdBy: "AI Media Canvas",
+    createdBy: "AI Canvas",
     sourceUrl: null,
     packageName: "@aimc/prompt-polisher",
     metadata: { scope: "bundled", tags: ["prompt", "image"] },
@@ -209,7 +209,7 @@ function loadDirectoryBundledSkills(): BundledSkillDefinition[] {
         frontmatter.description ??
         extractSection(body, "Description") ??
         "Local bundled skill";
-      const author = frontmatter.metadata.author ?? frontmatter.author ?? "AI Media Canvas";
+      const author = frontmatter.metadata.author ?? frontmatter.author ?? "AI Canvas";
       const version = frontmatter.metadata.version ?? frontmatter.version ?? "1.0.0";
 
       return [

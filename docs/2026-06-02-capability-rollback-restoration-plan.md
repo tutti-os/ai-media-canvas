@@ -1,4 +1,4 @@
-# AI Media Canvas 能力回退恢复与本地化改造方案
+# AI Canvas 能力回退恢复与本地化改造方案
 
 > 这份文档用于纠正当前执行路线：后续不再以 `ai-media-canvas` 当前基线继续“补骨架”，而是以原始旧源仓库的完整能力为恢复源，先把需要保留的产品能力按模块回退恢复，再在恢复结果上做单机本地化改造。
 
@@ -9,7 +9,7 @@
 - 去掉 `Supabase / Login / Register / Pricing / Credits / Payments`
 - 引入 `SQLite + 本地文件存储`
 - 恢复 `/home`、`/skills` 的本地页面与基础工作流
-- 产品命名切换为 `AI Media Canvas`
+- 产品命名切换为 `AI Canvas`
 
 但与此同时，也把一批原本仍然需要保留的核心能力删掉了：
 
@@ -56,7 +56,7 @@
 
 - `SQLite` 与本地文件底座
 - `/home` 与 `/skills` 的单机版路由恢复
-- 产品品牌切换为 `AI Media Canvas`
+- 产品品牌切换为 `AI Canvas`
 - `supabase / 旧命名` 大部分命名与配置清理
 
 如果直接做大范围整体回退，会把这些已经正确的工作也一起打掉，导致来回折腾。

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="./apps/web/public/brand/aimc-logo-cloud-spark.png" alt="AI Media Canvas logo" width="88" />
+  <img src="./apps/web/public/brand/aimc-logo-cloud-spark.png" alt="AI Canvas logo" width="88" />
 </p>
 
-<h1 align="center">AI Media Canvas</h1>
+<h1 align="center">AI Canvas</h1>
 
 <p align="center">
   <strong>Local-first AI canvas for image and video creation.</strong>
@@ -31,9 +31,9 @@
   <img alt="Next.js" src="https://img.shields.io/badge/web-Next.js-000000" />
 </p>
 
-![AI Media Canvas home screen](./docs/assets/readme-home.jpg)
+![AI Canvas home screen](./docs/assets/readme-home.jpg)
 
-AI Media Canvas is a local-first AI workspace for creating, organizing, and iterating on image and video ideas with a visual canvas.
+AI Canvas is a local-first AI workspace for creating, organizing, and iterating on image and video ideas with a visual canvas.
 
 It combines an Excalidraw-powered canvas, an AI design assistant, local project storage, a skills workspace, and provider-backed media generation in one single-user web app. Project data is stored in SQLite, and generated assets live on disk.
 
@@ -85,7 +85,7 @@ The server serves `apps/web/out`, `/api/*`, and `/local-assets/*` from one proce
 
 You can configure providers from the in-app Settings page, or through `.env.local`. Stored local settings take priority over environment fallback values at runtime.
 
-AI Media Canvas supports two agent execution paths:
+AI Canvas supports two agent execution paths:
 
 - Local CLI routes: use an installed and authenticated Codex or Claude Code CLI, including accounts that are already covered by your local subscription.
 - BYOK API routes: bring your own API key and base URL for OpenAI-compatible gateways, Anthropic-compatible Claude routes, Google Gemini, Vertex AI, Agnes, and other configured providers.
@@ -148,7 +148,7 @@ docs/        Design notes, plans, and project documentation
 
 ## Acknowledgements
 
-AI Media Canvas is inspired in part by [Loomic](https://github.com/fancyboi999/Loomic), an open-source AI canvas creative workspace. Loomic helped validate the canvas-first, chat-driven media creation direction; AI Media Canvas keeps its own local-first architecture and implementation.
+AI Canvas is inspired in part by [Loomic](https://github.com/fancyboi999/Loomic), an open-source AI canvas creative workspace. Loomic helped validate the canvas-first, chat-driven media creation direction; AI Canvas keeps its own local-first architecture and implementation.
 
 ## Development
 
@@ -177,4 +177,4 @@ For security issues, please follow [SECURITY.md](./SECURITY.md).
 
 ## License
 
-AI Media Canvas is licensed under the [Apache License 2.0](./LICENSE).
+AI Canvas is licensed under the [Apache License 2.0](./LICENSE).

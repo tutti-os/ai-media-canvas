@@ -68,6 +68,12 @@ export const videoGenerationPreferenceSchema = z.object({
   models: z.array(z.string().min(1)),
 });
 
+export const codexImagegenDelegationSchema = z.enum(["ask", "always", "never"]);
+
+export const codexImagegenDelegationConsentSchema = z.object({
+  codexImagegen: z.enum(["allow-once"]),
+});
+
 export const runtimeKindSchema = z.enum(["server-deepagent", "local-agent"]);
 
 export const agentRuntimeProviderSchema = z
@@ -105,6 +111,7 @@ export const runCreateRequestSchema = z
     resumeMode: agentRunResumeModeSchema.optional(),
     runtimeKind: runtimeKindSchema.optional(),
     runtimeProvider: agentRuntimeProviderSchema.optional(),
+    delegationConsent: codexImagegenDelegationConsentSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (value.runtimeProvider && value.runtimeKind !== "local-agent") {
@@ -179,6 +186,7 @@ export const canvasDetailSchema = z.object({
   id: canvasIdSchema,
   name: z.string().min(1),
   projectId: projectIdSchema,
+  revision: z.number().int().nonnegative(),
   content: canvasContentSchema,
 });
 
@@ -214,6 +222,7 @@ export const workspaceSettingsSchema = z.object({
   kieBaseUrl: z.string(),
   volcesApiKey: z.string(),
   volcesBaseUrl: z.string(),
+  codexImagegenDelegation: codexImagegenDelegationSchema.default("ask"),
 });
 
 export const agentModelSourceSchema = z.enum([

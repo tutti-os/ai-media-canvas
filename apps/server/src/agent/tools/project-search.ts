@@ -89,7 +89,7 @@ export function createProjectSearchTool(
     {
       name: "project_search",
       description:
-        "Search the AI Media Canvas workspace for matching project text without using shell execution.",
+        "Search the AI Canvas workspace for matching project text without using shell execution.",
       schema: projectSearchSchema,
     },
   );

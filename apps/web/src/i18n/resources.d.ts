@@ -183,7 +183,16 @@ export default interface Resources {
       "usesDefaultModel": "使用默认模型：{{model}}"
     },
     "assistant": {
-      "title": "AI Media Canvas 助手"
+      "title": "AI Canvas 助手"
+    },
+    "capabilityRequired": {
+      "configureMedia": "去连接",
+      "continueAfterSave": "媒体模型已保存，发送“继续”即可重试刚才的生成。",
+      "continueDraft": "继续",
+      "imageDescription": "连接后，我会继续按你的描述生成图片。",
+      "imageTitle": "先连接图片生成能力",
+      "videoDescription": "连接后，我会继续按你的描述生成视频。",
+      "videoTitle": "先连接视频生成能力"
     },
     "conversation": "对话",
     "input": {
@@ -196,10 +205,10 @@ export default interface Resources {
     "mediaModelPreference": {
       "configure": "配置媒体模型",
       "description": {
-        "autoImage": "AI Media Canvas 会使用内置本地渲染器处理图片任务。",
-        "autoVideo": "AI Media Canvas 会使用本地视频规划预设处理分镜和动态任务。",
-        "manualImage": "AI Media Canvas 仍使用本地渲染器，并优先使用你固定的预设。",
-        "manualVideo": "AI Media Canvas 会使用你选择的本地视频规划预设。"
+        "autoImage": "AI Canvas 会使用内置本地渲染器处理图片任务。",
+        "autoVideo": "AI Canvas 会使用本地视频规划预设处理分镜和动态任务。",
+        "manualImage": "AI Canvas 仍使用本地渲染器，并优先使用你固定的预设。",
+        "manualVideo": "AI Canvas 会使用你选择的本地视频规划预设。"
       },
       "empty": {
         "image": "未配置可用的图片模型",
@@ -289,7 +298,7 @@ export default interface Resources {
       "search": "搜索",
       "upload": "上传"
     },
-    "productName": "AI Media Canvas"
+    "productName": "AI Canvas"
   },
   "errors": {
     "canvas": {
@@ -363,6 +372,7 @@ export default interface Resources {
         "storyboard-video": "影片与分镜",
         "ui-design": "UI设计"
       },
+      "sendToPrompt": "做同款",
       "title": "灵感发现"
     },
     "examples": {
@@ -457,7 +467,7 @@ export default interface Resources {
       "attachImages": "添加图片",
       "clear": "清除",
       "modelPreference": "图片/视频模型",
-      "placeholder": "让 AI Media Canvas 帮你设计...",
+      "placeholder": "让 AI Canvas 帮你设计...",
       "submit": "提交 prompt"
     },
     "recentProjects": {
@@ -568,7 +578,7 @@ export default interface Resources {
         "tuttiManaged": "Tutti Managed"
       },
       "tuttiManaged": {
-        "bridgeUnavailable": "请在 Tutti 中打开 AI Media Canvas 后授权托管模型。",
+        "bridgeUnavailable": "请在 Tutti 中打开 AI Canvas 后授权托管模型。",
         "chooseModel": "请在下方选择 Tutti Managed 模型。",
         "connect": "连接",
         "connectFirst": "连接 Tutti Managed 后导入可用模型。",
@@ -642,16 +652,30 @@ export default interface Resources {
           "summary": "字节跳动 / 火山引擎官方通道，用于通过 Ark 提供的豆包 Seedream 模型。"
         }
       },
+      "codexImagegen": {
+        "description": "当没有直接可用的生图模型时，设置其他 Agent 是否可以调用 Codex Image 2.0 生图能力。",
+        "options": {
+          "always": {
+            "description": "以后符合条件的生图请求自动使用 Codex。",
+            "label": "默认调用"
+          },
+          "ask": {
+            "description": "每次符合条件的生图请求都会先询问。",
+            "label": "每次询问"
+          },
+          "never": {
+            "description": "不将生图任务委托给 Codex。",
+            "label": "不调用"
+          }
+        },
+        "title": "Codex 生图权限"
+      },
       "description": "按平台配置图片与视频提供商。如果同一模型家族后续存在多个平台版本，AIMC 会按提供商范围的模型 ID 分开保存，方便你显式选择路由。",
       "feedback": {
         "updateFailed": "本地媒体提供商设置更新失败，请重试。",
         "updated": "本地媒体提供商设置已更新。"
       },
       "localStorageNote": "这些值会保存在本地 sqlite 设置数据库中，并被对应媒体提供商复用。",
-      "providerNotes": {
-        "replicate": "{{provider}} 是第三方托管平台。",
-        "volces": "{{provider}} 是字节跳动 / 火山引擎官方通道。"
-      },
       "status": {
         "configured": "已配置",
         "notConfigured": "未配置"
@@ -710,7 +734,7 @@ export default interface Resources {
     "createDialog": {
       "addFile": "添加文件",
       "adding": "添加中...",
-      "description": "创建新的本地技能来扩展 AI Media Canvas 助手的能力。",
+      "description": "创建新的本地技能来扩展 AI Canvas 助手的能力。",
       "descriptionPlaceholder": "简述技能的功能和用途...",
       "fileContentPlaceholder": "文件内容...",
       "invalidPath": "文件路径需要以 scripts/、references/ 或 assets/ 开头。",

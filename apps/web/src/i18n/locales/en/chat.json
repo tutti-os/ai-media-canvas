@@ -23,7 +23,16 @@
     "usesDefaultModel": "Uses default model: {{model}}"
   },
   "assistant": {
-    "title": "AI Media Canvas Assistant"
+    "title": "AI Canvas Assistant"
+  },
+  "capabilityRequired": {
+    "configureMedia": "Connect",
+    "continueAfterSave": "Media model saved. Send \"Continue\" to retry the generation.",
+    "continueDraft": "Continue",
+    "imageDescription": "After that, I can continue and create the image from your prompt.",
+    "imageTitle": "Connect image generation first",
+    "videoDescription": "After that, I can continue and create the video from your prompt.",
+    "videoTitle": "Connect video generation first"
   },
   "conversation": "Conversation",
   "input": {
@@ -36,10 +45,10 @@
   "mediaModelPreference": {
     "configure": "Configure media models",
     "description": {
-      "autoImage": "AI Media Canvas uses the built-in local renderer for image tasks.",
-      "autoVideo": "AI Media Canvas uses local video-planning presets for storyboard and motion tasks.",
-      "manualImage": "AI Media Canvas keeps using the local renderer while prioritizing your pinned presets.",
-      "manualVideo": "AI Media Canvas keeps using your chosen local video-planning presets."
+      "autoImage": "AI Canvas uses the built-in local renderer for image tasks.",
+      "autoVideo": "AI Canvas uses local video-planning presets for storyboard and motion tasks.",
+      "manualImage": "AI Canvas keeps using the local renderer while prioritizing your pinned presets.",
+      "manualVideo": "AI Canvas keeps using your chosen local video-planning presets."
     },
     "empty": {
       "image": "No configured image models",

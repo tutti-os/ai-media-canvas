@@ -4,10 +4,10 @@ import type { AuthenticatedUser } from "../../auth/types.js";
 
 export class CanvasServiceError extends Error {
   readonly statusCode: number;
-  readonly code: "canvas_not_found" | "canvas_save_failed";
+  readonly code: "canvas_not_found" | "canvas_conflict" | "canvas_save_failed";
 
   constructor(
-    code: "canvas_not_found" | "canvas_save_failed",
+    code: "canvas_not_found" | "canvas_conflict" | "canvas_save_failed",
     message: string,
     statusCode: number,
   ) {
@@ -23,5 +23,6 @@ export type CanvasService = {
     user: AuthenticatedUser,
     canvasId: string,
     content: CanvasContent,
-  ): Promise<void>;
+    options?: { baseRevision?: number },
+  ): Promise<{ revision: number }>;
 };

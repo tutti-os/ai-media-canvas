@@ -11,7 +11,8 @@ export {
 } from "./managed-agent-invocation-credential";
 
 type TuttiManagedGrantResult = {
-  grantCode: string;
+  code: string;
+  contextToken?: string;
   expiresAt?: string;
   providers?: TuttiManagedProviderId[];
   models?: TuttiManagedModel[];
@@ -21,29 +22,27 @@ type TuttiAppContext = {
   appId?: string;
   contextToken?: string;
   installationId?: string;
+  language?: unknown;
+  locale?: unknown;
   workspaceId?: string;
 };
 
 type TuttiBridge = {
-  appContext?: {
-    get?: () => Promise<TuttiAppContext>;
+  app?: {
+    getContext?: () => Promise<TuttiAppContext | null> | TuttiAppContext | null;
   };
-  managedCredentials?: {
-    requestGrant?: (input: {
-      appId?: string;
-      contextToken: string;
-      installationId?: string;
+  permissions?: {
+    request?: (input: {
+      permission: "managed-ai-models";
       nonce: string;
       providers: TuttiManagedProviderId[];
       scopes: string[];
       state: string;
-      workspaceId?: string;
     }) => Promise<TuttiManagedGrantResult>;
   };
-  workspace?: {
-    openSettings?: (input: {
-      section: "apps";
-      pane: "managed-models";
+  settings?: {
+    open?: (input: {
+      tab: "models";
       provider?: TuttiManagedProviderId;
     }) => Promise<void>;
   };
@@ -51,30 +50,30 @@ type TuttiBridge = {
 
 declare global {
   interface Window {
-    tutti?: TuttiBridge;
+    tuttiExternal?: TuttiBridge;
   }
 }
 
 function getManagedCredentialBridge() {
   if (typeof window === "undefined") return undefined;
-  return window.tutti;
+  return window.tuttiExternal;
 }
 
 export function hasTuttiManagedCredentialBridge() {
   const bridge = getManagedCredentialBridge();
   return (
-    typeof bridge?.appContext?.get === "function" &&
-    typeof bridge?.managedCredentials?.requestGrant === "function"
+    typeof bridge?.app?.getContext === "function" &&
+    typeof bridge?.permissions?.request === "function"
   );
 }
 
 export async function requestTuttiManagedGrant(): Promise<TuttiManagedGrantCreateRequest> {
   const bridge = getManagedCredentialBridge();
-  const requestGrant = bridge?.managedCredentials?.requestGrant;
-  if (typeof requestGrant !== "function") {
+  const requestPermission = bridge?.permissions?.request;
+  if (typeof requestPermission !== "function") {
     throw new Error("Tutti Managed bridge is unavailable.");
   }
-  const context = await bridge?.appContext?.get?.();
+  const context = await bridge?.app?.getContext?.();
   if (!context?.contextToken) {
     throw new Error("Tutti app context is unavailable.");
   }
@@ -84,22 +83,17 @@ export async function requestTuttiManagedGrant(): Promise<TuttiManagedGrantCreat
   }
   const { nonce, state } = connection.connectChallenge;
 
-  const result = await requestGrant({
-    ...(context.appId ? { appId: context.appId } : {}),
-    contextToken: context.contextToken,
-    ...(context.installationId
-      ? { installationId: context.installationId }
-      : {}),
+  const result = await requestPermission({
     nonce,
+    permission: "managed-ai-models",
     providers: ["agnes", "openai", "anthropic"],
     scopes: ["managed_models.models.read", "managed_models.credentials.use"],
     state,
-    ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
   });
 
   return {
-    contextToken: context.contextToken,
-    grantCode: result.grantCode,
+    contextToken: result.contextToken ?? context.contextToken,
+    grantCode: result.code,
     nonce,
     state,
     ...(result.expiresAt ? { expiresAt: result.expiresAt } : {}),
@@ -111,13 +105,12 @@ export async function requestTuttiManagedGrant(): Promise<TuttiManagedGrantCreat
 export async function openTuttiManagedModelSettings(
   provider?: TuttiManagedProviderId,
 ) {
-  const openSettings = getManagedCredentialBridge()?.workspace?.openSettings;
+  const openSettings = getManagedCredentialBridge()?.settings?.open;
   if (typeof openSettings !== "function") {
     throw new Error("Tutti settings bridge is unavailable.");
   }
   await openSettings({
-    section: "apps",
-    pane: "managed-models",
+    tab: "models",
     ...(provider ? { provider } : {}),
   });
 }

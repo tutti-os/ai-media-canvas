@@ -27,17 +27,17 @@ import {
   isLocalCliProvider,
 } from "@/lib/agent-model-groups";
 import {
-  hasTuttiManagedCredentialBridge,
-  openTuttiManagedModelSettings,
-  requestTuttiManagedGrant,
-} from "@/lib/tutti-managed-credentials";
-import {
   connectTuttiManagedModels,
   disconnectTuttiManagedModels,
   fetchModels,
   fetchTuttiManagedConnection,
   installAgentProvider,
 } from "@/lib/server-api";
+import {
+  hasTuttiManagedCredentialBridge,
+  openTuttiManagedModelSettings,
+  requestTuttiManagedGrant,
+} from "@/lib/tutti-managed-credentials";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { LocalCliProviderIcon } from "./local-cli-provider-icon";
 import { Button } from "./ui/button";
@@ -1250,15 +1250,19 @@ export function AgentSettingsSection({
           </div>
 
           {activeSourceTab === "local-agent" ? (
-            <LocalCliProviderModelPicker
-              providerGroups={localCliProviderGroups}
-              activeProvider={activeLocalProvider}
-              onProviderChange={setActiveLocalProvider}
-              onSelect={(modelId) => selectDefaultModel(modelId, "local-agent")}
-              onRescan={refreshAvailableModels}
-              onInstallProvider={handleInstallLocalProvider}
-              installingProvider={installingLocalProvider}
-            />
+            <div className="space-y-5">
+              <LocalCliProviderModelPicker
+                providerGroups={localCliProviderGroups}
+                activeProvider={activeLocalProvider}
+                onProviderChange={setActiveLocalProvider}
+                onSelect={(modelId) =>
+                  selectDefaultModel(modelId, "local-agent")
+                }
+                onRescan={refreshAvailableModels}
+                onInstallProvider={handleInstallLocalProvider}
+                installingProvider={installingLocalProvider}
+              />
+            </div>
           ) : null}
 
           {activeSourceTab === "tutti-managed" ? (

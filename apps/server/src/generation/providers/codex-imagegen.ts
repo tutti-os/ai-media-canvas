@@ -161,7 +161,17 @@ export class CodexImagegenProvider implements ImageProvider {
         error instanceof Error ? error.message : "Unknown Codex Imagegen error",
       );
     } finally {
-      await rm(runDir, { recursive: true, force: true });
+      await rm(runDir, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 100,
+      }).catch((error) => {
+        console.warn(
+          "[codex-imagegen] temporary directory cleanup failed:",
+          error instanceof Error ? error.message : String(error),
+        );
+      });
     }
   }
 }

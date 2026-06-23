@@ -500,6 +500,12 @@ async function handleRunCommand(
     ...(payload.runtimeProvider
       ? { runtimeProvider: payload.runtimeProvider }
       : {}),
+    ...(runtimeSettings?.settings.codexImagegenDelegation
+      ? {
+          codexImagegenDelegation:
+            runtimeSettings.settings.codexImagegenDelegation,
+        }
+      : {}),
     ...(threadId ? { threadId } : {}),
   });
   assistantMessageId = response.assistantMessageId;

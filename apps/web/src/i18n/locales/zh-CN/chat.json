@@ -23,7 +23,16 @@
     "usesDefaultModel": "使用默认模型：{{model}}"
   },
   "assistant": {
-    "title": "AI Media Canvas 助手"
+    "title": "AI Canvas 助手"
+  },
+  "capabilityRequired": {
+    "configureMedia": "去连接",
+    "continueAfterSave": "媒体模型已保存，发送“继续”即可重试刚才的生成。",
+    "continueDraft": "继续",
+    "imageDescription": "连接后，我会继续按你的描述生成图片。",
+    "imageTitle": "先连接图片生成能力",
+    "videoDescription": "连接后，我会继续按你的描述生成视频。",
+    "videoTitle": "先连接视频生成能力"
   },
   "conversation": "对话",
   "input": {
@@ -36,10 +45,10 @@
   "mediaModelPreference": {
     "configure": "配置媒体模型",
     "description": {
-      "autoImage": "AI Media Canvas 会使用内置本地渲染器处理图片任务。",
-      "autoVideo": "AI Media Canvas 会使用本地视频规划预设处理分镜和动态任务。",
-      "manualImage": "AI Media Canvas 仍使用本地渲染器，并优先使用你固定的预设。",
-      "manualVideo": "AI Media Canvas 会使用你选择的本地视频规划预设。"
+      "autoImage": "AI Canvas 会使用内置本地渲染器处理图片任务。",
+      "autoVideo": "AI Canvas 会使用本地视频规划预设处理分镜和动态任务。",
+      "manualImage": "AI Canvas 仍使用本地渲染器，并优先使用你固定的预设。",
+      "manualVideo": "AI Canvas 会使用你选择的本地视频规划预设。"
     },
     "empty": {
       "image": "未配置可用的图片模型",

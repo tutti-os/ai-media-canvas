@@ -10,6 +10,7 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void;
   initialTab?: SettingsTab;
   initialAgentSourceTab?: AgentModelSourceTab | undefined;
+  onSaved?: (() => void) | undefined;
 }
 
 export function SettingsDialog({
@@ -17,6 +18,7 @@ export function SettingsDialog({
   onOpenChange,
   initialTab = "agent",
   initialAgentSourceTab,
+  onSaved,
 }: SettingsDialogProps) {
   const { t } = useAppTranslation("settings");
 
@@ -34,7 +36,10 @@ export function SettingsDialog({
         <SettingsPanel
           initialTab={initialTab}
           initialAgentSourceTab={initialAgentSourceTab}
-          onSaved={() => onOpenChange(false)}
+          onSaved={() => {
+            onOpenChange(false);
+            onSaved?.();
+          }}
           surface="dialog"
         />
       </DialogContent>

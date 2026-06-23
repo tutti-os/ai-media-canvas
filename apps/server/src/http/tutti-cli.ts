@@ -13,28 +13,41 @@ import {
 } from "@aimc/shared";
 
 import type { ServerEnv } from "../config/env.js";
+import {
+  insertImageGenerationNode,
+  insertVideoGenerationNode,
+} from "../features/canvas/canvas-element-writer.js";
 import { CanvasServiceError } from "../features/canvas/canvas-service.js";
 import { ChatServiceError } from "../features/chat/chat-service.js";
 import { JobServiceError } from "../features/jobs/job-service.js";
-import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 import { ProjectServiceError } from "../features/projects/project-service.js";
-import type { SettingsService } from "../features/settings/settings-service.js";
+import {
+  LOCAL_WORKSPACE_ID,
+  type SettingsService,
+} from "../features/settings/settings-service.js";
 import { SkillServiceError } from "../features/skills/skill-service.js";
+import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 import type { CanvasOperations } from "./canvas-operations.js";
 import type { ChatOperations } from "./chat-operations.js";
 import { listImageModels } from "./image-models.js";
 import type { JobOperations } from "./job-operations.js";
 import { listAgentModels } from "./models.js";
-import { isZodError, sendCliError, sendCliJson } from "./tutti-cli-output.js";
 import type { ProjectOperations } from "./project-operations.js";
 import type { SkillOperations } from "./skill-operations.js";
+import { isZodError, sendCliError, sendCliJson } from "./tutti-cli-output.js";
 import { listVideoModels } from "./video-models.js";
 
 type AgentCliOperations = {
   cancelRun: (runId: string) => Promise<unknown>;
   listRunEvents: (runId: string, cursor: number) => Promise<unknown>;
+  submitConsent?: (payload: {
+    decision: "allow-once" | "always" | "deny";
+    runId: string;
+  }) => Promise<unknown>;
   startRun: (payload: RunCreateRequest) => Promise<RunCreateResponse>;
 };
+
+type CanvasWriterClient = Parameters<typeof insertImageGenerationNode>[0];
 
 const emptyBodySchema = z.object({}).passthrough().optional();
 const projectCreateCliBodySchema = z.object({
@@ -43,6 +56,7 @@ const projectCreateCliBodySchema = z.object({
 });
 const canvasSaveCliBodySchema = z.object({
   "canvas-id": z.string().min(1),
+  "base-revision": z.coerce.number().int().nonnegative().optional(),
   "content-json": z.string().min(1),
 });
 const sessionCreateCliBodySchema = z.object({
@@ -62,10 +76,15 @@ const agentRunCliBodySchema = z.object({
   model: z.string().min(1).optional(),
   "runtime-kind": z.enum(["server-deepagent", "local-agent"]).optional(),
   "runtime-provider": z.string().min(1).optional(),
+  "codex-imagegen-consent": z.enum(["allow-once"]).optional(),
 });
 const agentEventsCliBodySchema = z.object({
   "run-id": z.string().min(1),
   cursor: z.number().int().nonnegative().optional(),
+});
+const agentConsentCliBodySchema = z.object({
+  "run-id": z.string().min(1),
+  decision: z.enum(["allow-once", "always", "deny"]),
 });
 const jobListCliBodySchema = z.object({
   status: z.string().min(1).optional(),
@@ -74,7 +93,7 @@ const jobListCliBodySchema = z.object({
 const generationImageCliBodySchema = z.object({
   prompt: z.string().min(1),
   model: z.string().min(1),
-  "project-id": z.string().min(1).optional(),
+  "project-id": z.string().min(1),
   "canvas-id": z.string().min(1).optional(),
   "session-id": z.string().min(1).optional(),
   "aspect-ratio": z.string().min(1).optional(),
@@ -82,11 +101,14 @@ const generationImageCliBodySchema = z.object({
   size: z.string().min(1).optional(),
   seed: z.number().int().optional(),
   "input-images": z.string().min(1).optional(),
+  "caller-provider": z.string().min(1).optional(),
+  "codex-imagegen-consent": z.enum(["allow-once"]).optional(),
+  "direct-user": z.boolean().optional(),
 });
 const generationVideoCliBodySchema = z.object({
   prompt: z.string().min(1),
   model: z.string().min(1),
-  "project-id": z.string().min(1).optional(),
+  "project-id": z.string().min(1),
   "canvas-id": z.string().min(1).optional(),
   "session-id": z.string().min(1).optional(),
   duration: z.number().int().positive().optional(),
@@ -97,6 +119,9 @@ const generationVideoCliBodySchema = z.object({
   "negative-prompt": z.string().min(1).optional(),
   seed: z.number().int().optional(),
   "enable-audio": z.boolean().optional(),
+});
+const settingsUpdateCliBodySchema = z.object({
+  "codex-imagegen-delegation": z.enum(["ask", "always", "never"]).optional(),
 });
 const skillEnableCliBodySchema = z.object({
   "skill-id": z.string().min(1),
@@ -115,6 +140,7 @@ export async function registerTuttiCliRoutes(
     projectOperations: ProjectOperations;
     settingsService?: SettingsService;
     skillOperations: SkillOperations;
+    localCanvasClient?: CanvasWriterClient;
   },
 ) {
   const route = (
@@ -125,7 +151,7 @@ export async function registerTuttiCliRoutes(
     const register = (routePath: string) =>
       app.post(routePath, async (request, reply) => {
         try {
-          const result = await handler(request.body);
+          const result = await handler(readCliInputBody(request.body));
           return sendCliJson(reply, result, statusCode);
         } catch (error) {
           return sendCliRouteError(error, reply);
@@ -176,7 +202,13 @@ export async function registerTuttiCliRoutes(
     const content = canvasContentSchema.parse(
       JSON.parse(payload["content-json"]),
     );
-    return options.canvasOperations.saveCanvas(payload["canvas-id"], content);
+    return options.canvasOperations.saveCanvas(
+      payload["canvas-id"],
+      content,
+      payload["base-revision"] === undefined
+        ? {}
+        : { baseRevision: payload["base-revision"] },
+    );
   });
 
   route("/tutti/cli/sessions/list", async (body) => {
@@ -232,6 +264,13 @@ export async function registerTuttiCliRoutes(
           ...(payload["runtime-provider"]
             ? { runtimeProvider: payload["runtime-provider"] }
             : {}),
+          ...(payload["codex-imagegen-consent"]
+            ? {
+                delegationConsent: {
+                  codexImagegen: payload["codex-imagegen-consent"],
+                },
+              }
+            : {}),
         }),
       );
     },
@@ -253,19 +292,38 @@ export async function registerTuttiCliRoutes(
     },
     202,
   );
+  route(
+    "/tutti/cli/agent/consent",
+    async (body) => {
+      if (!options.agentOperations.submitConsent) {
+        throw new Error("Agent consent is not supported by this server.");
+      }
+      const payload = agentConsentCliBodySchema.parse(body);
+      return options.agentOperations.submitConsent({
+        runId: payload["run-id"],
+        decision: payload.decision,
+      });
+    },
+    202,
+  );
 
   route(
     "/tutti/cli/generation/image",
     async (body) => {
       const payload = generationImageCliBodySchema.parse(body);
-      return options.jobOperations.createImageJob(
+      const callerProvider = payload["direct-user"]
+        ? undefined
+        : (payload["caller-provider"] ?? "external-cli");
+      const projectId = payload["project-id"];
+      const canvasId =
+        payload["canvas-id"] ??
+        (await resolvePrimaryCanvasId(options.projectOperations, projectId));
+      const result = await options.jobOperations.createImageJob(
         createImageJobRequestSchema.parse({
           prompt: payload.prompt,
           model: payload.model,
-          ...(payload["project-id"]
-            ? { project_id: payload["project-id"] }
-            : {}),
-          ...(payload["canvas-id"] ? { canvas_id: payload["canvas-id"] } : {}),
+          project_id: projectId,
+          canvas_id: canvasId,
           ...(payload["session-id"]
             ? { session_id: payload["session-id"] }
             : {}),
@@ -278,8 +336,24 @@ export async function registerTuttiCliRoutes(
           ...(payload["input-images"]
             ? { input_images: splitCsv(payload["input-images"]) }
             : {}),
+          ...(callerProvider ? { caller_provider: callerProvider } : {}),
+          ...(payload["codex-imagegen-consent"]
+            ? {
+                codex_imagegen_consent: payload["codex-imagegen-consent"],
+                codex_imagegen_delegation_allowed: true,
+              }
+            : {}),
         }),
       );
+      await insertCliImageGenerationNode({
+        canvasId,
+        payload,
+        result,
+        ...(options.localCanvasClient
+          ? { localCanvasClient: options.localCanvasClient }
+          : {}),
+      });
+      return result;
     },
     201,
   );
@@ -287,14 +361,16 @@ export async function registerTuttiCliRoutes(
     "/tutti/cli/generation/video",
     async (body) => {
       const payload = generationVideoCliBodySchema.parse(body);
-      return options.jobOperations.createVideoJob(
+      const projectId = payload["project-id"];
+      const canvasId =
+        payload["canvas-id"] ??
+        (await resolvePrimaryCanvasId(options.projectOperations, projectId));
+      const result = await options.jobOperations.createVideoJob(
         createVideoJobRequestSchema.parse({
           prompt: payload.prompt,
           model: payload.model,
-          ...(payload["project-id"]
-            ? { project_id: payload["project-id"] }
-            : {}),
-          ...(payload["canvas-id"] ? { canvas_id: payload["canvas-id"] } : {}),
+          project_id: projectId,
+          canvas_id: canvasId,
           ...(payload["session-id"]
             ? { session_id: payload["session-id"] }
             : {}),
@@ -318,6 +394,15 @@ export async function registerTuttiCliRoutes(
             : {}),
         }),
       );
+      await insertCliVideoGenerationNode({
+        canvasId,
+        payload,
+        result,
+        ...(options.localCanvasClient
+          ? { localCanvasClient: options.localCanvasClient }
+          : {}),
+      });
+      return result;
     },
     201,
   );
@@ -355,6 +440,41 @@ export async function registerTuttiCliRoutes(
     models: await listVideoModels(options.env, options.settingsService),
   }));
 
+  route("/tutti/cli/settings/get", async () => {
+    if (!options.settingsService) {
+      throw new Error("Workspace settings are not supported by this server.");
+    }
+    return {
+      settings: await options.settingsService.getWorkspaceSettings(
+        null,
+        LOCAL_WORKSPACE_ID,
+      ),
+    };
+  });
+  route("/tutti/cli/settings/update", async (body) => {
+    if (!options.settingsService) {
+      throw new Error("Workspace settings are not supported by this server.");
+    }
+    const payload = settingsUpdateCliBodySchema.parse(body ?? {});
+    const current = await options.settingsService.getWorkspaceSettings(
+      null,
+      LOCAL_WORKSPACE_ID,
+    );
+    const settings = await options.settingsService.updateWorkspaceSettings(
+      null,
+      LOCAL_WORKSPACE_ID,
+      {
+        ...current,
+        ...(payload["codex-imagegen-delegation"]
+          ? {
+              codexImagegenDelegation: payload["codex-imagegen-delegation"],
+            }
+          : {}),
+      },
+    );
+    return { settings };
+  });
+
   route("/tutti/cli/skills/list", async () =>
     options.skillOperations.listInstalledSkills(),
   );
@@ -377,6 +497,77 @@ export async function registerTuttiCliRoutes(
   });
 }
 
+async function resolvePrimaryCanvasId(
+  projectOperations: ProjectOperations,
+  projectId: string,
+) {
+  const { projects } = await projectOperations.listProjects();
+  const project = projects.find((item) => item.id === projectId);
+  if (!project) {
+    throw new ProjectServiceError(
+      "project_not_found",
+      "Project not found.",
+      404,
+    );
+  }
+  return project.primaryCanvas.id;
+}
+
+async function insertCliImageGenerationNode(input: {
+  canvasId: string;
+  localCanvasClient?: CanvasWriterClient;
+  payload: z.infer<typeof generationImageCliBodySchema>;
+  result: unknown;
+}) {
+  if (!input.localCanvasClient) return;
+  const jobId = readJobId(input.result);
+  if (!jobId) return;
+  await insertImageGenerationNode(input.localCanvasClient, {
+    canvasId: input.canvasId,
+    jobId,
+    prompt: input.payload.prompt,
+    model: input.payload.model,
+    aspectRatio: input.payload["aspect-ratio"] ?? "1:1",
+    ...(input.payload.quality ? { quality: input.payload.quality } : {}),
+    ...(input.payload["input-images"]
+      ? { inputImages: splitCsv(input.payload["input-images"]) }
+      : {}),
+  });
+}
+
+async function insertCliVideoGenerationNode(input: {
+  canvasId: string;
+  localCanvasClient?: CanvasWriterClient;
+  payload: z.infer<typeof generationVideoCliBodySchema>;
+  result: unknown;
+}) {
+  if (!input.localCanvasClient) return;
+  const jobId = readJobId(input.result);
+  if (!jobId) return;
+  await insertVideoGenerationNode(input.localCanvasClient, {
+    canvasId: input.canvasId,
+    jobId,
+    prompt: input.payload.prompt,
+    model: input.payload.model,
+    aspectRatio: input.payload["aspect-ratio"] ?? "16:9",
+    ...(input.payload.duration ? { duration: input.payload.duration } : {}),
+    ...(input.payload.resolution
+      ? { resolution: input.payload.resolution }
+      : {}),
+    ...(input.payload["input-images"]
+      ? { inputImages: splitCsv(input.payload["input-images"]) }
+      : {}),
+  });
+}
+
+function readJobId(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const job = (value as { job?: unknown }).job;
+  if (!job || typeof job !== "object") return null;
+  const id = (job as { id?: unknown }).id;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
 function parseRequiredString(body: unknown, key: string) {
   const payload = z.record(z.string(), z.unknown()).parse(body);
   const value = payload[key];
@@ -384,6 +575,42 @@ function parseRequiredString(body: unknown, key: string) {
     throw new Error(`Missing required input: ${key}`);
   }
   return value;
+}
+
+function readCliInputBody(body: unknown) {
+  if (!isRecord(body) || !isCliInvokeEnvelope(body)) {
+    return body;
+  }
+
+  return body.input ?? {};
+}
+
+function isCliInvokeEnvelope(body: Record<string, unknown>) {
+  const keys = Object.keys(body);
+  if (!Object.hasOwn(body, "input")) {
+    return false;
+  }
+  if (body.schemaVersion === "tutti.app.cli.invoke.v1") {
+    return true;
+  }
+  if (
+    Object.hasOwn(body, "commandId") &&
+    Object.hasOwn(body, "appId") &&
+    Object.hasOwn(body, "scope") &&
+    Object.hasOwn(body, "path")
+  ) {
+    return true;
+  }
+  return (
+    keys.length > 0 &&
+    keys.every(
+      (key) => key === "input" || key === "outputMode" || key === "context",
+    )
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function splitCsv(value: string) {

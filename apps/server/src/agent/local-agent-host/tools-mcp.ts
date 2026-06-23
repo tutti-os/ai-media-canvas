@@ -25,6 +25,22 @@ function send(value: Record<string, unknown>) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function logMcpToolEvent(event: string, fields: Record<string, unknown>) {
+  process.stderr.write(
+    `${JSON.stringify({
+      level: "info",
+      time: new Date().toISOString(),
+      scope: "local_agent.mcp_server",
+      event,
+      ...fields,
+    })}\n`,
+  );
+}
+
 async function fetchManifest() {
   const response = await fetch(`${gatewayUrl}/manifest`, {
     headers: {
@@ -133,12 +149,32 @@ async function handleRequest(message: JsonRpcRequest) {
         : {};
 
     if (!toolName) {
+      logMcpToolEvent("tool_call_invalid", {
+        requestId: message.id,
+        reason: "missing_tool_name",
+      });
       sendError(message.id, -32602, "Tool name is required.");
       return;
     }
 
+    const startedAt = Date.now();
+    logMcpToolEvent("tool_call_received", {
+      requestId: message.id,
+      toolName,
+      inputKeys: Object.keys(args).sort(),
+      ...(stringField(args.model) ? { model: args.model } : {}),
+      ...(stringField(args.aspectRatio) ? { aspectRatio: args.aspectRatio } : {}),
+      ...(stringField(args.title) ? { title: args.title } : {}),
+    });
+
     try {
       const { isError, result } = await callTool(toolName, args);
+      logMcpToolEvent("tool_call_completed", {
+        requestId: message.id,
+        toolName,
+        isError,
+        elapsedMs: Date.now() - startedAt,
+      });
       send({
         jsonrpc: "2.0",
         id: message.id,
@@ -153,6 +189,12 @@ async function handleRequest(message: JsonRpcRequest) {
         },
       });
     } catch (error) {
+      logMcpToolEvent("tool_call_failed", {
+        requestId: message.id,
+        toolName,
+        elapsedMs: Date.now() - startedAt,
+        message: error instanceof Error ? error.message : "Tool call failed.",
+      });
       sendError(
         message.id,
         -32000,

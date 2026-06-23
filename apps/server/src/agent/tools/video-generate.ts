@@ -10,6 +10,11 @@ import {
 import { generateVideo } from "../../generation/video-generation.js";
 import type { CanvasLayoutInspectionState } from "./inspect-canvas.js";
 import {
+  buildMediaCapabilityRequired,
+  isUnavailableMediaGenerationError,
+  type MediaCapabilityRequired,
+} from "./media-capability.js";
+import {
   collectStringEnumValues,
   summarizeModelSchemaForTool,
 } from "./model-schema-summary.js";
@@ -120,13 +125,7 @@ function buildVideoGenerateSchema(models: AvailableVideoModel[]) {
   const aspectRatioValues = collectStringEnumValues(models, "aspectRatio");
   const resolutionValues = collectStringEnumValues(models, "resolution");
 
-  const modelField =
-    modelIds.length >= 1
-      ? z
-          .enum(modelIds as [string, ...string[]])
-          .default(defaultModel as (typeof modelIds)[number])
-          .describe(modelDescription)
-      : z.string().default(DEFAULT_MODEL).describe(modelDescription);
+  const modelField = z.string().default(defaultModel).describe(modelDescription);
 
   return z.object({
     title: z
@@ -276,6 +275,8 @@ type VideoGenerateResult = {
   durationSeconds?: number;
   placement?: { x: number; y: number; width: number; height: number };
   error?: string;
+  errorCode?: string;
+  capabilityRequired?: MediaCapabilityRequired;
   jobId?: string;
   jobType?: "video_generation";
   status?: "generating";
@@ -499,6 +500,16 @@ export async function runVideoGenerate(
       }
       return result;
     } catch (error) {
+      if (isUnavailableMediaGenerationError(error)) {
+        const capabilityRequired =
+          buildMediaCapabilityRequired("video_generation");
+        return {
+          summary: "media_provider_configuration_required",
+          error: "media_provider_configuration_required",
+          errorCode: "media_provider_configuration_required",
+          capabilityRequired,
+        };
+      }
       const message = error instanceof Error ? error.message : "Unknown error";
       return {
         summary: `Video generation failed with model ${effectiveInput.model}: ${message}`,
@@ -624,6 +635,16 @@ export async function runVideoGenerate(
     }
     return directResult;
   } catch (error) {
+    if (isUnavailableMediaGenerationError(error)) {
+      const capabilityRequired =
+        buildMediaCapabilityRequired("video_generation");
+      return {
+        summary: "media_provider_configuration_required",
+        error: "media_provider_configuration_required",
+        errorCode: "media_provider_configuration_required",
+        capabilityRequired,
+      };
+    }
     const message = error instanceof Error ? error.message : "Unknown error";
     return {
       summary: `Video generation failed: ${message}`,

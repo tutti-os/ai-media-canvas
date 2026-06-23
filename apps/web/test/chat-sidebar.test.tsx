@@ -73,12 +73,26 @@ vi.mock("../src/components/settings-dialog", () => ({
   SettingsDialog: ({
     open,
     onOpenChange,
+    initialTab,
+    onSaved,
   }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    initialTab?: "general" | "agent" | "media";
+    onSaved?: () => void;
   }) => {
-    settingsDialogSpy({ open, onOpenChange });
-    return open ? <div>Mock Settings Dialog</div> : null;
+    settingsDialogSpy({ initialTab, onOpenChange, onSaved, open });
+    return open ? (
+      <div>
+        Mock Settings Dialog
+        <button type="button" onClick={() => onOpenChange(false)}>
+          Mock Close Settings
+        </button>
+        <button type="button" onClick={onSaved}>
+          Mock Save Settings
+        </button>
+      </div>
+    ) : null;
   },
 }));
 
@@ -229,6 +243,7 @@ describe("ChatSidebar", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     cleanup();
     sessionStorage.clear();
     (window as Window & { tutti?: unknown }).tutti = undefined;
@@ -305,6 +320,63 @@ describe("ChatSidebar", () => {
     expect(input).toHaveValue("hello while disconnected");
     expect(saveMessageMock).not.toHaveBeenCalled();
     expect(mockWs.startRun).not.toHaveBeenCalled();
+  });
+
+  it("filters stored manual image model preferences to currently available models", async () => {
+    fetchImageModelsMock.mockResolvedValueOnce({
+      models: [
+        {
+          id: "codex/gpt-image-2",
+          displayName: "GPT Image 2",
+        },
+      ],
+    });
+    localStorage.setItem(
+      "aimc:image-model-preference",
+      JSON.stringify({
+        mode: "manual",
+        models: ["black-forest-labs/flux-kontext-pro", "codex/gpt-image-2"],
+      }),
+    );
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => expect(fetchImageModelsMock).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "generate image{Enter}");
+
+    await waitFor(() =>
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          imageGenerationPreference: {
+            mode: "manual",
+            models: ["codex/gpt-image-2"],
+          },
+        }),
+        expect.any(Function),
+      ),
+    );
+    expect(mockWs.startRun).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        imageGenerationPreference: expect.objectContaining({
+          models: expect.arrayContaining([
+            "black-forest-labs/flux-kontext-pro",
+          ]),
+        }),
+      }),
+      expect.any(Function),
+    );
   });
 
   it("auto-starts image-only initial runs from stored home attachments", async () => {
@@ -854,6 +926,82 @@ describe("ChatSidebar", () => {
     );
   });
 
+  it("does not client-insert artifacts that the backend already inserted", async () => {
+    const imageGeneratedSpy = vi.fn();
+    const canvasSyncSpy = vi.fn();
+    const listeners: Array<
+      (entry: {
+        event: Record<string, unknown>;
+        replayed?: boolean;
+        eventId?: string;
+        seq?: number;
+      }) => void
+    > = [];
+    mockWs = {
+      ...mockWs,
+      onEvent: vi.fn((nextListener) => {
+        const listener = nextListener as (typeof listeners)[number];
+        listeners.push(listener);
+        return () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) listeners.splice(index, 1);
+        };
+      }),
+    };
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          onCanvasSync={canvasSyncSpy}
+          onImageGenerated={imageGeneratedSpy}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "generate image{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+
+    vi.useFakeTimers();
+    for (const listener of [...listeners]) {
+      listener({
+        event: {
+          type: "tool.completed",
+          runId: "run_123",
+          toolCallId: "tool-backend-image",
+          toolName: "generate_image",
+          output: {
+            elementId: "canvas-image-1",
+            imageUrl: "https://example.com/backend.png",
+          },
+          artifacts: [
+            {
+              type: "image",
+              title: "Backend image",
+              url: "https://example.com/backend.png",
+              mimeType: "image/png",
+              width: 1024,
+              height: 1024,
+            },
+          ],
+          timestamp: "2026-06-04T00:00:00.000Z",
+        },
+      });
+    }
+
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+
+    expect(imageGeneratedSpy).not.toHaveBeenCalled();
+    expect(canvasSyncSpy).toHaveBeenCalled();
+  });
+
   it("shows a chat media loading card for deferred image jobs", async () => {
     const listeners: Array<
       (entry: {
@@ -1019,6 +1167,124 @@ describe("ChatSidebar", () => {
     expect(settingsDialogSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({ open: true }),
     );
+  });
+
+  it("prompts the user to continue after saving media settings from a capability card", async () => {
+    fetchMessagesMock.mockResolvedValue({
+      messages: [
+        {
+          id: "assistant-media-required",
+          role: "assistant",
+          content: "",
+          createdAt: "2026-03-24T00:00:00.000Z",
+          toolActivities: null,
+          contentBlocks: [
+            {
+              type: "tool",
+              toolCallId: "tool-media-required",
+              toolName: "generate_image",
+              status: "completed",
+              output: {
+                error: "media_provider_configuration_required",
+                errorCode: "media_provider_configuration_required",
+                capabilityRequired: {
+                  kind: "media_provider_configuration_required",
+                  capability: "image_generation",
+                },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "去连接" }),
+    );
+    expect(settingsDialogSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ initialTab: "media", open: true }),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Mock Save Settings" }),
+    );
+
+    expect(
+      await screen.findByText("媒体模型已保存，发送“继续”即可重试刚才的生成。"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "输入消息" })).toHaveValue(
+      "继续",
+    );
+  });
+
+  it("does not prompt to continue after a later unrelated settings save", async () => {
+    fetchMessagesMock.mockResolvedValue({
+      messages: [
+        {
+          id: "assistant-media-required",
+          role: "assistant",
+          content: "",
+          createdAt: "2026-03-24T00:00:00.000Z",
+          toolActivities: null,
+          contentBlocks: [
+            {
+              type: "tool",
+              toolCallId: "tool-media-required",
+              toolName: "generate_image",
+              status: "completed",
+              output: {
+                error: "media_provider_configuration_required",
+                errorCode: "media_provider_configuration_required",
+                capabilityRequired: {
+                  kind: "media_provider_configuration_required",
+                  capability: "image_generation",
+                },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "去连接" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Mock Close Settings" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Mock Save Settings" }),
+    );
+
+    expect(
+      screen.queryByText("媒体模型已保存，发送“继续”即可重试刚才的生成。"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "输入消息" })).toHaveValue("");
   });
 
   it("replays durable run events on reconnect to recover missed media insertions", async () => {
