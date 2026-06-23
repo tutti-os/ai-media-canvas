@@ -625,11 +625,19 @@ export default interface Resources {
     },
     "media": {
       "actions": {
+        "add": "添加",
+        "adding": "添加中",
+        "cancel": "取消",
+        "collapse": "收起",
+        "enable": "启用",
+        "expand": "展开",
         "getApiKey": "获取 {{provider}} API Key",
         "save": "保存",
-        "saving": "保存中..."
+        "saving": "保存中...",
+        "scan": "扫描",
+        "scanning": "扫描中...",
+        "settings": "设置"
       },
-      "affectedModels": "受影响模型",
       "agnesHint": {
         "description": "Agnes 提供免费的入门路由。",
         "free": "免费",
@@ -638,33 +646,30 @@ export default interface Resources {
       },
       "capabilities": {
         "image": "图片",
-        "imageVideo": "图片 + 视频"
+        "video": "视频"
       },
       "cards": {
         "agnes": {
+          "remark": "推荐 · 免费可用",
           "summary": "Agnes 多模态路由。通过 agnes-ai-cli 提供图片/视频生成能力，包括 compose 与支持关键帧的视频模式。"
         },
         "google": {
           "summary": "Google AI Studio / Developer API 路由，适合 Nano Banana 和 Google 官方图片/视频模型系列。"
         },
         "kie": {
+          "remark": "可选模型最多",
           "summary": "Kie Market 第三方聚合路由，用于 Seedream、Nano Banana、Runway、Veo、Kling、Seedance 等图片与视频模型。"
         },
         "openai": {
           "summary": "OpenAI 兼容图片路由，复用 OpenAI 兼容 Agent 协议的 key/base URL 配置。"
         },
         "replicate": {
+          "remark": "开源模型丰富",
           "summary": "第三方托管模型路由，适合 Seedream、Seedance、Kling，或经 Replicate 路由的 Veo/Sora 系列。"
-        },
-        "vertex": {
-          "summary": "Google Cloud 托管路由。使用 Vertex project 与 location，服务账号凭证仍来自环境变量。"
-        },
-        "volces": {
-          "summary": "字节跳动 / 火山引擎官方通道，用于通过 Ark 提供的豆包 Seedream 模型。"
         }
       },
       "codexImagegen": {
-        "description": "当没有直接可用的生图模型时，设置其他 Agent 是否可以调用 Codex Image 2.0 生图能力。",
+        "description": "设置当前 Agent 是否可以调用 Codex Image 2.0 生图能力。",
         "options": {
           "always": {
             "description": "以后符合条件的生图请求自动使用 Codex。",
@@ -681,17 +686,50 @@ export default interface Resources {
         },
         "title": "Codex 生图权限"
       },
-      "description": "按平台配置图片与视频提供商。如果同一模型家族后续存在多个平台版本，AIMC 会按提供商范围的模型 ID 分开保存，方便你显式选择路由。",
+      "connected": {
+        "codexMeta": "本机权限 · {{mode}}",
+        "codexNote": "符合条件的生图请求会使用 Codex Image 2.0。",
+        "providerMeta": "API Key 已配置 · {{count}} 个模型",
+        "providerMeta_one": "API Key 已配置 · {{count}} 个模型",
+        "providerMeta_other": "API Key 已配置 · {{count}} 个模型"
+      },
+      "description": "连接 AI 服务，用来生成图片和视频。",
       "feedback": {
         "updateFailed": "本地媒体提供商设置更新失败，请重试。",
         "updated": "本地媒体提供商设置已更新。"
       },
-      "localStorageNote": "这些值会保存在本地 sqlite 设置数据库中，并被对应媒体提供商复用。",
-      "status": {
-        "configured": "已配置",
-        "notConfigured": "未配置"
+      "localDetection": {
+        "codexMeta": "当前 Agent 可调用 Codex Image 2.0 生图能力",
+        "codexTitle": "Codex 生图权限",
+        "detected": "检测到 1 个",
+        "enabled": "已启用"
       },
-      "title": "媒体提供商"
+      "localStorageNote": "这些值会保存在本地 sqlite 设置数据库中，并被对应媒体提供商复用。",
+      "manualAdd": {
+        "advanced": "高级选项",
+        "advancedHint": "通常不需要修改",
+        "description": "用自己的 API Key 接入更多图片和视频服务（共 {{count}} 个可选）。",
+        "description_one": "用自己的 API Key 接入更多图片和视频服务（共 {{count}} 个可选）。",
+        "description_other": "用自己的 API Key 接入更多图片和视频服务（共 {{count}} 个可选）。",
+        "supportedModels": "支持模型"
+      },
+      "sections": {
+        "connected": "已连接",
+        "localDetection": "本机检测",
+        "manualAdd": "手动添加",
+        "tuttiSync": "同步 Tutti 设置"
+      },
+      "status": {
+        "enabled": "✓ 已启用",
+        "notConfigured": "未配置",
+        "ready": "已就绪"
+      },
+      "title": "媒体生成",
+      "tuttiSync": {
+        "description": "复用已有 API Key，扫描可用于图片和视频生成的模型。",
+        "empty": "未发现可用于媒体生成的 Tutti 配置。",
+        "error": "无法扫描 Tutti 设置，请稍后重试。"
+      }
     },
     "modelConfiguration": {
       "configureAgent": "配置 Agent",
