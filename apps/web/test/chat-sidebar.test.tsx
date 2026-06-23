@@ -278,6 +278,35 @@ describe("ChatSidebar", () => {
     );
   });
 
+  it("does not save or consume input while the WebSocket is disconnected", async () => {
+    mockWs = {
+      ...mockWs,
+      connected: false,
+    };
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    expect(
+      await screen.findByText("连接已断开，正在重连..."),
+    ).toBeInTheDocument();
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "hello while disconnected{Enter}");
+
+    expect(input).toHaveValue("hello while disconnected");
+    expect(saveMessageMock).not.toHaveBeenCalled();
+    expect(mockWs.startRun).not.toHaveBeenCalled();
+  });
+
   it("auto-starts image-only initial runs from stored home attachments", async () => {
     const attachments = [
       {

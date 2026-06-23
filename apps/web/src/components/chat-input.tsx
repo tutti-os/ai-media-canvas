@@ -27,7 +27,7 @@ import {
 import { SettingsDialog } from "./settings-dialog";
 
 type ChatInputProps = {
-  onSend: (message: string) => void;
+  onSend: (message: string) => boolean | undefined;
   disabled?: boolean;
   attachments?: ImageAttachmentState[];
   canSendAttachments?: boolean;
@@ -129,7 +129,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         return;
       }
 
-      onSend(trimmed);
+      const sent = onSend(trimmed);
+      if (sent === false) return;
       setValue("");
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
