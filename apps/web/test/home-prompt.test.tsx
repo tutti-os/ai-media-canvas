@@ -170,7 +170,7 @@ describe("HomePrompt", () => {
     );
 
     await user.type(
-      screen.getByPlaceholderText("让 AI Media Canvas 帮你设计..."),
+      screen.getByPlaceholderText("让 AI Canvas 帮你设计..."),
       "请把这张自拍扩展成时尚杂志封面方案",
     );
     await user.click(screen.getByRole("button", { name: "提交 prompt" }));
@@ -233,7 +233,7 @@ describe("HomePrompt", () => {
     render(<HomePrompt onSubmit={onSubmit} />);
 
     await user.type(
-      screen.getByPlaceholderText("让 AI Media Canvas 帮你设计..."),
+      screen.getByPlaceholderText("让 AI Canvas 帮你设计..."),
       "生成一张海报",
     );
     await user.click(screen.getByRole("button", { name: "提交 prompt" }));

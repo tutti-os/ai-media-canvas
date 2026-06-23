@@ -1,6 +1,6 @@
-# Contributing to AI Media Canvas
+# Contributing to AI Canvas
 
-Thanks for your interest in contributing to AI Media Canvas.
+Thanks for your interest in contributing to AI Canvas.
 
 This project is a local-first, single-user AI media canvas. Please keep changes focused, practical, and aligned with the existing app architecture.
 

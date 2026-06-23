@@ -136,8 +136,8 @@ test("createManifest returns the Tutti package manifest contract", () => {
     schemaVersion: "tutti.app.manifest.v1",
     appId: "ai-media-canvas",
     version: "1.2.3",
-    name: "AI Media Canvas",
-    description: "Local-first AI canvas for image and video generation.",
+    name: "AI Canvas",
+    description: "Generate and organize AI images and videos on a canvas.",
     icon: {
       type: "asset",
       src: "icon.png",
@@ -148,6 +148,10 @@ test("createManifest returns the Tutti package manifest contract", () => {
     },
     cli: {
       manifest: "tutti.cli.json",
+    },
+    references: {
+      listEndpoint: "/tutti/references/list",
+      searchEndpoint: "/tutti/references/search",
     },
     localizationInfo: {
       defaultLocale: "en",
@@ -189,7 +193,7 @@ test("createCliManifest returns the Tutti CLI manifest contract", () => {
       path: ["projects", "create"],
       summary: "Create a project",
       description:
-        "Create a local AI Media Canvas project. Use the returned primaryCanvas.id before saving canvas content.",
+        "Create a local AI Canvas project. Use the returned primaryCanvas.id before saving canvas content.",
       inputSchema: {
         type: "object",
         properties: {
@@ -237,12 +241,12 @@ test("createCliManifest keeps command metadata discoverable for agents", () => {
 test("renderCommandsGuide documents CLI commands", () => {
   const guide = renderCommandsGuide();
 
-  assert.match(guide, /AI Media Canvas CLI Commands/);
+  assert.match(guide, /AI Canvas CLI Commands/);
   assert.match(guide, /`aimc projects create --name <required> --description`/);
   assert.match(guide, /\/tutti\/cli\/agent\/run/);
 });
 
-test("renderBootstrap maps Tutti runtime env into AI Media Canvas env", () => {
+test("renderBootstrap maps Tutti runtime env into AI Canvas env", () => {
   const bootstrap = renderBootstrap({ version: "1.2.3" });
 
   assert.match(bootstrap, /^#!\/bin\/sh\n/);
@@ -304,7 +308,7 @@ test("renderBootstrap maps Tutti runtime env into AI Media Canvas env", () => {
 test("renderAgentsGuide is non-empty and documents package layout", () => {
   const guide = renderAgentsGuide();
 
-  assert.match(guide, /AI Media Canvas/);
+  assert.match(guide, /AI Canvas/);
   assert.match(guide, /tutti\.app\.json/);
   assert.match(guide, /bootstrap\.sh/);
   assert.match(guide, /icon\.png/);

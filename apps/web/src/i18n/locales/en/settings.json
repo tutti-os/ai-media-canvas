@@ -59,7 +59,7 @@
       "tuttiManaged": "Tutti Managed"
     },
     "tuttiManaged": {
-      "bridgeUnavailable": "Open AI Media Canvas inside Tutti to authorize managed models.",
+      "bridgeUnavailable": "Open AI Canvas inside Tutti to authorize managed models.",
       "chooseModel": "Choose a Tutti Managed model below.",
       "connect": "Connect",
       "connected": "Connected",

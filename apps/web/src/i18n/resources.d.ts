@@ -183,7 +183,7 @@ export default interface Resources {
       "usesDefaultModel": "使用默认模型：{{model}}"
     },
     "assistant": {
-      "title": "AI Media Canvas 助手"
+      "title": "AI Canvas 助手"
     },
     "capabilityRequired": {
       "configureMedia": "去连接",
@@ -205,10 +205,10 @@ export default interface Resources {
     "mediaModelPreference": {
       "configure": "配置媒体模型",
       "description": {
-        "autoImage": "AI Media Canvas 会使用内置本地渲染器处理图片任务。",
-        "autoVideo": "AI Media Canvas 会使用本地视频规划预设处理分镜和动态任务。",
-        "manualImage": "AI Media Canvas 仍使用本地渲染器，并优先使用你固定的预设。",
-        "manualVideo": "AI Media Canvas 会使用你选择的本地视频规划预设。"
+        "autoImage": "AI Canvas 会使用内置本地渲染器处理图片任务。",
+        "autoVideo": "AI Canvas 会使用本地视频规划预设处理分镜和动态任务。",
+        "manualImage": "AI Canvas 仍使用本地渲染器，并优先使用你固定的预设。",
+        "manualVideo": "AI Canvas 会使用你选择的本地视频规划预设。"
       },
       "empty": {
         "image": "未配置可用的图片模型",
@@ -298,7 +298,7 @@ export default interface Resources {
       "search": "搜索",
       "upload": "上传"
     },
-    "productName": "AI Media Canvas"
+    "productName": "AI Canvas"
   },
   "errors": {
     "canvas": {
@@ -467,7 +467,7 @@ export default interface Resources {
       "attachImages": "添加图片",
       "clear": "清除",
       "modelPreference": "图片/视频模型",
-      "placeholder": "让 AI Media Canvas 帮你设计...",
+      "placeholder": "让 AI Canvas 帮你设计...",
       "submit": "提交 prompt"
     },
     "recentProjects": {
@@ -578,7 +578,7 @@ export default interface Resources {
         "tuttiManaged": "Tutti Managed"
       },
       "tuttiManaged": {
-        "bridgeUnavailable": "请在 Tutti 中打开 AI Media Canvas 后授权托管模型。",
+        "bridgeUnavailable": "请在 Tutti 中打开 AI Canvas 后授权托管模型。",
         "chooseModel": "请在下方选择 Tutti Managed 模型。",
         "connect": "连接",
         "connectFirst": "连接 Tutti Managed 后导入可用模型。",
@@ -734,7 +734,7 @@ export default interface Resources {
     "createDialog": {
       "addFile": "添加文件",
       "adding": "添加中...",
-      "description": "创建新的本地技能来扩展 AI Media Canvas 助手的能力。",
+      "description": "创建新的本地技能来扩展 AI Canvas 助手的能力。",
       "descriptionPlaceholder": "简述技能的功能和用途...",
       "fileContentPlaceholder": "文件内容...",
       "invalidPath": "文件路径需要以 scripts/、references/ 或 assets/ 开头。",

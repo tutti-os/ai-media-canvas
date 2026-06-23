@@ -16,7 +16,7 @@
   "createDialog": {
     "addFile": "Add file",
     "adding": "Adding...",
-    "description": "Create a local skill to extend the AI Media Canvas assistant.",
+    "description": "Create a local skill to extend the AI Canvas assistant.",
     "descriptionPlaceholder": "Summarize what this skill does and when to use it...",
     "fileContentPlaceholder": "File content...",
     "invalidPath": "File paths must start with scripts/, references/, or assets/.",

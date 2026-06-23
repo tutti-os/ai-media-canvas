@@ -14,8 +14,8 @@ const metadataBase = process.env.AIMC_SERVER_BASE_URL
 
 export const metadata: Metadata = {
   metadataBase,
-  title: "AI Media Canvas",
-  description: "Local-first AI canvas for image and video generation.",
+  title: "AI Canvas",
+  description: "Generate and organize AI images and videos on a canvas.",
   icons: {
     icon: [
       { url: "/brand/aimc-logo-cloud-spark.svg", type: "image/svg+xml" },
