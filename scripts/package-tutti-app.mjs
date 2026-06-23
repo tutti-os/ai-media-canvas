@@ -38,17 +38,17 @@ const CLI_COMMANDS = [
     path: ["status"],
     summary: "Show app status",
     description:
-      "Return AI Media Canvas server health, app version, and local runtime metadata.",
+      "Return AI Canvas server health, app version, and local runtime metadata.",
   },
   {
     path: ["projects", "list"],
     summary: "List projects",
-    description: "List local AI Media Canvas projects.",
+    description: "List local AI Canvas projects.",
   },
   {
     path: ["projects", "get"],
     summary: "Get a project",
-    description: "Return one local AI Media Canvas project by project-id.",
+    description: "Return one local AI Canvas project by project-id.",
     properties: {
       "project-id": { type: "string", description: "Project id to load." },
     },
@@ -58,7 +58,7 @@ const CLI_COMMANDS = [
     path: ["projects", "create"],
     summary: "Create a project",
     description:
-      "Create a local AI Media Canvas project. Use the returned primaryCanvas.id before saving canvas content.",
+      "Create a local AI Canvas project. Use the returned primaryCanvas.id before saving canvas content.",
     properties: {
       name: { type: "string", description: "Project name." },
       description: {
@@ -142,7 +142,7 @@ const CLI_COMMANDS = [
     path: ["agent", "run"],
     summary: "Start an agent run",
     description:
-      "Start an AI Media Canvas agent run for a session and conversation. Poll events with aimc agent events --run-id <runId>. For local agents, pass --runtime-kind local-agent --runtime-provider codex or --runtime-provider claude; when model is omitted the provider default is used. If model is provided with a local provider, use a matching provider-prefixed model such as codex:default or claude:default from aimc models list. If a non-Codex local agent needs Codex image generation and the user selected only this time, pass --codex-imagegen-consent allow-once on the follow-up run.",
+      "Start an AI Canvas agent run for a session and conversation. Poll events with aimc agent events --run-id <runId>. For local agents, pass --runtime-kind local-agent --runtime-provider codex or --runtime-provider claude; when model is omitted the provider default is used. If model is provided with a local provider, use a matching provider-prefixed model such as codex:default or claude:default from aimc models list. If a non-Codex local agent needs Codex image generation and the user selected only this time, pass --codex-imagegen-consent allow-once on the follow-up run.",
     properties: {
       "session-id": { type: "string", description: "Chat session id." },
       "conversation-id": {
@@ -385,7 +385,7 @@ const CLI_COMMANDS = [
   {
     path: ["skills", "list"],
     summary: "List skills",
-    description: "List installed AI Media Canvas skills.",
+    description: "List installed AI Canvas skills.",
   },
   {
     path: ["skills", "get"],
@@ -480,7 +480,7 @@ export function createCliManifest() {
     schemaVersion: "tutti.app.cli.v1",
     scope: CLI_SCOPE,
     description:
-      "Control AI Media Canvas projects, canvases, generation jobs, agent runs, and skills.",
+      "Control AI Canvas projects, canvases, generation jobs, agent runs, and skills.",
     documentation: {
       file: "COMMANDS.md",
     },
@@ -526,7 +526,7 @@ export function renderCommandsGuide() {
     })
     .join("\n");
 
-  return `# AI Media Canvas CLI Commands\n\nScope: \`${manifest.scope}\`\n\nThese commands expose AI Media Canvas to the Tutti app CLI. Command outputs are JSON \`CliCommandOutput\` envelopes.\n\n${rows}`;
+  return `# AI Canvas CLI Commands\n\nScope: \`${manifest.scope}\`\n\nThese commands expose AI Canvas to the Tutti app CLI. Command outputs are JSON \`CliCommandOutput\` envelopes.\n\n${rows}`;
 }
 
 export function renderBootstrap({ version = "0.0.0" } = {}) {
@@ -611,9 +611,9 @@ monitor_children
 }
 
 export function renderAgentsGuide() {
-  return `# AI Media Canvas Tutti Package
+  return `# AI Canvas Tutti Package
 
-This package runs AI Media Canvas as a Tutti workspace app.
+This package runs AI Canvas as a Tutti workspace app.
 
 ## Package Layout
 

@@ -3607,7 +3607,7 @@ export function createLocalStore(options: {
 
   function createGeneratedImage(prompt: string) {
     const svg = buildGeneratedPreviewSvg({
-      title: "AI Media Canvas Local Preview",
+      title: "AI Canvas Local Preview",
       subtitle: "Prompt",
       body: prompt,
     });
@@ -3638,7 +3638,7 @@ export function createLocalStore(options: {
     const duration = input.duration ?? 8;
     const resolution = input.resolution ?? "1080p";
     const previewSvg = buildGeneratedPreviewSvg({
-      title: "AI Media Canvas Video Storyboard",
+      title: "AI Canvas Video Storyboard",
       subtitle: `${input.model ?? "local:storyboard-motion"} · ${duration}s · ${resolution}`,
       body: input.prompt,
       width: 1280,
@@ -3653,7 +3653,7 @@ export function createLocalStore(options: {
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
     });
     const plan = {
-      title: "AI Media Canvas Local Video Plan",
+      title: "AI Canvas Local Video Plan",
       prompt: input.prompt,
       model: input.model ?? "local:storyboard-motion",
       durationSeconds: duration,

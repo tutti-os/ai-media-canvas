@@ -171,7 +171,7 @@ export function createLocalAgentRuntimeProvider(
             ].join("\n")
           : undefined;
       const prompt = [
-        "You are the local agent runtime for AI Media Canvas.",
+        "You are the local agent runtime for AI Canvas.",
         "If the user wants a finished visual asset, call generate_image or generate_video.",
         "Use inspect_canvas before precise canvas edits, and use manipulate_canvas for deterministic canvas updates.",
         "Do not claim an image or canvas update happened unless the tool actually succeeded.",

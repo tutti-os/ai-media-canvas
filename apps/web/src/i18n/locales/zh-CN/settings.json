@@ -59,7 +59,7 @@
       "tuttiManaged": "Tutti Managed"
     },
     "tuttiManaged": {
-      "bridgeUnavailable": "请在 Tutti 中打开 AI Media Canvas 后授权托管模型。",
+      "bridgeUnavailable": "请在 Tutti 中打开 AI Canvas 后授权托管模型。",
       "chooseModel": "请在下方选择 Tutti Managed 模型。",
       "connect": "连接",
       "connected": "已连接",

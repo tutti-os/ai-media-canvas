@@ -1,4 +1,4 @@
-// Cross-app contract barrel for the standalone AI Media Canvas build.
+// Cross-app contract barrel for the standalone AI Canvas build.
 export * from "./contracts.js";
 export * from "./errors.js";
 export * from "./events.js";

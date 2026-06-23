@@ -664,7 +664,7 @@ function sendStandaloneFeatureUnavailable(
   return sendApplicationError(
     reply,
     "application_error",
-    `${feature} is not available in the standalone AI Media Canvas build.`,
+    `${feature} is not available in the standalone AI Canvas build.`,
     statusCode,
   );
 }

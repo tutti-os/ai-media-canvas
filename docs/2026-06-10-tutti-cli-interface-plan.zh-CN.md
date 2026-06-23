@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Expose AI Media Canvas capabilities to the Tutti app CLI through `tutti.cli.json` and `/tutti/cli/*` HTTP handlers.
+**Goal:** Expose AI Canvas capabilities to the Tutti app CLI through `tutti.cli.json` and `/tutti/cli/*` HTTP handlers.
 
 **Architecture:** The packaged app manifest will declare a CLI manifest, the package script will generate `tutti.cli.json` plus command help docs, and the Fastify server will register a small CLI adapter layer. CLI routes must not duplicate existing HTTP route business logic; shared operations should live in service/use-case helpers that are called by both normal `/api/*` routes and `/tutti/cli/*` routes.
 
@@ -199,7 +199,7 @@ The package script should generate a manifest with this top-level shape:
 {
   "schemaVersion": "tutti.app.cli.v1",
   "scope": "aimc",
-  "description": "Control AI Media Canvas projects, canvases, generation jobs, agent runs, and skills.",
+  "description": "Control AI Canvas projects, canvases, generation jobs, agent runs, and skills.",
   "documentation": {
     "file": "COMMANDS.md"
   },
@@ -213,7 +213,7 @@ Every command entry should use:
 {
   "path": ["projects", "list"],
   "summary": "List projects",
-  "description": "List local AI Media Canvas projects.",
+  "description": "List local AI Canvas projects.",
   "inputSchema": {
     "type": "object",
     "properties": {}
@@ -444,7 +444,7 @@ test("createCliManifest carries agent-discoverable command guidance", () => {
 test("renderCommandsGuide documents the public CLI commands", () => {
   const guide = renderCommandsGuide();
 
-  assert.match(guide, /# AI Media Canvas CLI Commands/);
+  assert.match(guide, /# AI Canvas CLI Commands/);
   assert.match(guide, /aimc projects/);
   assert.match(guide, /aimc generation image/);
   assert.match(guide, /aimc agent run/);
@@ -549,7 +549,7 @@ Add `renderCommandsGuide()`:
 
 ```js
 export function renderCommandsGuide() {
-  return `# AI Media Canvas CLI Commands
+  return `# AI Canvas CLI Commands
 
 The app exposes the \`aimc\` scope through Tutti's workspace app CLI.
 All commands return JSON.

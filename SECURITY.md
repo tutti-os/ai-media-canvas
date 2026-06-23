@@ -1,6 +1,6 @@
 # Security Policy
 
-AI Media Canvas is a local-first app that can store provider credentials, generated assets, uploaded files, and project data on the user's machine.
+AI Canvas is a local-first app that can store provider credentials, generated assets, uploaded files, and project data on the user's machine.
 
 ## Reporting a Vulnerability
 

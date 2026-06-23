@@ -1,6 +1,6 @@
 # Code of Conduct
 
-AI Media Canvas is an open-source project for people building and exploring local-first AI media workflows.
+AI Canvas is an open-source project for people building and exploring local-first AI media workflows.
 
 We want the community to be useful, welcoming, and safe for contributors with different backgrounds and experience levels.
 
