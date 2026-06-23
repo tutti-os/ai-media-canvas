@@ -987,6 +987,80 @@ describe("ChatSidebar", () => {
     );
   });
 
+  it("turns a deferred image loading card into canceled when the run is canceled", async () => {
+    const listeners: Array<
+      (entry: {
+        event: Record<string, unknown>;
+        replayed?: boolean;
+        eventId?: string;
+        seq?: number;
+      }) => void
+    > = [];
+    mockWs = {
+      ...mockWs,
+      onEvent: vi.fn((nextListener) => {
+        const listener = nextListener as (typeof listeners)[number];
+        listeners.push(listener);
+        return () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) listeners.splice(index, 1);
+        };
+      }),
+    };
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "generate image{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+
+    for (const listener of [...listeners]) {
+      listener({
+        event: {
+          type: "tool.completed",
+          runId: "run_123",
+          toolCallId: "tool-deferred-image",
+          toolName: "generate_image",
+          output: {
+            status: "generating",
+            jobId: "job-image-1",
+            jobType: "image_generation",
+            elementId: "generator-1",
+            title: "Deferred image",
+          },
+          timestamp: "2026-06-04T00:00:00.000Z",
+        },
+      });
+    }
+
+    expect(await screen.findByText("图片生成中...")).toBeInTheDocument();
+
+    for (const listener of [...listeners]) {
+      listener({
+        event: {
+          type: "run.canceled",
+          runId: "run_123",
+          timestamp: "2026-06-04T00:00:01.000Z",
+        },
+      });
+    }
+
+    expect(await screen.findByText("图片生成已取消")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByText("图片生成中...")).not.toBeInTheDocument(),
+    );
+  });
+
   it("updates deferred image jobs in chat when polling succeeds", async () => {
     let onSucceeded: ((result: Record<string, unknown>) => void) | undefined;
     generationJobWatchMock.mockImplementation((_jobId, options) => {

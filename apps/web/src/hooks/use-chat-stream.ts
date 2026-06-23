@@ -47,6 +47,52 @@ const mergeToolArtifacts = (
   return artifacts;
 };
 
+const CANCELED_OUTPUT_SUMMARY = "\u5df2\u53d6\u6d88";
+
+function normalizeMediaToolName(toolName: string): string {
+  if (toolName === "image_generate") return "generate_image";
+  if (toolName === "video_generate") return "generate_video";
+  return toolName;
+}
+
+function isDeferredMediaToolBlock(block: ToolBlock): boolean {
+  const toolName = normalizeMediaToolName(block.toolName);
+  if (toolName !== "generate_image" && toolName !== "generate_video") {
+    return false;
+  }
+
+  const output = block.output as Record<string, unknown> | undefined;
+  return (
+    block.status === "completed" &&
+    output?.status === "generating" &&
+    typeof output.jobId === "string"
+  );
+}
+
+function isCancelableToolBlock(block: ToolBlock): boolean {
+  return block.status === "running" || isDeferredMediaToolBlock(block);
+}
+
+function cancelToolBlock(block: ToolBlock): ToolBlock {
+  const shouldMarkOutputCanceled =
+    Boolean(block.output) || isDeferredMediaToolBlock(block);
+  const canceledBlock: ToolBlock = {
+    ...block,
+    status: "canceled",
+    outputSummary: CANCELED_OUTPUT_SUMMARY,
+  };
+
+  return shouldMarkOutputCanceled
+    ? {
+        ...canceledBlock,
+        output: {
+          ...(block.output ?? {}),
+          status: "canceled",
+        },
+      }
+    : canceledBlock;
+}
+
 /**
  * Extracts the stream event handling logic into a reusable hook.
  * Used by both the main send flow and the reconnection resume flow,
@@ -256,23 +302,21 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
         }
 
         case "run.canceled":
-          // Clean up running tool blocks when a run stops before completion.
+          // Clean up active tool UI when a run stops before completion. Deferred
+          // media jobs have already emitted tool.completed, but still render as
+          // active until their backend job resolves.
           update((prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
-              const hasRunning = m.contentBlocks.some(
-                (b) => b.type === "tool" && b.status === "running",
+              const hasCancelable = m.contentBlocks.some(
+                (b) => b.type === "tool" && isCancelableToolBlock(b),
               );
-              if (!hasRunning) return m;
+              if (!hasCancelable) return m;
               return {
                 ...m,
                 contentBlocks: m.contentBlocks.map((block) =>
-                  block.type === "tool" && block.status === "running"
-                    ? {
-                        ...block,
-                        status: "canceled" as const,
-                        outputSummary: "\u5df2\u53d6\u6d88",
-                      }
+                  block.type === "tool" && isCancelableToolBlock(block)
+                    ? cancelToolBlock(block)
                     : block,
                 ),
               };
@@ -497,12 +541,8 @@ export function materializeAssistantBlocksFromEvents(
       case "run.canceled": {
         updateBlocks((prev) =>
           prev.map((block) =>
-            block.type === "tool" && block.status === "running"
-              ? {
-                  ...block,
-                  status: "canceled" as const,
-                  outputSummary: "\u5df2\u53d6\u6d88",
-                }
+            block.type === "tool" && isCancelableToolBlock(block)
+              ? cancelToolBlock(block)
               : block,
           ),
         );

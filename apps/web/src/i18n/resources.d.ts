@@ -204,6 +204,15 @@ export default interface Resources {
       "placeholder": "从一个想法开始，或输入 “@” 提及内容",
       "send": "发送消息"
     },
+    "media": {
+      "generationCanceled": "已取消",
+      "imageGenerating": "图片生成中...",
+      "imageGenerationCanceled": "图片生成已取消",
+      "imageGenerationFailed": "图片生成失败",
+      "videoGenerating": "视频生成中...",
+      "videoGenerationCanceled": "视频生成已取消",
+      "videoGenerationFailed": "视频生成失败"
+    },
     "mediaModelPreference": {
       "configure": "配置媒体模型",
       "description": {

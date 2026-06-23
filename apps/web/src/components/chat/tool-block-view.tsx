@@ -154,6 +154,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const isRunning = block.status === "running";
   const isCompleted = block.status === "completed";
   const isFailed = block.status === "failed";
+  const isCanceled = block.status === "canceled";
   const hasOutput = block.output && Object.keys(block.output).length > 0;
   const hasInput = block.input && Object.keys(block.input).length > 0;
   const hasDetails = hasOutput || hasInput;
@@ -198,12 +199,23 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const mediaError =
     isMediaTool &&
     !isDeferredMediaJob &&
-    (isFailed || isCompleted) &&
+    (isFailed || isCanceled || isCompleted) &&
     !imageArtifact &&
     !videoArtifact &&
     !capabilityRequired
-      ? ((outputData?.error as string | undefined) ?? block.outputSummary)
+      ? isCanceled
+        ? t("media.generationCanceled")
+        : ((outputData?.error as string | undefined) ?? block.outputSummary)
       : undefined;
+  const mediaErrorTitle = mediaError
+    ? isCanceled
+      ? isVideoTool
+        ? t("media.videoGenerationCanceled")
+        : t("media.imageGenerationCanceled")
+      : isVideoTool
+        ? t("media.videoGenerationFailed")
+        : t("media.imageGenerationFailed")
+    : undefined;
   const inputData = block.input as Record<string, unknown> | undefined;
   const modelName = inputData?.model as string | undefined;
   const headerLabel =
@@ -229,9 +241,13 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         {isVisuallyRunning ? (
           <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-muted-foreground/30 border-t-muted-foreground" />
-        ) : isFailed ? (
+        ) : isFailed || isCanceled ? (
           <svg
-            className="h-3.5 w-3.5 text-destructive"
+            className={
+              isFailed
+                ? "h-3.5 w-3.5 text-destructive"
+                : "h-3.5 w-3.5 text-muted-foreground"
+            }
             viewBox="0 0 16 16"
             fill="currentColor"
           >
@@ -257,12 +273,21 @@ export const ToolBlockView = React.memo(function ToolBlockView({
           isVideoTool={isVideoTool}
           aspectRatio={aspectRatio}
           modelName={modelName}
+          loadingLabel={
+            isVideoTool
+              ? t("media.videoGenerating")
+              : t("media.imageGenerating")
+          }
         />
       )}
 
       {/* Layer 2b-err: Media generation failed */}
-      {isMediaTool && mediaError && (
-        <MediaErrorCard isVideoTool={isVideoTool} error={mediaError} />
+      {isMediaTool && mediaError && mediaErrorTitle && (
+        <MediaErrorCard
+          title={mediaErrorTitle}
+          error={mediaError}
+          variant={isCanceled ? "canceled" : "error"}
+        />
       )}
 
       {isMediaTool && capabilityRequired && (
@@ -425,10 +450,12 @@ const MediaShimmer = React.memo(function MediaShimmer({
   isVideoTool,
   aspectRatio,
   modelName,
+  loadingLabel,
 }: {
   isVideoTool: boolean;
   aspectRatio: string;
   modelName: string | undefined;
+  loadingLabel: string;
 }) {
   return (
     <div className="rounded-xl border-[0.5px] border-border overflow-hidden">
@@ -470,9 +497,7 @@ const MediaShimmer = React.memo(function MediaShimmer({
       </div>
       <div className="px-3 py-2">
         <div className="text-[12px] font-medium text-muted-foreground/70">
-          {isVideoTool
-            ? "\u89c6\u9891\u751f\u6210\u4e2d..."
-            : "\u56fe\u7247\u751f\u6210\u4e2d..."}
+          {loadingLabel}
         </div>
         {modelName && (
           <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
@@ -489,16 +514,31 @@ const MediaShimmer = React.memo(function MediaShimmer({
 /* ------------------------------------------------------------------ */
 
 const MediaErrorCard = React.memo(function MediaErrorCard({
-  isVideoTool,
+  title,
   error,
+  variant,
 }: {
-  isVideoTool: boolean;
+  title: string;
   error: string;
+  variant: "error" | "canceled";
 }) {
+  const isError = variant === "error";
   return (
-    <div className="rounded-xl border-[0.5px] border-destructive/30 bg-destructive/5 p-3">
+    <div
+      className={
+        isError
+          ? "rounded-xl border-[0.5px] border-destructive/30 bg-destructive/5 p-3"
+          : "rounded-xl border-[0.5px] border-border bg-muted/30 p-3"
+      }
+    >
       <div className="flex items-start gap-2.5">
-        <div className="mt-0.5 shrink-0 rounded-lg bg-destructive/10 p-1.5 text-destructive">
+        <div
+          className={
+            isError
+              ? "mt-0.5 shrink-0 rounded-lg bg-destructive/10 p-1.5 text-destructive"
+              : "mt-0.5 shrink-0 rounded-lg bg-background p-1.5 text-muted-foreground"
+          }
+        >
           <svg
             className="h-4 w-4"
             viewBox="0 0 24 24"
@@ -511,9 +551,7 @@ const MediaErrorCard = React.memo(function MediaErrorCard({
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-foreground">
-            {isVideoTool
-              ? "\u89c6\u9891\u751f\u6210\u5931\u8d25"
-              : "\u56fe\u7247\u751f\u6210\u5931\u8d25"}
+            {title}
           </div>
           <div className="mt-0.5 text-[12px] text-muted-foreground line-clamp-2">
             {error}
