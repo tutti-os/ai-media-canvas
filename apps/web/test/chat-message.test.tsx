@@ -95,6 +95,29 @@ describe("ChatMessage", () => {
     expect(screen.getByText("图片生成中...")).toBeInTheDocument();
   });
 
+  it("shows a canceled media card instead of a loading card", () => {
+    const blocks: ContentBlock[] = [
+      {
+        type: "tool",
+        toolCallId: "tool-1",
+        toolName: "generate_image",
+        status: "canceled",
+        outputSummary: "已取消",
+        output: {
+          title: "Storyboard panel",
+          jobId: "job-image-1",
+          jobType: "image_generation",
+          status: "canceled",
+        },
+      },
+    ];
+
+    renderAssistantMessage(blocks);
+
+    expect(screen.getByText("图片生成已取消")).toBeInTheDocument();
+    expect(screen.queryByText("图片生成中...")).not.toBeInTheDocument();
+  });
+
   it("renders a media capability card with a settings action", async () => {
     const user = userEvent.setup();
     const openMediaSettings = vi.fn();

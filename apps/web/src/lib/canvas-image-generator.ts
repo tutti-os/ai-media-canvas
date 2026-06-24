@@ -29,6 +29,7 @@ export type ImageGeneratorData = {
   quality: string;
   inputImages?: string[];
   jobId?: string;
+  runId?: string;
   errorMessage?: string;
 };
 

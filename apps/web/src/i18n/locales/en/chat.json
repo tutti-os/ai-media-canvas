@@ -38,9 +38,19 @@
   "input": {
     "ariaLabel": "Message input",
     "attachImages": "Attach images",
+    "cancel": "Cancel generation",
     "modelPreference": "Image/Video model",
     "placeholder": "Start with an idea, or type \"@\" to mention",
     "send": "Send message"
+  },
+  "media": {
+    "generationCanceled": "Canceled",
+    "imageGenerating": "Generating image...",
+    "imageGenerationCanceled": "Image generation canceled",
+    "imageGenerationFailed": "Image generation failed",
+    "videoGenerating": "Generating video...",
+    "videoGenerationCanceled": "Video generation canceled",
+    "videoGenerationFailed": "Video generation failed"
   },
   "mediaModelPreference": {
     "configure": "Configure media models",

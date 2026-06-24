@@ -902,6 +902,7 @@ describe("createAgentRunService", () => {
         status: "generating",
         jobId: "job-1",
         prompt: "young playful logo",
+        runId: run.runId,
       },
     });
     releaseJob?.();
@@ -910,6 +911,152 @@ describe("createAgentRunService", () => {
       imageUrl: "http://127.0.0.1:3001/local-assets/asset-1",
       jobId: "job-1",
     });
+  });
+
+  it("cancels pending image generation jobs when the run is canceled", async () => {
+    let capturedGatewaySession:
+      | {
+          submitImageJob?: (input: {
+            aspectRatio: string;
+            model: string;
+            prompt: string;
+            title: string;
+          }) => Promise<unknown>;
+        }
+      | undefined;
+    const createSession = vi.fn((input) => {
+      capturedGatewaySession = input;
+      return { token: "tool-token" };
+    });
+    const canvasState = {
+      content: {
+        elements: [] as Array<Record<string, unknown>>,
+        appState: {},
+        files: {},
+      },
+    };
+    const cancelJob = vi.fn(async () => ({ id: "job-1", status: "canceled" }));
+
+    const runs = createAgentRunService({
+      createUserClient: () => ({
+        from(table: string) {
+          if (table === "canvases") {
+            return {
+              select() {
+                return this;
+              },
+              eq() {
+                return this;
+              },
+              async single() {
+                return { data: { content: canvasState.content }, error: null };
+              },
+              async maybeSingle() {
+                return { data: null, error: null };
+              },
+              update(payload: {
+                content: {
+                  elements: Array<Record<string, unknown>>;
+                  appState: Record<string, unknown>;
+                  files: Record<string, unknown>;
+                };
+              }) {
+                canvasState.content = payload.content;
+                return {
+                  async eq() {
+                    return { error: null };
+                  },
+                };
+              },
+            };
+          }
+          expect(table).toBe("workspaces");
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            limit() {
+              return this;
+            },
+            async single() {
+              return { data: { id: "workspace-1" }, error: null };
+            },
+          };
+        },
+      }),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        agnesApiKey: "agnes-key",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {
+        cancelJob,
+        createJob: vi.fn(async () => ({ id: "job-1" })),
+        getJobAdmin: vi.fn(async () => ({
+          attempt_count: 0,
+          max_attempts: 3,
+          status: "processing",
+        })),
+      } as never,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession,
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "conversation-1",
+        prompt: "生成一张图",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the local tool gateway session is created.
+    }
+
+    const submitImageJob = capturedGatewaySession?.submitImageJob;
+    expect(submitImageJob).toBeTypeOf("function");
+    if (!submitImageJob) {
+      throw new Error("Expected local tool gateway to receive submitImageJob");
+    }
+    const promise = submitImageJob({
+      aspectRatio: "1:1",
+      model: "agnes-image/agnes-image-2.1-flash",
+      prompt: "young playful logo",
+      title: "logo",
+    });
+    await vi.waitFor(() => {
+      expect(canvasState.content.elements).toHaveLength(1);
+    });
+
+    runs.cancelRun(run.runId);
+
+    await expect(promise).rejects.toThrow("Image generation was canceled.");
+    expect(cancelJob).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "user-1" }),
+      "job-1",
+    );
   });
 
   it("rejects invalid image generation parameters before creating agent jobs", async () => {
@@ -1469,6 +1616,7 @@ describe("createAgentRunService", () => {
         status: "generating",
         jobId: "job-video-1",
         prompt: "product reveal",
+        runId: run.runId,
       },
     });
     expect(getJobAdmin).not.toHaveBeenCalled();

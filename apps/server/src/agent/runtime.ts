@@ -1142,6 +1142,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   title: input.title,
                   model: input.model,
                   aspectRatio: input.aspectRatio,
+                  runId,
                   ...(input.quality ? { quality: input.quality } : {}),
                   ...(input.inputImages
                     ? { inputImages: input.inputImages }
@@ -1163,8 +1164,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           }
           const finalResult = await waitForImageJobResult(
             jobSvc,
+            user,
             job.id,
             jobLap,
+            run.controller.signal,
           );
           if (canvasId) {
             try {
@@ -1377,6 +1380,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   title: input.title,
                   model: input.model,
                   aspectRatio: input.aspectRatio ?? "16:9",
+                  runId,
                   ...(input.duration != null
                     ? { duration: input.duration }
                     : {}),
@@ -1639,13 +1643,30 @@ function parseAspectRatio(aspectRatio: string | undefined) {
 
 async function waitForImageJobResult(
   jobSvc: JobService,
+  user: AuthenticatedUser,
   jobId: string,
   jobLap: (label: string, extra?: Record<string, unknown>) => void,
+  signal: AbortSignal,
 ) {
   const startedAt = Date.now();
   let pollCount = 0;
+  let cancelRequested = false;
+
+  const cancelJobForAbort = async () => {
+    if (cancelRequested) return;
+    cancelRequested = true;
+    jobLap("job_cancel_requested", { jobId });
+    await jobSvc.cancelJob(user, jobId).catch((err) => {
+      console.warn("[submitImageJob] cancel job after run abort failed:", err);
+    });
+  };
 
   for (;;) {
+    if (signal.aborted) {
+      await cancelJobForAbort();
+      throw new Error("Image generation was canceled.");
+    }
+
     const job = await jobSvc.getJobAdmin(jobId);
     pollCount += 1;
     if (job.status === "succeeded") {
@@ -1690,7 +1711,15 @@ async function waitForImageJobResult(
       throw new Error(`Image generation job ${jobId} timed out.`);
     }
 
-    await delay(IMAGE_JOB_POLL_INTERVAL_MS);
+    try {
+      await delay(IMAGE_JOB_POLL_INTERVAL_MS, undefined, { signal });
+    } catch (err) {
+      if (signal.aborted) {
+        await cancelJobForAbort();
+        throw new Error("Image generation was canceled.");
+      }
+      throw err;
+    }
   }
 }
 
