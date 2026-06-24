@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Separator } from "./ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 interface MediaSettingsSectionProps {
   settings: WorkspaceSettings;
@@ -425,6 +426,12 @@ export function MediaSettingsSection({
     setSelectedCapability(capability);
   }
 
+  function handleCapabilityValueChange(value: unknown) {
+    if (value === "image" || value === "video") {
+      selectCapability(value);
+    }
+  }
+
   async function handleSave(scope: string) {
     setSavingCard(scope);
     setFeedback(null);
@@ -463,36 +470,8 @@ export function MediaSettingsSection({
     }
   }
 
-  return (
-    <div className="flex min-w-0 flex-col gap-6">
-      <div>
-        <h2 className="text-lg font-semibold text-foreground">
-          {t("media.title")}
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t("media.description")}
-        </p>
-      </div>
-
-      <div className="grid gap-3 rounded-xl border bg-background p-4 sm:grid-cols-2">
-        <CapabilityStatus
-          active={selectedCapability === "image"}
-          onSelect={() => selectCapability("image")}
-          ready={imageReady}
-          label={t("media.capabilities.image")}
-          readyLabel={t("media.status.ready")}
-          unconfiguredLabel={t("media.status.notConfigured")}
-        />
-        <CapabilityStatus
-          active={selectedCapability === "video"}
-          onSelect={() => selectCapability("video")}
-          ready={videoReady}
-          label={t("media.capabilities.video")}
-          readyLabel={t("media.status.ready")}
-          unconfiguredLabel={t("media.status.notConfigured")}
-        />
-      </div>
-
+  const capabilitySections = (
+    <>
       {hasConnectedServices && (
         <section className="flex flex-col gap-3">
           <SectionHeading title={t("media.sections.connected")} />
@@ -672,35 +651,69 @@ export function MediaSettingsSection({
           {feedback.message}
         </p>
       ) : null}
+    </>
+  );
+
+  return (
+    <div className="flex min-w-0 flex-col gap-6">
+      <div>
+        <h2 className="text-lg font-semibold text-foreground">
+          {t("media.title")}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {t("media.description")}
+        </p>
+      </div>
+
+      <Tabs
+        className="gap-6"
+        onValueChange={handleCapabilityValueChange}
+        value={selectedCapability}
+      >
+        <TabsList className="grid h-auto min-h-16 w-full grid-cols-2 items-stretch justify-stretch gap-2 rounded-2xl border bg-muted/20 p-2 shadow-inner">
+          <CapabilityStatus
+            ready={imageReady}
+            label={t("media.capabilities.image")}
+            readyLabel={t("media.status.ready")}
+            unconfiguredLabel={t("media.status.notConfigured")}
+            value="image"
+          />
+          <CapabilityStatus
+            ready={videoReady}
+            label={t("media.capabilities.video")}
+            readyLabel={t("media.status.ready")}
+            unconfiguredLabel={t("media.status.notConfigured")}
+            value="video"
+          />
+        </TabsList>
+        <TabsContent value="image" className="flex flex-col gap-6">
+          {selectedCapability === "image" ? capabilitySections : null}
+        </TabsContent>
+        <TabsContent value="video" className="flex flex-col gap-6">
+          {selectedCapability === "video" ? capabilitySections : null}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
 
 function CapabilityStatus({
-  active,
   label,
-  onSelect,
   ready,
   readyLabel,
   unconfiguredLabel,
+  value,
 }: {
-  active: boolean;
   label: string;
-  onSelect: () => void;
   ready: boolean;
   readyLabel: string;
   unconfiguredLabel: string;
+  value: MediaCapability;
 }) {
   return (
-    <button
-      aria-pressed={active}
-      className={`flex min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
-        active
-          ? "bg-muted text-foreground shadow-sm"
-          : "bg-muted/40 text-muted-foreground hover:bg-muted/70"
-      }`}
-      onClick={onSelect}
-      type="button"
+    <TabsTrigger
+      className="h-auto min-h-12 justify-start rounded-xl px-4 py-3 text-left data-active:border-border data-active:bg-background data-active:shadow-md"
+      value={value}
     >
       <span
         className={`size-2 rounded-full ${
@@ -709,11 +722,13 @@ function CapabilityStatus({
             : "border border-muted-foreground/60 bg-transparent"
         }`}
       />
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      <span className="text-sm text-muted-foreground">
-        {ready ? readyLabel : unconfiguredLabel}
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="text-sm font-semibold text-foreground">{label}</span>
+        <span className="text-sm font-normal text-muted-foreground">
+          {ready ? readyLabel : unconfiguredLabel}
+        </span>
       </span>
-    </button>
+    </TabsTrigger>
   );
 }
 
