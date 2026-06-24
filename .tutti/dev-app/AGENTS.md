@@ -16,6 +16,9 @@ debug metadata. The source app remains owned by the repository root.
 - The Web app receives `NEXT_PUBLIC_AIMC_SERVER_BASE_URL` and
   `AIMC_SERVER_BASE_URL` pointing to the internal server.
 - The server receives `AIMC_WEB_ORIGIN` matching the Tutti Web origin.
+- When the host provides a managed files root, the script normalizes it to
+  `AIMC_TUTTI_MANAGED_FILES_ROOT` so the server can safely confine managed-file
+  asset paths before serving them.
 
 ## Commands
 
@@ -24,6 +27,9 @@ runtime and Corepack:
 
 - `@aimc/server`: `dev`
 - `@aimc/web`: `exec next dev -H "$TUTTI_APP_HOST" -p "$TUTTI_APP_PORT"`
+
+`@aimc/shared` must be built before either dev process starts because the
+workspace packages resolve it through `packages/shared/dist`.
 
 Do not replace the managed runtime variables with system `node`, `npm`, `pnpm`,
 or `yarn` commands in this wrapper.

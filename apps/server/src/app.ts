@@ -1,11 +1,14 @@
-import { readFile, stat } from "node:fs/promises";
-import { extname, relative, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { readFile, realpath, stat } from "node:fs/promises";
+import { extname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import {
+  type ManagedFileAssetMetadata,
   type RunCreateRequest,
   type StreamEvent,
   applicationErrorResponseSchema,
@@ -480,7 +483,7 @@ function buildBrandKitService(store: LocalStore): BrandKitService {
   };
 }
 
-function buildUploadService(store: LocalStore): UploadService {
+function buildUploadService(store: LocalStore, env: ServerEnv): UploadService {
   return {
     async uploadFile(_user, input) {
       return store.uploadFile({
@@ -494,9 +497,12 @@ function buildUploadService(store: LocalStore): UploadService {
       });
     },
     async createManagedFileAsset(_user, input) {
+      const file = await validateManagedFileAsset(input.file, {
+        managedFilesRoot: env.tuttiManagedFilesRoot,
+      });
       return store.createManagedFileAsset({
         bucket: input.bucket,
-        file: input.file,
+        file,
         ...(input.projectId !== undefined
           ? { projectId: input.projectId }
           : {}),
@@ -531,6 +537,120 @@ function buildUploadService(store: LocalStore): UploadService {
       }
     },
   };
+}
+
+async function validateManagedFileAsset(
+  file: ManagedFileAssetMetadata,
+  options: { managedFilesRoot: string | undefined },
+): Promise<ManagedFileAssetMetadata> {
+  if (!options.managedFilesRoot) {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file upload root is not configured.",
+      400,
+    );
+  }
+
+  const managedRoot = await realpathOrUploadError(
+    resolve(options.managedFilesRoot),
+    "Managed file upload root is unavailable.",
+  );
+  const filePath = await realpathOrUploadError(
+    resolve(file.path),
+    "Managed file does not exist.",
+  );
+
+  if (!isPathInsideRoot(filePath, managedRoot)) {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file path is outside the configured upload root.",
+      400,
+    );
+  }
+
+  const fileStat = await statOrUploadError(filePath);
+  if (!fileStat.isFile()) {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file path must point to a file.",
+      400,
+    );
+  }
+
+  if (fileStat.size !== file.sizeBytes) {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file metadata size does not match the uploaded file.",
+      400,
+    );
+  }
+
+  const sha256 = await calculateSha256OrUploadError(filePath);
+  if (sha256 !== file.sha256.toLowerCase()) {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file metadata checksum does not match the uploaded file.",
+      400,
+    );
+  }
+
+  return {
+    ...file,
+    path: filePath,
+    sha256,
+    sizeBytes: fileStat.size,
+  };
+}
+
+async function realpathOrUploadError(path: string, message: string) {
+  try {
+    return await realpath(path);
+  } catch {
+    throw new UploadServiceError("upload_failed", message, 400);
+  }
+}
+
+async function statOrUploadError(path: string) {
+  try {
+    return await stat(path);
+  } catch {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file is unavailable.",
+      400,
+    );
+  }
+}
+
+function isPathInsideRoot(filePath: string, managedRoot: string) {
+  const relativePath = relative(managedRoot, filePath);
+  return (
+    relativePath !== "" &&
+    !relativePath.startsWith("..") &&
+    !isAbsolute(relativePath)
+  );
+}
+
+async function calculateSha256OrUploadError(filePath: string) {
+  try {
+    return await calculateSha256(filePath);
+  } catch {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file checksum could not be verified.",
+      400,
+    );
+  }
+}
+
+function calculateSha256(filePath: string): Promise<string> {
+  return new Promise((resolveHash, rejectHash) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(filePath);
+    stream.on("error", rejectHash);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolveHash(hash.digest("hex")));
+  });
 }
 
 function buildSkillService(store: LocalStore): SkillService {
@@ -834,7 +954,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const canvasService = buildCanvasService(store);
   const chatService = buildChatService(store);
   const brandKitService = buildBrandKitService(store);
-  const uploadService = buildUploadService(store);
+  const uploadService = buildUploadService(store, env);
   const skillService = buildSkillService(store);
   const jobService = createJobService(store);
   const settingsService = createSettingsService(store, env);

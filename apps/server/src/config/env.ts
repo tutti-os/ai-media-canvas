@@ -36,6 +36,7 @@ export type ServerEnv = {
   tuttiApiBaseUrl?: string;
   tuttiAppId?: string;
   tuttiAppInstallationId?: string;
+  tuttiManagedFilesRoot?: string;
   tuttiAppServerToken?: string;
   tuttiWorkspaceId?: string;
   port: number;
@@ -87,8 +88,7 @@ export function loadServerEnv(
       source.AIMC_AGNES_MODEL ?? source.AGNES_DEFAULT_MODEL,
     );
   const agnesBaseUrl =
-    agnesBaseUrlSource ??
-    (agnesApiKey ? DEFAULT_AGNES_BASE_URL : undefined);
+    agnesBaseUrlSource ?? (agnesApiKey ? DEFAULT_AGNES_BASE_URL : undefined);
   const agnesDefaultModel =
     agnesDefaultModelSource ??
     (agnesApiKey ? DEFAULT_AGNES_AGENT_MODEL : undefined);
@@ -115,24 +115,35 @@ export function loadServerEnv(
     overrides.codexImagegenAgentModel ??
     normalizeOptionalString(source.AIMC_CODEX_IMAGEGEN_AGENT_MODEL);
   const agentModel =
-    configuredAgentModel ??
-    agnesDefaultModel ??
-    DEFAULT_AGENT_MODEL;
+    configuredAgentModel ?? agnesDefaultModel ?? DEFAULT_AGENT_MODEL;
   const openAIApiBase =
     overrides.openAIApiBase ??
-    normalizeOptionalString(source.AIMC_OPENAI_API_BASE ?? source.OPENAI_API_BASE);
+    normalizeOptionalString(
+      source.AIMC_OPENAI_API_BASE ?? source.OPENAI_API_BASE,
+    );
   const openAIApiKey =
     overrides.openAIApiKey ??
-    normalizeOptionalString(source.AIMC_OPENAI_API_KEY ?? source.OPENAI_API_KEY);
+    normalizeOptionalString(
+      source.AIMC_OPENAI_API_KEY ?? source.OPENAI_API_KEY,
+    );
   const tuttiApiBaseUrl =
     overrides.tuttiApiBaseUrl ??
     normalizeOptionalString(source.TUTTI_API_BASE_URL);
   const tuttiAppId =
-    overrides.tuttiAppId ??
-    normalizeOptionalString(source.TUTTI_APP_ID);
+    overrides.tuttiAppId ?? normalizeOptionalString(source.TUTTI_APP_ID);
   const tuttiAppInstallationId =
     overrides.tuttiAppInstallationId ??
     normalizeOptionalString(source.TUTTI_APP_INSTALLATION_ID);
+  const tuttiManagedFilesRoot =
+    overrides.tuttiManagedFilesRoot ??
+    normalizeOptionalString(
+      source.AIMC_TUTTI_MANAGED_FILES_ROOT ??
+        source.TUTTI_APP_MANAGED_FILES_ROOT ??
+        source.TUTTI_MANAGED_FILES_ROOT ??
+        source.TUTTI_APP_FILES_ROOT ??
+        source.TUTTI_APP_FILES_DIR ??
+        source.TUTTI_FILES_ROOT,
+    );
   const tuttiAppServerToken =
     overrides.tuttiAppServerToken ??
     normalizeOptionalString(source.TUTTI_APP_SERVER_TOKEN);
@@ -141,7 +152,9 @@ export function loadServerEnv(
     normalizeOptionalString(source.TUTTI_WORKSPACE_ID);
   const googleApiKey =
     overrides.googleApiKey ??
-    normalizeOptionalString(source.AIMC_GOOGLE_API_KEY ?? source.GOOGLE_API_KEY);
+    normalizeOptionalString(
+      source.AIMC_GOOGLE_API_KEY ?? source.GOOGLE_API_KEY,
+    );
   const googleApplicationCredentials =
     overrides.googleApplicationCredentials ??
     normalizeOptionalString(
@@ -188,10 +201,14 @@ export function loadServerEnv(
     parseOptionalBoolean(source.AIMC_TRUSTED_LOCAL_AGENT_MODE, true);
   const volcesApiKey =
     overrides.volcesApiKey ??
-    normalizeOptionalString(source.AIMC_VOLCES_API_KEY ?? source.VOLCES_API_KEY);
+    normalizeOptionalString(
+      source.AIMC_VOLCES_API_KEY ?? source.VOLCES_API_KEY,
+    );
   const volcesBaseUrl =
     overrides.volcesBaseUrl ??
-    normalizeOptionalString(source.AIMC_VOLCES_BASE_URL ?? source.VOLCES_BASE_URL);
+    normalizeOptionalString(
+      source.AIMC_VOLCES_BASE_URL ?? source.VOLCES_BASE_URL,
+    );
   const workerId =
     overrides.workerId ??
     normalizeOptionalString(source.AIMC_WORKER_ID ?? source.WORKER_ID);
@@ -235,6 +252,7 @@ export function loadServerEnv(
     ...(tuttiApiBaseUrl ? { tuttiApiBaseUrl } : {}),
     ...(tuttiAppId ? { tuttiAppId } : {}),
     ...(tuttiAppInstallationId ? { tuttiAppInstallationId } : {}),
+    ...(tuttiManagedFilesRoot ? { tuttiManagedFilesRoot } : {}),
     ...(tuttiAppServerToken ? { tuttiAppServerToken } : {}),
     ...(tuttiWorkspaceId ? { tuttiWorkspaceId } : {}),
     ...(googleApiKey ? { googleApiKey } : {}),
@@ -299,9 +317,7 @@ function parseAgentBackendMode(
     return rawMode;
   }
 
-  throw new Error(
-    `Invalid AIMC_AGENT_BACKEND_MODE value: ${rawMode}`,
-  );
+  throw new Error(`Invalid AIMC_AGENT_BACKEND_MODE value: ${rawMode}`);
 }
 
 function readServerVersion() {

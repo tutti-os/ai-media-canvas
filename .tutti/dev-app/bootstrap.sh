@@ -55,6 +55,22 @@ fi
 WEB_ORIGIN="http://${APP_HOST}:${APP_PORT}"
 SERVER_BASE_URL="http://${APP_HOST}:${server_port}"
 
+if [[ -z "${AIMC_TUTTI_MANAGED_FILES_ROOT:-}" ]]; then
+  for candidate_root in \
+    "${TUTTI_APP_MANAGED_FILES_ROOT:-}" \
+    "${TUTTI_MANAGED_FILES_ROOT:-}" \
+    "${TUTTI_APP_FILES_ROOT:-}" \
+    "${TUTTI_APP_FILES_DIR:-}" \
+    "${TUTTI_FILES_ROOT:-}"; do
+    if [[ -n "$candidate_root" ]]; then
+      export AIMC_TUTTI_MANAGED_FILES_ROOT="$candidate_root"
+      break
+    fi
+  done
+else
+  export AIMC_TUTTI_MANAGED_FILES_ROOT
+fi
+
 cleanup() {
   local exit_code=$?
 
@@ -94,6 +110,9 @@ echo "[aimc] project root: ${PROJECT_ROOT}"
 echo "[aimc] web: ${WEB_ORIGIN}"
 echo "[aimc] server: ${SERVER_BASE_URL}"
 
+cd "$PROJECT_ROOT"
+run_package_manager --filter @aimc/shared build
+
 (
   cleanup_server() {
     local exit_code=$?
@@ -121,11 +140,9 @@ echo "[aimc] server: ${SERVER_BASE_URL}"
 
   trap cleanup_server EXIT INT TERM
 
-  cd "$PROJECT_ROOT"
   export HOST="$APP_HOST"
   export AIMC_WEB_ORIGIN="$WEB_ORIGIN"
   export AIMC_SERVER_PORT="$server_port"
-  run_package_manager --filter @aimc/shared build
 
   cd "$PROJECT_ROOT/apps/server"
   "$TUTTI_APP_NODE" --watch ${SERVER_ENV_FILE_ARG:+"$SERVER_ENV_FILE_ARG"} --import tsx ./src/server.ts &
