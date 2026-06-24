@@ -493,6 +493,15 @@ function buildUploadService(store: LocalStore): UploadService {
           : {}),
       });
     },
+    async createManagedFileAsset(_user, input) {
+      return store.createManagedFileAsset({
+        bucket: input.bucket,
+        file: input.file,
+        ...(input.projectId !== undefined
+          ? { projectId: input.projectId }
+          : {}),
+      });
+    },
     async getAssetUrl(_user, assetId) {
       const url = store.getAssetUrl(assetId);
       if (!url) {

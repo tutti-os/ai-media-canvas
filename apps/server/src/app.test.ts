@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -78,6 +78,66 @@ describe("buildApp", () => {
     expect(response.headers["content-range"]).toBe("bytes 0-3/10");
     expect(response.headers["content-type"]).toContain("video/mp4");
     expect(response.body).toBe("0123");
+  });
+
+  it("creates managed file asset records and serves them through local asset URLs", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
+    dataRoots.push(dataRoot);
+    const managedFilePath = join(dataRoot, "managed-ref.png");
+    await writeFile(managedFilePath, "fake");
+
+    const app = buildApp({ env: { dataRoot } });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/uploads/managed-file",
+      payload: {
+        file: {
+          path: managedFilePath,
+          name: "ref.png",
+          mimeType: "image/png",
+          sizeBytes: 4,
+          sha256: "sha256-ref",
+        },
+        projectId: "project-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = JSON.parse(response.body) as {
+      asset: {
+        id: string;
+        objectPath: string;
+        source?: string;
+        displayName?: string | null;
+        sha256?: string | null;
+      };
+      url: string;
+    };
+    expect(body.asset).toMatchObject({
+      objectPath: managedFilePath,
+      source: "managed-file",
+      displayName: "ref.png",
+      sha256: "sha256-ref",
+    });
+    expect(body.url).toContain(`/local-assets/${body.asset.id}`);
+
+    const assetUrl = await app.inject({
+      method: "GET",
+      url: `/api/uploads/${body.asset.id}/url`,
+    });
+    expect(assetUrl.statusCode).toBe(200);
+    expect(JSON.parse(assetUrl.body)).toEqual({
+      url: body.url,
+    });
+
+    const localAsset = await app.inject({
+      method: "GET",
+      url: `/local-assets/${body.asset.id}`,
+    });
+    await app.close();
+
+    expect(localAsset.statusCode).toBe(200);
+    expect(localAsset.body).toBe("fake");
   });
 
   it("allows local frontend origins even when the configured dev port differs", async () => {
