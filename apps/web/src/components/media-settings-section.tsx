@@ -392,9 +392,7 @@ export function MediaSettingsSection({
   const videoReady = configuredCards.some((card) =>
     card.capabilities.includes("video"),
   );
-  const codexVisible = selectedCapability === "image" && codexEnabled;
-  const hasConnectedServices =
-    codexVisible || configuredCardsForCapability.length > 0;
+  const hasConnectedServices = configuredCardsForCapability.length > 0;
 
   useEffect(() => {
     if (!activeProvider) return;
@@ -469,45 +467,6 @@ export function MediaSettingsSection({
       {hasConnectedServices && (
         <section className="flex flex-col gap-3">
           <SectionHeading title={t("media.sections.connected")} />
-          {codexVisible ? (
-            <div className="rounded-xl border bg-background px-4 py-3">
-              <ConnectedServiceRow
-                capabilities={["image"]}
-                meta={t("media.connected.codexMeta", {
-                  mode: t(
-                    `media.codexImagegen.options.${codexImagegenDelegation}.label`,
-                  ),
-                })}
-                name="Codex Image 2.0"
-                onSettings={() => setCodexSettingsOpen((open) => !open)}
-                settingsLabel={t("media.actions.settings")}
-                status={t("media.status.enabled")}
-                tCapability={(capability) =>
-                  capability === "image"
-                    ? t("media.capabilities.image")
-                    : t("media.capabilities.video")
-                }
-              />
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t("media.connected.codexNote")}
-              </p>
-              {codexSettingsOpen ? (
-                <div className="mt-3 rounded-lg border bg-muted/20 p-3">
-                  <CodexPermissionControl
-                    disabled={savingCard !== null}
-                    hasChanges={codexHasChanges}
-                    onSave={() => void handleSave("codex-imagegen")}
-                    onValueChange={(value) =>
-                      updateField("codexImagegenDelegation", value)
-                    }
-                    saving={savingCard === "codex-imagegen"}
-                    t={t}
-                    value={codexImagegenDelegation}
-                  />
-                </div>
-              ) : null}
-            </div>
-          ) : null}
           {configuredCardsForCapability.map((card) => (
             <div
               key={card.id}
@@ -564,6 +523,21 @@ export function MediaSettingsSection({
                   : t("media.capabilities.video")
               }
             />
+            {codexSettingsOpen ? (
+              <div className="mt-3 rounded-lg border bg-muted/20 p-3">
+                <CodexPermissionControl
+                  disabled={savingCard !== null}
+                  hasChanges={codexHasChanges}
+                  onSave={() => void handleSave("codex-imagegen")}
+                  onValueChange={(value) =>
+                    updateField("codexImagegenDelegation", value)
+                  }
+                  saving={savingCard === "codex-imagegen"}
+                  t={t}
+                  value={codexImagegenDelegation}
+                />
+              </div>
+            ) : null}
           </div>
         </section>
       ) : null}

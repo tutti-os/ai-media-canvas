@@ -155,8 +155,6 @@
       "title": "Codex image permission"
     },
     "connected": {
-      "codexMeta": "Local permission · {{mode}}",
-      "codexNote": "Matching image generation requests can use Codex Image 2.0.",
       "providerMeta": "API Key configured · {{count}} models",
       "providerMeta_one": "API Key configured · {{count}} model",
       "providerMeta_other": "API Key configured · {{count}} models"

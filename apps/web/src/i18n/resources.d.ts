@@ -685,8 +685,6 @@ export default interface Resources {
         "title": "Codex 生图权限"
       },
       "connected": {
-        "codexMeta": "本机权限 · {{mode}}",
-        "codexNote": "符合条件的生图请求会使用 Codex Image 2.0。",
         "providerMeta": "API Key 已配置 · {{count}} 个模型",
         "providerMeta_one": "API Key 已配置 · {{count}} 个模型",
         "providerMeta_other": "API Key 已配置 · {{count}} 个模型"
