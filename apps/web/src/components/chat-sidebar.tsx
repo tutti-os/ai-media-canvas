@@ -44,7 +44,6 @@ import {
   fetchRunEvents,
   saveMessage,
 } from "../lib/server-api";
-import { getManagedAgentInvocationCredential } from "../lib/tutti-managed-credentials";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import {
   type BrandKitMentionItem,
@@ -1039,9 +1038,6 @@ export function ChatSidebar({
           const runIdRef = { current: "" };
           const runCanvasId = canvasId;
 
-          const managedAgentInvocationCredential =
-            await getManagedAgentInvocationCredential();
-
           cleanupStreamListener = ws.onEvent((entry) => {
             const event = entry.event;
             if (!runIdRef.current || event.runId !== runIdRef.current) return;
@@ -1150,9 +1146,6 @@ export function ChatSidebar({
             ...(agentModelRef.current ? { model: agentModelRef.current } : {}),
             ...(agentModelRef.current && agentModelSourceRef.current
               ? { modelSource: agentModelSourceRef.current }
-              : {}),
-            ...(managedAgentInvocationCredential
-              ? { managedAgentInvocationCredential }
               : {}),
           };
 

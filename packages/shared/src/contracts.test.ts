@@ -51,7 +51,7 @@ describe("runCreateRequestSchema", () => {
     ).toBe(true);
   });
 
-  it("accepts a run-scoped managed agent invocation credential", () => {
+  it("does not expose managed agent invocation credentials in run bodies", () => {
     const result = runCreateRequestSchema.safeParse({
       ...baseRunCreateRequest,
       managedAgentInvocationCredential: "  bearer-run-1  ",
@@ -59,7 +59,9 @@ describe("runCreateRequestSchema", () => {
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.managedAgentInvocationCredential).toBe("bearer-run-1");
+      expect(result.data).not.toHaveProperty(
+        "managedAgentInvocationCredential",
+      );
     }
   });
 
@@ -130,15 +132,15 @@ describe("runCreateRequestSchema", () => {
 });
 
 describe("modelListRequestSchema", () => {
-  it("accepts a request-scoped managed agent invocation credential", () => {
+  it("does not expose managed agent invocation credentials in model list bodies", () => {
     const result = modelListRequestSchema.safeParse({
       managedAgentInvocationCredential: "  bearer-model-1  ",
     });
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.managedAgentInvocationCredential).toBe(
-        "bearer-model-1",
+      expect(result.data).not.toHaveProperty(
+        "managedAgentInvocationCredential",
       );
     }
   });

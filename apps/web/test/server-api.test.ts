@@ -220,25 +220,7 @@ describe("local server API", () => {
     expect(result.settings.agnesApiKey).toBe("sk-local-agnes");
   });
 
-  it("fetchModels sends only a fresh managed agent invocation credential when the bridge is available", async () => {
-    const getManagedAgentInvocationCredential = vi.fn().mockResolvedValue({
-      ok: true,
-      value: {
-        connId: "ignored-conn-1",
-        credential: " credential-model-1 ",
-      },
-    });
-    (
-      window as Window & {
-        tutti?: {
-          agent?: {
-            getManagedAgentInvocationCredential?: typeof getManagedAgentInvocationCredential;
-          };
-        };
-      }
-    ).tutti = {
-      agent: { getManagedAgentInvocationCredential },
-    };
+  it("fetchModels uses the header-injected server route without JSB payload", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -247,18 +229,9 @@ describe("local server API", () => {
 
     await fetchModels();
 
-    expect(getManagedAgentInvocationCredential).toHaveBeenCalledTimes(1);
     expect(mockFetch).toHaveBeenCalledWith("http://localhost:3001/api/models", {
       cache: "no-store",
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        managedAgentInvocationCredential: "credential-model-1",
-      }),
     });
-    expect(JSON.stringify(mockFetch.mock.calls)).not.toContain(
-      "ignored-conn-1",
-    );
   });
 
   it("fetchModels keeps the existing GET path when the managed bridge is unavailable", async () => {

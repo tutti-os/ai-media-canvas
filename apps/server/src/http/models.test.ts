@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
 
 import { loadServerEnv } from "../config/env.js";
 import { listAgentModels, registerModelRoutes } from "./models.js";
@@ -101,6 +102,7 @@ describe("registerModelRoutes", () => {
       loadServerEnv(
         {
           agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
         },
         {},
       ),
@@ -315,6 +317,7 @@ describe("registerModelRoutes", () => {
       loadServerEnv(
         {
           agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
         },
         {},
       ),
@@ -387,6 +390,7 @@ describe("registerModelRoutes", () => {
       loadServerEnv(
         {
           agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
         },
         {},
       ),
@@ -397,9 +401,10 @@ describe("registerModelRoutes", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/models",
-      payload: {
-        managedAgentInvocationCredential: "  credential-model-1  ",
+      headers: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-model-1",
       },
+      payload: {},
     });
 
     expect(response.statusCode).toBe(200);
@@ -412,8 +417,13 @@ describe("registerModelRoutes", () => {
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({
       managedAgentInvocation: {
         credential: "credential-model-1",
-        cwd: "/workspace",
+        cwd: "/tmp/aimc-app-data",
       },
+      cwd: "/tmp/aimc-app-data",
+      env: expect.objectContaining({
+        TUTTI_APP_DATA_DIR: "/tmp/aimc-app-data",
+      }),
+      redactionSecrets: ["credential-model-1"],
     });
   });
 
@@ -423,6 +433,7 @@ describe("registerModelRoutes", () => {
       env: loadServerEnv(
         {
           agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
         },
         {},
       ),
@@ -432,7 +443,13 @@ describe("registerModelRoutes", () => {
         }),
       },
       logger,
-      managedAgentInvocationCredential: "credential-model-1",
+      managedAgentDetectContext: {
+        cwd: "/tmp/aimc-app-data",
+        managedAgentInvocation: {
+          credential: "credential-model-1",
+          cwd: "/tmp/aimc-app-data",
+        },
+      },
     });
 
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(

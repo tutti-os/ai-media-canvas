@@ -372,7 +372,11 @@ type RuntimeRunStatus =
   | "failed"
   | "running";
 
-type RuntimeRunRecord = RunCreateRequest & {
+type RuntimeRunCreateInput = RunCreateRequest & {
+  managedAgentInvocationCredential?: string | undefined;
+};
+
+type RuntimeRunRecord = RuntimeRunCreateInput & {
   accessToken?: string;
   assistantMessageId?: string;
   connectionId?: string;
@@ -381,6 +385,7 @@ type RuntimeRunRecord = RunCreateRequest & {
   codexImagegenDelegation?: "ask" | "always" | "never";
   codexImagegenConsentBudget?: number;
   envOverride?: ServerEnv;
+  managedAgentInvocationCredential?: string | undefined;
   modelOverride?: string;
   resumeContext?: {
     mode: "provider-local" | "handoff" | "fresh";
@@ -665,7 +670,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     },
 
     createRun(
-      input: RunCreateRequest,
+      input: RuntimeRunCreateInput,
       runOptions?: {
         accessToken?: string;
         assistantMessageId?: string;

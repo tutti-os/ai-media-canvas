@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { getManagedAgentInvocationCredentialFromHeaders } from "@tutti-os/agent-acp-kit";
 
 import {
+  type RunCreateRequest,
   applicationErrorResponseSchema,
   runCancelResponseSchema,
   runCreateRequestSchema,
@@ -18,6 +20,10 @@ import type { ServerEnv } from "../config/env.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { RequestAuthenticator } from "../auth/request.js";
 
+type ServerRunCreateRequest = RunCreateRequest & {
+  managedAgentInvocationCredential?: string | undefined;
+};
+
 export async function registerRunRoutes(
   app: FastifyInstance,
   agentRuns: AgentRunService,
@@ -30,7 +36,15 @@ export async function registerRunRoutes(
 ) {
   app.post("/api/agent/runs", async (request, reply) => {
     try {
-      const payload = runCreateRequestSchema.parse(request.body);
+      const parsedPayload = runCreateRequestSchema.parse(request.body);
+      const managedAgentInvocationCredential =
+        getManagedAgentInvocationCredentialFromHeaders(request.headers);
+      const payload: ServerRunCreateRequest = managedAgentInvocationCredential
+        ? {
+            ...parsedPayload,
+            managedAgentInvocationCredential,
+          }
+        : parsedPayload;
       const hasAuthorization = hasBearerAuthorization(
         request.headers.authorization,
       );

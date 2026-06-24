@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
+import { getManagedAgentInvocationCredentialFromHeaders } from "@tutti-os/agent-acp-kit";
 
 import {
   type RunCreateRequest,
@@ -1041,7 +1042,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     })();
   };
 
-  const startLocalAgentRun = async (payload: RunCreateRequest) => {
+  type ServerRunCreateRequest = RunCreateRequest & {
+    managedAgentInvocationCredential?: string | undefined;
+  };
+
+  const startLocalAgentRun = async (payload: ServerRunCreateRequest) => {
     if (store.listMessages(payload.sessionId) === null) {
       throw new LocalAgentRunError(
         "session_not_found",
@@ -1344,7 +1349,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.post("/api/agent/runs", async (request, reply) => {
     try {
-      const payload = runCreateRequestSchema.parse(request.body);
+      const parsedPayload = runCreateRequestSchema.parse(request.body);
+      const managedAgentInvocationCredential =
+        getManagedAgentInvocationCredentialFromHeaders(request.headers);
+      const payload: ServerRunCreateRequest = managedAgentInvocationCredential
+        ? {
+            ...parsedPayload,
+            managedAgentInvocationCredential,
+          }
+        : parsedPayload;
       return reply.code(202).send(await startLocalAgentRun(payload));
     } catch (error) {
       if (error instanceof LocalAgentRunError) {

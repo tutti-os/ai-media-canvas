@@ -5,10 +5,6 @@ import type {
 } from "@aimc/shared";
 
 import { fetchTuttiManagedConnection } from "./server-api";
-export {
-  getManagedAgentInvocationCredential,
-  hasManagedAgentInvocationCredentialBridge,
-} from "./managed-agent-invocation-credential";
 
 type TuttiManagedGrantResult = {
   code: string;

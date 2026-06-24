@@ -8,8 +8,8 @@ import type {
   LocalAgentProviderPlugin,
 } from "@tutti-os/agent-acp-kit";
 import {
-  MANAGED_AGENT_INVOCATION_CREDENTIAL_ENV,
-  isManagedAgentInvocationCwd,
+  MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER,
+  createManagedAgentRunContextFromHeaders,
 } from "@tutti-os/agent-acp-kit";
 
 import { createAimcToolsMcpServerConfig } from "../local-agent-host/mcp-config.js";
@@ -35,14 +35,7 @@ type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   AgentRuntimeProvider
 >;
 
-const MANAGED_AGENT_WORKSPACE_ROOT = "/workspace";
-const MANAGED_AGENT_RUNS_DIR = join(
-  MANAGED_AGENT_WORKSPACE_ROOT,
-  ".aimc-agent-runs",
-);
 const LOCAL_AGENT_RUNS_DIR_NAME = ".aimc-agent-runs";
-
-export const isManagedAgentWorkspaceCwd = isManagedAgentInvocationCwd;
 
 function safeRunDirSegment(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -60,41 +53,25 @@ export async function createLocalAgentRunDirectory(input: {
   runId: string;
   runtimeProvider: AgentRuntimeProvider;
 }): Promise<LocalAgentRunDirectoryResult> {
-  const appDataRunsDir = input.appDataDir
-    ? join(input.appDataDir, LOCAL_AGENT_RUNS_DIR_NAME)
-    : undefined;
-
-  if (input.managed) {
-    const runDir = join(
-      input.managedRunsDir ?? MANAGED_AGENT_RUNS_DIR,
-      `${safeRunDirSegment(input.runtimeProvider)}-${safeRunDirSegment(
-        input.runId,
-      )}`,
-    );
-    try {
-      await mkdir(runDir, { recursive: true });
-      return {
-        runDir,
-        useManagedAgentInvocation: isManagedAgentInvocationCwd(runDir),
-      };
-    } catch (err) {
-      if (!appDataRunsDir || !isManagedRunsRootUnavailable(err)) {
-        throw err;
-      }
-    }
-
-    return createAppDataLocalAgentRunDirectory(input, appDataRunsDir);
-  }
+  const appDataRunsDir =
+    input.managedRunsDir ??
+    (input.appDataDir
+      ? join(input.appDataDir, LOCAL_AGENT_RUNS_DIR_NAME)
+      : undefined);
 
   if (appDataRunsDir) {
-    return createAppDataLocalAgentRunDirectory(input, appDataRunsDir);
+    return createAppDataLocalAgentRunDirectory(
+      input,
+      appDataRunsDir,
+      input.managed,
+    );
   }
 
   return {
     runDir: await mkdtemp(
       join(tmpdir(), `aimc-local-agent-${input.runtimeProvider}-run-`),
     ),
-    useManagedAgentInvocation: false,
+    useManagedAgentInvocation: input.managed,
   };
 }
 
@@ -104,6 +81,7 @@ async function createAppDataLocalAgentRunDirectory(
     runtimeProvider: AgentRuntimeProvider;
   },
   appDataRunsDir: string,
+  useManagedAgentInvocation: boolean,
 ): Promise<LocalAgentRunDirectoryResult> {
   const runDir = join(
     appDataRunsDir,
@@ -114,19 +92,8 @@ async function createAppDataLocalAgentRunDirectory(
   await mkdir(runDir, { recursive: true });
   return {
     runDir,
-    useManagedAgentInvocation: false,
+    useManagedAgentInvocation,
   };
-}
-
-function isManagedRunsRootUnavailable(err: unknown) {
-  const code = (err as NodeJS.ErrnoException).code;
-  return (
-    code === "EACCES" ||
-    code === "ENOENT" ||
-    code === "ENOTDIR" ||
-    code === "EPERM" ||
-    code === "EROFS"
-  );
 }
 
 function normalizeRunDirectoryResult(
@@ -183,7 +150,6 @@ function resolveLocalAgentTimeoutMs(runtimeEnv: {
 }
 
 function buildLocalAgentProviderEnv(input: {
-  managedCredentialEnv?: Record<string, string>;
   runtimeEnv: RuntimeExecutionContext["runtimeEnv"];
   runtimeProvider: AgentRuntimeProvider;
 }) {
@@ -196,7 +162,6 @@ function buildLocalAgentProviderEnv(input: {
     env.CODEX_HOME = input.runtimeEnv.codexImagegenCodexHome;
   }
 
-  Object.assign(env, input.managedCredentialEnv ?? {});
   return Object.keys(env).length > 0 ? env : undefined;
 }
 
@@ -320,52 +285,42 @@ export function createLocalAgentRuntimeProvider(
       run.managedAgentInvocationCredential = undefined;
 
       const appDataDir = runtimeEnv.appDataDir ?? runtimeEnv.dataRoot;
-      const runDirectory = normalizeRunDirectoryResult(
-        deps.createRunDirectory
-          ? await deps.createRunDirectory({
-              managed,
-              runId: run.runId,
-              runtimeProvider,
-            })
-          : await createLocalAgentRunDirectory({
-              ...(appDataDir ? { appDataDir } : {}),
-              managed,
-              runId: run.runId,
-              runtimeProvider,
-            }),
-        managed,
-      );
-      const { runDir } = runDirectory;
-      if (
-        managed &&
-        runDirectory.useManagedAgentInvocation &&
-        !isManagedAgentInvocationCwd(runDir)
-      ) {
-        throw new Error("Managed agent cwd must be under /workspace.");
-      }
-      if (managed && !runDirectory.useManagedAgentInvocation) {
-        rlog.warn("local_agent_managed_cwd_fallback", {
-          provider: runtimeProvider,
-        });
-      }
-      const managedAgentInvocation =
-        managedAgentInvocationCredential &&
-        runDirectory.useManagedAgentInvocation
-          ? {
-              credential: managedAgentInvocationCredential,
-              cwd: runDir,
-            }
-          : undefined;
-      const managedCredentialEnv =
-        managedAgentInvocationCredential &&
-        !runDirectory.useManagedAgentInvocation
-          ? {
-              [MANAGED_AGENT_INVOCATION_CREDENTIAL_ENV]:
+      const managedRunContext = managedAgentInvocationCredential
+        ? await createManagedAgentRunContextFromHeaders(
+            {
+              [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]:
                 managedAgentInvocationCredential,
-            }
-          : undefined;
+            },
+            {
+              ...(appDataDir ? { appDataDir } : {}),
+              providerId: runtimeProvider,
+              runId: run.runId,
+            },
+          )
+        : undefined;
+      const runDirectory = managedRunContext
+        ? undefined
+        : normalizeRunDirectoryResult(
+            deps.createRunDirectory
+              ? await deps.createRunDirectory({
+                  managed,
+                  runId: run.runId,
+                  runtimeProvider,
+                })
+              : await createLocalAgentRunDirectory({
+                  ...(appDataDir ? { appDataDir } : {}),
+                  managed,
+                  runId: run.runId,
+                  runtimeProvider,
+                }),
+            managed,
+          );
+      const runDir = managedRunContext?.cwd ?? runDirectory?.runDir;
+      if (!runDir) {
+        throw new Error("Local agent run directory is required.");
+      }
+      const managedAgentInvocation = managedRunContext?.managedAgentInvocation;
       const localAgentProviderEnv = buildLocalAgentProviderEnv({
-        ...(managedCredentialEnv ? { managedCredentialEnv } : {}),
         runtimeEnv,
         runtimeProvider,
       });

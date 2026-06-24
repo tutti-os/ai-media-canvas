@@ -7,9 +7,13 @@ import {
   agentProviderInstallResponseSchema,
   applicationErrorResponseSchema,
   installableAgentProviderIdSchema,
-  modelListRequestSchema,
   modelListResponseSchema,
 } from "@aimc/shared";
+import {
+  type DetectContext,
+  type ManagedAgentInvocationCredentialHeaders,
+  createManagedAgentDetectContextFromHeaders,
+} from "@tutti-os/agent-acp-kit";
 
 import {
   type LocalAgentModelDiscovery,
@@ -269,18 +273,13 @@ export async function registerModelRoutes(
 
   const sendModels = async (
     reply: FastifyReply,
-    input: { managedAgentInvocationCredential?: string | undefined } = {},
+    input: { headers?: ManagedAgentInvocationCredentialHeaders } = {},
   ) => {
     const models = await listAgentModels({
       env,
       localAgentModelDiscovery,
       logger: app.log,
-      ...(input.managedAgentInvocationCredential
-        ? {
-            managedAgentInvocationCredential:
-              input.managedAgentInvocationCredential,
-          }
-        : {}),
+      ...(input.headers ? { managedAgentHeaders: input.headers } : {}),
       ...(options?.tuttiManagedCredentials
         ? { tuttiManagedCredentials: options.tuttiManagedCredentials }
         : {}),
@@ -289,23 +288,12 @@ export async function registerModelRoutes(
     return reply.code(200).send(modelListResponseSchema.parse({ models }));
   };
 
-  app.get("/api/models", async (_request, reply) => {
-    return sendModels(reply);
+  app.get("/api/models", async (request, reply) => {
+    return sendModels(reply, { headers: request.headers });
   });
 
   app.post("/api/models", async (request, reply) => {
-    const result = modelListRequestSchema.safeParse(request.body ?? {});
-    if (!result.success) {
-      return reply.code(400).send(
-        applicationErrorResponseSchema.parse({
-          error: {
-            code: "invalid_input",
-            message: "Invalid model list request.",
-          },
-        }),
-      );
-    }
-    return sendModels(reply, result.data);
+    return sendModels(reply, { headers: request.headers });
   });
 
   app.post(
@@ -369,7 +357,8 @@ export async function listAgentModels(options: {
   env: ServerEnv;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
-  managedAgentInvocationCredential?: string;
+  managedAgentDetectContext?: DetectContext;
+  managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders;
   tuttiManagedCredentials?: TuttiManagedCredentialService;
   settingsService?: SettingsService;
 }) {
@@ -455,21 +444,22 @@ export async function listAgentModels(options: {
     );
   }
   if (effectiveEnv.trustedLocalAgentMode !== false) {
-    const managedAgentInvocationCredential =
-      options.managedAgentInvocationCredential?.trim();
+    const managedAgentAppDataDir =
+      effectiveEnv.appDataDir ?? effectiveEnv.dataRoot;
+    const managedAgentDetectContext =
+      options.managedAgentDetectContext ??
+      createManagedAgentDetectContextFromHeaders(
+        options.managedAgentHeaders,
+        managedAgentAppDataDir ? { appDataDir: managedAgentAppDataDir } : {},
+      );
     try {
-      const detections = managedAgentInvocationCredential
-        ? await localAgentModelDiscovery.detect({
-            managedAgentInvocation: {
-              credential: managedAgentInvocationCredential,
-              cwd: "/workspace",
-            },
-          })
-        : await localAgentModelDiscovery.detect();
+      const detections = await localAgentModelDiscovery.detect(
+        managedAgentDetectContext,
+      );
       models.push(...buildLocalAgentModels(detections));
     } catch (error) {
       options.logger?.warn(
-        managedAgentInvocationCredential ? {} : { err: error },
+        managedAgentDetectContext ? {} : { err: error },
         "Failed to load local-agent models; omitting local providers.",
       );
     }

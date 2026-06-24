@@ -632,35 +632,7 @@ describe("ChatSidebar", () => {
     );
   });
 
-  it("fetches a fresh managed agent invocation credential for each run", async () => {
-    const getManagedAgentInvocationCredential = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        value: {
-          connId: "ignored-conn-1",
-          credential: "credential-run-1",
-        },
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        value: {
-          connId: "ignored-conn-2",
-          credential: "credential-run-2",
-        },
-      });
-    (
-      window as Window & {
-        tutti?: {
-          agent?: {
-            getManagedAgentInvocationCredential?: typeof getManagedAgentInvocationCredential;
-          };
-        };
-      }
-    ).tutti = {
-      agent: { getManagedAgentInvocationCredential },
-    };
-
+  it("does not include managed agent invocation credentials in run payloads", async () => {
     render(
       <ToastProvider>
         <ChatSidebar
@@ -685,40 +657,25 @@ describe("ChatSidebar", () => {
     await userEvent.type(nextInput, "second run{Enter}");
 
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(2));
-    expect(getManagedAgentInvocationCredential).toHaveBeenCalledTimes(2);
 
     const startRunMock = mockWs.startRun as unknown as {
       mock: { calls: Array<[Record<string, unknown>, unknown]> };
     };
     expect(startRunMock.mock.calls[0]?.[0]).toMatchObject({
-      managedAgentInvocationCredential: "credential-run-1",
       prompt: "first run",
     });
     expect(startRunMock.mock.calls[1]?.[0]).toMatchObject({
-      managedAgentInvocationCredential: "credential-run-2",
       prompt: "second run",
     });
-    expect(startRunMock.mock.calls[0]?.[0]).not.toHaveProperty("connId");
-    expect(startRunMock.mock.calls[1]?.[0]).not.toHaveProperty("connId");
+    expect(startRunMock.mock.calls[0]?.[0]).not.toHaveProperty(
+      "managedAgentInvocationCredential",
+    );
+    expect(startRunMock.mock.calls[1]?.[0]).not.toHaveProperty(
+      "managedAgentInvocationCredential",
+    );
   });
 
-  it("does not register a stream listener when managed credential lookup fails", async () => {
-    const getManagedAgentInvocationCredential = vi
-      .fn()
-      .mockRejectedValue(new Error("bridge failed"));
-    (
-      window as Window & {
-        tutti?: {
-          agent?: {
-            getManagedAgentInvocationCredential?: typeof getManagedAgentInvocationCredential;
-          };
-        };
-      }
-    ).tutti = {
-      agent: { getManagedAgentInvocationCredential },
-    };
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
+  it("starts a run even when no managed credential bridge is present", async () => {
     render(
       <ToastProvider>
         <ChatSidebar
@@ -733,18 +690,15 @@ describe("ChatSidebar", () => {
 
     const input = await screen.findByPlaceholderText(chatInputPlaceholder);
     await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
-    const onEventCallsBeforeSend = vi.mocked(mockWs.onEvent).mock.calls.length;
-    await userEvent.type(input, "credential fails{Enter}");
+    await userEvent.type(input, "header handles credentials{Enter}");
 
-    await waitFor(() =>
-      expect(getManagedAgentInvocationCredential).toHaveBeenCalledTimes(1),
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+    expect(mockWs.startRun).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        managedAgentInvocationCredential: expect.any(String),
+      }),
+      expect.any(Function),
     );
-    expect(
-      await screen.findByText("Failed to get response."),
-    ).toBeInTheDocument();
-    expect(mockWs.startRun).not.toHaveBeenCalled();
-    expect(mockWs.onEvent).toHaveBeenCalledTimes(onEventCallsBeforeSend);
-    warnSpy.mockRestore();
   });
 
   it("does not attach selected canvas images when sending a local template", async () => {

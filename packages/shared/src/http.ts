@@ -158,9 +158,7 @@ export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),
 });
 
-export const modelListRequestSchema = z.object({
-  managedAgentInvocationCredential: z.string().trim().min(1).optional(),
-});
+export const modelListRequestSchema = z.object({});
 
 export const tuttiManagedConnectionResponseSchema = z.object({
   connectChallenge: tuttiManagedConnectChallengeSchema.optional(),
