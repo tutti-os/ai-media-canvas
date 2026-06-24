@@ -95,31 +95,11 @@ afterEach(() => {
 });
 
 describe("createLocalAgentRuntimeProvider", () => {
-  it("uses app data for managed local-agent run directories", async () => {
-    const tempRoot = mkdtempSync(join(tmpdir(), "aimc-local-agent-runs-"));
-    try {
-      const result = await createLocalAgentRunDirectory({
-        appDataDir: join(tempRoot, "app-data"),
-        managed: true,
-        runId: "run-1",
-        runtimeProvider: "codex",
-      });
-
-      expect(result).toEqual({
-        runDir: join(tempRoot, "app-data", ".aimc-agent-runs", "codex-run-1"),
-        useManagedAgentInvocation: true,
-      });
-    } finally {
-      rmSync(tempRoot, { recursive: true, force: true });
-    }
-  });
-
   it("uses app data for regular local-agent run directories", async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-local-agent-runs-"));
     try {
       const result = await createLocalAgentRunDirectory({
         appDataDir: join(tempRoot, "app-data"),
-        managed: false,
         runId: "run-1",
         runtimeProvider: "codex",
       });
@@ -145,6 +125,7 @@ describe("createLocalAgentRuntimeProvider", () => {
     });
     const createRunDirectory = vi.fn();
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-managed-run-"));
+    vi.stubEnv("TUTTI_APP_DATA_DIR", tempRoot);
     const context = createRuntimeContext({
       managedAgentInvocationCredential: "credential-run-1",
     });
@@ -218,6 +199,7 @@ describe("createLocalAgentRuntimeProvider", () => {
       };
     });
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-managed-run-"));
+    vi.stubEnv("TUTTI_APP_DATA_DIR", tempRoot);
     const context = createRuntimeContext({
       managedAgentInvocationCredential: "credential-run-1",
     });
@@ -279,6 +261,7 @@ describe("createLocalAgentRuntimeProvider", () => {
       managedAgentInvocationCredential: "credential-run-1",
     });
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-managed-run-"));
+    vi.stubEnv("TUTTI_APP_DATA_DIR", tempRoot);
     context.runtimeEnv = {
       ...context.runtimeEnv,
       appDataDir: tempRoot,
@@ -338,6 +321,7 @@ describe("createLocalAgentRuntimeProvider", () => {
     const localAgentRuntimeRun = vi.fn();
     const revokeSession = vi.fn();
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-managed-run-"));
+    vi.stubEnv("TUTTI_APP_DATA_DIR", tempRoot);
     const provider = createLocalAgentRuntimeProvider(
       {
         buildAttachmentDataMap: vi.fn(() => ({})),

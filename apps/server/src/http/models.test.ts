@@ -21,6 +21,7 @@ describe("registerModelRoutes", () => {
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("loads trusted local agent mode from the environment", () => {
@@ -368,6 +369,7 @@ describe("registerModelRoutes", () => {
   });
 
   it("passes a managed agent invocation to local-agent model discovery for POST model requests", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
     const localAgentModelDiscovery = {
       detect: vi.fn(async () => [
         {

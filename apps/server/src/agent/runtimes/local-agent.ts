@@ -48,30 +48,22 @@ type LocalAgentRunDirectoryResult = {
 
 export async function createLocalAgentRunDirectory(input: {
   appDataDir?: string;
-  managed: boolean;
-  managedRunsDir?: string;
   runId: string;
   runtimeProvider: AgentRuntimeProvider;
 }): Promise<LocalAgentRunDirectoryResult> {
-  const appDataRunsDir =
-    input.managedRunsDir ??
-    (input.appDataDir
-      ? join(input.appDataDir, LOCAL_AGENT_RUNS_DIR_NAME)
-      : undefined);
+  const appDataRunsDir = input.appDataDir
+    ? join(input.appDataDir, LOCAL_AGENT_RUNS_DIR_NAME)
+    : undefined;
 
   if (appDataRunsDir) {
-    return createAppDataLocalAgentRunDirectory(
-      input,
-      appDataRunsDir,
-      input.managed,
-    );
+    return createAppDataLocalAgentRunDirectory(input, appDataRunsDir);
   }
 
   return {
     runDir: await mkdtemp(
       join(tmpdir(), `aimc-local-agent-${input.runtimeProvider}-run-`),
     ),
-    useManagedAgentInvocation: input.managed,
+    useManagedAgentInvocation: false,
   };
 }
 
@@ -81,7 +73,6 @@ async function createAppDataLocalAgentRunDirectory(
     runtimeProvider: AgentRuntimeProvider;
   },
   appDataRunsDir: string,
-  useManagedAgentInvocation: boolean,
 ): Promise<LocalAgentRunDirectoryResult> {
   const runDir = join(
     appDataRunsDir,
@@ -92,7 +83,7 @@ async function createAppDataLocalAgentRunDirectory(
   await mkdir(runDir, { recursive: true });
   return {
     runDir,
-    useManagedAgentInvocation,
+    useManagedAgentInvocation: false,
   };
 }
 
@@ -268,7 +259,6 @@ export function createLocalAgentRuntimeProvider(
       const managed = Boolean(managedAgentInvocationCredential);
       run.managedAgentInvocationCredential = undefined;
 
-      const appDataDir = runtimeEnv.appDataDir ?? runtimeEnv.dataRoot;
       const managedRunContext = managedAgentInvocationCredential
         ? await createManagedAgentRunContextFromHeaders(
             {
@@ -276,7 +266,6 @@ export function createLocalAgentRuntimeProvider(
                 managedAgentInvocationCredential,
             },
             {
-              ...(appDataDir ? { appDataDir } : {}),
               providerId: runtimeProvider,
               runId: run.runId,
             },
@@ -292,8 +281,9 @@ export function createLocalAgentRuntimeProvider(
                   runtimeProvider,
                 })
               : await createLocalAgentRunDirectory({
-                  ...(appDataDir ? { appDataDir } : {}),
-                  managed,
+                  ...(runtimeEnv.appDataDir
+                    ? { appDataDir: runtimeEnv.appDataDir }
+                    : {}),
                   runId: run.runId,
                   runtimeProvider,
                 }),

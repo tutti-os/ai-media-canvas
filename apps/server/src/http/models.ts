@@ -444,14 +444,9 @@ export async function listAgentModels(options: {
     );
   }
   if (effectiveEnv.trustedLocalAgentMode !== false) {
-    const managedAgentAppDataDir =
-      effectiveEnv.appDataDir ?? effectiveEnv.dataRoot;
     const managedAgentDetectContext =
       options.managedAgentDetectContext ??
-      createManagedAgentDetectContextFromHeaders(
-        options.managedAgentHeaders,
-        managedAgentAppDataDir ? { appDataDir: managedAgentAppDataDir } : {},
-      );
+      createManagedAgentDetectContextFromHeaders(options.managedAgentHeaders);
     try {
       const detections = await localAgentModelDiscovery.detect(
         managedAgentDetectContext,
