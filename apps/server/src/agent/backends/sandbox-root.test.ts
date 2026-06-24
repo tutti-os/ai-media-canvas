@@ -4,6 +4,7 @@ import { join, sep } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { loadServerEnv } from "../../config/env.js";
 import { createAgentBackend } from "./index.js";
 
 const tempDirs: string[] = [];
@@ -45,11 +46,11 @@ describe("agent sandbox root", () => {
     mkdirSync(skillsRoot, { recursive: true });
 
     const backendResult = createAgentBackend(
-      {
+      loadServerEnv({
         agentBackendMode: "state",
         dataRoot,
         skillsRoot,
-      },
+      }),
       "canvas-1",
     );
 
@@ -90,12 +91,12 @@ describe("agent sandbox root", () => {
     mkdirSync(dataRoot, { recursive: true });
     mkdirSync(skillsRoot, { recursive: true });
 
-    const backendResult = createAgentBackend({
+    const backendResult = createAgentBackend(loadServerEnv({
       agentBackendMode: "filesystem",
       agentFilesRoot,
       dataRoot,
       skillsRoot,
-    });
+    }));
 
     expectSandboxDirInside(
       backendResult.sandboxDir,

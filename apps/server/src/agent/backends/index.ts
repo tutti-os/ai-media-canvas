@@ -12,7 +12,6 @@ type AgentBackendEnv = Pick<
   | "agentBackendMode"
   | "agentFilesRoot"
   | "appDataDir"
-  | "dataRoot"
   | "skillsRoot"
 >;
 
@@ -42,11 +41,9 @@ export function createAgentBackend(
     );
   }
 
-  const appDataDir = env.appDataDir ?? env.dataRoot;
-
   return createProductionBackendFactory(canvasId, {
-    ...(appDataDir
-      ? { sandboxRoot: join(appDataDir, "ai-media-canvas-sandbox") }
+    ...(env.appDataDir
+      ? { sandboxRoot: join(env.appDataDir, "ai-media-canvas-sandbox") }
       : {}),
     ...(env.skillsRoot ? { skillsRoot: env.skillsRoot } : {}),
     ...(options?.workspaceSkills
