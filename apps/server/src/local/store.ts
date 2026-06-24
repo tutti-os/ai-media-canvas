@@ -15,6 +15,7 @@ import type {
   AgentRunResumeMode,
   AssetBucket,
   AssetObject,
+  AssetSource,
   BackgroundJob,
   BackgroundJobStatus,
   BackgroundJobType,
@@ -197,6 +198,10 @@ type AssetRow = {
   byte_size: number | null;
   workspace_id: string;
   project_id: string | null;
+  file_path: string;
+  source: AssetSource;
+  display_name: string | null;
+  sha256: string | null;
   created_at: string;
 };
 
@@ -413,6 +418,9 @@ export function createLocalStore(options: {
       workspace_id TEXT NOT NULL,
       project_id TEXT,
       file_path TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'local',
+      display_name TEXT,
+      sha256 TEXT,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS brand_kits (
@@ -543,6 +551,7 @@ export function createLocalStore(options: {
   `);
 
   ensureWorkspaceSettingsSchema();
+  ensureAssetSchema();
   ensureCanvasSchema();
   ensureAgentRunSchema();
   ensureBackgroundJobSchema();
@@ -638,6 +647,24 @@ export function createLocalStore(options: {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_settings_workspace_id
       ON workspace_settings(workspace_id)
     `);
+  }
+
+  function ensureAssetSchema() {
+    const columns = db.prepare("PRAGMA table_info(assets)").all() as Array<{
+      name: string;
+    }>;
+    const columnNames = new Set(columns.map((column) => column.name));
+    const missingColumns = [
+      ["source", "TEXT NOT NULL DEFAULT 'local'"],
+      ["display_name", "TEXT"],
+      ["sha256", "TEXT"],
+    ] as const;
+
+    for (const [columnName, columnSql] of missingColumns) {
+      if (columnNames.has(columnName)) continue;
+      db.prepare(`ALTER TABLE assets ADD COLUMN ${columnName} ${columnSql}`)
+        .run();
+    }
   }
 
   function ensureCanvasSchema() {
@@ -1259,16 +1286,17 @@ export function createLocalStore(options: {
     return db
       .prepare(
         `
-          SELECT id, bucket, object_path, mime_type, byte_size, workspace_id, project_id, file_path, created_at
+          SELECT id, bucket, object_path, mime_type, byte_size, workspace_id,
+                 project_id, file_path, source, display_name, sha256, created_at
           FROM assets
           WHERE id = ?
         `,
       )
-      .get(assetId) as (AssetRow & { file_path: string }) | undefined;
+      .get(assetId) as AssetRow | undefined;
   }
 
   function assetObjectFromRow(row: AssetRow): AssetObject {
-    return {
+    const asset: AssetObject = {
       id: row.id,
       bucket: row.bucket,
       objectPath: row.object_path,
@@ -1277,6 +1305,16 @@ export function createLocalStore(options: {
       projectId: row.project_id,
       createdAt: row.created_at,
     };
+    if (row.source !== "local") {
+      asset.source = row.source;
+    }
+    if (row.display_name) {
+      asset.displayName = row.display_name;
+    }
+    if (row.sha256) {
+      asset.sha256 = row.sha256;
+    }
+    return asset;
   }
 
   function mapBackgroundJobRow(row: BackgroundJobRow): BackgroundJob {
@@ -1432,10 +1470,12 @@ export function createLocalStore(options: {
     if (!options?.force && findAssetReference(assetId)) {
       return { ok: false, reason: "asset_in_use" };
     }
-    try {
-      unlinkSync(row.file_path);
-    } catch {
-      // ignore missing local file
+    if (row.source === "local") {
+      try {
+        unlinkSync(row.file_path);
+      } catch {
+        // ignore missing local file
+      }
     }
     db.prepare(`DELETE FROM assets WHERE id = ?`).run(assetId);
     return { ok: true };
@@ -3569,6 +3609,50 @@ export function createLocalStore(options: {
     });
   }
 
+  function createManagedFileAsset(input: {
+    bucket: AssetBucket;
+    file: {
+      path: string;
+      name: string;
+      mimeType: string;
+      sizeBytes: number;
+      sha256: string;
+    };
+    projectId?: string;
+  }) {
+    const assetId = randomUUID();
+    const createdAt = nowIso();
+    db.prepare(
+      `
+        INSERT INTO assets (
+          id, bucket, object_path, mime_type, byte_size, workspace_id,
+          project_id, file_path, source, display_name, sha256, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      assetId,
+      input.bucket,
+      input.file.path,
+      input.file.mimeType,
+      input.file.sizeBytes,
+      LOCAL_WORKSPACE_ID,
+      input.projectId ?? null,
+      input.file.path,
+      "managed-file",
+      input.file.name,
+      input.file.sha256,
+      createdAt,
+    );
+    const row = getAssetRow(assetId);
+    if (!row) {
+      throw new Error("Failed to persist managed file asset.");
+    }
+    return {
+      asset: assetObjectFromRow(row),
+      url: assetUrl(assetId),
+    };
+  }
+
   function buildGeneratedPreviewSvg(input: {
     title: string;
     subtitle: string;
@@ -3847,6 +3931,16 @@ export function createLocalStore(options: {
     return relative(dataRoot, filePath).split("\\").join("/");
   }
 
+  function assetReferencePath(row: {
+    file_path: string;
+    object_path: string;
+    source?: AssetSource | null;
+  }): string {
+    return row.source === "managed-file"
+      ? row.object_path
+      : dataRelativePath(row.file_path);
+  }
+
   // Root level: one group per active project plus one special group for
   // unassigned media assets when any exist. referenceCount only includes
   // in-range reusable media assets; projects with no reusable outputs remain
@@ -4044,7 +4138,7 @@ export function createLocalStore(options: {
     const rows = db
       .prepare(
         `
-          SELECT id, object_path, mime_type, byte_size, file_path, created_at
+          SELECT id, object_path, mime_type, byte_size, file_path, source, created_at
           FROM assets
           WHERE ${conditions.join(" AND ")}
           ORDER BY created_at DESC, id DESC
@@ -4057,6 +4151,7 @@ export function createLocalStore(options: {
       mime_type: string | null;
       byte_size: number | null;
       file_path: string;
+      source: AssetSource | null;
       created_at: string;
     }>;
     const hasMore = rows.length > limit;
@@ -4068,7 +4163,7 @@ export function createLocalStore(options: {
         return {
           id: row.id,
           displayName: row.object_path.split("/").at(-1) ?? row.id,
-          relativePath: dataRelativePath(row.file_path),
+          relativePath: assetReferencePath(row),
           mimeType: row.mime_type,
           sizeBytes: row.byte_size,
           mtimeMs: Number.isNaN(mtime) ? null : mtime,
@@ -4131,7 +4226,7 @@ export function createLocalStore(options: {
     const rows = db
       .prepare(
         `
-          SELECT id, object_path, mime_type, byte_size, file_path, created_at
+          SELECT id, object_path, mime_type, byte_size, file_path, source, created_at
           FROM assets
           WHERE ${conditions.join(" AND ")}
           ORDER BY created_at DESC, id DESC
@@ -4144,6 +4239,7 @@ export function createLocalStore(options: {
       mime_type: string | null;
       byte_size: number | null;
       file_path: string;
+      source: AssetSource | null;
       created_at: string;
     }>;
     const hasMore = rows.length > limit;
@@ -4155,7 +4251,7 @@ export function createLocalStore(options: {
         return {
           id: row.id,
           displayName: row.object_path.split("/").at(-1) ?? row.id,
-          relativePath: dataRelativePath(row.file_path),
+          relativePath: assetReferencePath(row),
           mimeType: row.mime_type,
           sizeBytes: row.byte_size,
           mtimeMs: Number.isNaN(mtime) ? null : mtime,
@@ -4244,6 +4340,7 @@ export function createLocalStore(options: {
       .prepare(
         `
           SELECT a.id, a.object_path, a.mime_type, a.byte_size, a.file_path,
+                 a.source,
                  a.created_at, p.name AS project_name
           FROM assets a
           LEFT JOIN projects p ON p.id = a.project_id
@@ -4258,6 +4355,7 @@ export function createLocalStore(options: {
       mime_type: string | null;
       byte_size: number | null;
       file_path: string;
+      source: AssetSource | null;
       created_at: string;
       project_name: string | null;
     }>;
@@ -4270,7 +4368,7 @@ export function createLocalStore(options: {
         return {
           id: row.id,
           displayName: row.object_path.split("/").at(-1) ?? row.id,
-          relativePath: dataRelativePath(row.file_path),
+          relativePath: assetReferencePath(row),
           mimeType: row.mime_type,
           sizeBytes: row.byte_size,
           mtimeMs: Number.isNaN(mtime) ? null : mtime,
@@ -4356,6 +4454,7 @@ export function createLocalStore(options: {
     markBackgroundJobSucceeded,
     markBackgroundJobFailed,
     uploadFile,
+    createManagedFileAsset,
     getAssetUrl(assetId: string) {
       return resolveAssetUrl(assetId);
     },

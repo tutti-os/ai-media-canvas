@@ -3,14 +3,15 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   applicationErrorResponseSchema,
   assetSignedUrlResponseSchema,
+  managedFileAssetCreateRequestSchema,
   uploadResponseSchema,
 } from "@aimc/shared";
 
-import {
-  UploadServiceError,
-  type UploadService,
-} from "../features/uploads/upload-service.js";
 import type { AuthenticatedUser } from "../auth/types.js";
+import {
+  type UploadService,
+  UploadServiceError,
+} from "../features/uploads/upload-service.js";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/png",
@@ -72,9 +73,40 @@ export async function registerUploadRoutes(
         ...(projectId ? { projectId } : {}),
       });
 
-      return reply
-        .code(201)
-        .send(uploadResponseSchema.parse(result));
+      return reply.code(201).send(uploadResponseSchema.parse(result));
+    } catch (error) {
+      return sendUploadError(error, reply);
+    }
+  });
+
+  // Create an app asset record for a file already uploaded through the Tutti
+  // workspace file bridge.
+  app.post("/api/uploads/managed-file", async (request, reply) => {
+    const parsed = managedFileAssetCreateRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "upload_failed",
+            message: "Invalid managed file asset metadata.",
+          },
+        }),
+      );
+    }
+
+    try {
+      const result = await options.uploadService.createManagedFileAsset(
+        options.localUser,
+        {
+          bucket: "project-assets",
+          file: parsed.data.file,
+          ...(parsed.data.projectId
+            ? { projectId: parsed.data.projectId }
+            : {}),
+        },
+      );
+
+      return reply.code(201).send(uploadResponseSchema.parse(result));
     } catch (error) {
       return sendUploadError(error, reply);
     }

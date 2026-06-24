@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -78,6 +79,122 @@ describe("buildApp", () => {
     expect(response.headers["content-range"]).toBe("bytes 0-3/10");
     expect(response.headers["content-type"]).toContain("video/mp4");
     expect(response.body).toBe("0123");
+  });
+
+  it("creates managed file asset records and serves them through local asset URLs", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
+    dataRoots.push(dataRoot);
+    const managedRoot = await mkdtemp(join(tmpdir(), "aimc-managed-files-"));
+    dataRoots.push(managedRoot);
+    const managedFilePath = join(managedRoot, "managed-ref.png");
+    const managedFileBytes = Buffer.from("fake");
+    const managedFileSha256 = createHash("sha256")
+      .update(managedFileBytes)
+      .digest("hex");
+    await writeFile(managedFilePath, managedFileBytes);
+    const managedFileRealPath = await realpath(managedFilePath);
+
+    const app = buildApp({
+      env: {
+        dataRoot,
+        tuttiManagedFilesRoot: managedRoot,
+      },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/uploads/managed-file",
+      payload: {
+        file: {
+          path: managedFilePath,
+          name: "ref.png",
+          mimeType: "image/png",
+          sizeBytes: managedFileBytes.byteLength,
+          sha256: managedFileSha256,
+        },
+        projectId: "project-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = JSON.parse(response.body) as {
+      asset: {
+        id: string;
+        objectPath: string;
+        source?: string;
+        displayName?: string | null;
+        sha256?: string | null;
+      };
+      url: string;
+    };
+    expect(body.asset).toMatchObject({
+      objectPath: managedFileRealPath,
+      source: "managed-file",
+      displayName: "ref.png",
+      sha256: managedFileSha256,
+    });
+    expect(body.url).toContain(`/local-assets/${body.asset.id}`);
+
+    const assetUrl = await app.inject({
+      method: "GET",
+      url: `/api/uploads/${body.asset.id}/url`,
+    });
+    expect(assetUrl.statusCode).toBe(200);
+    expect(JSON.parse(assetUrl.body)).toEqual({
+      url: body.url,
+    });
+
+    const localAsset = await app.inject({
+      method: "GET",
+      url: `/local-assets/${body.asset.id}`,
+    });
+    await app.close();
+
+    expect(localAsset.statusCode).toBe(200);
+    expect(localAsset.body).toBe("fake");
+  });
+
+  it("rejects managed file asset records outside the managed files root", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
+    dataRoots.push(dataRoot);
+    const managedRoot = await mkdtemp(join(tmpdir(), "aimc-managed-files-"));
+    dataRoots.push(managedRoot);
+    const outsideRoot = await mkdtemp(join(tmpdir(), "aimc-outside-files-"));
+    dataRoots.push(outsideRoot);
+    const outsidePath = join(outsideRoot, "secret.txt");
+    const outsideBytes = Buffer.from("secret");
+    const outsideSha256 = createHash("sha256")
+      .update(outsideBytes)
+      .digest("hex");
+    await writeFile(outsidePath, outsideBytes);
+
+    const app = buildApp({
+      env: {
+        dataRoot,
+        tuttiManagedFilesRoot: managedRoot,
+      },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/uploads/managed-file",
+      payload: {
+        file: {
+          path: outsidePath,
+          name: "secret.txt",
+          mimeType: "text/plain",
+          sizeBytes: outsideBytes.byteLength,
+          sha256: outsideSha256,
+        },
+      },
+    });
+    await app.close();
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body)).toMatchObject({
+      error: {
+        code: "upload_failed",
+        message: "Managed file path is outside the configured upload root.",
+      },
+    });
   });
 
   it("allows local frontend origins even when the configured dev port differs", async () => {

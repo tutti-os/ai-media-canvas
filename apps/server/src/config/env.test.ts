@@ -4,10 +4,13 @@ import { loadServerEnv } from "./env.js";
 
 describe("loadServerEnv", () => {
   it("loads Tutti package runtime data root and package version overrides", () => {
-    const env = loadServerEnv({}, {
-      AIMC_APP_VERSION: "1.2.3",
-      AIMC_DATA_ROOT: "/tmp/aimc-tutti-data",
-    });
+    const env = loadServerEnv(
+      {},
+      {
+        AIMC_APP_VERSION: "1.2.3",
+        AIMC_DATA_ROOT: "/tmp/aimc-tutti-data",
+      },
+    );
 
     expect(env.dataRoot).toBe("/tmp/aimc-tutti-data");
     expect(env.version).toBe("1.2.3");
@@ -20,6 +23,7 @@ describe("loadServerEnv", () => {
         TUTTI_API_BASE_URL: "https://tutti.example/api",
         TUTTI_APP_ID: "tutti-app",
         TUTTI_APP_INSTALLATION_ID: "tutti-installation",
+        TUTTI_APP_MANAGED_FILES_ROOT: "/tmp/tutti-managed-files",
         TUTTI_APP_SERVER_TOKEN: "tutti-token",
         TUTTI_WORKSPACE_ID: "tutti-workspace",
       },
@@ -28,6 +32,7 @@ describe("loadServerEnv", () => {
     expect(env.tuttiApiBaseUrl).toBe("https://tutti.example/api");
     expect(env.tuttiAppId).toBe("tutti-app");
     expect(env.tuttiAppInstallationId).toBe("tutti-installation");
+    expect(env.tuttiManagedFilesRoot).toBe("/tmp/tutti-managed-files");
     expect(env.tuttiAppServerToken).toBe("tutti-token");
     expect(env.tuttiWorkspaceId).toBe("tutti-workspace");
   });

@@ -1,4 +1,8 @@
-import type { AssetBucket, AssetObject } from "@aimc/shared";
+import type {
+  AssetBucket,
+  AssetObject,
+  ManagedFileAssetMetadata,
+} from "@aimc/shared";
 
 import type { AuthenticatedUser } from "../../auth/types.js";
 
@@ -25,10 +29,20 @@ export type UploadFileInput = {
   projectId?: string | undefined;
 };
 
+export type ManagedFileAssetInput = {
+  bucket: AssetBucket;
+  file: ManagedFileAssetMetadata;
+  projectId?: string | undefined;
+};
+
 export type UploadService = {
   uploadFile(
     user: AuthenticatedUser,
     input: UploadFileInput,
+  ): Promise<{ asset: AssetObject; url: string }>;
+  createManagedFileAsset(
+    user: AuthenticatedUser,
+    input: ManagedFileAssetInput,
   ): Promise<{ asset: AssetObject; url: string }>;
   getAssetUrl(user: AuthenticatedUser, assetId: string): Promise<string>;
   deleteAsset(user: AuthenticatedUser, assetId: string): Promise<void>;

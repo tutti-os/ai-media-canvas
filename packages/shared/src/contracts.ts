@@ -390,6 +390,7 @@ export const chatMessageCreateRequestSchema = z.object({
 });
 
 export const assetBucketSchema = z.enum(["project-assets", "user-avatars"]);
+export const assetSourceSchema = z.enum(["local", "managed-file"]);
 
 export const assetObjectSchema = z.object({
   id: identifierSchema,
@@ -399,9 +400,13 @@ export const assetObjectSchema = z.object({
   byteSize: z.number().int().nonnegative().nullable(),
   projectId: projectIdSchema.nullable(),
   createdAt: timestampSchema,
+  source: assetSourceSchema.optional(),
+  displayName: z.string().min(1).nullable().optional(),
+  sha256: z.string().min(1).nullable().optional(),
 });
 
 export type AssetBucket = z.infer<typeof assetBucketSchema>;
+export type AssetSource = z.infer<typeof assetSourceSchema>;
 export type AssetObject = z.infer<typeof assetObjectSchema>;
 
 export type TextBlock = z.infer<typeof textBlockSchema>;
