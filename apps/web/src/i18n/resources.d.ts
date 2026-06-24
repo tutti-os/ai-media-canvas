@@ -634,8 +634,6 @@ export default interface Resources {
         "getApiKey": "获取 {{provider}} API Key",
         "save": "保存",
         "saving": "保存中...",
-        "scan": "扫描",
-        "scanning": "扫描中...",
         "settings": "设置"
       },
       "agnesHint": {
@@ -716,20 +714,14 @@ export default interface Resources {
       "sections": {
         "connected": "已连接",
         "localDetection": "本机检测",
-        "manualAdd": "手动添加",
-        "tuttiSync": "同步 Tutti 设置"
+        "manualAdd": "手动添加"
       },
       "status": {
         "enabled": "✓ 已启用",
         "notConfigured": "未配置",
         "ready": "已就绪"
       },
-      "title": "媒体生成",
-      "tuttiSync": {
-        "description": "复用已有 API Key，扫描可用于图片和视频生成的模型。",
-        "empty": "未发现可用于媒体生成的 Tutti 配置。",
-        "error": "无法扫描 Tutti 设置，请稍后重试。"
-      }
+      "title": "媒体生成"
     },
     "modelConfiguration": {
       "configureAgent": "配置 Agent",

@@ -104,8 +104,6 @@
       "getApiKey": "Get {{provider}} API Key",
       "save": "Save",
       "saving": "Saving...",
-      "scan": "Scan",
-      "scanning": "Scanning...",
       "settings": "Settings"
     },
     "agnesHint": {
@@ -186,20 +184,14 @@
     "sections": {
       "connected": "Connected",
       "localDetection": "Local detection",
-      "manualAdd": "Manual add",
-      "tuttiSync": "Sync Tutti settings"
+      "manualAdd": "Manual add"
     },
     "status": {
       "enabled": "✓ Enabled",
       "notConfigured": "Not configured",
       "ready": "Ready"
     },
-    "title": "Media Generation",
-    "tuttiSync": {
-      "description": "Reuse existing API keys and scan for models that can generate images or videos.",
-      "empty": "No Tutti settings are available for media generation.",
-      "error": "Unable to scan Tutti settings. Please try again later."
-    }
+    "title": "Media Generation"
   },
   "modelConfiguration": {
     "configureAgent": "Configure Agent",

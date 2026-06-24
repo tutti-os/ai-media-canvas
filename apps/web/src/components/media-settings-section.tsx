@@ -1,17 +1,11 @@
 "use client";
 
-import {
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  RefreshCw,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import type { WorkspaceSettings } from "@aimc/shared";
 
 import { useAppTranslation } from "@/i18n";
-import { fetchTuttiManagedConnection } from "@/lib/server-api";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -47,6 +41,10 @@ type StringSettingsKey = Exclude<
 type MediaCapability = "image" | "video";
 type MediaProviderId = "agnes" | "kie" | "replicate" | "google" | "openai";
 type Translate = ReturnType<typeof useAppTranslation>["t"];
+type MediaProviderModel = {
+  capabilities: MediaCapability[];
+  label: string;
+};
 
 type MediaProviderCard = {
   id: MediaProviderId;
@@ -54,7 +52,7 @@ type MediaProviderCard = {
   capabilities: MediaCapability[];
   summaryKey: string;
   remarkKey?: string;
-  models: string[];
+  models: MediaProviderModel[];
   fields: Array<{
     key: StringSettingsKey;
     label: string;
@@ -84,9 +82,9 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
     summaryKey: "media.cards.agnes.summary",
     remarkKey: "media.cards.agnes.remark",
     models: [
-      "Agnes Image 2.1 Flash",
-      "Agnes Image 2.0 Flash",
-      "Agnes Video v2.0",
+      { label: "Agnes Image 2.1 Flash", capabilities: ["image"] },
+      { label: "Agnes Image 2.0 Flash", capabilities: ["image"] },
+      { label: "Agnes Video v2.0", capabilities: ["video"] },
     ],
     fields: [
       {
@@ -110,18 +108,18 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
     summaryKey: "media.cards.kie.summary",
     remarkKey: "media.cards.kie.remark",
     models: [
-      "Z-Image",
-      "Seedream 5.0 Lite",
-      "GPT Image 2",
-      "Qwen2",
-      "Nano Banana Pro",
-      "Runway Gen-4 Turbo",
-      "Grok Imagine 1.5 Preview",
-      "Hailuo Pro",
-      "Veo 3.1",
-      "Kling 2.6",
-      "Seedance 2.0",
-      "HappyHorse 1.0",
+      { label: "Z-Image", capabilities: ["image"] },
+      { label: "Seedream 5.0 Lite", capabilities: ["image"] },
+      { label: "GPT Image 2", capabilities: ["image"] },
+      { label: "Qwen2", capabilities: ["image"] },
+      { label: "Nano Banana Pro", capabilities: ["image"] },
+      { label: "Runway Gen-4 Turbo", capabilities: ["video"] },
+      { label: "Grok Imagine 1.5 Preview", capabilities: ["image", "video"] },
+      { label: "Hailuo Pro", capabilities: ["video"] },
+      { label: "Veo 3.1", capabilities: ["video"] },
+      { label: "Kling 2.6", capabilities: ["video"] },
+      { label: "Seedance 2.0", capabilities: ["video"] },
+      { label: "HappyHorse 1.0", capabilities: ["video"] },
     ],
     fields: [
       {
@@ -146,12 +144,12 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
     summaryKey: "media.cards.replicate.summary",
     remarkKey: "media.cards.replicate.remark",
     models: [
-      "Seedream 5 Lite",
-      "Seedream 4.5",
-      "Seedream 4",
-      "Seedance 1.5 Pro",
-      "Kling 3.0 / Omni / 2.6 / O1",
-      "Veo 3 / 3.1",
+      { label: "Seedream 5 Lite", capabilities: ["video"] },
+      { label: "Seedream 4.5", capabilities: ["video"] },
+      { label: "Seedream 4", capabilities: ["video"] },
+      { label: "Seedance 1.5 Pro", capabilities: ["video"] },
+      { label: "Kling 3.0 / Omni / 2.6 / O1", capabilities: ["video"] },
+      { label: "Veo 3 / 3.1", capabilities: ["video"] },
     ],
     fields: [
       {
@@ -167,7 +165,12 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
     label: "Google",
     capabilities: ["image", "video"],
     summaryKey: "media.cards.google.summary",
-    models: ["Nano Banana", "Nano Banana 2", "Nano Banana Pro", "Veo"],
+    models: [
+      { label: "Nano Banana", capabilities: ["image"] },
+      { label: "Nano Banana 2", capabilities: ["image"] },
+      { label: "Nano Banana Pro", capabilities: ["image"] },
+      { label: "Veo", capabilities: ["video"] },
+    ],
     fields: [
       {
         key: "googleApiKey",
@@ -182,7 +185,11 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
     label: "OpenAI",
     capabilities: ["image"],
     summaryKey: "media.cards.openai.summary",
-    models: ["GPT Image 1.5", "GPT Image 1", "GPT Image 1 Mini"],
+    models: [
+      { label: "GPT Image 1.5", capabilities: ["image"] },
+      { label: "GPT Image 1", capabilities: ["image"] },
+      { label: "GPT Image 1 Mini", capabilities: ["image"] },
+    ],
     fields: [
       {
         key: "openAIApiKey",
@@ -248,6 +255,13 @@ function isMediaProviderConfigured(
       !field.defaultValue &&
       String(settings[field.key] ?? "").trim().length > 0,
   );
+}
+
+function getModelsForCapability(
+  card: MediaProviderCard,
+  capability: MediaCapability,
+) {
+  return card.models.filter((model) => model.capabilities.includes(capability));
 }
 
 function mergeMediaSettingsPreservingDirtyFields(
@@ -340,10 +354,8 @@ export function MediaSettingsSection({
     null,
   );
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [tuttiScanState, setTuttiScanState] = useState<
-    "idle" | "loading" | "found" | "empty" | "error"
-  >("idle");
-  const [tuttiModels, setTuttiModels] = useState<string[]>([]);
+  const [selectedCapability, setSelectedCapability] =
+    useState<MediaCapability>("image");
 
   useEffect(() => {
     setBaselineSettings((previousBaseline) => {
@@ -365,8 +377,13 @@ export function MediaSettingsSection({
   const configuredCards = MEDIA_PROVIDER_CARDS.filter((card) =>
     isMediaProviderConfigured(card, settings),
   );
-  const availableCards = MEDIA_PROVIDER_CARDS.filter(
-    (card) => !isMediaProviderConfigured(card, settings),
+  const configuredCardsForCapability = configuredCards.filter((card) =>
+    card.capabilities.includes(selectedCapability),
+  );
+  const availableCardsForCapability = MEDIA_PROVIDER_CARDS.filter(
+    (card) =>
+      card.capabilities.includes(selectedCapability) &&
+      !isMediaProviderConfigured(card, settings),
   );
   const imageReady =
     codexEnabled ||
@@ -374,6 +391,20 @@ export function MediaSettingsSection({
   const videoReady = configuredCards.some((card) =>
     card.capabilities.includes("video"),
   );
+  const codexVisible = selectedCapability === "image" && codexEnabled;
+  const hasConnectedServices =
+    codexVisible || configuredCardsForCapability.length > 0;
+
+  useEffect(() => {
+    if (!activeProvider) return;
+    const activeCard = MEDIA_PROVIDER_CARDS.find(
+      (card) => card.id === activeProvider,
+    );
+    if (!activeCard?.capabilities.includes(selectedCapability)) {
+      setActiveProvider(null);
+      setAdvancedOpen(false);
+    }
+  }, [activeProvider, selectedCapability]);
 
   function updateField<Key extends keyof WorkspaceSettings>(
     key: Key,
@@ -388,6 +419,10 @@ export function MediaSettingsSection({
       current === providerId ? null : providerId,
     );
     setAdvancedOpen(false);
+  }
+
+  function selectCapability(capability: MediaCapability) {
+    setSelectedCapability(capability);
   }
 
   async function handleSave(scope: string) {
@@ -428,30 +463,6 @@ export function MediaSettingsSection({
     }
   }
 
-  async function handleTuttiScan() {
-    setTuttiScanState("loading");
-    setTuttiModels([]);
-    try {
-      const connection = await fetchTuttiManagedConnection();
-      const mediaModels = connection.connection.models
-        .filter(
-          (model) => model.provider === "agnes" || model.provider === "openai",
-        )
-        .map((model) => model.name)
-        .filter((name) => /image|图|agnes/i.test(name));
-      setTuttiModels(mediaModels);
-      setTuttiScanState(mediaModels.length > 0 ? "found" : "empty");
-    } catch {
-      setTuttiScanState("error");
-    }
-  }
-
-  const activeProviderCard =
-    activeProvider === null
-      ? null
-      : (MEDIA_PROVIDER_CARDS.find((card) => card.id === activeProvider) ??
-        null);
-
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <div>
@@ -465,12 +476,16 @@ export function MediaSettingsSection({
 
       <div className="grid gap-3 rounded-xl border bg-background p-4 sm:grid-cols-2">
         <CapabilityStatus
+          active={selectedCapability === "image"}
+          onSelect={() => selectCapability("image")}
           ready={imageReady}
           label={t("media.capabilities.image")}
           readyLabel={t("media.status.ready")}
           unconfiguredLabel={t("media.status.notConfigured")}
         />
         <CapabilityStatus
+          active={selectedCapability === "video"}
+          onSelect={() => selectCapability("video")}
           ready={videoReady}
           label={t("media.capabilities.video")}
           readyLabel={t("media.status.ready")}
@@ -478,10 +493,10 @@ export function MediaSettingsSection({
         />
       </div>
 
-      {(codexEnabled || configuredCards.length > 0) && (
+      {hasConnectedServices && (
         <section className="flex flex-col gap-3">
           <SectionHeading title={t("media.sections.connected")} />
-          {codexEnabled ? (
+          {codexVisible ? (
             <div className="rounded-xl border bg-background px-4 py-3">
               <ConnectedServiceRow
                 capabilities={["image"]}
@@ -520,7 +535,7 @@ export function MediaSettingsSection({
               ) : null}
             </div>
           ) : null}
-          {configuredCards.map((card) => (
+          {configuredCardsForCapability.map((card) => (
             <div
               key={card.id}
               className="rounded-xl border bg-background px-4 py-3"
@@ -528,7 +543,8 @@ export function MediaSettingsSection({
               <ConnectedServiceRow
                 capabilities={card.capabilities}
                 meta={t("media.connected.providerMeta", {
-                  count: card.models.length,
+                  count: getModelsForCapability(card, selectedCapability)
+                    .length,
                 })}
                 name={card.label}
                 onSettings={() => showProviderForm(card.id)}
@@ -545,76 +561,39 @@ export function MediaSettingsSection({
         </section>
       )}
 
-      <section className="flex flex-col gap-3">
-        <SectionHeading
-          action={
-            <span className="text-xs text-muted-foreground">
-              {codexEnabled
-                ? t("media.localDetection.enabled")
-                : t("media.localDetection.detected")}
-            </span>
-          }
-          title={t("media.sections.localDetection")}
-        />
-        <div className="rounded-xl border bg-background px-4 py-3">
-          <ConnectedServiceRow
-            capabilities={["image"]}
-            meta={t("media.localDetection.codexMeta")}
-            name={t("media.localDetection.codexTitle")}
-            onSettings={() => setCodexSettingsOpen((open) => !open)}
-            settingsLabel={
-              codexEnabled
-                ? t("media.actions.settings")
-                : t("media.actions.enable")
+      {selectedCapability === "image" ? (
+        <section className="flex flex-col gap-3">
+          <SectionHeading
+            action={
+              <span className="text-xs text-muted-foreground">
+                {codexEnabled
+                  ? t("media.localDetection.enabled")
+                  : t("media.localDetection.detected")}
+              </span>
             }
-            status={codexEnabled ? t("media.status.enabled") : undefined}
-            tCapability={(capability) =>
-              capability === "image"
-                ? t("media.capabilities.image")
-                : t("media.capabilities.video")
-            }
+            title={t("media.sections.localDetection")}
           />
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <SectionHeading title={t("media.sections.tuttiSync")} />
-        <div className="rounded-xl border bg-background px-4 py-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              {t("media.tuttiSync.description")}
-            </p>
-            <Button
-              disabled={tuttiScanState === "loading"}
-              onClick={() => void handleTuttiScan()}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <RefreshCw data-icon="inline-start" />
-              {tuttiScanState === "loading"
-                ? t("media.actions.scanning")
-                : t("media.actions.scan")}
-            </Button>
+          <div className="rounded-xl border bg-background px-4 py-3">
+            <ConnectedServiceRow
+              capabilities={["image"]}
+              meta={t("media.localDetection.codexMeta")}
+              name={t("media.localDetection.codexTitle")}
+              onSettings={() => setCodexSettingsOpen((open) => !open)}
+              settingsLabel={
+                codexEnabled
+                  ? t("media.actions.settings")
+                  : t("media.actions.enable")
+              }
+              status={codexEnabled ? t("media.status.enabled") : undefined}
+              tCapability={(capability) =>
+                capability === "image"
+                  ? t("media.capabilities.image")
+                  : t("media.capabilities.video")
+              }
+            />
           </div>
-          {tuttiScanState === "found" ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {tuttiModels.map((model) => (
-                <Badge key={model} variant="outline">
-                  {model}
-                </Badge>
-              ))}
-            </div>
-          ) : null}
-          {tuttiScanState === "empty" || tuttiScanState === "error" ? (
-            <p className="mt-3 text-xs text-muted-foreground">
-              {tuttiScanState === "empty"
-                ? t("media.tuttiSync.empty")
-                : t("media.tuttiSync.error")}
-            </p>
-          ) : null}
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       <section className="flex flex-col gap-3">
         <SectionHeading
@@ -643,12 +622,12 @@ export function MediaSettingsSection({
         <div className="rounded-xl border bg-background px-4 py-3">
           <p className="text-sm text-muted-foreground">
             {t("media.manualAdd.description", {
-              count: availableCards.length,
+              count: availableCardsForCapability.length,
             })}
           </p>
           {manualOpen ? (
             <div className="mt-3 flex flex-col gap-2">
-              {availableCards.map((card) => (
+              {availableCardsForCapability.map((card) => (
                 <ProviderAddRow
                   active={activeProvider === card.id}
                   card={card}
@@ -673,6 +652,7 @@ export function MediaSettingsSection({
                       onSave={() => void handleSave(card.id)}
                       saving={savingCard === card.id}
                       settings={settings}
+                      selectedCapability={selectedCapability}
                       t={t}
                     />
                   ) : null}
@@ -697,18 +677,31 @@ export function MediaSettingsSection({
 }
 
 function CapabilityStatus({
+  active,
   label,
+  onSelect,
   ready,
   readyLabel,
   unconfiguredLabel,
 }: {
+  active: boolean;
   label: string;
+  onSelect: () => void;
   ready: boolean;
   readyLabel: string;
   unconfiguredLabel: string;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2">
+    <button
+      aria-pressed={active}
+      className={`flex min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
+        active
+          ? "bg-muted text-foreground shadow-sm"
+          : "bg-muted/40 text-muted-foreground hover:bg-muted/70"
+      }`}
+      onClick={onSelect}
+      type="button"
+    >
       <span
         className={`size-2 rounded-full ${
           ready
@@ -720,7 +713,7 @@ function CapabilityStatus({
       <span className="text-sm text-muted-foreground">
         {ready ? readyLabel : unconfiguredLabel}
       </span>
-    </div>
+    </button>
   );
 }
 
@@ -901,6 +894,7 @@ function ProviderForm({
   onFieldChange,
   onSave,
   saving,
+  selectedCapability,
   settings,
   t,
 }: {
@@ -916,11 +910,13 @@ function ProviderForm({
   ) => void;
   onSave: () => void;
   saving: boolean;
+  selectedCapability: MediaCapability;
   settings: WorkspaceSettings;
   t: Translate;
 }) {
   const primaryFields = card.fields.filter((field) => !field.advanced);
   const advancedFields = card.fields.filter((field) => field.advanced);
+  const visibleModels = getModelsForCapability(card, selectedCapability);
 
   return (
     <div className="border-t bg-muted/20 p-3">
@@ -942,9 +938,9 @@ function ProviderForm({
           {t("media.manualAdd.supportedModels")}
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
-          {card.models.map((model) => (
-            <Badge key={model} variant="outline">
-              {model}
+          {visibleModels.map((model) => (
+            <Badge key={model.label} variant="outline">
+              {model.label}
             </Badge>
           ))}
         </div>
