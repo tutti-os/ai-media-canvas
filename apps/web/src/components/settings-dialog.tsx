@@ -36,10 +36,7 @@ export function SettingsDialog({
         <SettingsPanel
           initialTab={initialTab}
           initialAgentSourceTab={initialAgentSourceTab}
-          onSaved={() => {
-            onOpenChange(false);
-            onSaved?.();
-          }}
+          onSaved={onSaved}
           surface="dialog"
         />
       </DialogContent>
