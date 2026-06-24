@@ -34,7 +34,7 @@ type HostBridge = {
 
 type AgentBridge = {
   agent?: {
-    getManagedAgentInvocationCredential?: ReturnType<typeof vi.fn>;
+    getManagedAgentInvocationCredential?: () => Promise<unknown>;
   };
 };
 
@@ -129,6 +129,29 @@ describe("Tutti managed credential bridge", () => {
       "run-credential-1",
     );
     expect(getManagedAgentInvocationCredentialMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("binds the managed agent invocation bridge method to the agent object", async () => {
+    setAgentBridge({
+      agent: {
+        async getManagedAgentInvocationCredential() {
+          return {
+            ok: true,
+            value: {
+              credential: (this as { credential: string }).credential,
+            },
+          };
+        },
+        credential: "bound-run-credential",
+      } as {
+        credential: string;
+        getManagedAgentInvocationCredential: () => Promise<unknown>;
+      },
+    });
+
+    await expect(getManagedAgentInvocationCredential()).resolves.toBe(
+      "bound-run-credential",
+    );
   });
 
   it("falls back to app context token when the host grant response omits one", async () => {

@@ -91,6 +91,7 @@ type ApiProviderPreset = {
 };
 
 const LOCAL_CLI_PROVIDER_ORDER = [...SUPPORTED_LOCAL_CLI_PROVIDERS];
+const INSTALLABLE_LOCAL_CLI_PROVIDER_PLACEHOLDERS = ["codex", "claude"];
 const AGNES_API_KEYS_URL = "https://platform.agnes-ai.com/settings/apiKeys";
 const ANTHROPIC_API_KEYS_URL = "https://console.anthropic.com/settings/keys";
 const DEEPSEEK_API_KEYS_URL = "https://platform.deepseek.com/api_keys";
@@ -735,7 +736,7 @@ function LocalCliProviderModelPicker({
   const displayGroups = useMemo<LocalCliProviderDisplayGroup[]>(() => {
     const groups = new Map<string, LocalCliProviderDisplayGroup>();
 
-    for (const provider of SUPPORTED_LOCAL_CLI_PROVIDERS) {
+    for (const provider of INSTALLABLE_LOCAL_CLI_PROVIDER_PLACEHOLDERS) {
       groups.set(provider, {
         provider,
         label: formatLocalCliProviderLabel(provider),

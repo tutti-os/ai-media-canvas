@@ -1016,6 +1016,11 @@ export function ChatSidebar({
         abortRef.current = false;
 
         let failureStage: SendFailureStage = "save_message";
+        let cleanupStreamListener: (() => void) | undefined;
+        const cleanupRegisteredStreamListener = () => {
+          cleanupStreamListener?.();
+          cleanupStreamListener = undefined;
+        };
         try {
           await userMessageSave;
           failureStage = "agent_run_ack";
@@ -1034,7 +1039,10 @@ export function ChatSidebar({
           const runIdRef = { current: "" };
           const runCanvasId = canvasId;
 
-          const cleanup = ws.onEvent((entry) => {
+          const managedAgentInvocationCredential =
+            await getManagedAgentInvocationCredential();
+
+          cleanupStreamListener = ws.onEvent((entry) => {
             const event = entry.event;
             if (!runIdRef.current || event.runId !== runIdRef.current) return;
             if (abortRef.current) {
@@ -1118,8 +1126,6 @@ export function ChatSidebar({
           });
 
           // Start run via WebSocket
-          const managedAgentInvocationCredential =
-            await getManagedAgentInvocationCredential();
           const runPayload = {
             sessionId: currentSessionId,
             conversationId: canvasId,
@@ -1152,7 +1158,7 @@ export function ChatSidebar({
 
           const runId = await new Promise<string>((resolve, reject) => {
             const timeout = setTimeout(() => {
-              cleanup();
+              cleanupRegisteredStreamListener();
               reject(
                 new Error("WebSocket ack timeout — connection may be down"),
               );
@@ -1197,7 +1203,7 @@ export function ChatSidebar({
 
           failureStage = "stream";
           await streamDone;
-          cleanup();
+          cleanupRegisteredStreamListener();
         } catch (error) {
           console.warn("[chat] Failed to send agent message", {
             ...sendDiagnostics,
@@ -1219,6 +1225,7 @@ export function ChatSidebar({
             }),
           );
         } finally {
+          cleanupRegisteredStreamListener();
           inFlightSessionIdsRef.current.delete(currentSessionId);
           const runningId = activeRunIdsRef.current.get(currentSessionId);
           activeRunIdsRef.current.delete(currentSessionId);

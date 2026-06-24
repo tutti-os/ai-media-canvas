@@ -28,8 +28,10 @@ function getManagedAgentInvocationBridge() {
 }
 
 function getCredentialBridgeMethod() {
-  return getManagedAgentInvocationBridge()?.agent
-    ?.getManagedAgentInvocationCredential;
+  const agent = getManagedAgentInvocationBridge()?.agent;
+  const getCredential = agent?.getManagedAgentInvocationCredential;
+  if (typeof getCredential !== "function") return undefined;
+  return () => getCredential.call(agent);
 }
 
 function delay(ms: number) {

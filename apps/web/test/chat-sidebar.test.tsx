@@ -702,6 +702,51 @@ describe("ChatSidebar", () => {
     expect(startRunMock.mock.calls[1]?.[0]).not.toHaveProperty("connId");
   });
 
+  it("does not register a stream listener when managed credential lookup fails", async () => {
+    const getManagedAgentInvocationCredential = vi
+      .fn()
+      .mockRejectedValue(new Error("bridge failed"));
+    (
+      window as Window & {
+        tutti?: {
+          agent?: {
+            getManagedAgentInvocationCredential?: typeof getManagedAgentInvocationCredential;
+          };
+        };
+      }
+    ).tutti = {
+      agent: { getManagedAgentInvocationCredential },
+    };
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
+    const onEventCallsBeforeSend = vi.mocked(mockWs.onEvent).mock.calls.length;
+    await userEvent.type(input, "credential fails{Enter}");
+
+    await waitFor(() =>
+      expect(getManagedAgentInvocationCredential).toHaveBeenCalledTimes(1),
+    );
+    expect(
+      await screen.findByText("Failed to get response."),
+    ).toBeInTheDocument();
+    expect(mockWs.startRun).not.toHaveBeenCalled();
+    expect(mockWs.onEvent).toHaveBeenCalledTimes(onEventCallsBeforeSend);
+    warnSpy.mockRestore();
+  });
+
   it("does not attach selected canvas images when sending a local template", async () => {
     render(
       <ToastProvider>
