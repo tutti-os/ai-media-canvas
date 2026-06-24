@@ -7,6 +7,7 @@ import type { WorkspaceSettings } from "@aimc/shared";
 
 import { useAppTranslation } from "@/i18n";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
+import { SettingsSegmentTabs } from "./settings-segment-tabs";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -20,7 +21,6 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Separator } from "./ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 interface MediaSettingsSectionProps {
   settings: WorkspaceSettings;
@@ -426,12 +426,6 @@ export function MediaSettingsSection({
     setSelectedCapability(capability);
   }
 
-  function handleCapabilityValueChange(value: unknown) {
-    if (value === "image" || value === "video") {
-      selectCapability(value);
-    }
-  }
-
   async function handleSave(scope: string) {
     setSavingCard(scope);
     setFeedback(null);
@@ -665,70 +659,48 @@ export function MediaSettingsSection({
         </p>
       </div>
 
-      <Tabs
-        className="gap-6"
-        onValueChange={handleCapabilityValueChange}
+      <SettingsSegmentTabs
+        columns={2}
+        items={[
+          {
+            value: "image" as const,
+            label: t("media.capabilities.image"),
+            description: imageReady
+              ? t("media.status.ready")
+              : t("media.status.notConfigured"),
+            leading: <CapabilityStatusDot ready={imageReady} />,
+          },
+          {
+            value: "video" as const,
+            label: t("media.capabilities.video"),
+            description: videoReady
+              ? t("media.status.ready")
+              : t("media.status.notConfigured"),
+            leading: <CapabilityStatusDot ready={videoReady} />,
+          },
+        ]}
+        onValueChange={selectCapability}
         value={selectedCapability}
-      >
-        <TabsList className="grid h-auto min-h-16 w-full grid-cols-2 items-stretch justify-stretch gap-2 rounded-2xl border bg-muted/20 p-2 shadow-inner">
-          <CapabilityStatus
-            ready={imageReady}
-            label={t("media.capabilities.image")}
-            readyLabel={t("media.status.ready")}
-            unconfiguredLabel={t("media.status.notConfigured")}
-            value="image"
-          />
-          <CapabilityStatus
-            ready={videoReady}
-            label={t("media.capabilities.video")}
-            readyLabel={t("media.status.ready")}
-            unconfiguredLabel={t("media.status.notConfigured")}
-            value="video"
-          />
-        </TabsList>
-        <TabsContent value="image" className="flex flex-col gap-6">
-          {selectedCapability === "image" ? capabilitySections : null}
-        </TabsContent>
-        <TabsContent value="video" className="flex flex-col gap-6">
-          {selectedCapability === "video" ? capabilitySections : null}
-        </TabsContent>
-      </Tabs>
+      />
+
+      <div className="flex flex-col gap-6">{capabilitySections}</div>
     </div>
   );
 }
 
-function CapabilityStatus({
-  label,
+function CapabilityStatusDot({
   ready,
-  readyLabel,
-  unconfiguredLabel,
-  value,
 }: {
-  label: string;
   ready: boolean;
-  readyLabel: string;
-  unconfiguredLabel: string;
-  value: MediaCapability;
 }) {
   return (
-    <TabsTrigger
-      className="h-auto min-h-12 justify-start rounded-xl px-4 py-3 text-left data-active:border-border data-active:bg-background data-active:shadow-md"
-      value={value}
-    >
-      <span
-        className={`size-2 rounded-full ${
-          ready
-            ? "bg-success"
-            : "border border-muted-foreground/60 bg-transparent"
-        }`}
-      />
-      <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="text-sm font-semibold text-foreground">{label}</span>
-        <span className="text-sm font-normal text-muted-foreground">
-          {ready ? readyLabel : unconfiguredLabel}
-        </span>
-      </span>
-    </TabsTrigger>
+    <span
+      className={`size-2 shrink-0 rounded-full ${
+        ready
+          ? "bg-success"
+          : "border border-muted-foreground/60 bg-transparent"
+      }`}
+    />
   );
 }
 
