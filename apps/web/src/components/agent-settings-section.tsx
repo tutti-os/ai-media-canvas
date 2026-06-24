@@ -40,6 +40,7 @@ import {
 } from "@/lib/tutti-managed-credentials";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { LocalCliProviderIcon } from "./local-cli-provider-icon";
+import { SettingsSegmentTabs } from "./settings-segment-tabs";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -1198,10 +1199,11 @@ export function AgentSettingsSection({
               : "space-y-5 pb-24"
           }
         >
-          <div className="grid grid-cols-3 rounded-xl border bg-muted/30 p-1">
-            {[
+          <SettingsSegmentTabs
+            columns={3}
+            items={[
               {
-                id: "local-agent" as const,
+                value: "local-agent" as const,
                 label: t("agentSettings.source.localAgent"),
                 description: t("agentSettings.source.detected", {
                   cliCount: localCliProviderCount,
@@ -1209,7 +1211,7 @@ export function AgentSettingsSection({
                 icon: Terminal,
               },
               {
-                id: "tutti-managed" as const,
+                value: "tutti-managed" as const,
                 label: t("agentSettings.source.tuttiManaged"),
                 description: tuttiManagedConnection.connected
                   ? t("agentSettings.tuttiManaged.connected")
@@ -1217,38 +1219,15 @@ export function AgentSettingsSection({
                 icon: Cloud,
               },
               {
-                id: "api-provider" as const,
+                value: "api-provider" as const,
                 label: t("agentSettings.source.apiProvider"),
                 description: "BYOK",
                 icon: Cloud,
               },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const selected = activeSourceTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  aria-label={tab.label}
-                  aria-pressed={selected}
-                  onClick={() => setActiveSourceTab(tab.id)}
-                  className={`flex min-h-14 items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${
-                    selected
-                      ? "border-border bg-background shadow-sm"
-                      : "border-transparent text-muted-foreground hover:bg-background/70 hover:text-foreground"
-                  }`}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold">
-                      {tab.label}
-                    </span>
-                    <span className="block text-xs">{tab.description}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+            ]}
+            onValueChange={setActiveSourceTab}
+            value={activeSourceTab}
+          />
 
           {activeSourceTab === "local-agent" ? (
             <div className="space-y-5">

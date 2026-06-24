@@ -621,6 +621,7 @@ export function ChatSidebar({
   const handleSettingsSaved = useCallback(() => {
     if (!mediaSettingsOpenedFromCapabilityRef.current) return;
     mediaSettingsOpenedFromCapabilityRef.current = false;
+    setSettingsOpen(false);
     chatInputRef.current?.setDraft(t("capabilityRequired.continueDraft"));
     chatInputRef.current?.focus();
     showToast(t("capabilityRequired.continueAfterSave"), "success");

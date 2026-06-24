@@ -25,6 +25,7 @@ describe("loadServerEnv", () => {
         TUTTI_APP_DATA_DIR: "/data/tutti-app",
         TUTTI_APP_ID: "tutti-app",
         TUTTI_APP_INSTALLATION_ID: "tutti-installation",
+        TUTTI_APP_MANAGED_FILES_ROOT: "/tmp/tutti-managed-files",
         TUTTI_APP_SERVER_TOKEN: "tutti-token",
         TUTTI_WORKSPACE_ID: "tutti-workspace",
       },
@@ -34,6 +35,7 @@ describe("loadServerEnv", () => {
     expect(env.appDataDir).toBe("/data/tutti-app");
     expect(env.tuttiAppId).toBe("tutti-app");
     expect(env.tuttiAppInstallationId).toBe("tutti-installation");
+    expect(env.tuttiManagedFilesRoot).toBe("/tmp/tutti-managed-files");
     expect(env.tuttiAppServerToken).toBe("tutti-token");
     expect(env.tuttiWorkspaceId).toBe("tutti-workspace");
   });

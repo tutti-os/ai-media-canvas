@@ -11,6 +11,7 @@ import {
   generateImageDirect,
   generateVideoDirect,
   updateWorkspaceSettings,
+  uploadFile,
 } from "../src/lib/server-api";
 
 const mockFetch = vi.fn();
@@ -33,6 +34,7 @@ describe("local server API", () => {
   afterEach(() => {
     generationJobService.clearForTest();
     vi.useRealTimers();
+    (window as Window & { tuttiExternal?: unknown }).tuttiExternal = undefined;
     vi.unstubAllEnvs();
     (window as Window & { tutti?: unknown }).tutti = undefined;
   });
@@ -246,6 +248,120 @@ describe("local server API", () => {
     expect(mockFetch).toHaveBeenCalledWith("http://localhost:3001/api/models", {
       cache: "no-store",
     });
+  });
+
+  it("uploadFile uses the local multipart endpoint outside Tutti", async () => {
+    const payload = {
+      asset: {
+        id: "asset-local-1",
+        bucket: "project-assets",
+        objectPath: "upload/asset-local-1.png",
+        mimeType: "image/png",
+        byteSize: 4,
+        projectId: "project-1",
+        createdAt: "2026-06-24T00:00:00.000Z",
+      },
+      url: "http://localhost:3001/local-assets/asset-local-1",
+    };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => payload,
+    });
+
+    const file = new File(["fake"], "ref.png", { type: "image/png" });
+    const result = await uploadFile(file, "project-1");
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0]?.[0]).toBe(
+      "http://localhost:3001/api/uploads",
+    );
+    const init = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBeInstanceOf(FormData);
+    expect((init?.body as FormData).get("file")).toBe(file);
+    expect((init?.body as FormData).get("projectId")).toBe("project-1");
+    expect(result).toEqual(payload);
+  });
+
+  it("uploadFile uses Tutti file upload bridge and creates an asset record", async () => {
+    const managedPath =
+      "/Users/test/Library/Application Support/Tutti/files/ref.png";
+    const bridgeUpload = vi.fn(async (_file: Blob, options: unknown) => {
+      expect(options).toMatchObject({
+        purpose: "app-asset",
+        name: "ref.png",
+        mimeType: "image/png",
+      });
+      return {
+        path: managedPath,
+        name: "ref.png",
+        mimeType: "image/png",
+        sizeBytes: 4,
+        sha256: "sha256-ref",
+      };
+    });
+    (
+      window as Window & {
+        tuttiExternal?: {
+          files?: { upload?: typeof bridgeUpload };
+        };
+      }
+    ).tuttiExternal = { files: { upload: bridgeUpload } };
+
+    const payload = {
+      asset: {
+        id: "asset-managed-1",
+        bucket: "project-assets",
+        objectPath: managedPath,
+        mimeType: "image/png",
+        byteSize: 4,
+        projectId: "project-1",
+        createdAt: "2026-06-24T00:00:00.000Z",
+        source: "managed-file",
+        displayName: "ref.png",
+        sha256: "sha256-ref",
+      },
+      url: "http://localhost:3001/local-assets/asset-managed-1",
+    };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => payload,
+    });
+
+    const file = new File(["fake"], "ref.png", { type: "image/png" });
+    const result = await uploadFile(file, "project-1");
+
+    expect(bridgeUpload).toHaveBeenCalledWith(
+      file,
+      expect.objectContaining({
+        purpose: "app-asset",
+        name: "ref.png",
+        mimeType: "image/png",
+      }),
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/uploads/managed-file",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          file: {
+            path: managedPath,
+            name: "ref.png",
+            mimeType: "image/png",
+            sizeBytes: 4,
+            sha256: "sha256-ref",
+          },
+          projectId: "project-1",
+        }),
+      },
+    );
+    expect(result.asset).toEqual(payload.asset);
+    expect(result.url).toBe(
+      "http://localhost:3001/local-assets/asset-managed-1",
+    );
   });
 
   it("generateImageDirect creates an image job and polls for the stored result", async () => {

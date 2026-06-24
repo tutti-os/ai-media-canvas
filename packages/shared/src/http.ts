@@ -7,6 +7,7 @@ import {
   chatMessageSchema,
   chatSessionSummarySchema,
   modelInfoSchema,
+  projectIdSchema,
   projectSummarySchema,
   runIdSchema,
   tuttiManagedConnectChallengeSchema,
@@ -234,11 +235,30 @@ export const uploadResponseSchema = z.object({
   url: z.string().min(1),
 });
 
+export const managedFileAssetMetadataSchema = z.object({
+  path: z.string().min(1),
+  name: z.string().min(1),
+  mimeType: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative(),
+  sha256: z.string().min(1),
+});
+
+export const managedFileAssetCreateRequestSchema = z.object({
+  file: managedFileAssetMetadataSchema,
+  projectId: projectIdSchema.optional(),
+});
+
 export const assetSignedUrlResponseSchema = z.object({
   url: z.string().min(1),
 });
 
 export type UploadResponse = z.infer<typeof uploadResponseSchema>;
+export type ManagedFileAssetMetadata = z.infer<
+  typeof managedFileAssetMetadataSchema
+>;
+export type ManagedFileAssetCreateRequest = z.infer<
+  typeof managedFileAssetCreateRequestSchema
+>;
 export type AssetSignedUrlResponse = z.infer<
   typeof assetSignedUrlResponseSchema
 >;
