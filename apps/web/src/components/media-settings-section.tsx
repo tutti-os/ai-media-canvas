@@ -350,7 +350,7 @@ export function MediaSettingsSection({
     message: string;
   } | null>(null);
   const [codexSettingsOpen, setCodexSettingsOpen] = useState(false);
-  const [manualOpen, setManualOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(true);
   const [activeProvider, setActiveProvider] = useState<MediaProviderId | null>(
     null,
   );
