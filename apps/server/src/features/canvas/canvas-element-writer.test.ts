@@ -197,6 +197,7 @@ describe("canvas element writer", () => {
       model: "agnes-image/agnes-image-2.1-flash",
       prompt: "A neon city logo",
       quality: "hd",
+      runId: "run-image-1",
       title: "Neon logo",
     });
 
@@ -218,6 +219,7 @@ describe("canvas element writer", () => {
         model: "agnes-image/agnes-image-2.1-flash",
         aspectRatio: "16:9",
         quality: "hd",
+        runId: "run-image-1",
       },
     });
   });
@@ -296,6 +298,7 @@ describe("canvas element writer", () => {
       model: "google-official/veo-3.1-generate-preview",
       prompt: "A rotating product video",
       resolution: "720p",
+      runId: "run-video-1",
       title: "Product video",
     });
 
@@ -318,6 +321,7 @@ describe("canvas element writer", () => {
         aspectRatio: "16:9",
         duration: 5,
         resolution: "720p",
+        runId: "run-video-1",
       },
     });
   });

@@ -23,7 +23,10 @@ import { SettingsDialog } from "./settings-dialog";
 
 type ChatInputProps = {
   onSend: (message: string) => void;
+  onCancel?: () => void;
   disabled?: boolean;
+  isRunning?: boolean;
+  canceling?: boolean;
   attachments?: ImageAttachmentState[];
   canSendAttachments?: boolean;
   onAddFiles?: (files: File[]) => void;
@@ -58,7 +61,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
   function ChatInput(
     {
       onSend,
+      onCancel,
       disabled,
+      isRunning,
+      canceling,
       attachments,
       canSendAttachments,
       onAddFiles,
@@ -110,7 +116,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const handleSubmit = useCallback(async () => {
       const trimmed = value.trim();
       const hasReadyAttachments = canSendAttachments ?? !!attachments?.length;
-      if ((!trimmed && !hasReadyAttachments) || disabled || isUploading) return;
+      if (
+        (!trimmed && !hasReadyAttachments) ||
+        disabled ||
+        isUploading ||
+        isRunning
+      ) {
+        return;
+      }
 
       if (!(await agentRequirement.ensureAgentModelConfigured())) {
         setSettingsInitialTab("agent");
@@ -129,6 +142,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       canSendAttachments,
       disabled,
       isUploading,
+      isRunning,
       onSend,
       value,
     ]);
@@ -428,26 +442,46 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 />
               </div>
             </div>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              aria-label={t("input.send")}
-              disabled={disabled || !hasContent || isUploading}
-              className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/80 active:bg-primary/90 disabled:opacity-20 disabled:cursor-not-allowed"
-            >
-              <svg
-                aria-hidden="true"
-                className="h-[14px] w-[14px]"
-                viewBox="0 0 14 14"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.6}
-                strokeLinecap="round"
+            {isRunning && onCancel ? (
+              <button
+                type="button"
+                onClick={onCancel}
+                aria-label={t("input.cancel")}
+                title={t("input.cancel")}
+                disabled={canceling}
+                className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-muted text-foreground transition-colors hover:bg-muted/80 active:bg-muted/70 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <path d="M7 11.5V2.5" />
-                <path d="M3 6.5L7 2.5L11 6.5" />
-              </svg>
-            </button>
+                <svg
+                  aria-hidden="true"
+                  className="h-[13px] w-[13px]"
+                  viewBox="0 0 14 14"
+                  fill="currentColor"
+                >
+                  <rect x="3.5" y="3.5" width="7" height="7" rx="1.4" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSubmit}
+                aria-label={t("input.send")}
+                disabled={disabled || !hasContent || isUploading || isRunning}
+                className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/80 active:bg-primary/90 disabled:opacity-20 disabled:cursor-not-allowed"
+              >
+                <svg
+                  aria-hidden="true"
+                  className="h-[14px] w-[14px]"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.6}
+                  strokeLinecap="round"
+                >
+                  <path d="M7 11.5V2.5" />
+                  <path d="M3 6.5L7 2.5L11 6.5" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
         <SettingsDialog

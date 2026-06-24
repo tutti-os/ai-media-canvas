@@ -95,11 +95,17 @@
   },
   "media": {
     "actions": {
+      "add": "Add",
+      "adding": "Adding",
+      "cancel": "Cancel",
+      "collapse": "Collapse",
+      "enable": "Enable",
+      "expand": "Expand",
       "getApiKey": "Get {{provider}} API Key",
       "save": "Save",
-      "saving": "Saving..."
+      "saving": "Saving...",
+      "settings": "Settings"
     },
-    "affectedModels": "Affected models",
     "agnesHint": {
       "description": "Agnes offers a free starter route.",
       "free": "Free",
@@ -108,33 +114,30 @@
     },
     "capabilities": {
       "image": "Image",
-      "imageVideo": "Image + Video"
+      "video": "Video"
     },
     "cards": {
       "agnes": {
+        "remark": "Recommended · free tier",
         "summary": "Agnes multimodal route. Uses agnes-ai-cli for image/video generation, including compose and keyframe-capable video modes."
       },
       "google": {
         "summary": "Google AI Studio / Developer API route. Best for Nano Banana and Google-official image/video families."
       },
       "kie": {
+        "remark": "Most model choices",
         "summary": "Third-party aggregation route for Kie Market image and video models, including Seedream, Nano Banana, Runway, Veo, Kling, and Seedance."
       },
       "openai": {
         "summary": "OpenAI-compatible image route. Uses the same key/base URL pair as the OpenAI-compatible agent protocol."
       },
       "replicate": {
+        "remark": "Rich open models",
         "summary": "Third-party hosted models. Use this when you want Seedream, Seedance, Kling, or Replicate-routed Veo/Sora families."
-      },
-      "vertex": {
-        "summary": "Google Cloud hosted route. Uses Vertex project and locations, with service-account credentials still coming from env."
-      },
-      "volces": {
-        "summary": "ByteDance / Volcengine's official channel. Use this for Doubao Seedream models served through Ark."
       }
     },
     "codexImagegen": {
-      "description": "Set whether other agents can use Codex Image 2.0 when no direct image generation model is available.",
+      "description": "Set whether the current agent can use Codex Image 2.0 for image generation.",
       "options": {
         "always": {
           "description": "Use Codex automatically for future matching image requests.",
@@ -151,17 +154,42 @@
       },
       "title": "Codex image permission"
     },
-    "description": "Configure image and video providers by platform. If the same model family exists on multiple platforms later, AIMC keeps them separate by provider-scoped model IDs so you can choose the route explicitly.",
+    "connected": {
+      "providerMeta": "API Key configured · {{count}} models",
+      "providerMeta_one": "API Key configured · {{count}} model",
+      "providerMeta_other": "API Key configured · {{count}} models"
+    },
+    "description": "Connect AI services for image and video generation.",
     "feedback": {
       "updated": "Local media provider settings updated.",
       "updateFailed": "Failed to update local media provider settings. Please try again."
     },
-    "localStorageNote": "These values are stored in the local sqlite settings database and reused by the matching media providers.",
-    "status": {
-      "configured": "Configured",
-      "notConfigured": "Not configured"
+    "localDetection": {
+      "codexMeta": "The current agent can call Codex Image 2.0 for image generation",
+      "codexTitle": "Codex image permission",
+      "detected": "1 detected",
+      "enabled": "Enabled"
     },
-    "title": "Media Providers"
+    "localStorageNote": "These values are stored in the local sqlite settings database and reused by the matching media providers.",
+    "manualAdd": {
+      "advanced": "Advanced options",
+      "advancedHint": "Usually does not need changes",
+      "description": "Connect more image and video services with your own API Key ({{count}} available).",
+      "description_one": "Connect {{count}} more image or video service with your own API Key.",
+      "description_other": "Connect more image and video services with your own API Key ({{count}} available).",
+      "supportedModels": "Supported models"
+    },
+    "sections": {
+      "connected": "Connected",
+      "localDetection": "Local detection",
+      "manualAdd": "Manual add"
+    },
+    "status": {
+      "enabled": "✓ Enabled",
+      "notConfigured": "Not configured",
+      "ready": "Ready"
+    },
+    "title": "Media Generation"
   },
   "modelConfiguration": {
     "configureAgent": "Configure Agent",

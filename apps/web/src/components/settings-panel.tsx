@@ -218,11 +218,11 @@ export function SettingsPanel({
         ) : null}
 
         {surface === "dialog" && activeTab === "general" ? (
-          <div className="min-h-0 flex-1 overflow-y-auto p-6 md:p-8">
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-6 md:p-8">
             {activeSection}
           </div>
         ) : surface === "dialog" && activeTab === "media" ? (
-          <div className="min-h-0 flex-1 overflow-y-auto p-6 md:p-8">
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-6 md:p-8">
             {activeSection}
           </div>
         ) : (

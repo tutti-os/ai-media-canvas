@@ -34,6 +34,7 @@ export type VideoGeneratorData = {
   inputMode?: VideoGeneratorInputMode;
   inputImages?: string[];
   jobId?: string;
+  runId?: string;
   errorMessage?: string;
 };
 

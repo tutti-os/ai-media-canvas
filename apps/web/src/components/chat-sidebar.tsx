@@ -363,6 +363,9 @@ export function ChatSidebar({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef(false);
   const inFlightSessionIdsRef = useRef<Set<string>>(new Set());
+  const activeRunIdsRef = useRef<Map<string, string>>(new Map());
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [cancelingRunId, setCancelingRunId] = useState<string | null>(null);
   const messageMentionsRef = useRef(messageMentions);
   messageMentionsRef.current = messageMentions;
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
@@ -390,6 +393,12 @@ export function ChatSidebar({
         activeSessionId && inFlightSessionIdsRef.current.has(activeSessionId),
       ),
     );
+    setActiveRunId(
+      activeSessionId
+        ? (activeRunIdsRef.current.get(activeSessionId) ?? null)
+        : null,
+    );
+    setCancelingRunId(null);
   }, [activeSessionId, setStreaming]);
 
   const buildAutoTitleSource = useCallback(
@@ -612,6 +621,7 @@ export function ChatSidebar({
   const handleSettingsSaved = useCallback(() => {
     if (!mediaSettingsOpenedFromCapabilityRef.current) return;
     mediaSettingsOpenedFromCapabilityRef.current = false;
+    setSettingsOpen(false);
     chatInputRef.current?.setDraft(t("capabilityRequired.continueDraft"));
     chatInputRef.current?.focus();
     showToast(t("capabilityRequired.continueAfterSave"), "success");
@@ -1158,6 +1168,10 @@ export function ChatSidebar({
                 );
               }
               runIdRef.current = id;
+              activeRunIdsRef.current.set(currentSessionId, id);
+              if (activeSessionIdRef.current === currentSessionId) {
+                setActiveRunId(id);
+              }
               resolve(id);
             },
           );
@@ -1190,8 +1204,16 @@ export function ChatSidebar({
         );
       } finally {
         inFlightSessionIdsRef.current.delete(currentSessionId);
+        const runningId = activeRunIdsRef.current.get(currentSessionId);
+        activeRunIdsRef.current.delete(currentSessionId);
         if (activeSessionIdRef.current === currentSessionId) {
           setStreaming(false);
+          setActiveRunId(null);
+        }
+        if (runningId) {
+          setCancelingRunId((current) =>
+            current === runningId ? null : current,
+          );
         }
       }
     },
@@ -1216,6 +1238,12 @@ export function ChatSidebar({
       showToast,
     ],
   );
+
+  const handleCancelRun = useCallback(() => {
+    if (!activeRunId || cancelingRunId === activeRunId) return;
+    setCancelingRunId(activeRunId);
+    ws.cancelRun(activeRunId);
+  }, [activeRunId, cancelingRunId, ws]);
 
   // ── Mention picker ──
   const mentionPickerItems: MessageMentionPickerItem[] = [
@@ -1452,9 +1480,14 @@ export function ChatSidebar({
           evt.type === "run.canceled"
         ) {
           inFlightSessionIdsRef.current.delete(sessionId);
+          activeRunIdsRef.current.delete(sessionId);
           if (activeSessionIdRef.current === sessionId) {
             setStreaming(false);
+            setActiveRunId(null);
           }
+          setCancelingRunId((current) =>
+            current === evt.runId ? null : current,
+          );
         }
       };
 
@@ -1493,8 +1526,10 @@ export function ChatSidebar({
           .assistantMessageId;
         if (activeRunId && typeof activeRunId === "string") {
           inFlightSessionIdsRef.current.add(sessionId);
+          activeRunIdsRef.current.set(sessionId, activeRunId);
           if (activeSessionIdRef.current === sessionId) {
             setStreaming(true);
+            setActiveRunId(activeRunId);
           }
 
           resumedRunId = activeRunId;
@@ -1768,7 +1803,10 @@ export function ChatSidebar({
         <ChatInput
           ref={chatInputRef}
           onSend={handleSend}
-          disabled={streaming || sessionsLoading}
+          {...(activeRunId ? { onCancel: handleCancelRun } : {})}
+          disabled={sessionsLoading}
+          isRunning={streaming}
+          canceling={activeRunId ? cancelingRunId === activeRunId : false}
           attachments={imageAttachments}
           canSendAttachments={readyAttachments.length > 0}
           onAddFiles={addFiles}
