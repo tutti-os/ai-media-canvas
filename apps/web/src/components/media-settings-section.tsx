@@ -377,7 +377,7 @@ export function MediaSettingsSection({
     codexImagegenDelegation !== getCodexImagegenDelegation(baselineSettings);
   const codexEnabled = codexImagegenDelegation !== "never";
   const configuredCards = MEDIA_PROVIDER_CARDS.filter((card) =>
-    isMediaProviderConfigured(card, settings),
+    isMediaProviderConfigured(card, baselineSettings),
   );
   const configuredCardsForCapability = configuredCards.filter((card) =>
     card.capabilities.includes(selectedCapability),
@@ -385,7 +385,7 @@ export function MediaSettingsSection({
   const availableCardsForCapability = MEDIA_PROVIDER_CARDS.filter(
     (card) =>
       card.capabilities.includes(selectedCapability) &&
-      !isMediaProviderConfigured(card, settings),
+      !isMediaProviderConfigured(card, baselineSettings),
   );
   const imageReady =
     codexEnabled ||
@@ -413,8 +413,13 @@ export function MediaSettingsSection({
     setSettings((current) => ({ ...current, [key]: value }));
   }
 
-  function showProviderForm(providerId: MediaProviderId) {
-    setManualOpen(true);
+  function toggleProviderForm(
+    providerId: MediaProviderId,
+    options?: { openManual?: boolean },
+  ) {
+    if (options?.openManual) {
+      setManualOpen(true);
+    }
     setActiveProvider((current) =>
       current === providerId ? null : providerId,
     );
@@ -480,7 +485,7 @@ export function MediaSettingsSection({
                     .length,
                 })}
                 name={card.label}
-                onSettings={() => showProviderForm(card.id)}
+                onSettings={() => toggleProviderForm(card.id)}
                 settingsLabel={t("media.actions.settings")}
                 status={t("media.status.enabled")}
                 tCapability={(capability) =>
@@ -489,6 +494,26 @@ export function MediaSettingsSection({
                     : t("media.capabilities.video")
                 }
               />
+              {activeProvider === card.id ? (
+                <ProviderForm
+                  advancedOpen={advancedOpen}
+                  card={card}
+                  disabled={savingCard !== null}
+                  hasChanges={hasMediaProviderCardChanges(
+                    card,
+                    settings,
+                    baselineSettings,
+                  )}
+                  onAdvancedToggle={() => setAdvancedOpen((open) => !open)}
+                  onCancel={() => setActiveProvider(null)}
+                  onFieldChange={updateField}
+                  onSave={() => void handleSave(card.id)}
+                  saving={savingCard === card.id}
+                  settings={settings}
+                  selectedCapability={selectedCapability}
+                  t={t}
+                />
+              ) : null}
             </div>
           ))}
         </section>
@@ -581,7 +606,9 @@ export function MediaSettingsSection({
                   card={card}
                   disabled={savingCard !== null}
                   key={card.id}
-                  onAdd={() => showProviderForm(card.id)}
+                  onAdd={() =>
+                    toggleProviderForm(card.id, { openManual: true })
+                  }
                   t={t}
                 >
                   {activeProvider === card.id ? (
