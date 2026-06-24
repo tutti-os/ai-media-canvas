@@ -265,7 +265,7 @@ describe("createLocalAgentRuntimeProvider", () => {
     expectOrdinaryEnvOmitsToolToken(params?.env);
   });
 
-  it("passes CODEX_HOME to managed codex SDK runs", async () => {
+  it("lets the kit manage CODEX_HOME for managed codex SDK runs", async () => {
     vi.stubEnv("AIMC_TOOLS_MCP_PATH", "/package/server/tools-mcp.js");
     const localAgentRuntimeRun = vi.fn(async function* () {
       yield {
@@ -309,15 +309,19 @@ describe("createLocalAgentRuntimeProvider", () => {
     const params = localAgentRuntimeRun.mock.calls[0]?.[0];
     expect(params?.cwd).toContain(join(tempRoot, ".agent-runs", "codex-"));
     expect(params).toMatchObject({
-      env: {
-        CODEX_HOME: join(tempRoot, ".codex-home"),
-      },
       managedAgentInvocation: {
         credential: "credential-run-1",
         cwd: params?.cwd,
       },
     });
-    expect(JSON.stringify(params.env ?? {})).not.toContain("credential-run-1");
+    expect(params).not.toHaveProperty("env");
+    expect(JSON.stringify(params ?? {})).not.toContain("CODEX_HOME");
+    expect(JSON.stringify(params ?? {})).not.toContain(
+      join(tempRoot, ".codex-home"),
+    );
+    expect(JSON.stringify(params?.mcpServers ?? [])).not.toContain(
+      "credential-run-1",
+    );
     expect(params).toMatchObject({
       mcpServers: [
         expect.objectContaining({

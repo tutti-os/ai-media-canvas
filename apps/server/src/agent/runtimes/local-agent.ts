@@ -149,22 +149,6 @@ function resolveLocalAgentTimeoutMs(runtimeEnv: {
   );
 }
 
-function buildLocalAgentProviderEnv(input: {
-  runtimeEnv: RuntimeExecutionContext["runtimeEnv"];
-  runtimeProvider: AgentRuntimeProvider;
-}) {
-  const env: Record<string, string> = {};
-
-  if (
-    input.runtimeProvider === "codex" &&
-    input.runtimeEnv.codexImagegenCodexHome
-  ) {
-    env.CODEX_HOME = input.runtimeEnv.codexImagegenCodexHome;
-  }
-
-  return Object.keys(env).length > 0 ? env : undefined;
-}
-
 export function createLocalAgentRuntimeProvider(
   deps: LocalAgentRuntimeProviderDeps,
   providerPlugin: AimcLocalAgentProviderPlugin,
@@ -320,10 +304,6 @@ export function createLocalAgentRuntimeProvider(
         throw new Error("Local agent run directory is required.");
       }
       const managedAgentInvocation = managedRunContext?.managedAgentInvocation;
-      const localAgentProviderEnv = buildLocalAgentProviderEnv({
-        runtimeEnv,
-        runtimeProvider,
-      });
       await materializeWorkspaceSkillsForLocalAgent({
         runDir,
         workspaceSkills,
@@ -411,7 +391,6 @@ export function createLocalAgentRuntimeProvider(
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
           ...(managedAgentInvocation ? { managedAgentInvocation } : {}),
-          ...(localAgentProviderEnv ? { env: localAgentProviderEnv } : {}),
           model: stripLocalAgentProviderPrefix(resolvedModel, runtimeProvider),
           runtimeKind: "local-agent",
           runtimeProvider,
