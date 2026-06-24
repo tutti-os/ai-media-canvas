@@ -6,6 +6,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { WorkspaceSettings } from "@aimc/shared";
 
 import { useAppTranslation } from "@/i18n";
+import { cn } from "@/lib/utils";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { SettingsSegmentTabs } from "./settings-segment-tabs";
 import { Badge } from "./ui/badge";
@@ -821,9 +822,16 @@ function ProviderAddRow({
               </Badge>
             ))}
             {card.remarkKey ? (
-              <span className="text-xs text-muted-foreground">
+              <Badge
+                className={cn(
+                  card.id === "agnes"
+                    ? "border-success/20 bg-success/10 text-success"
+                    : "border-border bg-muted text-muted-foreground",
+                )}
+                variant="outline"
+              >
                 {t(card.remarkKey)}
-              </span>
+              </Badge>
             ) : null}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
