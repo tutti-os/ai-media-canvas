@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generationJobService } from "../src/lib/generation-job-service";
 import {
   createProject,
+  fetchModels,
   fetchProjects,
   fetchViewer,
   fetchWorkspaceSettings,
@@ -27,6 +28,7 @@ describe("local server API", () => {
     vi.clearAllMocks();
     generationJobService.clearForTest();
     vi.stubEnv("AIMC_SERVER_BASE_URL", "http://localhost:3001");
+    (window as Window & { tutti?: unknown }).tutti = undefined;
   });
 
   afterEach(() => {
@@ -34,13 +36,23 @@ describe("local server API", () => {
     vi.useRealTimers();
     (window as Window & { tuttiExternal?: unknown }).tuttiExternal = undefined;
     vi.unstubAllEnvs();
+    (window as Window & { tutti?: unknown }).tutti = undefined;
   });
 
   it("fetchViewer calls the local viewer endpoint and returns the viewer", async () => {
     const viewer = {
-      profile: { id: "u1", email: "a@b.com", displayName: "A", avatarUrl: null },
+      profile: {
+        id: "u1",
+        email: "a@b.com",
+        displayName: "A",
+        avatarUrl: null,
+      },
     };
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => viewer });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => viewer,
+    });
 
     const result = await fetchViewer();
     expect(mockFetch).toHaveBeenCalledWith("http://localhost:3001/api/viewer");
@@ -50,12 +62,20 @@ describe("local server API", () => {
   it("createProject sends POST without auth headers and handles 201", async () => {
     const project = {
       project: {
-        id: "p1", name: "Test", slug: "test", description: null,
+        id: "p1",
+        name: "Test",
+        slug: "test",
+        description: null,
         primaryCanvas: { id: "c1", name: "Main Canvas", isPrimary: true },
-        createdAt: "2026-03-23T00:00:00Z", updatedAt: "2026-03-23T00:00:00Z",
+        createdAt: "2026-03-23T00:00:00Z",
+        updatedAt: "2026-03-23T00:00:00Z",
       },
     };
-    mockFetch.mockResolvedValue({ ok: true, status: 201, json: async () => project });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => project,
+    });
 
     const result = await createProject({ name: "Test" });
     expect(mockFetch).toHaveBeenCalledWith(
@@ -71,10 +91,16 @@ describe("local server API", () => {
 
   it("fetchProjects returns the local project list", async () => {
     const list = { projects: [{ id: "p1", name: "Test", slug: "test" }] };
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => list });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => list,
+    });
 
     const result = await fetchProjects();
-    expect(mockFetch).toHaveBeenCalledWith("http://localhost:3001/api/projects");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/projects",
+    );
     expect(result.projects).toHaveLength(1);
   });
 
@@ -87,13 +113,11 @@ describe("local server API", () => {
       }),
     });
 
-    await expect(createProject({ name: "Dup" })).rejects.toThrow(
-      "Slug taken.",
-    );
+    await expect(createProject({ name: "Dup" })).rejects.toThrow("Slug taken.");
     try {
       await createProject({ name: "Dup" });
     } catch (err) {
-      expect((err as any).code).toBe("project_slug_taken");
+      expect((err as { code?: unknown }).code).toBe("project_slug_taken");
     }
   });
 
@@ -143,7 +167,11 @@ describe("local server API", () => {
         volcesBaseUrl: "",
       },
     };
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => payload,
+    });
 
     const result = await fetchWorkspaceSettings();
     expect(mockFetch).toHaveBeenCalledWith(
@@ -174,7 +202,11 @@ describe("local server API", () => {
         volcesBaseUrl: "",
       },
     };
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => payload,
+    });
 
     const result = await updateWorkspaceSettings(payload.settings);
     expect(mockFetch).toHaveBeenCalledWith(
@@ -188,6 +220,34 @@ describe("local server API", () => {
     expect(result.settings.googleApiKey).toBe("google-local-key");
     expect(result.settings.anthropicApiKey).toBe("sk-local-anthropic");
     expect(result.settings.agnesApiKey).toBe("sk-local-agnes");
+  });
+
+  it("fetchModels uses the header-injected server route without JSB payload", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ models: [] }),
+    });
+
+    await fetchModels();
+
+    expect(mockFetch).toHaveBeenCalledWith("http://localhost:3001/api/models", {
+      cache: "no-store",
+    });
+  });
+
+  it("fetchModels keeps the existing GET path when the managed bridge is unavailable", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ models: [] }),
+    });
+
+    await fetchModels();
+
+    expect(mockFetch).toHaveBeenCalledWith("http://localhost:3001/api/models", {
+      cache: "no-store",
+    });
   });
 
   it("uploadFile uses the local multipart endpoint outside Tutti", async () => {

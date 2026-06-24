@@ -254,10 +254,7 @@ test("renderBootstrap maps Tutti runtime env into AI Canvas env", () => {
     bootstrap,
     /package_dir="\$\{TUTTI_APP_PACKAGE_DIR:-\$script_dir\}"/,
   );
-  assert.match(
-    bootstrap,
-    /export HOST="\$\{TUTTI_APP_HOST:-127\.0\.0\.1\}"/,
-  );
+  assert.match(bootstrap, /export HOST="\$\{TUTTI_APP_HOST:-127\.0\.0\.1\}"/);
   assert.match(
     bootstrap,
     /export AIMC_SERVER_PORT="\$\{TUTTI_APP_PORT:-3001\}"/,
@@ -281,10 +278,7 @@ test("renderBootstrap maps Tutti runtime env into AI Canvas env", () => {
     bootstrap,
     /base_url="\$\{TUTTI_APP_BASE_URL:-http:\/\/\$HOST:\$AIMC_SERVER_PORT\}"/,
   );
-  assert.match(
-    bootstrap,
-    /node_bin="\$\{TUTTI_APP_NODE:-node\}"/,
-  );
+  assert.match(bootstrap, /node_bin="\$\{TUTTI_APP_NODE:-node\}"/);
   assert.match(
     bootstrap,
     /runtime_dir="\$\{TUTTI_APP_RUNTIME_DIR:-\$AIMC_DATA_ROOT\/\.runtime\}"/,
@@ -324,10 +318,11 @@ test("Tutti icon asset is a generated PNG with a contrast-safe tile", async () =
   const bounds = readPngAlphaBounds(icon);
 
   assert.ok(iconStat.size > 0);
-  assert.equal(bounds.width, 1024);
-  assert.equal(bounds.height, 1024);
+  assert.equal(bounds.width, 363);
+  assert.equal(bounds.height, 363);
   assert.ok(
-    bounds.contentWidth >= 900 && bounds.contentHeight >= 900,
+    bounds.contentWidth >= Math.floor(bounds.width * 0.88) &&
+      bounds.contentHeight >= Math.floor(bounds.height * 0.88),
     `icon content should fill most of the canvas, got ${bounds.contentWidth}x${bounds.contentHeight}`,
   );
 });

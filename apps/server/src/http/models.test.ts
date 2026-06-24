@@ -1,8 +1,9 @@
 import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
 
 import { loadServerEnv } from "../config/env.js";
-import { registerModelRoutes } from "./models.js";
+import { listAgentModels, registerModelRoutes } from "./models.js";
 
 describe("registerModelRoutes", () => {
   const apps: Array<ReturnType<typeof Fastify>> = [];
@@ -20,6 +21,7 @@ describe("registerModelRoutes", () => {
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("loads trusted local agent mode from the environment", () => {
@@ -101,6 +103,7 @@ describe("registerModelRoutes", () => {
       loadServerEnv(
         {
           agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
         },
         {},
       ),
@@ -315,6 +318,7 @@ describe("registerModelRoutes", () => {
       loadServerEnv(
         {
           agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
         },
         {},
       ),
@@ -362,6 +366,101 @@ describe("registerModelRoutes", () => {
       expect.objectContaining({ provider: "hermes" }),
     );
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes a managed agent invocation to local-agent model discovery for POST model requests", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    const localAgentModelDiscovery = {
+      detect: vi.fn(async () => [
+        {
+          provider: "nexight" as const,
+          displayName: "Nexight",
+          result: {
+            authState: "unknown" as const,
+            executablePath: "nexight",
+            models: [{ id: "default", label: "Default (Nexight)" }],
+            supported: true,
+            version: "1.0.0",
+          },
+        },
+      ]),
+    };
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
+        },
+        {},
+      ),
+      undefined,
+      { localAgentModelDiscovery },
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/models",
+      headers: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-model-1",
+      },
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().models).toContainEqual({
+      id: "nexight:default",
+      name: "Default (Nexight)",
+      provider: "nexight",
+      source: "local-agent",
+    });
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({
+      managedAgentInvocation: {
+        credential: "credential-model-1",
+        cwd: "/tmp/aimc-app-data",
+      },
+      cwd: "/tmp/aimc-app-data",
+      env: expect.objectContaining({
+        TUTTI_APP_DATA_DIR: "/tmp/aimc-app-data",
+      }),
+      redactionSecrets: ["credential-model-1"],
+    });
+  });
+
+  it("keeps managed model discovery credentials out of logs", async () => {
+    const logger = { warn: vi.fn() };
+    await listAgentModels({
+      env: loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
+        },
+        {},
+      ),
+      localAgentModelDiscovery: {
+        detect: vi.fn(async () => {
+          throw new Error("credential-model-1");
+        }),
+      },
+      logger,
+      managedAgentDetectContext: {
+        cwd: "/tmp/aimc-app-data",
+        managedAgentInvocation: {
+          credential: "credential-model-1",
+          cwd: "/tmp/aimc-app-data",
+        },
+      },
+    });
+
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(
+      "credential-model-1",
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      {},
+      "Failed to load local-agent models; omitting local providers.",
+    );
   });
 
   it("omits local-agent models when trusted local mode is disabled", async () => {

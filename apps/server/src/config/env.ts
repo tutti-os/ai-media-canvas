@@ -22,6 +22,7 @@ export type ServerEnv = {
   codexImagegenAgentModel?: string;
   codexImagegenAgentModelConfigured?: boolean;
   codexImagegenTimeoutMs?: number;
+  appDataDir?: string;
   dataRoot?: string;
   googleApiKey?: string;
   googleApplicationCredentials?: string;
@@ -31,6 +32,7 @@ export type ServerEnv = {
   kieApiKey?: string;
   kieBaseUrl?: string;
   kieUploadBaseUrl?: string;
+  localToolGatewayBaseUrl?: string;
   openAIApiBase?: string;
   openAIApiKey?: string;
   tuttiApiBaseUrl?: string;
@@ -61,6 +63,10 @@ export function loadServerEnv(
     overrides.webDistDir ?? normalizeOptionalString(source.AIMC_WEB_DIST);
   const dataRoot =
     overrides.dataRoot ?? normalizeOptionalString(source.AIMC_DATA_ROOT);
+  const appDataDir =
+    overrides.appDataDir ??
+    normalizeOptionalString(source.TUTTI_APP_DATA_DIR) ??
+    dataRoot;
   const agentBackendMode =
     overrides.agentBackendMode ??
     parseAgentBackendMode(
@@ -193,6 +199,9 @@ export function loadServerEnv(
     normalizeOptionalString(
       source.AIMC_KIE_UPLOAD_BASE_URL ?? source.KIE_UPLOAD_BASE_URL,
     );
+  const localToolGatewayBaseUrl =
+    overrides.localToolGatewayBaseUrl ??
+    normalizeOptionalString(source.AIMC_LOCAL_TOOL_GATEWAY_BASE_URL);
   const skillsRoot =
     overrides.skillsRoot ??
     normalizeOptionalString(source.AIMC_SKILLS_ROOT ?? source.SKILLS_ROOT);
@@ -234,6 +243,7 @@ export function loadServerEnv(
       readServerVersion(),
     webOrigin:
       overrides.webOrigin ?? source.AIMC_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
+    ...(appDataDir ? { appDataDir } : {}),
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(dataRoot ? { dataRoot } : {}),
     ...(webDistDir ? { webDistDir } : {}),
@@ -264,6 +274,7 @@ export function loadServerEnv(
     ...(kieApiKey ? { kieApiKey } : {}),
     ...(kieBaseUrl ? { kieBaseUrl } : {}),
     ...(kieUploadBaseUrl ? { kieUploadBaseUrl } : {}),
+    ...(localToolGatewayBaseUrl ? { localToolGatewayBaseUrl } : {}),
     ...(skillsRoot ? { skillsRoot } : {}),
     trustedLocalAgentMode,
     ...(volcesApiKey ? { volcesApiKey } : {}),

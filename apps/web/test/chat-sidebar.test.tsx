@@ -246,6 +246,7 @@ describe("ChatSidebar", () => {
     vi.useRealTimers();
     cleanup();
     sessionStorage.clear();
+    (window as Window & { tutti?: unknown }).tutti = undefined;
     settingsDialogSpy.mockClear();
     vi.clearAllMocks();
     vi.restoreAllMocks();
@@ -290,6 +291,35 @@ describe("ChatSidebar", () => {
       }),
       expect.anything(),
     );
+  });
+
+  it("does not save or consume input while the WebSocket is disconnected", async () => {
+    mockWs = {
+      ...mockWs,
+      connected: false,
+    };
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    expect(
+      await screen.findByText("连接已断开，正在重连..."),
+    ).toBeInTheDocument();
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "hello while disconnected{Enter}");
+
+    expect(input).toHaveValue("hello while disconnected");
+    expect(saveMessageMock).not.toHaveBeenCalled();
+    expect(mockWs.startRun).not.toHaveBeenCalled();
   });
 
   it("cancels the active run from the composer stop button", async () => {
@@ -597,6 +627,75 @@ describe("ChatSidebar", () => {
       expect.objectContaining({
         sessionId: "session-created",
         prompt: "second run",
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it("does not include managed agent invocation credentials in run payloads", async () => {
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await userEvent.type(input, "first run{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByRole("button", { name: "新建对话" }));
+    await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
+
+    const nextInput = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await waitFor(() => expect(nextInput).not.toBeDisabled());
+    await userEvent.type(nextInput, "second run{Enter}");
+
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(2));
+
+    const startRunMock = mockWs.startRun as unknown as {
+      mock: { calls: Array<[Record<string, unknown>, unknown]> };
+    };
+    expect(startRunMock.mock.calls[0]?.[0]).toMatchObject({
+      prompt: "first run",
+    });
+    expect(startRunMock.mock.calls[1]?.[0]).toMatchObject({
+      prompt: "second run",
+    });
+    expect(startRunMock.mock.calls[0]?.[0]).not.toHaveProperty(
+      "managedAgentInvocationCredential",
+    );
+    expect(startRunMock.mock.calls[1]?.[0]).not.toHaveProperty(
+      "managedAgentInvocationCredential",
+    );
+  });
+
+  it("starts a run even when no managed credential bridge is present", async () => {
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
+    await userEvent.type(input, "header handles credentials{Enter}");
+
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+    expect(mockWs.startRun).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        managedAgentInvocationCredential: expect.any(String),
       }),
       expect.any(Function),
     );
@@ -1218,9 +1317,7 @@ describe("ChatSidebar", () => {
     );
 
     expect(
-      await screen.findByText(
-        "媒体模型已保存，发送“继续”即可重试刚才的生成。",
-      ),
+      await screen.findByText("媒体模型已保存，发送“继续”即可重试刚才的生成。"),
     ).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "输入消息" })).toHaveValue(
       "继续",

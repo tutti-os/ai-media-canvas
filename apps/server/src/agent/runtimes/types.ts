@@ -45,6 +45,7 @@ export type RuntimeRunRecord = {
   delegationConsent?: RunCreateRequest["delegationConsent"];
   envOverride?: ServerEnv | undefined;
   imageGenerationPreference?: ImageGenerationPreference | undefined;
+  managedAgentInvocationCredential?: string | undefined;
   mentions?: MessageMention[] | undefined;
   modelOverride?: string | undefined;
   prompt: string;
@@ -117,6 +118,17 @@ export type LoadCanvasSummaryForRuntime = (
 export type LocalAgentRuntimeProviderDeps = {
   buildAttachmentDataMap: BuildAttachmentDataMap;
   buildUserMessage: BuildUserMessage;
+  createRunDirectory?: (input: {
+    managed: boolean;
+    runId: string;
+    runtimeProvider: AgentRuntimeProvider;
+  }) => Promise<
+    | string
+    | {
+        runDir: string;
+        useManagedAgentInvocation: boolean;
+      }
+  >;
   loadCanvasSummaryForRuntime: LoadCanvasSummaryForRuntime;
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
   localAgentRuntime: Pick<

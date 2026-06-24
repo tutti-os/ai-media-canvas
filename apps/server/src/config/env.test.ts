@@ -13,6 +13,7 @@ describe("loadServerEnv", () => {
     );
 
     expect(env.dataRoot).toBe("/tmp/aimc-tutti-data");
+    expect(env.appDataDir).toBe("/tmp/aimc-tutti-data");
     expect(env.version).toBe("1.2.3");
   });
 
@@ -21,6 +22,7 @@ describe("loadServerEnv", () => {
       {},
       {
         TUTTI_API_BASE_URL: "https://tutti.example/api",
+        TUTTI_APP_DATA_DIR: "/data/tutti-app",
         TUTTI_APP_ID: "tutti-app",
         TUTTI_APP_INSTALLATION_ID: "tutti-installation",
         TUTTI_APP_MANAGED_FILES_ROOT: "/tmp/tutti-managed-files",
@@ -30,6 +32,7 @@ describe("loadServerEnv", () => {
     );
 
     expect(env.tuttiApiBaseUrl).toBe("https://tutti.example/api");
+    expect(env.appDataDir).toBe("/data/tutti-app");
     expect(env.tuttiAppId).toBe("tutti-app");
     expect(env.tuttiAppInstallationId).toBe("tutti-installation");
     expect(env.tuttiManagedFilesRoot).toBe("/tmp/tutti-managed-files");
@@ -50,6 +53,20 @@ describe("loadServerEnv", () => {
     expect(env.kieApiKey).toBe("env-kie-key");
     expect(env.kieBaseUrl).toBe("https://kie-api.example");
     expect(env.kieUploadBaseUrl).toBe("https://kie-upload.example");
+  });
+
+  it("loads local tool gateway URL overrides", () => {
+    const env = loadServerEnv(
+      {},
+      {
+        AIMC_LOCAL_TOOL_GATEWAY_BASE_URL:
+          "http://127.0.0.1:45231/api/agent-tools",
+      },
+    );
+
+    expect(env.localToolGatewayBaseUrl).toBe(
+      "http://127.0.0.1:45231/api/agent-tools",
+    );
   });
 
   it("loads Codex Imagegen configuration", () => {

@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  codexImagegenDelegationSchema,
-  runCreateRequestSchema,
-  workspaceSettingsSchema,
-} from "./contracts.js";
-import {
   canvasGetResponseSchema,
   canvasSaveRequestSchema,
-} from "./http.js";
+  codexImagegenDelegationSchema,
+  modelListRequestSchema,
+  runCreateRequestSchema,
+  workspaceSettingsSchema,
+} from "./index.js";
 
 const baseRunCreateRequest = {
   conversationId: "canvas_1",
@@ -50,6 +49,20 @@ describe("runCreateRequestSchema", () => {
         runtimeProvider: "claude",
       }).success,
     ).toBe(true);
+  });
+
+  it("does not expose managed agent invocation credentials in run bodies", () => {
+    const result = runCreateRequestSchema.safeParse({
+      ...baseRunCreateRequest,
+      managedAgentInvocationCredential: "  bearer-run-1  ",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty(
+        "managedAgentInvocationCredential",
+      );
+    }
   });
 
   it("accepts one-time Codex image delegation consent", () => {
@@ -115,6 +128,21 @@ describe("runCreateRequestSchema", () => {
         }),
       ]),
     );
+  });
+});
+
+describe("modelListRequestSchema", () => {
+  it("does not expose managed agent invocation credentials in model list bodies", () => {
+    const result = modelListRequestSchema.safeParse({
+      managedAgentInvocationCredential: "  bearer-model-1  ",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty(
+        "managedAgentInvocationCredential",
+      );
+    }
   });
 });
 

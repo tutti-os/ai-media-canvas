@@ -837,7 +837,7 @@ export function ChatSidebar({
 
   // ── Send message ──
   const handleSend = useCallback(
-    async (
+    (
       text: string,
       attachmentsOverride?: ReadyAttachment[],
       imageGenerationPreferenceOverride?: ImageGenerationPreference,
@@ -849,188 +849,270 @@ export function ChatSidebar({
         !currentSessionId ||
         inFlightSessionIdsRef.current.has(currentSessionId)
       ) {
-        return;
+        return false;
       }
-      inFlightSessionIdsRef.current.add(currentSessionId);
-      if (activeSessionIdRef.current === currentSessionId) {
-        setStreaming(true);
+      if (!ws.connected) {
+        return false;
       }
 
-      if (!(await ensureAgentModelConfigured())) {
-        inFlightSessionIdsRef.current.delete(currentSessionId);
+      void (async () => {
+        inFlightSessionIdsRef.current.add(currentSessionId);
         if (activeSessionIdRef.current === currentSessionId) {
-          setStreaming(false);
-        }
-        openSettings("agent");
-        return;
-      }
-
-      // Merge explicitly-attached images with auto-sensed canvas selection images
-      let currentAttachments = attachmentsOverride ?? readyAttachments;
-      const selectedEls = selectedCanvasElementsRef.current ?? [];
-      const selectedImageEls = selectedEls.filter(
-        (el) =>
-          el.type === "image" && el.fileId && (el.storageUrl || el.dataUrl),
-      );
-      if (selectedImageEls.length > 0 && !attachmentsOverride) {
-        const existingIds = new Set(currentAttachments.map((a) => a.assetId));
-        const selectionAttachments: ReadyAttachment[] = selectedImageEls
-          .filter((el) => !existingIds.has(el.id))
-          .flatMap((el) => {
-            const url = resolveSelectedCanvasImageUrl(el);
-            if (!url) return [];
-            return [
-              {
-                assetId: el.id,
-                url,
-                mimeType: "image/png",
-                source: "canvas-ref" as const,
-                name: `Canvas selection ${el.id.slice(0, 6)}`,
-              },
-            ];
-          });
-        if (selectionAttachments.length > 0) {
-          currentAttachments = [...currentAttachments, ...selectionAttachments];
-        }
-      }
-      const availableImageModelIds = new Set(
-        imageModelMentionItems.map((item) => item.id),
-      );
-      const currentImageGenerationPreference = filterImageGenerationPreference(
-        imageGenerationPreferenceOverride ??
-          activeImageGenerationPreferenceRef.current,
-        availableImageModelIds,
-      );
-      const currentVideoGenerationPreference =
-        videoGenerationPreferenceOverride ??
-        activeVideoGenerationPreferenceRef.current;
-      const currentMentions = filterMessageMentions(
-        mentionsOverride ?? messageMentionsRef.current,
-        availableImageModelIds,
-      );
-      const agentPromptText = text;
-
-      // Add user message locally
-      const imageBlocks: ContentBlock[] = currentAttachments.map((a) => ({
-        type: "image" as const,
-        assetId: a.assetId,
-        url: a.url,
-        mimeType: a.mimeType,
-        source: a.source,
-        ...(a.name ? { name: a.name } : {}),
-      }));
-      const mentionBlocks: ContentBlock[] = currentMentions.map((mention) => {
-        if (mention.mentionType === "image-model") {
-          return {
-            type: "mention" as const,
-            mentionType: "image-model" as const,
-            id: mention.id,
-            label: mention.label,
-          };
+          setStreaming(true);
         }
 
-        if (mention.mentionType === "skill") {
-          return {
-            type: "mention" as const,
-            mentionType: "skill" as const,
-            id: mention.id,
-            label: mention.label,
-            slug: mention.slug,
-          };
-        }
-
-        return {
-          type: "mention" as const,
-          mentionType: "brand-kit-asset" as const,
-          id: mention.id,
-          label: mention.label,
-          assetType: mention.assetType,
-          ...(mention.textContent !== undefined
-            ? { textContent: mention.textContent }
-            : {}),
-          ...(mention.fileUrl !== undefined
-            ? { fileUrl: mention.fileUrl }
-            : {}),
-        };
-      });
-      const userMsg = {
-        id: `user-${Date.now()}`,
-        role: "user" as const,
-        contentBlocks: [
-          { type: "text" as const, text },
-          ...mentionBlocks,
-          ...imageBlocks,
-        ],
-      };
-      updateSessionMessages(currentSessionId, (prev) => [...prev, userMsg]);
-
-      const userMessagePayload = {
-        role: "user" as const,
-        content: text,
-        contentBlocks: [
-          { type: "text" as const, text },
-          ...mentionBlocks,
-          ...imageBlocks,
-        ],
-      };
-      const userMessageSave = saveMessage(currentSessionId, userMessagePayload);
-      const sendDiagnostics = {
-        attachmentCount: currentAttachments.length,
-        attachments: summarizeReadyAttachments(currentAttachments),
-        canvasId,
-        messageBodyBytes: byteLength(JSON.stringify(userMessagePayload)),
-        promptChars: text.length,
-        selectedCanvasImageCount: selectedImageEls.length,
-        sessionId: currentSessionId,
-      };
-
-      // Auto-title from first user message, falling back to attachment names
-      // for image-only initial runs from the home prompt.
-      autoTitleSession(buildAutoTitleSource(text, currentAttachments));
-
-      // Create assistant placeholder
-      const assistantIdRef = { current: `assistant-${Date.now()}` };
-      updateSessionMessages(currentSessionId, (prev) => [
-        ...prev,
-        {
-          id: assistantIdRef.current,
-          role: "assistant" as const,
-          contentBlocks: [],
-        },
-      ]);
-      if (activeSessionIdRef.current === currentSessionId) {
-        setStreaming(true);
-      }
-      abortRef.current = false;
-
-      let failureStage: SendFailureStage = "save_message";
-      try {
-        await userMessageSave;
-        failureStage = "agent_run_ack";
-
-        const perf = {
-          t0Send: performance.now(),
-          tAck: 0,
-          tFirstToken: 0,
-          gotFirstToken: false,
-        };
-
-        let resolveStream: () => void;
-        const streamDone = new Promise<void>((r) => {
-          resolveStream = r;
-        });
-        const runIdRef = { current: "" };
-        const runCanvasId = canvasId;
-
-        const cleanup = ws.onEvent((entry) => {
-          const event = entry.event;
-          if (!runIdRef.current || event.runId !== runIdRef.current) return;
-          if (abortRef.current) {
-            resolveStream();
-            return;
+        if (!(await ensureAgentModelConfigured())) {
+          inFlightSessionIdsRef.current.delete(currentSessionId);
+          if (activeSessionIdRef.current === currentSessionId) {
+            setStreaming(false);
           }
-          const isCurrentCanvas = currentCanvasIdRef.current === runCanvasId;
-          if (!isCurrentCanvas) {
+          openSettings("agent");
+          return;
+        }
+
+        // Merge explicitly-attached images with auto-sensed canvas selection images
+        let currentAttachments = attachmentsOverride ?? readyAttachments;
+        const selectedEls = selectedCanvasElementsRef.current ?? [];
+        const selectedImageEls = selectedEls.filter(
+          (el) =>
+            el.type === "image" && el.fileId && (el.storageUrl || el.dataUrl),
+        );
+        if (selectedImageEls.length > 0 && !attachmentsOverride) {
+          const existingIds = new Set(currentAttachments.map((a) => a.assetId));
+          const selectionAttachments: ReadyAttachment[] = selectedImageEls
+            .filter((el) => !existingIds.has(el.id))
+            .flatMap((el) => {
+              const url = resolveSelectedCanvasImageUrl(el);
+              if (!url) return [];
+              return [
+                {
+                  assetId: el.id,
+                  url,
+                  mimeType: "image/png",
+                  source: "canvas-ref" as const,
+                  name: `Canvas selection ${el.id.slice(0, 6)}`,
+                },
+              ];
+            });
+          if (selectionAttachments.length > 0) {
+            currentAttachments = [
+              ...currentAttachments,
+              ...selectionAttachments,
+            ];
+          }
+        }
+        const availableImageModelIds = new Set(
+          imageModelMentionItems.map((item) => item.id),
+        );
+        const currentImageGenerationPreference =
+          filterImageGenerationPreference(
+            imageGenerationPreferenceOverride ??
+              activeImageGenerationPreferenceRef.current,
+            availableImageModelIds,
+          );
+        const currentVideoGenerationPreference =
+          videoGenerationPreferenceOverride ??
+          activeVideoGenerationPreferenceRef.current;
+        const currentMentions = filterMessageMentions(
+          mentionsOverride ?? messageMentionsRef.current,
+          availableImageModelIds,
+        );
+        const agentPromptText = text;
+
+        // Add user message locally
+        const imageBlocks: ContentBlock[] = currentAttachments.map((a) => ({
+          type: "image" as const,
+          assetId: a.assetId,
+          url: a.url,
+          mimeType: a.mimeType,
+          source: a.source,
+          ...(a.name ? { name: a.name } : {}),
+        }));
+        const mentionBlocks: ContentBlock[] = currentMentions.map((mention) => {
+          if (mention.mentionType === "image-model") {
+            return {
+              type: "mention" as const,
+              mentionType: "image-model" as const,
+              id: mention.id,
+              label: mention.label,
+            };
+          }
+
+          if (mention.mentionType === "skill") {
+            return {
+              type: "mention" as const,
+              mentionType: "skill" as const,
+              id: mention.id,
+              label: mention.label,
+              slug: mention.slug,
+            };
+          }
+
+          return {
+            type: "mention" as const,
+            mentionType: "brand-kit-asset" as const,
+            id: mention.id,
+            label: mention.label,
+            assetType: mention.assetType,
+            ...(mention.textContent !== undefined
+              ? { textContent: mention.textContent }
+              : {}),
+            ...(mention.fileUrl !== undefined
+              ? { fileUrl: mention.fileUrl }
+              : {}),
+          };
+        });
+        const userMsg = {
+          id: `user-${Date.now()}`,
+          role: "user" as const,
+          contentBlocks: [
+            { type: "text" as const, text },
+            ...mentionBlocks,
+            ...imageBlocks,
+          ],
+        };
+        updateSessionMessages(currentSessionId, (prev) => [...prev, userMsg]);
+
+        const userMessagePayload = {
+          role: "user" as const,
+          content: text,
+          contentBlocks: [
+            { type: "text" as const, text },
+            ...mentionBlocks,
+            ...imageBlocks,
+          ],
+        };
+        const userMessageSave = saveMessage(
+          currentSessionId,
+          userMessagePayload,
+        );
+        const sendDiagnostics = {
+          attachmentCount: currentAttachments.length,
+          attachments: summarizeReadyAttachments(currentAttachments),
+          canvasId,
+          messageBodyBytes: byteLength(JSON.stringify(userMessagePayload)),
+          promptChars: text.length,
+          selectedCanvasImageCount: selectedImageEls.length,
+          sessionId: currentSessionId,
+        };
+
+        // Auto-title from first user message, falling back to attachment names
+        // for image-only initial runs from the home prompt.
+        autoTitleSession(buildAutoTitleSource(text, currentAttachments));
+
+        // Create assistant placeholder
+        const assistantIdRef = { current: `assistant-${Date.now()}` };
+        updateSessionMessages(currentSessionId, (prev) => [
+          ...prev,
+          {
+            id: assistantIdRef.current,
+            role: "assistant" as const,
+            contentBlocks: [],
+          },
+        ]);
+        if (activeSessionIdRef.current === currentSessionId) {
+          setStreaming(true);
+        }
+        abortRef.current = false;
+
+        let failureStage: SendFailureStage = "save_message";
+        let cleanupStreamListener: (() => void) | undefined;
+        const cleanupRegisteredStreamListener = () => {
+          cleanupStreamListener?.();
+          cleanupStreamListener = undefined;
+        };
+        try {
+          await userMessageSave;
+          failureStage = "agent_run_ack";
+
+          const perf = {
+            t0Send: performance.now(),
+            tAck: 0,
+            tFirstToken: 0,
+            gotFirstToken: false,
+          };
+
+          let resolveStream: () => void;
+          const streamDone = new Promise<void>((r) => {
+            resolveStream = r;
+          });
+          const runIdRef = { current: "" };
+          const runCanvasId = canvasId;
+
+          cleanupStreamListener = ws.onEvent((entry) => {
+            const event = entry.event;
+            if (!runIdRef.current || event.runId !== runIdRef.current) return;
+            if (abortRef.current) {
+              resolveStream();
+              return;
+            }
+            const isCurrentCanvas = currentCanvasIdRef.current === runCanvasId;
+            if (!isCurrentCanvas) {
+              if (
+                event.type === "run.completed" ||
+                event.type === "run.failed" ||
+                event.type === "run.canceled"
+              ) {
+                resolveStream();
+              }
+              return;
+            }
+
+            // Track first token timing
+            if (!perf.gotFirstToken && event.type === "message.delta") {
+              perf.tFirstToken = performance.now();
+              perf.gotFirstToken = true;
+              console.log(
+                `[perf] send → first token: ${(perf.tFirstToken - perf.t0Send).toFixed(0)}ms` +
+                  ` (ack→token: ${(perf.tFirstToken - perf.tAck).toFixed(0)}ms)`,
+              );
+            }
+
+            // Apply event to messages (single source of truth — shared with reconnect)
+            applyStreamEvent(event, assistantIdRef.current, currentSessionId);
+            watchDeferredMediaJob(event, currentSessionId);
+
+            // Forward event to parent for fallback job polling.
+            onStreamEvent?.(event);
+
+            // Fire canvas insertion callbacks for image/video artifacts.
+            // Backend-inserted artifacts should already arrive through canvas.sync.
+            // Verify after sync has had a chance to land; if the canvas still does
+            // not contain the artifact, fall back to client-side insertion.
+            const backendInserted =
+              event.type === "tool.completed" &&
+              event.output &&
+              typeof (event.output as Record<string, unknown>).elementId ===
+                "string";
+            if (
+              event.type === "tool.completed" &&
+              event.artifacts &&
+              event.toolName !== "screenshot_canvas"
+            ) {
+              for (const artifact of event.artifacts) {
+                if (backendInserted) {
+                  onCanvasSync?.();
+                } else if (onImageGenerated) {
+                  onImageGenerated?.(artifact);
+                }
+              }
+            }
+
+            if (event.type === "canvas.sync" && onCanvasSync) {
+              onCanvasSync();
+            }
+
+            // Preview model hint: suggest switching when run fails
+            if (event.type === "run.failed") {
+              const currentModel = agentModelRef.current ?? "";
+              if (currentModel.includes("preview")) {
+                showToast(
+                  "当前 Preview 模型请求不稳定，建议切换模型后重试",
+                  "error",
+                );
+              }
+            }
+
             if (
               event.type === "run.completed" ||
               event.type === "run.failed" ||
@@ -1038,110 +1120,45 @@ export function ChatSidebar({
             ) {
               resolveStream();
             }
-            return;
-          }
+          });
 
-          // Track first token timing
-          if (!perf.gotFirstToken && event.type === "message.delta") {
-            perf.tFirstToken = performance.now();
-            perf.gotFirstToken = true;
-            console.log(
-              `[perf] send → first token: ${(perf.tFirstToken - perf.t0Send).toFixed(0)}ms` +
-                ` (ack→token: ${(perf.tFirstToken - perf.tAck).toFixed(0)}ms)`,
-            );
-          }
+          // Start run via WebSocket
+          const runPayload = {
+            sessionId: currentSessionId,
+            conversationId: canvasId,
+            prompt: agentPromptText,
+            canvasId,
+            ...(currentAttachments.length > 0
+              ? { attachments: currentAttachments }
+              : {}),
+            ...(currentMentions.length > 0
+              ? { mentions: currentMentions }
+              : {}),
+            ...(currentImageGenerationPreference
+              ? {
+                  imageGenerationPreference: currentImageGenerationPreference,
+                }
+              : {}),
+            ...(currentVideoGenerationPreference
+              ? {
+                  videoGenerationPreference: currentVideoGenerationPreference,
+                }
+              : {}),
+            ...(agentModelRef.current ? { model: agentModelRef.current } : {}),
+            ...(agentModelRef.current && agentModelSourceRef.current
+              ? { modelSource: agentModelSourceRef.current }
+              : {}),
+          };
 
-          // Apply event to messages (single source of truth — shared with reconnect)
-          applyStreamEvent(event, assistantIdRef.current, currentSessionId);
-          watchDeferredMediaJob(event, currentSessionId);
-
-          // Forward event to parent for fallback job polling.
-          onStreamEvent?.(event);
-
-          // Fire canvas insertion callbacks for image/video artifacts.
-          // Backend-inserted artifacts should already arrive through canvas.sync.
-          // Verify after sync has had a chance to land; if the canvas still does
-          // not contain the artifact, fall back to client-side insertion.
-          const backendInserted =
-            event.type === "tool.completed" &&
-            event.output &&
-            typeof (event.output as Record<string, unknown>).elementId ===
-              "string";
-          if (
-            event.type === "tool.completed" &&
-            event.artifacts &&
-            event.toolName !== "screenshot_canvas"
-          ) {
-            for (const artifact of event.artifacts) {
-              if (backendInserted) {
-                onCanvasSync?.();
-              } else if (onImageGenerated) {
-                onImageGenerated?.(artifact);
-              }
-            }
-          }
-
-          if (event.type === "canvas.sync" && onCanvasSync) {
-            onCanvasSync();
-          }
-
-          // Preview model hint: suggest switching when run fails
-          if (event.type === "run.failed") {
-            const currentModel = agentModelRef.current ?? "";
-            if (currentModel.includes("preview")) {
-              showToast(
-                "当前 Preview 模型请求不稳定，建议切换模型后重试",
-                "error",
+          const runId = await new Promise<string>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              cleanupRegisteredStreamListener();
+              reject(
+                new Error("WebSocket ack timeout — connection may be down"),
               );
-            }
-          }
+            }, 10_000);
 
-          if (
-            event.type === "run.completed" ||
-            event.type === "run.failed" ||
-            event.type === "run.canceled"
-          ) {
-            resolveStream();
-          }
-        });
-
-        // Start run via WebSocket
-        const runId = await new Promise<string>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            cleanup();
-            reject(new Error("WebSocket ack timeout — connection may be down"));
-          }, 10_000);
-
-          ws.startRun(
-            {
-              sessionId: currentSessionId,
-              conversationId: canvasId,
-              prompt: agentPromptText,
-              canvasId,
-              ...(currentAttachments.length > 0
-                ? { attachments: currentAttachments }
-                : {}),
-              ...(currentMentions.length > 0
-                ? { mentions: currentMentions }
-                : {}),
-              ...(currentImageGenerationPreference
-                ? {
-                    imageGenerationPreference: currentImageGenerationPreference,
-                  }
-                : {}),
-              ...(currentVideoGenerationPreference
-                ? {
-                    videoGenerationPreference: currentVideoGenerationPreference,
-                  }
-                : {}),
-              ...(agentModelRef.current
-                ? { model: agentModelRef.current }
-                : {}),
-              ...(agentModelRef.current && agentModelSourceRef.current
-                ? { modelSource: agentModelSourceRef.current }
-                : {}),
-            },
-            (ack) => {
+            ws.startRun(runPayload, (ack) => {
               clearTimeout(timeout);
               perf.tAck = performance.now();
               console.log(
@@ -1173,49 +1190,51 @@ export function ChatSidebar({
                 setActiveRunId(id);
               }
               resolve(id);
-            },
-          );
-        });
-        clearAttachments();
-        setMessageMentions([]);
+            });
+          });
+          clearAttachments();
+          setMessageMentions([]);
 
-        failureStage = "stream";
-        await streamDone;
-        cleanup();
-      } catch (error) {
-        console.warn("[chat] Failed to send agent message", {
-          ...sendDiagnostics,
-          error: summarizeClientError(error),
-          stage: failureStage,
-        });
-        updateSessionMessages(currentSessionId, (prev) =>
-          prev.map((m) => {
-            if (m.id !== assistantIdRef.current) return m;
-            const hasText = m.contentBlocks.some((b) => b.type === "text");
-            if (hasText) return m;
-            return {
-              ...m,
-              contentBlocks: [
-                ...m.contentBlocks,
-                { type: "text" as const, text: "Failed to get response." },
-              ],
-            };
-          }),
-        );
-      } finally {
-        inFlightSessionIdsRef.current.delete(currentSessionId);
-        const runningId = activeRunIdsRef.current.get(currentSessionId);
-        activeRunIdsRef.current.delete(currentSessionId);
-        if (activeSessionIdRef.current === currentSessionId) {
-          setStreaming(false);
-          setActiveRunId(null);
-        }
-        if (runningId) {
-          setCancelingRunId((current) =>
-            current === runningId ? null : current,
+          failureStage = "stream";
+          await streamDone;
+          cleanupRegisteredStreamListener();
+        } catch (error) {
+          console.warn("[chat] Failed to send agent message", {
+            ...sendDiagnostics,
+            error: summarizeClientError(error),
+            stage: failureStage,
+          });
+          updateSessionMessages(currentSessionId, (prev) =>
+            prev.map((m) => {
+              if (m.id !== assistantIdRef.current) return m;
+              const hasText = m.contentBlocks.some((b) => b.type === "text");
+              if (hasText) return m;
+              return {
+                ...m,
+                contentBlocks: [
+                  ...m.contentBlocks,
+                  { type: "text" as const, text: "Failed to get response." },
+                ],
+              };
+            }),
           );
+        } finally {
+          cleanupRegisteredStreamListener();
+          inFlightSessionIdsRef.current.delete(currentSessionId);
+          const runningId = activeRunIdsRef.current.get(currentSessionId);
+          activeRunIdsRef.current.delete(currentSessionId);
+          if (activeSessionIdRef.current === currentSessionId) {
+            setStreaming(false);
+            setActiveRunId(null);
+          }
+          if (runningId) {
+            setCancelingRunId((current) =>
+              current === runningId ? null : current,
+            );
+          }
         }
-      }
+      })();
+      return true;
     },
     [
       canvasId,
@@ -1804,7 +1823,7 @@ export function ChatSidebar({
           ref={chatInputRef}
           onSend={handleSend}
           {...(activeRunId ? { onCancel: handleCancelRun } : {})}
-          disabled={sessionsLoading}
+          disabled={sessionsLoading || !ws.connected}
           isRunning={streaming}
           canceling={activeRunId ? cancelingRunId === activeRunId : false}
           attachments={imageAttachments}

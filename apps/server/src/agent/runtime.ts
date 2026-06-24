@@ -372,7 +372,11 @@ type RuntimeRunStatus =
   | "failed"
   | "running";
 
-type RuntimeRunRecord = RunCreateRequest & {
+type RuntimeRunCreateInput = RunCreateRequest & {
+  managedAgentInvocationCredential?: string | undefined;
+};
+
+type RuntimeRunRecord = RuntimeRunCreateInput & {
   accessToken?: string;
   assistantMessageId?: string;
   connectionId?: string;
@@ -381,6 +385,7 @@ type RuntimeRunRecord = RunCreateRequest & {
   codexImagegenDelegation?: "ask" | "always" | "never";
   codexImagegenConsentBudget?: number;
   envOverride?: ServerEnv;
+  managedAgentInvocationCredential?: string | undefined;
   modelOverride?: string;
   resumeContext?: {
     mode: "provider-local" | "handoff" | "fresh";
@@ -665,7 +670,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     },
 
     createRun(
-      input: RunCreateRequest,
+      input: RuntimeRunCreateInput,
       runOptions?: {
         accessToken?: string;
         assistantMessageId?: string;
@@ -707,6 +712,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         initialRuntimeTarget?.kind ?? requestedRuntimeKind;
       const persistedRuntimeProvider =
         initialRuntimeTarget?.provider ?? requestedRuntimeProvider;
+      const keepManagedAgentInvocationCredential =
+        persistedRuntimeKind === "local-agent";
       const previousRun = runInput.resumeFromRunId
         ? options.agentRunStore?.getRun?.(runInput.resumeFromRunId)
         : undefined;
@@ -757,6 +764,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       runs.set(runId, {
         ...runInput,
+        ...(keepManagedAgentInvocationCredential
+          ? {}
+          : { managedAgentInvocationCredential: undefined }),
         ...(runOptions?.accessToken
           ? { accessToken: runOptions.accessToken }
           : {}),
@@ -1457,6 +1467,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         activeRuntimeTarget = resolvedRuntimeTarget;
         run.runtimeKind = resolvedRuntimeTarget.kind;
         run.runtimeProvider = resolvedRuntimeTarget.provider;
+        if (resolvedRuntimeTarget.kind !== "local-agent") {
+          run.managedAgentInvocationCredential = undefined;
+        }
         runtimeLease = runtimeControlPlane.acquireRuntimeLease(
           resolvedRuntimeTarget,
           run.runId,
@@ -1571,6 +1584,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         yield failedEvent;
         return;
       } finally {
+        run.managedAgentInvocationCredential = undefined;
         runtimeLease?.release();
         if (backendResult.sandboxDir) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(

@@ -11,6 +11,7 @@ import {
   wsCommandSchema,
   wsRpcResponseSchema,
 } from "@aimc/shared";
+import { getManagedAgentInvocationCredentialFromHeaders } from "@tutti-os/agent-acp-kit";
 import {
   AgentRunModelResolutionError,
   type AgentRunOrchestrator,
@@ -80,6 +81,10 @@ type RegisterWsOptions = {
   viewerService?: ViewerService;
 };
 
+type ServerRunCreateRequest = Omit<RunCreateRequest, "accessToken"> & {
+  managedAgentInvocationCredential?: string | undefined;
+};
+
 export async function registerWsRoute(
   app: FastifyInstance,
   options: RegisterWsOptions,
@@ -113,7 +118,7 @@ export async function registerWsRoute(
 async function authenticateAndBind(
   socket: WebSocket,
   token: string,
-  _request: FastifyRequest,
+  request: FastifyRequest,
   options: RegisterWsOptions,
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
@@ -149,10 +154,12 @@ async function authenticateAndBind(
   if (socket.readyState !== 1) return;
 
   // Use client-provided connectionId for reconnect identity; fallback to server UUID
-  const urlForParams = new URL(_request.url, `http://${_request.headers.host}`);
+  const urlForParams = new URL(request.url, `http://${request.headers.host}`);
   const connectionId =
     urlForParams.searchParams.get("connectionId") || randomUUID();
   connectionManager.register(connectionId, authenticatedUser.id, socket);
+  const managedAgentInvocationCredential =
+    getManagedAgentInvocationCredentialFromHeaders(request.headers);
 
   // Heartbeat with pong timeout (spec §1.3: 60s no-pong → disconnect)
   let lastPong = Date.now();
@@ -238,6 +245,14 @@ async function authenticateAndBind(
               : {}),
             ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
             ...(p.model !== undefined ? { model: p.model } : {}),
+            ...(p.modelSource !== undefined
+              ? { modelSource: p.modelSource }
+              : {}),
+            ...(managedAgentInvocationCredential !== undefined
+              ? {
+                  managedAgentInvocationCredential,
+                }
+              : {}),
             ...(p.runtimeKind !== undefined
               ? { runtimeKind: p.runtimeKind }
               : {}),
@@ -345,7 +360,7 @@ async function authenticateAndBind(
 async function handleRunCommand(
   authenticatedUser: AuthenticatedUser,
   connectionId: string,
-  payload: Omit<RunCreateRequest, "accessToken">,
+  payload: ServerRunCreateRequest,
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
   services: RegisterWsOptions,

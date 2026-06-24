@@ -17,6 +17,7 @@ apps/web/out/
 
 # production
 /build
+output/*
 **/dist
 **/.turbo
 

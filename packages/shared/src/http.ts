@@ -159,6 +159,8 @@ export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),
 });
 
+export const modelListRequestSchema = z.object({});
+
 export const tuttiManagedConnectionResponseSchema = z.object({
   connectChallenge: tuttiManagedConnectChallengeSchema.optional(),
   connection: tuttiManagedPublicConnectionSchema,
@@ -211,6 +213,7 @@ export type WorkspaceSettingsUpdateRequest = z.infer<
   typeof workspaceSettingsUpdateRequestSchema
 >;
 export type ModelListResponse = z.infer<typeof modelListResponseSchema>;
+export type ModelListRequest = z.infer<typeof modelListRequestSchema>;
 export type TuttiManagedConnectionResponse = z.infer<
   typeof tuttiManagedConnectionResponseSchema
 >;

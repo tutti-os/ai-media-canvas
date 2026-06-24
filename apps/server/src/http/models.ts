@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
   type InstallableAgentProviderId,
@@ -9,22 +9,27 @@ import {
   installableAgentProviderIdSchema,
   modelListResponseSchema,
 } from "@aimc/shared";
-
 import {
-  type AgentProviderInstallResult,
-  installAgentProvider,
-} from "../agent/local-agent-provider-installer.js";
+  type DetectContext,
+  type ManagedAgentInvocationCredentialHeaders,
+  createManagedAgentDetectContextFromHeaders,
+} from "@tutti-os/agent-acp-kit";
+
 import {
   type LocalAgentModelDiscovery,
   buildLocalAgentModels,
   createDefaultLocalAgentModelDiscovery,
 } from "../agent/local-agent-models.js";
+import {
+  type AgentProviderInstallResult,
+  installAgentProvider,
+} from "../agent/local-agent-provider-installer.js";
 import type { ServerEnv } from "../config/env.js";
-import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 import {
   LOCAL_WORKSPACE_ID,
   type SettingsService,
 } from "../features/settings/settings-service.js";
+import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 
 const OPENAI_MODELS: ModelInfo[] = [
   { id: "openai:gpt-5.5", name: "OpenAI GPT-5.5", provider: "openai" },
@@ -266,17 +271,29 @@ export async function registerModelRoutes(
   const localAgentProviderInstaller =
     options?.localAgentProviderInstaller ?? installAgentProvider;
 
-  app.get("/api/models", async (_request, reply) => {
+  const sendModels = async (
+    reply: FastifyReply,
+    input: { headers?: ManagedAgentInvocationCredentialHeaders } = {},
+  ) => {
     const models = await listAgentModels({
       env,
       localAgentModelDiscovery,
       logger: app.log,
+      ...(input.headers ? { managedAgentHeaders: input.headers } : {}),
       ...(options?.tuttiManagedCredentials
         ? { tuttiManagedCredentials: options.tuttiManagedCredentials }
         : {}),
       ...(settingsService ? { settingsService } : {}),
     });
     return reply.code(200).send(modelListResponseSchema.parse({ models }));
+  };
+
+  app.get("/api/models", async (request, reply) => {
+    return sendModels(reply, { headers: request.headers });
+  });
+
+  app.post("/api/models", async (request, reply) => {
+    return sendModels(reply, { headers: request.headers });
   });
 
   app.post(
@@ -340,6 +357,8 @@ export async function listAgentModels(options: {
   env: ServerEnv;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
+  managedAgentDetectContext?: DetectContext;
+  managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders;
   tuttiManagedCredentials?: TuttiManagedCredentialService;
   settingsService?: SettingsService;
 }) {
@@ -425,13 +444,17 @@ export async function listAgentModels(options: {
     );
   }
   if (effectiveEnv.trustedLocalAgentMode !== false) {
+    const managedAgentDetectContext =
+      options.managedAgentDetectContext ??
+      createManagedAgentDetectContextFromHeaders(options.managedAgentHeaders);
     try {
-      models.push(
-        ...buildLocalAgentModels(await localAgentModelDiscovery.detect()),
+      const detections = await localAgentModelDiscovery.detect(
+        managedAgentDetectContext,
       );
+      models.push(...buildLocalAgentModels(detections));
     } catch (error) {
       options.logger?.warn(
-        { err: error },
+        managedAgentDetectContext ? {} : { err: error },
         "Failed to load local-agent models; omitting local providers.",
       );
     }
