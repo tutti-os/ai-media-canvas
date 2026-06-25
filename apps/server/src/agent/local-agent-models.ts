@@ -1,6 +1,7 @@
 import type { AgentRuntimeProvider, ModelInfo } from "@aimc/shared";
 import {
   type AgentDetection,
+  type DetectContext,
   type LocalAgentRuntime,
   createLocalAgentRuntime,
 } from "@tutti-os/agent-acp-kit";
@@ -10,10 +11,20 @@ import {
   isAimcLocalAgentProvider,
 } from "./local-agent-providers.js";
 
-export type LocalAgentModelDiscovery = Pick<
-  LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
-  "detect"
->;
+type LocalAgentRuntimeDetect = LocalAgentRuntime<
+  "local-agent",
+  AgentRuntimeProvider
+>["detect"];
+
+export type LocalAgentModelDetectContext = DetectContext & {
+  refresh?: boolean;
+};
+
+export type LocalAgentModelDiscovery = {
+  detect: (
+    context?: LocalAgentModelDetectContext,
+  ) => ReturnType<LocalAgentRuntimeDetect>;
+};
 
 export function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
   return createLocalAgentRuntime({
