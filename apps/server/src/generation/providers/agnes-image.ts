@@ -1,4 +1,4 @@
-import { type AgnesClientConfig, createAgnesClient } from "agnes-ai-cli";
+import { createAgnesClient } from "agnes-ai-cli";
 
 import type {
   GeneratedImage,
@@ -11,6 +11,10 @@ import {
   aspectRatioToDimensions,
   withTimeout,
 } from "../utils.js";
+import {
+  type AgnesMediaOptions,
+  resolveAgnesMediaOptions,
+} from "./agnes-media.js";
 
 const ICON_AGNES = "https://agnes-cdn.kiwiar.com/logo/agnes-icon-400x400.jpg";
 const DEFAULT_AGNES_MEDIA_TTL = "1h" as const;
@@ -80,14 +84,13 @@ export class AgnesImageProvider implements ImageProvider {
   constructor(
     apiKey: string,
     baseUrl?: string,
-    options: Pick<AgnesClientConfig, "mediaProvider"> = {},
+    options: AgnesMediaOptions = {},
   ) {
+    const mediaOptions = resolveAgnesMediaOptions(options);
     this.client = createAgnesClient({
       apiKey,
       ...(baseUrl ? { baseUrl } : {}),
-      ...(options.mediaProvider
-        ? { mediaProvider: options.mediaProvider }
-        : {}),
+      ...mediaOptions,
     });
   }
 

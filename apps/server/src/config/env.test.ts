@@ -14,6 +14,7 @@ describe("loadServerEnv", () => {
 
     expect(env.dataRoot).toBe("/tmp/aimc-tutti-data");
     expect(env.appDataDir).toBe("/tmp/aimc-tutti-data");
+    expect(env.tuttiManagedFilesRoot).toBe("/tmp/aimc-tutti-data/uploads");
     expect(env.version).toBe("1.2.3");
   });
 

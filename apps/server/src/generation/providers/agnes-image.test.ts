@@ -15,6 +15,7 @@ vi.mock("agnes-ai-cli", () => ({
 }));
 
 import { AgnesImageProvider } from "./agnes-image.js";
+import { DEFAULT_AGNES_TEMPORARY_MEDIA_PROVIDER_ORDER } from "./agnes-media.js";
 
 describe("AgnesImageProvider", () => {
   beforeEach(() => {
@@ -43,6 +44,7 @@ describe("AgnesImageProvider", () => {
     expect(createAgnesClientMock).toHaveBeenCalledWith({
       apiKey: "agnes-test-key",
       baseUrl: "https://agnes.example/v1",
+      temporaryMediaProviderOrder: DEFAULT_AGNES_TEMPORARY_MEDIA_PROVIDER_ORDER,
     });
     expect(imageGenerateMock).toHaveBeenCalledWith({
       mode: "text2img",
@@ -55,6 +57,17 @@ describe("AgnesImageProvider", () => {
       mimeType: "image/png",
       width: 1024,
       height: 1024,
+    });
+  });
+
+  it("lets callers override the Agnes temporary media provider order", () => {
+    new AgnesImageProvider("agnes-test-key", undefined, {
+      temporaryMediaProviderOrder: ["tmpfiles", "uguu"],
+    });
+
+    expect(createAgnesClientMock).toHaveBeenCalledWith({
+      apiKey: "agnes-test-key",
+      temporaryMediaProviderOrder: ["tmpfiles", "uguu"],
     });
   });
 
