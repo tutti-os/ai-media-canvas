@@ -41,6 +41,18 @@ const CLI_COMMANDS = [
       "Return AI Canvas server health, app version, and local runtime metadata.",
   },
   {
+    path: ["open"],
+    summary: "Open AI Canvas",
+    description:
+      "Open AI Canvas in Tutti Desktop. When project-id is provided, open that project's primary canvas; otherwise open the app home page.",
+    properties: {
+      "project-id": {
+        type: "string",
+        description: "Optional project id to open.",
+      },
+    },
+  },
+  {
     path: ["projects", "list"],
     summary: "List projects",
     description: "List local AI Canvas projects.",
