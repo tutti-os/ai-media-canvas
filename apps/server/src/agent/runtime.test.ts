@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
 
 const { createAgentBackendMock } = vi.hoisted(() => ({
   createAgentBackendMock: vi.fn(() => ({ factory: { kind: "backend" } })),
@@ -2891,13 +2892,19 @@ describe("createAgentRunService", () => {
       loadSessionMessages: async () => [],
     });
 
-    const run = runs.createRun({
-      canvasId: "canvas-1",
-      conversationId: "canvas-1",
-      managedAgentInvocationCredential: "credential-run-1",
-      prompt: "hi",
-      sessionId: "session-1",
-    });
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "hi",
+        sessionId: "session-1",
+      },
+      {
+        managedAgentHeaders: {
+          [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
+        },
+      },
+    );
 
     for await (const _event of runs.streamRun(run.runId)) {
       // Exhaust the stream so the server runtime reaches the agent factory.

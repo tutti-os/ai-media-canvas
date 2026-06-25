@@ -55,20 +55,6 @@ describe("loadServerEnv", () => {
     expect(env.kieUploadBaseUrl).toBe("https://kie-upload.example");
   });
 
-  it("loads local tool gateway URL overrides", () => {
-    const env = loadServerEnv(
-      {},
-      {
-        AIMC_LOCAL_TOOL_GATEWAY_BASE_URL:
-          "http://127.0.0.1:45231/api/agent-tools",
-      },
-    );
-
-    expect(env.localToolGatewayBaseUrl).toBe(
-      "http://127.0.0.1:45231/api/agent-tools",
-    );
-  });
-
   it("loads Codex Imagegen configuration", () => {
     const env = loadServerEnv(
       {},

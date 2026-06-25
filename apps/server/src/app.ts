@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
-import { getManagedAgentInvocationCredentialFromHeaders } from "@tutti-os/agent-acp-kit";
+import type { ManagedAgentInvocationCredentialHeaders } from "@tutti-os/agent-acp-kit";
 
 import {
   type ManagedFileAssetMetadata,
@@ -1005,9 +1005,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       );
     },
   });
-  const localToolGatewayBaseUrl =
-    env.localToolGatewayBaseUrl ??
-    `http://127.0.0.1:${env.port}/api/agent-tools`;
+  const localToolGatewayBaseUrl = `http://127.0.0.1:${env.port}/api/agent-tools`;
   const localAuth: RequestAuthenticator = {
     async authenticate(request) {
       const authorization = request.headers.authorization;
@@ -1171,11 +1169,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     })();
   };
 
-  type ServerRunCreateRequest = RunCreateRequest & {
-    managedAgentInvocationCredential?: string | undefined;
-  };
-
-  const startLocalAgentRun = async (payload: ServerRunCreateRequest) => {
+  const startLocalAgentRun = async (
+    payload: RunCreateRequest,
+    managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders,
+  ) => {
     if (store.listMessages(payload.sessionId) === null) {
       throw new LocalAgentRunError(
         "session_not_found",
@@ -1250,6 +1247,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         accessToken: LOCAL_AGENT_ACCESS_TOKEN,
         assistantMessageId: assistantMessage.id,
         env: runtimeEnv,
+        ...(managedAgentHeaders ? { managedAgentHeaders } : {}),
         ...(runtimeModel ? { model: runtimeModel } : {}),
         ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
         ...(payload.runtimeProvider
@@ -1479,15 +1477,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.post("/api/agent/runs", async (request, reply) => {
     try {
       const parsedPayload = runCreateRequestSchema.parse(request.body);
-      const managedAgentInvocationCredential =
-        getManagedAgentInvocationCredentialFromHeaders(request.headers);
-      const payload: ServerRunCreateRequest = managedAgentInvocationCredential
-        ? {
-            ...parsedPayload,
-            managedAgentInvocationCredential,
-          }
-        : parsedPayload;
-      return reply.code(202).send(await startLocalAgentRun(payload));
+      return reply
+        .code(202)
+        .send(await startLocalAgentRun(parsedPayload, request.headers));
     } catch (error) {
       if (error instanceof LocalAgentRunError) {
         return sendApplicationError(

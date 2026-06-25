@@ -16,6 +16,7 @@ import type {
   AgentEvent,
   LocalAgentProviderPlugin,
   LocalAgentRuntime,
+  ManagedAgentRunContext,
 } from "@tutti-os/agent-acp-kit";
 
 import type { UserDataClient } from "../../auth/request.js";
@@ -45,7 +46,9 @@ export type RuntimeRunRecord = {
   delegationConsent?: RunCreateRequest["delegationConsent"];
   envOverride?: ServerEnv | undefined;
   imageGenerationPreference?: ImageGenerationPreference | undefined;
-  managedAgentInvocationCredential?: string | undefined;
+  loadManagedAgentRunContext?: () => Promise<
+    ManagedAgentRunContext | undefined
+  >;
   mentions?: MessageMention[] | undefined;
   modelOverride?: string | undefined;
   prompt: string;

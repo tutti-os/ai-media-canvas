@@ -32,7 +32,6 @@ export type ServerEnv = {
   kieApiKey?: string;
   kieBaseUrl?: string;
   kieUploadBaseUrl?: string;
-  localToolGatewayBaseUrl?: string;
   openAIApiBase?: string;
   openAIApiKey?: string;
   tuttiApiBaseUrl?: string;
@@ -199,9 +198,6 @@ export function loadServerEnv(
     normalizeOptionalString(
       source.AIMC_KIE_UPLOAD_BASE_URL ?? source.KIE_UPLOAD_BASE_URL,
     );
-  const localToolGatewayBaseUrl =
-    overrides.localToolGatewayBaseUrl ??
-    normalizeOptionalString(source.AIMC_LOCAL_TOOL_GATEWAY_BASE_URL);
   const skillsRoot =
     overrides.skillsRoot ??
     normalizeOptionalString(source.AIMC_SKILLS_ROOT ?? source.SKILLS_ROOT);
@@ -274,7 +270,6 @@ export function loadServerEnv(
     ...(kieApiKey ? { kieApiKey } : {}),
     ...(kieBaseUrl ? { kieBaseUrl } : {}),
     ...(kieUploadBaseUrl ? { kieUploadBaseUrl } : {}),
-    ...(localToolGatewayBaseUrl ? { localToolGatewayBaseUrl } : {}),
     ...(skillsRoot ? { skillsRoot } : {}),
     trustedLocalAgentMode,
     ...(volcesApiKey ? { volcesApiKey } : {}),
