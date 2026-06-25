@@ -23,6 +23,7 @@ vi.mock("agnes-ai-cli", () => ({
   createAgnesClient: createAgnesClientMock,
 }));
 
+import { DEFAULT_AGNES_TEMPORARY_MEDIA_PROVIDER_ORDER } from "./agnes-media.js";
 import { AgnesVideoProvider } from "./agnes-video.js";
 
 describe("AgnesVideoProvider", () => {
@@ -81,6 +82,7 @@ describe("AgnesVideoProvider", () => {
     expect(createAgnesClientMock).toHaveBeenCalledWith({
       apiKey: "agnes-test-key",
       baseUrl: "https://agnes.example/v1",
+      temporaryMediaProviderOrder: DEFAULT_AGNES_TEMPORARY_MEDIA_PROVIDER_ORDER,
     });
     expect(videoGenerateMock).toHaveBeenCalledWith({
       mode: "text2video",
