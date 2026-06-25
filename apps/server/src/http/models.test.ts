@@ -265,7 +265,7 @@ describe("registerModelRoutes", () => {
 
   it("includes local-agent models from package discovery", async () => {
     const localAgentModelDiscovery = {
-      detect: vi.fn(async () => [
+      detect: vi.fn(async (_context?: { env?: Record<string, string> }) => [
         {
           provider: "codex" as const,
           displayName: "Codex CLI",
@@ -366,12 +366,15 @@ describe("registerModelRoutes", () => {
       expect.objectContaining({ provider: "hermes" }),
     );
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(1);
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith(undefined);
   });
 
   it("passes a managed agent invocation to local-agent model discovery for POST model requests", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    vi.stubEnv("CODEX_HOME", "/tmp/user-codex-home");
+    vi.stubEnv("CLAUDE_CONFIG_DIR", "/tmp/user-claude-config");
     const localAgentModelDiscovery = {
-      detect: vi.fn(async () => [
+      detect: vi.fn(async (_context?: { env?: Record<string, string> }) => [
         {
           provider: "nexight" as const,
           displayName: "Nexight",
@@ -427,6 +430,17 @@ describe("registerModelRoutes", () => {
       }),
       redactionSecrets: ["credential-model-1"],
     });
+    const detectContext = localAgentModelDiscovery.detect.mock.calls[0]?.[0];
+    expect(detectContext?.env ?? {}).toMatchObject({
+      TUTTI_APP_DATA_DIR: "/tmp/aimc-app-data",
+    });
+    expect(detectContext?.env ?? {}).not.toEqual(
+      expect.objectContaining({
+        CLAUDE_CONFIG_DIR: expect.any(String),
+        CODEX_HOME: expect.any(String),
+        PATH: expect.any(String),
+      }),
+    );
   });
 
   it("keeps managed model discovery credentials out of logs", async () => {
@@ -510,7 +524,7 @@ describe("registerModelRoutes", () => {
     const localAgentProviderInstaller = vi.fn(async () => ({
       provider: "codex" as const,
       status: "succeeded" as const,
-      command: "npm install -g @openai/codex @zed-industries/codex-acp",
+      command: "npm install -g @openai/codex",
       before: {
         availability: "not_installed" as const,
         reason: "cli_not_found" as const,
@@ -522,11 +536,7 @@ describe("registerModelRoutes", () => {
         availability: "ready" as const,
         reason: "ready" as const,
         cli: { binary: "codex", installed: true, path: "/usr/bin/codex" },
-        adapter: {
-          binary: "codex-acp",
-          installed: true,
-          path: "/usr/bin/codex-acp",
-        },
+        adapter: { binary: "codex-acp", installed: false },
         auth: { ok: true, required: false },
       },
     }));
@@ -554,6 +564,9 @@ describe("registerModelRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(localAgentProviderInstaller).toHaveBeenCalledWith("codex");
+    expect(emptyLocalAgentModelDiscovery.detect).toHaveBeenCalledWith({
+      refresh: true,
+    });
     expect(response.json()).toEqual({
       provider: "codex",
       status: "succeeded",

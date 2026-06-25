@@ -10,9 +10,11 @@ import {
   modelListResponseSchema,
 } from "@aimc/shared";
 import {
+  type AgentProviderInstallResult,
   type DetectContext,
   type ManagedAgentInvocationCredentialHeaders,
   createManagedAgentDetectContextFromHeaders,
+  installAgentProvider,
 } from "@tutti-os/agent-acp-kit";
 
 import {
@@ -20,10 +22,6 @@ import {
   buildLocalAgentModels,
   createDefaultLocalAgentModelDiscovery,
 } from "../agent/local-agent-models.js";
-import {
-  type AgentProviderInstallResult,
-  installAgentProvider,
-} from "../agent/local-agent-provider-installer.js";
 import type { ServerEnv } from "../config/env.js";
 import {
   LOCAL_WORKSPACE_ID,
@@ -326,6 +324,16 @@ export async function registerModelRoutes(
 
       try {
         const result = await localAgentProviderInstaller(paramsResult.data);
+        if (result.status !== "failed") {
+          try {
+            await localAgentModelDiscovery.detect({ refresh: true });
+          } catch (error) {
+            app.log.warn(
+              { err: error },
+              "Failed to refresh local-agent models after installation.",
+            );
+          }
+        }
         return reply.code(200).send(
           agentProviderInstallResponseSchema.parse({
             provider: result.provider,

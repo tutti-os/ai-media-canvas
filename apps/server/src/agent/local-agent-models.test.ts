@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildLocalAgentModels,
@@ -37,24 +37,25 @@ describe("local agent model helpers", () => {
   });
 
   it("resolves Codex Imagegen agent model from detected Codex models", async () => {
+    const detect = vi.fn(async () => [
+      {
+        provider: "codex",
+        result: {
+          supported: true,
+          models: [
+            { id: "default", label: "Default (CLI config)" },
+            { id: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
+          ],
+        },
+      },
+    ]);
+
     await expect(
       resolveCodexImagegenAgentModel(undefined, {
-        async detect() {
-          return [
-            {
-              provider: "codex",
-              result: {
-                supported: true,
-                models: [
-                  { id: "default", label: "Default (CLI config)" },
-                  { id: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
-                ],
-              },
-            },
-          ];
-        },
+        detect,
       }),
     ).resolves.toBe("gpt-5.4-mini");
+    expect(detect).toHaveBeenCalledWith();
   });
 
   it("uses configured Codex Imagegen model before detection", async () => {
