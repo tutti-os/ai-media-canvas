@@ -29,7 +29,6 @@
       "workspaceModelsDescription": "Choose from the model lists configured under each provider."
     },
     "feedback": {
-      "installFailed": "Unable to install local agent provider.",
       "updated": "Local agent settings updated.",
       "updateFailed": "Failed to update local agent settings. Please try again."
     },
@@ -39,18 +38,22 @@
       "customOption": "Custom (type below)...",
       "description": "Pick the CLI route generations should use.",
       "detectedCli": "Detected CLI",
-      "empty": "No local CLI models detected yet. Rescan after installing or signing in to a supported local CLI.",
+      "empty": "No local CLI models detected yet. Manage supported agents in Tutti, then rescan.",
+      "feedback": {
+        "managerOpened": "Tutti agent manager opened. Finish setup there, then rescan.",
+        "openManagerFailed": "Open AI Canvas inside Tutti to manage local agents."
+      },
       "fetchedDescription": "Fetched from the CLI when it exposes models. Custom lets you type any model id this CLI accepts.",
-      "installHint": "Install Codex or Claude Code, then rescan to enable local agent routes.",
-      "installing": "Installing...",
-      "installRequired": "Install required",
+      "manageInTutti": "Manage in Tutti",
       "modelCountOne": "{{modelCount}} model",
       "modelCountOther": "{{modelCount}} models",
       "modelLabel": "Model",
       "noCliSelected": "No CLI selected",
+      "openingManager": "Opening...",
       "rescan": "Rescan",
       "selectCliFirst": "Select a CLI first...",
-      "selectModel": "Select a model..."
+      "selectModel": "Select a model...",
+      "setupHint": "Use Tutti to install or sign in to Codex or Claude Code, then rescan to enable local agent routes."
     },
     "source": {
       "apiProvider": "API provider",

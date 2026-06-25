@@ -370,6 +370,54 @@ describe("registerModelRoutes", () => {
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith(undefined);
   });
 
+  it("bypasses cached local-agent detection when model refresh is requested", async () => {
+    const localAgentModelDiscovery = {
+      detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
+        {
+          provider: "claude" as const,
+          displayName: "Claude Code",
+          result: {
+            authState: "unknown" as const,
+            executablePath: "claude",
+            models: [{ id: "sonnet", label: "Sonnet" }],
+            supported: true,
+            version: "1.0.0",
+          },
+        },
+      ]),
+    };
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
+        },
+        {},
+      ),
+      undefined,
+      { localAgentModelDiscovery },
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/models?refresh=1",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().models).toContainEqual({
+      id: "claude:sonnet",
+      name: "Sonnet",
+      provider: "claude",
+      source: "local-agent",
+    });
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({
+      refresh: true,
+    });
+  });
+
   it("passes a managed agent invocation to local-agent model discovery for POST model requests", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
     vi.stubEnv("CODEX_HOME", "/tmp/user-codex-home");
@@ -521,87 +569,4 @@ describe("registerModelRoutes", () => {
     expect(localAgentModelDiscovery.detect).not.toHaveBeenCalled();
   });
 
-  it("installs a pinned local-agent provider through the installer", async () => {
-    const localAgentProviderInstaller = vi.fn(async () => ({
-      provider: "codex" as const,
-      status: "succeeded" as const,
-      command: "npm install -g @openai/codex",
-      before: {
-        availability: "not_installed" as const,
-        reason: "cli_not_found" as const,
-        cli: { binary: "codex", installed: false },
-        adapter: { binary: "codex-acp", installed: false },
-        auth: { ok: false, required: true },
-      },
-      after: {
-        availability: "ready" as const,
-        reason: "ready" as const,
-        cli: { binary: "codex", installed: true, path: "/usr/bin/codex" },
-        adapter: { binary: "codex-acp", installed: false },
-        auth: { ok: true, required: false },
-      },
-    }));
-    const app = Fastify();
-    apps.push(app);
-    await registerModelRoutes(
-      app,
-      loadServerEnv(
-        {
-          agentModel: "openai:gpt-4.1",
-        },
-        {},
-      ),
-      undefined,
-      {
-        localAgentModelDiscovery: emptyLocalAgentModelDiscovery,
-        localAgentProviderInstaller,
-      },
-    );
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/local-agent/providers/codex/install",
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(localAgentProviderInstaller).toHaveBeenCalledWith("codex");
-    expect(emptyLocalAgentModelDiscovery.detect).toHaveBeenCalledWith({
-      refresh: true,
-    });
-    expect(response.json()).toEqual({
-      provider: "codex",
-      status: "succeeded",
-      availability: "ready",
-      reason: "ready",
-      message: "Codex is installed and ready.",
-    });
-  });
-
-  it("rejects unsupported local-agent provider installation requests", async () => {
-    const localAgentProviderInstaller = vi.fn();
-    const app = Fastify();
-    apps.push(app);
-    await registerModelRoutes(
-      app,
-      loadServerEnv(
-        {
-          agentModel: "openai:gpt-4.1",
-        },
-        {},
-      ),
-      undefined,
-      {
-        localAgentModelDiscovery: emptyLocalAgentModelDiscovery,
-        localAgentProviderInstaller,
-      },
-    );
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/local-agent/providers/gemini/install",
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(localAgentProviderInstaller).not.toHaveBeenCalled();
-  });
 });

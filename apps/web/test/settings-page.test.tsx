@@ -25,7 +25,6 @@ const {
   fetchTuttiManagedConnectionMock,
   fetchWorkspaceSettingsMock,
   fetchModelsMock,
-  installAgentProviderMock,
   updateWorkspaceSettingsMock,
 } = vi.hoisted(() => ({
   connectTuttiManagedModelsMock: vi.fn(),
@@ -33,7 +32,6 @@ const {
   fetchTuttiManagedConnectionMock: vi.fn(),
   fetchWorkspaceSettingsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
-  installAgentProviderMock: vi.fn(),
   updateWorkspaceSettingsMock: vi.fn(),
 }));
 
@@ -47,7 +45,6 @@ vi.mock("../src/lib/server-api", () => ({
   fetchModels: fetchModelsMock,
   fetchTuttiManagedConnection: fetchTuttiManagedConnectionMock,
   fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
-  installAgentProvider: installAgentProviderMock,
   updateWorkspaceSettings: updateWorkspaceSettingsMock,
 }));
 
@@ -70,7 +67,6 @@ describe("SettingsPage", () => {
     fetchTuttiManagedConnectionMock.mockReset();
     connectTuttiManagedModelsMock.mockReset();
     disconnectTuttiManagedModelsMock.mockReset();
-    installAgentProviderMock.mockReset();
     updateWorkspaceSettingsMock.mockReset();
     fetchModelsMock.mockResolvedValue({ models: [] });
     fetchTuttiManagedConnectionMock.mockResolvedValue({
@@ -80,17 +76,15 @@ describe("SettingsPage", () => {
         providers: [],
       },
     });
-    installAgentProviderMock.mockResolvedValue({
-      provider: "codex",
-      status: "succeeded",
-      availability: "ready",
-      reason: "ready",
-      message: "Codex is installed and ready.",
-    });
   });
 
   afterEach(() => {
     cleanup();
+    (
+      window as Window & {
+        tuttiExternal?: unknown;
+      }
+    ).tuttiExternal = undefined;
     window.localStorage.clear();
     vi.clearAllMocks();
   });
@@ -165,7 +159,7 @@ describe("SettingsPage", () => {
     const retryButton = screen.getByRole("button", { name: "Retry" });
     await userEvent.click(retryButton);
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
 
     await waitFor(() =>
@@ -200,7 +194,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
 
     expect(await screen.findByLabelText("Agnes API Key")).toHaveValue(
@@ -261,7 +255,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
 
     expect(await screen.findByLabelText("Agnes Base URL")).toHaveValue(
@@ -328,7 +322,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
 
     expect(await screen.findByLabelText("Agnes model 1")).toHaveValue(
@@ -368,7 +362,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
 
     expect(
@@ -452,7 +446,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
 
     await waitFor(
@@ -542,7 +536,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
     expect(
       (await screen.findAllByText("openai:gpt-4.1")).length,
@@ -698,7 +692,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
     await screen.findByLabelText("OpenAI API Key");
     const customModelInput = screen.getByRole("textbox", {
@@ -785,7 +779,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
     await userEvent.click(
       await screen.findByRole("button", { name: "OpenAI-compatible" }),
@@ -860,7 +854,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
     await userEvent.click(
       await screen.findByRole("button", { name: "OpenAI-compatible" }),
@@ -964,7 +958,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
     await screen.findByText("Default LLM Model");
     await userEvent.click(
@@ -984,7 +978,7 @@ describe("SettingsPage", () => {
     );
   });
 
-  it("shows the Media tab with Replicate and Volces provider cards", async () => {
+  it("shows Media settings across image and video provider tabs", async () => {
     updateWorkspaceSettingsMock.mockImplementation(async (settings) => ({
       settings,
     }));
@@ -1018,68 +1012,66 @@ describe("SettingsPage", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Replicate" }),
+      await screen.findByRole("heading", { name: "Media Generation" }),
     ).toBeInTheDocument();
+    const agnesHeading = await screen.findByRole("heading", { name: "Agnes" });
+    expect(agnesHeading).toBeInTheDocument();
     expect(screen.getByText("Codex image permission")).toBeInTheDocument();
-    expect(
-      screen.getByRole("combobox", { name: "Codex image permission" }),
-    ).toHaveTextContent("Ask each time");
-    expect(screen.getByRole("heading", { name: "Volces" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Agnes" })).toBeInTheDocument();
-    expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
-    expect(
-      screen.getAllByRole("link", { name: "Get Agnes API Key" })[0],
-    ).toHaveAttribute("href", "https://platform.agnes-ai.com/settings/apiKeys");
-    expect(
-      screen.getAllByRole("link", { name: "Quick Start Docs" })[0],
-    ).toHaveAttribute("href", "https://agnes-ai.com/doc/quick-start");
-    expect(screen.getByText("Seedance 1.5 Pro")).toBeInTheDocument();
-    expect(screen.getByText("Agnes Video v2.0")).toBeInTheDocument();
-    expect(
-      screen.getByDisplayValue("replicate-local-token"),
-    ).toBeInTheDocument();
-    expect(screen.getByDisplayValue("sk-local-agnes")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("https://api.kie.ai")).toBeInTheDocument();
-    expect(
-      screen.getByDisplayValue("http://127.0.0.1:4000/v1"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByDisplayValue("https://ark.cn-beijing.volces.com/api/v3"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Get Kie.ai API Key" }),
-    ).toHaveAttribute("href", "https://kie.ai/api-key");
-    expect(
-      screen.getByRole("link", { name: "Get Replicate API Key" }),
-    ).toHaveAttribute("href", "https://replicate.com/account/api-tokens");
-    expect(
-      screen.getByRole("link", { name: "Get Volces API Key" }),
-    ).toHaveAttribute(
-      "href",
-      "https://console.volcengine.com/ark/region:ark+cn-beijing/apikey",
+    const codexHeading = screen.getByRole("heading", {
+      name: "Codex image permission",
+    });
+    const codexCard = codexHeading.closest(".rounded-xl");
+    expect(codexCard).not.toBeNull();
+    await userEvent.click(
+      within(codexCard as HTMLElement).getByRole("button", {
+        name: "Settings",
+      }),
     );
     expect(
-      screen.getByRole("link", { name: "Get Google API Key" }),
-    ).toHaveAttribute("href", "https://aistudio.google.com/app/apikey");
+      within(codexCard as HTMLElement).getByRole("combobox", {
+        name: "Codex image permission",
+      }),
+    ).toHaveTextContent("Ask each time");
+
+    const agnesCard = agnesHeading.closest(".rounded-xl");
+    expect(agnesCard).not.toBeNull();
+    await userEvent.click(
+      within(agnesCard as HTMLElement).getByRole("button", {
+        name: "Settings",
+      }),
+    );
+    expect(screen.getByDisplayValue("sk-local-agnes")).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "Get OpenAI API Key" }),
-    ).toHaveAttribute("href", "https://platform.openai.com/api-keys");
+      within(agnesCard as HTMLElement).getByRole("link", {
+        name: "Get Agnes API Key",
+      }),
+    ).toHaveAttribute("href", "https://platform.agnes-ai.com/settings/apiKeys");
+    expect(
+      within(agnesCard as HTMLElement).getByRole("link", {
+        name: "Quick Start Docs",
+      }),
+    ).toHaveAttribute("href", "https://agnes-ai.com/doc/quick-start");
 
     await userEvent.clear(screen.getByDisplayValue("sk-local-agnes"));
     await userEvent.type(screen.getByLabelText("Agnes API Key"), "sk-updated");
-    const saveButtonsAfterAgnesEdit = screen.getAllByRole("button", {
-      name: "Save",
-    });
-    expect(saveButtonsAfterAgnesEdit[0]).toBeDisabled();
-    expect(saveButtonsAfterAgnesEdit[1]).toBeEnabled();
+    expect(
+      within(codexCard as HTMLElement).getByRole("button", { name: "Save" }),
+    ).toBeDisabled();
+    expect(
+      within(agnesCard as HTMLElement).getByRole("button", { name: "Save" }),
+    ).toBeEnabled();
 
     await userEvent.click(
-      screen.getByRole("combobox", { name: "Codex image permission" }),
+      within(codexCard as HTMLElement).getByRole("combobox", {
+        name: "Codex image permission",
+      }),
     );
     await userEvent.click(
       await screen.findByRole("option", { name: "Use by default" }),
     );
-    await userEvent.click(screen.getAllByRole("button", { name: "Save" })[0]);
+    await userEvent.click(
+      within(codexCard as HTMLElement).getByRole("button", { name: "Save" }),
+    );
 
     await waitFor(() =>
       expect(updateWorkspaceSettingsMock).toHaveBeenLastCalledWith(
@@ -1090,6 +1082,29 @@ describe("SettingsPage", () => {
       ),
     );
     expect(screen.getByLabelText("Agnes API Key")).toHaveValue("sk-updated");
+
+    await userEvent.click(screen.getByRole("tab", { name: "Video" }));
+
+    const replicateHeading = await screen.findByRole("heading", {
+      name: "Replicate",
+    });
+    expect(replicateHeading).toBeInTheDocument();
+    const replicateCard = replicateHeading.closest(".rounded-xl");
+    expect(replicateCard).not.toBeNull();
+    await userEvent.click(
+      within(replicateCard as HTMLElement).getByRole("button", {
+        name: "Settings",
+      }),
+    );
+    expect(screen.getByText("Seedance 1.5 Pro")).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue("replicate-local-token"),
+    ).toBeInTheDocument();
+    expect(
+      within(replicateCard as HTMLElement).getByRole("link", {
+        name: "Get Replicate API Key",
+      }),
+    ).toHaveAttribute("href", "https://replicate.com/account/api-tokens");
   });
 
   it("localizes Media settings copy in Chinese", async () => {
@@ -1121,27 +1136,30 @@ describe("SettingsPage", () => {
 
     await userEvent.click(await screen.findByText("媒体"));
 
-    expect(await screen.findByText("媒体提供商")).toBeInTheDocument();
+    expect(await screen.findByText("媒体生成")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "按平台配置图片与视频提供商。如果同一模型家族后续存在多个平台版本，AIMC 会按提供商范围的模型 ID 分开保存，方便你显式选择路由。",
-      ),
+      screen.getByText("连接 AI 服务，用来生成图片和视频。"),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("图片 + 视频").length).toBeGreaterThan(0);
+    expect(screen.getByRole("tab", { name: "图片" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "视频" })).toBeInTheDocument();
     expect(screen.getAllByText("未配置").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("受影响模型").length).toBeGreaterThan(0);
-    expect(screen.getByText("免费")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "获取 Agnes API Key" }),
-    ).toHaveAttribute("href", "https://platform.agnes-ai.com/settings/apiKeys");
+    expect(screen.getByText("手动添加")).toBeInTheDocument();
     expect(screen.getByText("Codex 生图权限")).toBeInTheDocument();
+    const codexHeading = screen.getByRole("heading", {
+      name: "Codex 生图权限",
+    });
+    const codexCard = codexHeading.closest(".rounded-xl");
+    expect(codexCard).not.toBeNull();
+    await userEvent.click(
+      within(codexCard as HTMLElement).getByRole("button", {
+        name: "设置",
+      }),
+    );
     expect(
-      screen.getByRole("combobox", { name: "Codex 生图权限" }),
+      within(codexCard as HTMLElement).getByRole("combobox", {
+        name: "Codex 生图权限",
+      }),
     ).toHaveTextContent("每次询问");
-    expect(
-      screen.getByRole("link", { name: "获取 Kie.ai API Key" }),
-    ).toHaveAttribute("href", "https://kie.ai/api-key");
-    expect(screen.getByDisplayValue("https://api.kie.ai")).toBeInTheDocument();
     expect(screen.queryByText("Media Providers")).not.toBeInTheDocument();
     expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
   });
@@ -1187,8 +1205,8 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     expect(
-      await screen.findByRole("button", { name: "Local agent" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      await screen.findByRole("tab", { name: "Local agent" }),
+    ).toHaveAttribute("aria-selected", "true");
     expect((await screen.findAllByText("Codex")).length).toBeGreaterThan(0);
     expect(screen.getByText("2 models")).toBeInTheDocument();
     expect(
@@ -1202,18 +1220,18 @@ describe("SettingsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: /Claude Code/i }));
     expect(screen.queryByLabelText("OpenAI API Key")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "API provider" }));
+    await userEvent.click(screen.getByRole("tab", { name: "API provider" }));
     await userEvent.click(
       await screen.findByRole("button", { name: "OpenAI-compatible" }),
     );
 
-    expect(screen.getByRole("button", { name: "Local agent" })).toHaveAttribute(
-      "aria-pressed",
+    expect(screen.getByRole("tab", { name: "Local agent" })).toHaveAttribute(
+      "aria-selected",
       "false",
     );
     expect(
-      screen.getByRole("button", { name: "API provider" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      screen.getByRole("tab", { name: "API provider" }),
+    ).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByLabelText("OpenAI API Key")).toHaveValue(
       "sk-local-openai",
     );
@@ -1259,10 +1277,10 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     expect(
-      await screen.findByRole("button", { name: "API provider" }),
-    ).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Local agent" })).toHaveAttribute(
-      "aria-pressed",
+      await screen.findByRole("tab", { name: "API provider" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Local agent" })).toHaveAttribute(
+      "aria-selected",
       "false",
     );
     expect(await screen.findByText("Default LLM Model")).toBeInTheDocument();
@@ -1436,10 +1454,16 @@ describe("SettingsPage", () => {
       },
     });
 
-    render(<SettingsDialog open onOpenChange={onOpenChange} />);
+    render(
+      <SettingsDialog
+        open
+        onOpenChange={onOpenChange}
+        onSaved={() => onOpenChange(false)}
+      />,
+    );
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
     await userEvent.type(screen.getByLabelText("OpenAI API Key"), "sk-updated");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -1457,7 +1481,7 @@ describe("SettingsPage", () => {
         openAIApiBase: "",
         anthropicApiKey: "",
         anthropicBaseUrl: "",
-        agnesApiKey: "",
+        agnesApiKey: "sk-old-agnes",
         agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
         agnesDefaultModel: "",
         googleApiKey: "",
@@ -1499,17 +1523,20 @@ describe("SettingsPage", () => {
         open
         onOpenChange={onOpenChange}
         initialTab="media"
+        onSaved={() => onOpenChange(false)}
       />,
     );
 
-    await userEvent.type(
-      await screen.findByLabelText("Agnes API Key"),
-      "sk-agnes",
-    );
-    const agnesSection = screen
-      .getByRole("heading", { name: "Agnes" })
-      .closest("section");
+    const agnesHeading = await screen.findByRole("heading", { name: "Agnes" });
+    const agnesSection = agnesHeading.closest(".rounded-xl");
     expect(agnesSection).not.toBeNull();
+    await userEvent.click(
+      within(agnesSection as HTMLElement).getByRole("button", {
+        name: "Settings",
+      }),
+    );
+    await userEvent.clear(await screen.findByLabelText("Agnes API Key"));
+    await userEvent.type(screen.getByLabelText("Agnes API Key"), "sk-agnes");
     await userEvent.click(
       within(agnesSection as HTMLElement).getByRole("button", {
         name: "Save",
@@ -1519,7 +1546,7 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
-  it("installs missing pinned Local agent providers with a loading state", async () => {
+  it("opens Tutti manager for missing pinned Local agent providers without rescanning", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "",
@@ -1542,17 +1569,19 @@ describe("SettingsPage", () => {
         volcesBaseUrl: "",
       },
     });
-    let resolveInstall: (value: unknown) => void = () => {};
-    installAgentProviderMock.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveInstall = resolve;
-      }),
-    );
-    fetchModelsMock
-      .mockResolvedValueOnce({ models: [] })
-      .mockResolvedValueOnce({
-        models: [{ id: "codex:gpt-5.4", name: "gpt-5.4", provider: "codex" }],
-      });
+    const openFeature = vi.fn().mockResolvedValue(undefined);
+    (
+      window as Window & {
+        tuttiExternal?: {
+          workspace?: {
+            openFeature?: typeof openFeature;
+          };
+        };
+      }
+    ).tuttiExternal = {
+      workspace: { openFeature },
+    };
+    fetchModelsMock.mockResolvedValue({ models: [] });
 
     render(<SettingsPage />);
 
@@ -1561,30 +1590,72 @@ describe("SettingsPage", () => {
 
     expect(codexButton).toBeEnabled();
     expect(claudeButton).toBeEnabled();
-    expect(screen.getAllByText("Install required")).toHaveLength(2);
+    expect(screen.getAllByText("Manage in Tutti")).toHaveLength(2);
     expect(
-      screen.getByText(/Install Codex or Claude Code/i),
+      screen.getByText(/Use Tutti to install or sign in/i),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
 
     await userEvent.click(codexButton);
 
-    expect(installAgentProviderMock).toHaveBeenCalledWith("codex");
-    expect(await screen.findByText("Installing...")).toBeInTheDocument();
-
-    resolveInstall({
+    expect(openFeature).toHaveBeenCalledWith({
+      feature: "agent-manage",
       provider: "codex",
-      status: "succeeded",
-      availability: "ready",
-      reason: "ready",
-      message: "Codex is installed and ready.",
     });
+    expect(fetchModelsMock).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText(/Tutti agent manager opened/i),
+    ).toBeInTheDocument();
+
+    await userEvent.click(claudeButton);
+
+    expect(openFeature).toHaveBeenLastCalledWith({
+      feature: "agent-manage",
+      provider: "claude-code",
+    });
+    expect(fetchModelsMock).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Rescan" }));
 
     await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("1 model")).toBeInTheDocument();
+    expect(fetchModelsMock).toHaveBeenLastCalledWith({ refresh: true });
+  });
+
+  it("shows an error when the Tutti agent manager bridge is unavailable", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({ models: [] });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Codex/i }));
+
     expect(
-      screen.getByText("Codex is installed and ready."),
+      await screen.findByText(
+        "Open AI Canvas inside Tutti to manage local agents.",
+      ),
     ).toBeInTheDocument();
+    expect(fetchModelsMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not preselect a Local agent provider when no local model is selected", async () => {

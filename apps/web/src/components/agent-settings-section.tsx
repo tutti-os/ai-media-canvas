@@ -10,7 +10,6 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
-  InstallableAgentProviderId,
   ModelInfo,
   TuttiManagedConnection,
   WorkspaceSettings,
@@ -31,12 +30,13 @@ import {
   disconnectTuttiManagedModels,
   fetchModels,
   fetchTuttiManagedConnection,
-  installAgentProvider,
 } from "@/lib/server-api";
 import {
   hasTuttiManagedCredentialBridge,
+  openTuttiAgentManager,
   openTuttiManagedModelSettings,
   requestTuttiManagedGrant,
+  type TuttiLocalAgentManagerProvider,
 } from "@/lib/tutti-managed-credentials";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { LocalCliProviderIcon } from "./local-cli-provider-icon";
@@ -287,9 +287,9 @@ function getModelProvider(modelId: string) {
   return modelId.includes(":") ? (modelId.split(":", 1)[0] ?? "") : "";
 }
 
-function isInstallableLocalProvider(
+function isTuttiManageableLocalProvider(
   provider: string,
-): provider is InstallableAgentProviderId {
+): provider is TuttiLocalAgentManagerProvider {
   return provider === "codex" || provider === "claude";
 }
 
@@ -720,16 +720,16 @@ function LocalCliProviderModelPicker({
   onProviderChange,
   onSelect,
   onRescan,
-  onInstallProvider,
-  installingProvider,
+  onManageProvider,
+  openingManagerProvider,
 }: {
   providerGroups: LocalCliProviderGroup[];
   activeProvider: string;
   onProviderChange: (provider: string) => void;
   onSelect: (modelId: string) => void;
   onRescan: () => void;
-  onInstallProvider: (provider: InstallableAgentProviderId) => void;
-  installingProvider: InstallableAgentProviderId | null;
+  onManageProvider: (provider: TuttiLocalAgentManagerProvider) => void;
+  openingManagerProvider: TuttiLocalAgentManagerProvider | null;
 }) {
   const { t } = useAppTranslation("settings");
   const activeGroup =
@@ -789,22 +789,25 @@ function LocalCliProviderModelPicker({
             <div className="grid gap-3 md:grid-cols-2">
               {displayGroups.map((group) => {
                 const selected = activeGroup?.provider === group.provider;
-                const installing = installingProvider === group.provider;
-                const canInstall =
+                const openingManager =
+                  openingManagerProvider === group.provider;
+                const canManage =
                   !group.installed &&
-                  isInstallableLocalProvider(group.provider);
+                  isTuttiManageableLocalProvider(group.provider);
 
                 return (
                   <button
                     key={group.provider}
                     type="button"
                     aria-pressed={selected}
-                    aria-busy={installing}
-                    disabled={installing || (!group.installed && !canInstall)}
+                    aria-busy={openingManager}
+                    disabled={
+                      openingManager || (!group.installed && !canManage)
+                    }
                     onClick={() => {
                       if (!group.installed) {
-                        if (isInstallableLocalProvider(group.provider)) {
-                          onInstallProvider(group.provider);
+                        if (isTuttiManageableLocalProvider(group.provider)) {
+                          onManageProvider(group.provider);
                         }
                         return;
                       }
@@ -834,8 +837,8 @@ function LocalCliProviderModelPicker({
                         {group.label}
                       </span>
                       <span className="mt-1 block truncate text-xs text-muted-foreground">
-                        {installing
-                          ? t("agentSettings.local.installing")
+                        {openingManager
+                          ? t("agentSettings.local.openingManager")
                           : group.installed
                             ? group.models.length === 1
                               ? t("agentSettings.local.modelCountOne", {
@@ -844,10 +847,10 @@ function LocalCliProviderModelPicker({
                               : t("agentSettings.local.modelCountOther", {
                                   modelCount: group.models.length,
                                 })
-                            : t("agentSettings.local.installRequired")}
+                            : t("agentSettings.local.manageInTutti")}
                       </span>
                     </span>
-                    {installing ? (
+                    {openingManager ? (
                       <Loader2 className="size-4 animate-spin text-muted-foreground" />
                     ) : (
                       <span
@@ -862,7 +865,7 @@ function LocalCliProviderModelPicker({
             </div>
             {providerGroups.length === 0 ? (
               <p className="mt-3 text-xs text-muted-foreground">
-                {t("agentSettings.local.installHint")}
+                {t("agentSettings.local.setupHint")}
               </p>
             ) : null}
           </div>
@@ -909,8 +912,10 @@ export function AgentSettingsSection({
       getAgentModelSourceTab(initialSettings.defaultModel),
   );
   const [saving, setSaving] = useState(false);
-  const [installingLocalProvider, setInstallingLocalProvider] =
-    useState<InstallableAgentProviderId | null>(null);
+  const [
+    openingLocalAgentManagerProvider,
+    setOpeningLocalAgentManagerProvider,
+  ] = useState<TuttiLocalAgentManagerProvider | null>(null);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
@@ -925,10 +930,15 @@ export function AgentSettingsSection({
     setActiveSourceTab(initialSourceTab);
   }, [initialSourceTab]);
 
-  const refreshAvailableModels = useCallback(async () => {
+  const refreshAvailableModels = useCallback(async (options?: {
+    refreshLocalAgents?: boolean;
+  }) => {
     try {
+      const modelRequest = options?.refreshLocalAgents
+        ? fetchModels({ refresh: true })
+        : fetchModels();
       const [response, connectionResponse] = await Promise.all([
-        fetchModels(),
+        modelRequest,
         fetchTuttiManagedConnection(),
       ]);
       setAvailableModels(response.models);
@@ -1058,28 +1068,24 @@ export function AgentSettingsSection({
     }));
   }
 
-  async function handleInstallLocalProvider(
-    provider: InstallableAgentProviderId,
+  async function handleOpenLocalAgentManager(
+    provider: TuttiLocalAgentManagerProvider,
   ) {
     setFeedback(null);
-    setInstallingLocalProvider(provider);
+    setOpeningLocalAgentManagerProvider(provider);
     try {
-      const result = await installAgentProvider(provider);
+      await openTuttiAgentManager(provider);
       setFeedback({
-        type: result.status === "failed" ? "error" : "success",
-        message: result.message,
+        type: "success",
+        message: t("agentSettings.local.feedback.managerOpened"),
       });
-      await refreshAvailableModels();
-    } catch (error) {
+    } catch {
       setFeedback({
         type: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : t("agentSettings.feedback.installFailed"),
+        message: t("agentSettings.local.feedback.openManagerFailed"),
       });
     } finally {
-      setInstallingLocalProvider(null);
+      setOpeningLocalAgentManagerProvider(null);
     }
   }
 
@@ -1238,9 +1244,11 @@ export function AgentSettingsSection({
                 onSelect={(modelId) =>
                   selectDefaultModel(modelId, "local-agent")
                 }
-                onRescan={refreshAvailableModels}
-                onInstallProvider={handleInstallLocalProvider}
-                installingProvider={installingLocalProvider}
+                onRescan={() =>
+                  refreshAvailableModels({ refreshLocalAgents: true })
+                }
+                onManageProvider={handleOpenLocalAgentManager}
+                openingManagerProvider={openingLocalAgentManagerProvider}
               />
             </div>
           ) : null}
