@@ -609,7 +609,6 @@ async function invokeTuttiAppOpen(input: {
 
   try {
     const args = [
-      "--json",
       "app",
       "open",
       "--app-id",

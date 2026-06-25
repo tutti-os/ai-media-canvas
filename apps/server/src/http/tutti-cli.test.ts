@@ -273,7 +273,6 @@ describe("registerTuttiCliRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect((await readFile(argsPath, "utf8")).trim().split("\n")).toEqual([
-      "--json",
       "app",
       "open",
       "--app-id",
