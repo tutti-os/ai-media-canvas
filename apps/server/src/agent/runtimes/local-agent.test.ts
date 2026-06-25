@@ -115,6 +115,7 @@ describe("createLocalAgentRuntimeProvider", () => {
 
   it("passes managed agent invocation only to the SDK run input", async () => {
     vi.stubEnv("AIMC_TOOLS_MCP_PATH", "/package/server/tools-mcp.js");
+    vi.stubEnv("CODEX_HOME", "/tmp/user-codex-home");
     const localAgentRuntimeRun = vi.fn(async function* () {
       yield {
         type: "done" as const,
@@ -249,6 +250,7 @@ describe("createLocalAgentRuntimeProvider", () => {
 
   it("lets the kit manage CODEX_HOME for managed codex SDK runs", async () => {
     vi.stubEnv("AIMC_TOOLS_MCP_PATH", "/package/server/tools-mcp.js");
+    vi.stubEnv("CODEX_HOME", "/tmp/user-codex-home");
     const localAgentRuntimeRun = vi.fn(async function* () {
       yield {
         type: "done" as const,
