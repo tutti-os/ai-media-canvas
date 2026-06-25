@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { loadServerEnv } from "../config/env.js";
+import { type ServerEnv, loadServerEnv } from "../config/env.js";
 import { registerTuttiCliRoutes } from "./tutti-cli.js";
 
 const apps: Array<ReturnType<typeof Fastify>> = [];
@@ -166,6 +166,83 @@ describe("registerTuttiCliRoutes", () => {
       prompt: "Continue the image task",
       delegationConsent: {
         codexImagegen: "allow-once",
+      },
+    });
+  });
+
+  it("requests opening the app home page when no project id is provided", async () => {
+    const appOpenRequester = vi.fn(async () => undefined);
+    const app = buildTestApp({
+      appOpenRequester,
+      env: { tuttiAppId: "ai-media-canvas" },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/open",
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(appOpenRequester).toHaveBeenCalledWith({
+      appId: "ai-media-canvas",
+      route: "/home",
+    });
+    expect(response.json()).toEqual({
+      kind: "json",
+      value: {
+        openRequested: true,
+        route: "/home",
+      },
+    });
+  });
+
+  it("requests opening a project's primary canvas", async () => {
+    const appOpenRequester = vi.fn(async () => undefined);
+    const app = buildTestApp({
+      appOpenRequester,
+      env: { tuttiAppId: "ai-media-canvas" },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/open",
+      payload: {
+        "project-id": "project-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(appOpenRequester).toHaveBeenCalledWith({
+      appId: "ai-media-canvas",
+      route: "/canvas?id=canvas-1",
+    });
+    expect(response.json()).toEqual({
+      kind: "json",
+      value: {
+        openRequested: true,
+        projectId: "project-1",
+        canvasId: "canvas-1",
+        route: "/canvas?id=canvas-1",
+      },
+    });
+  });
+
+  it("returns a CLI error when open is unavailable outside Tutti runtime", async () => {
+    const app = buildTestApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/open",
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "open_unavailable",
+        message: "Tutti app id is not configured for this runtime.",
       },
     });
   });
@@ -692,7 +769,13 @@ function buildTestApp(overrides: Record<string, unknown> = {}) {
       listSessions: vi.fn(),
       ...(overrides.chatOperations as object | undefined),
     } as never,
-    env: loadServerEnv({ version: "1.2.3" }, {}),
+    env: loadServerEnv(
+      {
+        version: "1.2.3",
+        ...((overrides.env as Partial<ServerEnv> | undefined) ?? {}),
+      },
+      {},
+    ),
     jobOperations: {
       cancelJob: vi.fn(),
       createImageJob: vi.fn(),
@@ -703,6 +786,9 @@ function buildTestApp(overrides: Record<string, unknown> = {}) {
     } as never,
     ...(overrides.settingsService
       ? { settingsService: overrides.settingsService as never }
+      : {}),
+    ...(overrides.appOpenRequester
+      ? { appOpenRequester: overrides.appOpenRequester as never }
       : {}),
     projectOperations: {
       createProject: vi.fn(),

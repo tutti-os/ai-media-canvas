@@ -186,6 +186,34 @@ test("createCliManifest returns the Tutti CLI manifest contract", () => {
   assert.equal(manifest.documentation.file, "COMMANDS.md");
   assert.ok(manifest.commands.length >= 20);
   assert.deepEqual(
+    manifest.commands.find((command) => command.path.join(" ") === "open"),
+    {
+      path: ["open"],
+      summary: "Open AI Canvas",
+      description:
+        "Open AI Canvas in Tutti Desktop. When project-id is provided, open that project's primary canvas; otherwise open the app home page.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          "project-id": {
+            type: "string",
+            description: "Optional project id to open.",
+          },
+        },
+      },
+      output: {
+        defaultMode: "json",
+        json: true,
+      },
+      handler: {
+        kind: "http",
+        method: "POST",
+        path: "/tutti/cli/open",
+        timeoutMs: 30000,
+      },
+    },
+  );
+  assert.deepEqual(
     manifest.commands.find(
       (command) => command.path.join(" ") === "projects create",
     ),
@@ -242,6 +270,7 @@ test("renderCommandsGuide documents CLI commands", () => {
   const guide = renderCommandsGuide();
 
   assert.match(guide, /AI Canvas CLI Commands/);
+  assert.match(guide, /`aimc open --project-id`/);
   assert.match(guide, /`aimc projects create --name <required> --description`/);
   assert.match(guide, /\/tutti\/cli\/agent\/run/);
 });

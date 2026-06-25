@@ -39,6 +39,7 @@ export type ServerEnv = {
   tuttiApiBaseUrl?: string;
   tuttiAppId?: string;
   tuttiAppInstallationId?: string;
+  tuttiCliPath?: string;
   tuttiManagedFilesRoot?: string;
   tuttiAppServerToken?: string;
   tuttiWorkspaceId?: string;
@@ -141,6 +142,8 @@ export function loadServerEnv(
   const tuttiAppInstallationId =
     overrides.tuttiAppInstallationId ??
     normalizeOptionalString(source.TUTTI_APP_INSTALLATION_ID);
+  const tuttiCliPath =
+    overrides.tuttiCliPath ?? normalizeOptionalString(source.TUTTI_CLI);
   const configuredTuttiManagedFilesRoot = normalizeOptionalString(
     source.AIMC_TUTTI_MANAGED_FILES_ROOT ??
       source.TUTTI_APP_MANAGED_FILES_ROOT ??
@@ -265,6 +268,7 @@ export function loadServerEnv(
     ...(tuttiApiBaseUrl ? { tuttiApiBaseUrl } : {}),
     ...(tuttiAppId ? { tuttiAppId } : {}),
     ...(tuttiAppInstallationId ? { tuttiAppInstallationId } : {}),
+    ...(tuttiCliPath ? { tuttiCliPath } : {}),
     ...(tuttiManagedFilesRoot ? { tuttiManagedFilesRoot } : {}),
     ...(tuttiAppServerToken ? { tuttiAppServerToken } : {}),
     ...(tuttiWorkspaceId ? { tuttiWorkspaceId } : {}),
