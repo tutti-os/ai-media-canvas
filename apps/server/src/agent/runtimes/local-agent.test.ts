@@ -173,7 +173,6 @@ describe("createLocalAgentRuntimeProvider", () => {
         {
           name: "aimc",
           type: "stdio",
-          executionSide: "vm",
           command: "node",
           args: ["/package/server/tools-mcp.js"],
           env: {
@@ -312,7 +311,6 @@ describe("createLocalAgentRuntimeProvider", () => {
         expect.objectContaining({
           name: "aimc",
           type: "stdio",
-          executionSide: "vm",
         }),
       ],
     });
