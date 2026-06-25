@@ -1,3 +1,7 @@
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -5,10 +9,18 @@ import { type ServerEnv, loadServerEnv } from "../config/env.js";
 import { registerTuttiCliRoutes } from "./tutti-cli.js";
 
 const apps: Array<ReturnType<typeof Fastify>> = [];
+const tempRoots: string[] = [];
 
 describe("registerTuttiCliRoutes", () => {
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
+    await Promise.all(
+      tempRoots
+        .splice(0)
+        .map((tempRoot) =>
+          rm(tempRoot, { force: true, recursive: true, maxRetries: 3 }),
+        ),
+    );
   });
 
   it("wraps project creation as a CLI JSON output", async () => {
@@ -215,7 +227,10 @@ describe("registerTuttiCliRoutes", () => {
     expect(response.statusCode).toBe(200);
     expect(appOpenRequester).toHaveBeenCalledWith({
       appId: "ai-media-canvas",
-      route: "/canvas?id=canvas-1",
+      params: {
+        id: "canvas-1",
+      },
+      route: "/canvas",
     });
     expect(response.json()).toEqual({
       kind: "json",
@@ -223,9 +238,50 @@ describe("registerTuttiCliRoutes", () => {
         openRequested: true,
         projectId: "project-1",
         canvasId: "canvas-1",
-        route: "/canvas?id=canvas-1",
+        params: {
+          id: "canvas-1",
+        },
+        route: "/canvas",
       },
     });
+  });
+
+  it("passes canvas ids as app open params when invoking the Tutti CLI", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "aimc-cli-test-"));
+    tempRoots.push(tempRoot);
+    const argsPath = join(tempRoot, "args.txt");
+    const tuttiCliPath = join(tempRoot, "tutti");
+    await writeFile(
+      tuttiCliPath,
+      `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(argsPath)}\n`,
+    );
+    await chmod(tuttiCliPath, 0o755);
+    const app = buildTestApp({
+      env: {
+        tuttiAppId: "ai-media-canvas",
+        tuttiCliPath,
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/open",
+      payload: {
+        "project-id": "project-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect((await readFile(argsPath, "utf8")).trim().split("\n")).toEqual([
+      "app",
+      "open",
+      "--app-id",
+      "ai-media-canvas",
+      "--route",
+      "/canvas",
+      "--param",
+      "id=canvas-1",
+    ]);
   });
 
   it("returns a CLI error when open is unavailable outside Tutti runtime", async () => {

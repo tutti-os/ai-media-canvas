@@ -272,6 +272,30 @@ describe("buildApp", () => {
     );
   });
 
+  it("serves routed web pages when launch URLs include query params", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
+    const webDistDir = await mkdtemp(join(tmpdir(), "aimc-web-dist-"));
+    dataRoots.push(dataRoot, webDistDir);
+    await writeFile(join(webDistDir, "canvas.html"), "<main>canvas</main>");
+    await writeFile(join(webDistDir, "404.html"), "<main>missing</main>");
+
+    const app = buildApp({
+      env: {
+        dataRoot,
+        webDistDir,
+      },
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/canvas?id=1b69eb24-390e-4ea6-b737-b3741c3a53dc",
+    });
+    await app.close();
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/html");
+    expect(response.body).toBe("<main>canvas</main>");
+  });
+
   it("does not reflect non-local origins that differ from the configured web origin", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
     dataRoots.push(dataRoot);
