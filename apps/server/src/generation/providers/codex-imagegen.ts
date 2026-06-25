@@ -206,7 +206,12 @@ export class CodexImagegenProvider implements ImageProvider {
     } catch (error) {
       trace.lap("failed", {
         errorCode: error instanceof GenerationError ? error.code : null,
-        error: error instanceof Error ? error.message : String(error),
+        error:
+          error instanceof GenerationError
+            ? error.code
+            : error instanceof Error
+              ? error.name
+              : typeof error,
       });
       if (error instanceof GenerationError) throw error;
       throw new GenerationError(

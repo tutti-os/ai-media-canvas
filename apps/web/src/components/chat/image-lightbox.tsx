@@ -260,20 +260,17 @@ export function ImageLightbox({
       animate={{ opacity: 1 }}
       transition={{ duration: 0.15 }}
       className="fixed inset-0 z-[2000] m-0 flex h-auto max-h-none w-auto max-w-none flex-col items-center justify-center border-0 bg-black/70 p-0 backdrop-blur-sm"
-      onClick={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
       aria-modal="true"
       aria-label={t("lightbox.viewerLabel")}
     >
       {/* Image */}
       <ContextMenu>
-        <ContextMenuTrigger
-          className="flex flex-1 w-full items-center justify-center overflow-hidden"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              onClose();
-            }
-          }}
-        >
+        <ContextMenuTrigger className="flex w-full flex-1 items-center justify-center overflow-hidden">
           <img
             draggable
             src={src}
