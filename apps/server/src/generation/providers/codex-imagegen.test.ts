@@ -163,9 +163,14 @@ describe("CodexImagegenProvider", () => {
       });
 
       const instruction = String(execCodex.mock.calls[0]?.[0].at(-1));
+      const args = execCodex.mock.calls[0]?.[0] ?? [];
       expect(instruction).toContain("Reference images:");
       expect(instruction).toContain(
         "Use the reference image(s) for subject, composition, or style according to the prompt.",
+      );
+      expect(args).toContain("--image");
+      expect(args).toEqual(
+        expect.arrayContaining([expect.stringMatching(/reference-1\.png$/)]),
       );
     } finally {
       await rm(sourceHome, { recursive: true, force: true });

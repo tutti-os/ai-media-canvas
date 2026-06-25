@@ -27,6 +27,7 @@ export default interface Resources {
         "canvasAndShapeProperties": "画布和形状属性",
         "copyImage": "复制图片",
         "copyLinkToObject": "复制对象链接",
+        "copyNode": "复制节点",
         "cropImage": "裁剪图片",
         "duplicate": "复制节点",
         "paste": "粘贴",
@@ -203,6 +204,22 @@ export default interface Resources {
       "modelPreference": "图片/视频模型",
       "placeholder": "从一个想法开始，或输入 “@” 提及内容",
       "send": "发送消息"
+    },
+    "lightbox": {
+      "close": "关闭 (Esc)",
+      "copyImage": "复制图片",
+      "copyImageFailed": "图片复制失败",
+      "copyImageSuccess": "图片已复制",
+      "downloadFailed": "图片下载失败",
+      "downloadImage": "下载图片",
+      "flipHorizontal": "左右翻转",
+      "flipVertical": "上下翻转",
+      "imageFailedToLoad": "图片加载失败",
+      "rotateClockwise": "顺时针旋转 (R)",
+      "rotateCounterClockwise": "逆时针旋转",
+      "viewerLabel": "图片查看器",
+      "zoomIn": "放大 (+)",
+      "zoomOut": "缩小 (-)"
     },
     "media": {
       "generationCanceled": "已取消",

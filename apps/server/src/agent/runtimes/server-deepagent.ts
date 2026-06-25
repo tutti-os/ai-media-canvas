@@ -2,6 +2,10 @@ import type { StreamEvent } from "@aimc/shared";
 import { HumanMessage } from "@langchain/core/messages";
 
 import type { UserDataClient } from "../../auth/request.js";
+import {
+  type ImageAttachmentMetadata,
+  buildImageAttachmentMetadata,
+} from "../image-attachment-metadata.js";
 import type {
   RuntimeExecutionContext,
   ServerDeepAgentRuntimeProviderDeps,
@@ -117,6 +121,7 @@ export function createServerDeepAgentRuntimeProvider(
       const hasAttachments = run.attachments && run.attachments.length > 0;
       let userMessage: HumanMessage;
       let attachmentDataMap: Record<string, string> = {};
+      const attachmentMetadata: Record<string, ImageAttachmentMetadata> = {};
 
       if (hasAttachments) {
         const attachments = run.attachments ?? [];
@@ -146,6 +151,11 @@ export function createServerDeepAgentRuntimeProvider(
                 base64 = buffer.toString("base64");
               }
 
+              const metadata = buildImageAttachmentMetadata(
+                Buffer.from(base64, "base64"),
+              );
+              if (metadata) attachmentMetadata[attachment.assetId] = metadata;
+
               downloaded.push({
                 assetId: attachment.assetId,
                 mimeType,
@@ -172,6 +182,7 @@ export function createServerDeepAgentRuntimeProvider(
           run.mentions,
           run.videoGenerationPreference,
           canvasSummary,
+          attachmentMetadata,
         );
 
         attachmentDataMap = deps.buildAttachmentDataMap(downloaded);

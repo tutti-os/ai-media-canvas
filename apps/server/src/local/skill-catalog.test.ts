@@ -2,7 +2,12 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.resetModules();
+});
 
 describe("local bundled skill catalog", () => {
   it("loads directory skills from AIMC_SKILLS_ROOT", async () => {
@@ -30,6 +35,21 @@ describe("local bundled skill catalog", () => {
         expect.objectContaining({
           id: "skill-local-packaged-test-skill",
           description: "Loaded from package skills root.",
+        }),
+      ]),
+    );
+  });
+
+  it("marks the bundled imagegen directory skill as installed by default", async () => {
+    vi.stubEnv("AIMC_SKILLS_ROOT", "");
+    vi.resetModules();
+    const { getBundledSkills } = await import("./skill-catalog.js");
+
+    expect(getBundledSkills()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "skill-local-imagegen",
+          installedByDefault: true,
         }),
       ]),
     );
