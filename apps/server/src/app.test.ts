@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -151,6 +151,56 @@ describe("buildApp", () => {
 
     expect(localAsset.statusCode).toBe(200);
     expect(localAsset.body).toBe("fake");
+  });
+
+  it("defaults managed file asset records to files under the data root uploads directory", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
+    dataRoots.push(dataRoot);
+    const uploadsRoot = join(dataRoot, "uploads");
+    await mkdir(uploadsRoot);
+    const managedFilePath = join(uploadsRoot, "managed-ref.png");
+    const managedFileBytes = Buffer.from("fake");
+    const managedFileSha256 = createHash("sha256")
+      .update(managedFileBytes)
+      .digest("hex");
+    await writeFile(managedFilePath, managedFileBytes);
+    const managedFileRealPath = await realpath(managedFilePath);
+
+    const app = buildApp({
+      env: {
+        dataRoot,
+      },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/uploads/managed-file",
+      payload: {
+        file: {
+          path: managedFilePath,
+          name: "ref.png",
+          mimeType: "image/png",
+          sizeBytes: managedFileBytes.byteLength,
+          sha256: managedFileSha256,
+        },
+      },
+    });
+    await app.close();
+
+    expect(response.statusCode).toBe(201);
+    const body = JSON.parse(response.body) as {
+      asset: {
+        objectPath: string;
+        source?: string;
+        displayName?: string | null;
+        sha256?: string | null;
+      };
+    };
+    expect(body.asset).toMatchObject({
+      objectPath: managedFileRealPath,
+      source: "managed-file",
+      displayName: "ref.png",
+      sha256: managedFileSha256,
+    });
   });
 
   it("rejects managed file asset records outside the managed files root", async () => {
