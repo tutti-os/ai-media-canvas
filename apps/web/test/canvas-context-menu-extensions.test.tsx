@@ -318,7 +318,7 @@ describe("CanvasContextMenuExtensions", () => {
         <ul class="context-menu">
           <li>
             <button type="button" class="context-menu-item">
-              <div class="context-menu-item__label">Copy</div>
+              <div class="context-menu-item__label">拷贝</div>
             </button>
           </li>
           <li>

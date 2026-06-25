@@ -64,6 +64,7 @@ const NATIVE_CONTEXT_MENU_LABEL_KEYS: Record<string, string> = {
   "View mode": "canvas:contextMenu.native.viewMode",
   "Wrap selection in frame": "canvas:contextMenu.native.wrapSelectionInFrame",
   "Zen mode": "canvas:contextMenu.native.zenMode",
+  拷贝: "canvas:contextMenu.native.copyNode",
   "复制为 PNG 到剪贴板": "canvas:contextMenu.native.copyImage",
   复制: "canvas:contextMenu.native.duplicate",
 };
