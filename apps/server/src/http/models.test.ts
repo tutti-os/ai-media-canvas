@@ -1,7 +1,8 @@
+import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
 import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
 
+import type { LocalAgentModelDetectContext } from "../agent/local-agent-models.js";
 import { loadServerEnv } from "../config/env.js";
 import { listAgentModels, registerModelRoutes } from "./models.js";
 
@@ -265,7 +266,7 @@ describe("registerModelRoutes", () => {
 
   it("includes local-agent models from package discovery", async () => {
     const localAgentModelDiscovery = {
-      detect: vi.fn(async (_context?: { env?: Record<string, string> }) => [
+      detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
         {
           provider: "codex" as const,
           displayName: "Codex CLI",
@@ -374,7 +375,7 @@ describe("registerModelRoutes", () => {
     vi.stubEnv("CODEX_HOME", "/tmp/user-codex-home");
     vi.stubEnv("CLAUDE_CONFIG_DIR", "/tmp/user-claude-config");
     const localAgentModelDiscovery = {
-      detect: vi.fn(async (_context?: { env?: Record<string, string> }) => [
+      detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
         {
           provider: "nexight" as const,
           displayName: "Nexight",

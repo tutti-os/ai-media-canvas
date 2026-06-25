@@ -55,6 +55,7 @@ type AgentCliOperations = {
 type CanvasWriterClient = Parameters<typeof insertImageGenerationNode>[0];
 type AppOpenRequester = (input: {
   appId: string;
+  params?: Record<string, string>;
   route: string;
   tuttiCliPath?: string;
 }) => Promise<void>;
@@ -197,11 +198,7 @@ export async function registerTuttiCliRoutes(
       : {
           route: "/home",
         };
-    await requestTuttiAppOpen(
-      options.env,
-      target.route,
-      options.appOpenRequester,
-    );
+    await requestTuttiAppOpen(options.env, target, options.appOpenRequester);
     return {
       openRequested: true,
       ...target,
@@ -557,15 +554,22 @@ async function resolveProjectOpenTarget(
   return {
     projectId,
     canvasId,
-    route: `/canvas?id=${encodeURIComponent(canvasId)}`,
+    route: "/canvas",
+    params: {
+      id: canvasId,
+    },
   };
 }
 
 async function requestTuttiAppOpen(
   env: ServerEnv,
-  route: string,
+  target: {
+    params?: Record<string, string>;
+    route: string;
+  },
   appOpenRequester: AppOpenRequester = invokeTuttiAppOpen,
 ) {
+  const { route } = target;
   if (!route.startsWith("/") || route.startsWith("//")) {
     throw {
       code: "open_unavailable",
@@ -583,12 +587,14 @@ async function requestTuttiAppOpen(
   await appOpenRequester({
     appId: env.tuttiAppId,
     route,
+    ...(target.params ? { params: target.params } : {}),
     ...(env.tuttiCliPath ? { tuttiCliPath: env.tuttiCliPath } : {}),
   });
 }
 
 async function invokeTuttiAppOpen(input: {
   appId: string;
+  params?: Record<string, string>;
   route: string;
   tuttiCliPath?: string;
 }) {
@@ -602,21 +608,21 @@ async function invokeTuttiAppOpen(input: {
   }
 
   try {
-    await execFileAsync(
-      tuttiCliPath,
-      [
-        "--json",
-        "app",
-        "open",
-        "--app-id",
-        input.appId,
-        "--route",
-        input.route,
-      ],
-      {
-        timeout: 30_000,
-      },
-    );
+    const args = [
+      "--json",
+      "app",
+      "open",
+      "--app-id",
+      input.appId,
+      "--route",
+      input.route,
+    ];
+    for (const [key, value] of Object.entries(input.params ?? {})) {
+      args.push("--param", `${key}=${value}`);
+    }
+    await execFileAsync(tuttiCliPath, args, {
+      timeout: 30_000,
+    });
   } catch (error) {
     throw {
       code: "open_failed",
