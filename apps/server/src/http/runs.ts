@@ -9,7 +9,6 @@ import {
 } from "@aimc/shared";
 
 import type { AgentRunService } from "../agent/runtime.js";
-import { createManagedAgentCredentialHeaders } from "../agent/managed-agent-headers.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
   ThreadServiceError,
@@ -74,14 +73,11 @@ export async function registerRunRoutes(
         }
       }
 
-      const managedAgentHeaders = createManagedAgentCredentialHeaders(
-        request.headers,
-      );
       const response = runCreateResponseSchema.parse(
         agentRuns.createRun(parsedPayload, {
           ...(authenticatedUser ? { accessToken: authenticatedUser.accessToken, userId: authenticatedUser.id } : {}),
           ...(runEnv ? { env: runEnv } : {}),
-          ...(managedAgentHeaders ? { managedAgentHeaders } : {}),
+          managedAgentHeaders: request.headers,
           ...(model ? { model } : {}),
           ...(sessionThread ? { threadId: sessionThread.threadId } : {}),
         }),

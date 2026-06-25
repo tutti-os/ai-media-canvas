@@ -18,7 +18,6 @@ import {
   isLocalAgentRuntimeRequested,
   resolveAgentRunModel,
 } from "../agent/run-orchestrator.js";
-import { createManagedAgentCredentialHeaders } from "../agent/managed-agent-headers.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type {
   AuthenticatedUser,
@@ -154,9 +153,6 @@ async function authenticateAndBind(
   const connectionId =
     urlForParams.searchParams.get("connectionId") || randomUUID();
   connectionManager.register(connectionId, authenticatedUser.id, socket);
-  const managedAgentHeaders = createManagedAgentCredentialHeaders(
-    request.headers,
-  );
 
   // Heartbeat with pong timeout (spec §1.3: 60s no-pong → disconnect)
   let lastPong = Date.now();
@@ -255,7 +251,7 @@ async function authenticateAndBind(
           agentRuns,
           connectionManager,
           options,
-          managedAgentHeaders,
+          request.headers,
         );
       } else if (msg.action === "agent.cancel") {
         log.info("run_cancel", {
@@ -357,9 +353,7 @@ async function handleRunCommand(
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
   services: RegisterWsOptions,
-  managedAgentHeaders:
-    | ReturnType<typeof createManagedAgentCredentialHeaders>
-    | undefined,
+  managedAgentHeaders: FastifyRequest["headers"],
 ) {
   const log = createPipelineLogger("agent.run", {
     userId: authenticatedUser.id,
@@ -496,7 +490,7 @@ async function handleRunCommand(
     ...(assistantMessageId ? { assistantMessageId } : {}),
     connectionId,
     ...(runtimeEnv ? { env: runtimeEnv } : {}),
-    ...(managedAgentHeaders ? { managedAgentHeaders } : {}),
+    managedAgentHeaders,
     userId: authenticatedUser.id,
     ...(runtimeModel ? { model: runtimeModel } : {}),
     ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),

@@ -22,7 +22,6 @@ import {
 } from "@aimc/shared";
 
 import { createLocalToolGatewayService } from "./agent/local-agent-host/tool-gateway.js";
-import { createManagedAgentCredentialHeaders } from "./agent/managed-agent-headers.js";
 import {
   AgentRunModelResolutionError,
   createAgentRunOrchestrator,
@@ -1481,10 +1480,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       return reply
         .code(202)
         .send(
-          await startLocalAgentRun(
-            parsedPayload,
-            createManagedAgentCredentialHeaders(request.headers),
-          ),
+          await startLocalAgentRun(parsedPayload, request.headers),
         );
     } catch (error) {
       if (error instanceof LocalAgentRunError) {
