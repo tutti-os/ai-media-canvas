@@ -14,6 +14,33 @@ type SaveFilePicker = (options: {
 
 export type ImageDownloadResult = "cancelled" | "saved" | "started";
 
+const IMAGE_EXTENSION_PATTERN = /\.(?:png|jpe?g|webp|gif|svg)$/i;
+const INVALID_FILENAME_CHAR_PATTERN = /[<>:"/\\|?*]/g;
+
+export function createPngDownloadFilename({
+  name,
+  fallbackBaseName,
+}: {
+  name?: string | null;
+  fallbackBaseName: string;
+}) {
+  const candidate = sanitizeFilenameBase(name);
+  const fallback = sanitizeFilenameBase(fallbackBaseName);
+  return `${candidate || fallback || "ai-media-canvas-image"}.png`;
+}
+
+function sanitizeFilenameBase(value?: string | null) {
+  return (value ?? "")
+    .trim()
+    .replace(IMAGE_EXTENSION_PATTERN, "")
+    .replace(INVALID_FILENAME_CHAR_PATTERN, "-")
+    .replace(/./g, (char) => (char.charCodeAt(0) < 32 ? "-" : char))
+    .replace(/\s+/g, " ")
+    .replace(/^\.+/, "")
+    .replace(/[.\s]+$/g, "")
+    .slice(0, 120);
+}
+
 function getSaveFilePicker() {
   const picker = (window as Window & { showSaveFilePicker?: SaveFilePicker })
     .showSaveFilePicker;

@@ -10,7 +10,10 @@ import {
   scaleToFit,
 } from "../lib/canvas-elements";
 import { withNormalizedCanvasElementIndices } from "../lib/canvas-normalize";
-import { downloadPngFile } from "../lib/image-download";
+import {
+  createPngDownloadFilename,
+  downloadPngFile,
+} from "../lib/image-download";
 import { useToast } from "./toast";
 
 type CanvasContextMenuExtensionsProps = {
@@ -48,6 +51,7 @@ const IMAGE_CLIPBOARD_PASTE_WINDOW_MS = 2 * 60 * 1000;
 const NATIVE_CONTEXT_MENU_LABEL_KEYS: Record<string, string> = {
   "Canvas & Shape properties":
     "canvas:contextMenu.native.canvasAndShapeProperties",
+  Copy: "canvas:contextMenu.native.copyNode",
   "Copy image": "canvas:contextMenu.native.copyImage",
   "Copy to clipboard as PNG": "canvas:contextMenu.native.copyImage",
   "Copy link to object": "canvas:contextMenu.native.copyLinkToObject",
@@ -217,6 +221,39 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getElementDownloadName(element: Record<string, unknown>) {
+  const customData = asRecord(element.customData);
+  const title = customData?.title;
+  if (typeof title === "string" && title.trim()) return title;
+  const label = customData?.label;
+  return typeof label === "string" && label.trim() ? label : null;
+}
+
+function getElementDownloadId(element: Record<string, unknown>) {
+  return typeof element.id === "string" && element.id.trim()
+    ? element.id
+    : "image";
+}
+
+function getImageDownloadFilename(
+  elements: readonly Record<string, unknown>[],
+) {
+  if (elements.length === 1) {
+    const element = elements[0];
+    return createPngDownloadFilename({
+      name: element ? getElementDownloadName(element) : null,
+      fallbackBaseName: `ai-media-canvas-${element ? getElementDownloadId(element) : "image"}`,
+    });
+  }
+
+  const selectionId = elements.map(getElementDownloadId).slice(0, 3).join("-");
+  return createPngDownloadFilename({
+    fallbackBaseName: selectionId
+      ? `ai-media-canvas-selection-${selectionId}`
+      : "ai-media-canvas-selection",
+  });
 }
 
 async function blobFromDataUrl(dataUrl: string): Promise<Blob> {
@@ -666,10 +703,7 @@ export function CanvasContextMenuExtensions({
           : getLiveElements(excalidrawApi);
       if (elements.length === 0) return;
 
-      const filename =
-        elements.length === 1
-          ? "ai-media-canvas-image.png"
-          : "ai-media-canvas-selection.png";
+      const filename = getImageDownloadFilename(elements);
 
       try {
         const dataUrl = getSingleUncroppedImageDataUrl(excalidrawApi, elements);
