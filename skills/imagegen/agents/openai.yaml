@@ -1,0 +1,4 @@
+interface:
+  display_name: "Imagegen"
+  short_description: "Production-ready AI image generation workflow"
+  default_prompt: "Use $imagegen to turn this visual idea into a production-ready image prompt and generate it."

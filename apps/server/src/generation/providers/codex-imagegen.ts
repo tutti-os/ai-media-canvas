@@ -75,6 +75,16 @@ export class CodexImagegenProvider implements ImageProvider {
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
+    const trace = createCodexImagegenTrace(params);
+    trace.lap("start", {
+      model: params.model,
+      promptLength: params.prompt.length,
+      aspectRatio: params.aspectRatio ?? null,
+      quality: params.quality ?? null,
+      size: params.size ?? null,
+      inputImageCount: params.inputImages?.length ?? 0,
+      timeoutMs: this.timeoutMs,
+    });
     if (params.model !== CODEX_IMAGEGEN_MODEL_ID) {
       throw new GenerationError(
         this.name,
@@ -97,36 +107,61 @@ export class CodexImagegenProvider implements ImageProvider {
     const runDir = await mkdtemp(join(tmpdir(), "aimc-codex-imagegen-"));
     const outputPath = resolve(runDir, "codex-images", "result.png");
     await mkdir(dirname(outputPath), { recursive: true });
+    trace.lap("run_dir_ready", {
+      outputPath,
+      targetWidth: dimensions.width,
+      targetHeight: dimensions.height,
+    });
 
     try {
       const referenceImages = await materializeReferenceImages(
         params.inputImages ?? [],
         runDir,
       );
+      trace.lap("reference_images_ready", {
+        inputImageCount: params.inputImages?.length ?? 0,
+        materializedCount: referenceImages.length,
+      });
       const instruction = buildCodexImagegenInstruction(params, {
         aspectRatio,
         outputPath,
         referenceImages,
       });
+      trace.lap("instruction_built", {
+        instructionLength: instruction.length,
+      });
       const agentModel = await this.resolveAgentModel();
+      trace.lap("agent_model_resolved", {
+        agentModel: agentModel ?? null,
+      });
       const codexHome = await materializeCodexImagegenHome({
         runDir,
         sourceHome: this.codexHome ?? join(homedir(), ".codex"),
       });
+      trace.lap("codex_home_ready");
       const env = {
         ...process.env,
         CODEX_HOME: codexHome,
       };
+      trace.lap("codex_exec_start", {
+        agentModel: agentModel ?? null,
+        sandbox: "workspace-write",
+      });
       const result = await this.execCodex(
         [
           "exec",
           "--ignore-user-config",
+          "--ignore-rules",
+          "--ephemeral",
+          "--disable",
+          "plugins",
           ...(agentModel ? ["-m", agentModel] : []),
           "--sandbox",
           "workspace-write",
           "--skip-git-repo-check",
           "-C",
           runDir,
+          ...referenceImages.flatMap((imagePath) => ["--image", imagePath]),
           "--",
           instruction,
         ],
@@ -136,8 +171,16 @@ export class CodexImagegenProvider implements ImageProvider {
           timeoutMs: this.timeoutMs,
         },
       );
+      trace.lap("codex_exec_done", {
+        stdoutLength: result.stdout.length,
+        stderrLength: result.stderr.length,
+      });
       const savedPath = parseSavedPath(`${result.stdout}\n${result.stderr}`);
       const resolvedPath = resolveSavedPath(savedPath, runDir);
+      trace.lap("saved_path_parsed", {
+        savedPath,
+        resolvedPath,
+      });
       if (!isPathInside(runDir, resolvedPath)) {
         throw new GenerationError(
           this.name,
@@ -146,7 +189,14 @@ export class CodexImagegenProvider implements ImageProvider {
         );
       }
       const imageBuffer = await readFile(resolvedPath);
+      trace.lap("image_read", {
+        byteSize: imageBuffer.length,
+      });
       const imageDimensions = parsePngDimensions(imageBuffer) ?? dimensions;
+      trace.lap("done", {
+        width: imageDimensions.width,
+        height: imageDimensions.height,
+      });
       return {
         url: `data:image/png;base64,${imageBuffer.toString("base64")}`,
         mimeType: "image/png",
@@ -154,6 +204,10 @@ export class CodexImagegenProvider implements ImageProvider {
         height: imageDimensions.height,
       };
     } catch (error) {
+      trace.lap("failed", {
+        errorCode: error instanceof GenerationError ? error.code : null,
+        error: error instanceof Error ? error.message : String(error),
+      });
       if (error instanceof GenerationError) throw error;
       throw new GenerationError(
         this.name,
@@ -161,19 +215,53 @@ export class CodexImagegenProvider implements ImageProvider {
         error instanceof Error ? error.message : "Unknown Codex Imagegen error",
       );
     } finally {
+      const cleanupStartedAt = Date.now();
       await rm(runDir, {
         recursive: true,
         force: true,
         maxRetries: 3,
         retryDelay: 100,
       }).catch((error) => {
+        trace.lap("cleanup_failed", {
+          cleanupMs: Date.now() - cleanupStartedAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
         console.warn(
           "[codex-imagegen] temporary directory cleanup failed:",
           error instanceof Error ? error.message : String(error),
         );
       });
+      trace.lap("cleanup_done", {
+        cleanupMs: Date.now() - cleanupStartedAt,
+      });
     }
   }
+}
+
+function createCodexImagegenTrace(params: ImageGenerateParams) {
+  const t0 = Date.now();
+  let lastLapAt = t0;
+  const jobId =
+    typeof params.metadata?.jobId === "string" ? params.metadata.jobId : null;
+  const attempt =
+    typeof params.metadata?.attempt === "number"
+      ? params.metadata.attempt
+      : null;
+
+  return {
+    lap(label: string, extra?: Record<string, unknown>) {
+      const now = Date.now();
+      console.info(
+        `[codex-imagegen] ${label} +${now - t0}ms step=${now - lastLapAt}ms`,
+        JSON.stringify({
+          jobId,
+          attempt,
+          ...(extra ?? {}),
+        }),
+      );
+      lastLapAt = now;
+    },
+  };
 }
 
 async function materializeCodexImagegenHome(options: {
@@ -204,7 +292,9 @@ function buildCodexImagegenInstruction(
 ) {
   const quality = params.quality ?? "hd";
   return [
-    "Use the system imagegen skill to generate exactly one raster image.",
+    "Generate exactly one raster image using the already-available image generation capability in this Codex session.",
+    "Do not inspect, cat, sed, or otherwise read any SKILL.md or instruction files before generating.",
+    "Do not run shell commands before the image is generated.",
     "Do not call any AIMC tools. Do not write explanations.",
     `Prompt: ${params.prompt}`,
     ...(options.referenceImages.length > 0
@@ -220,6 +310,9 @@ function buildCodexImagegenInstruction(
     `Quality: ${quality}`,
     "Output format: PNG.",
     `Save the final image exactly at: ${options.outputPath}`,
+    "After image generation, do not search /tmp, /private/tmp, or the workspace broadly.",
+    `If copying is needed, find only .codex-home/generated_images with: find .codex-home/generated_images -type f -name '*.png' -print | sort | tail -1`,
+    `Copy that one file to: ${options.outputPath}`,
     "After saving, print a final line in this exact format:",
     `SAVED: ${options.outputPath}`,
   ].join("\n");

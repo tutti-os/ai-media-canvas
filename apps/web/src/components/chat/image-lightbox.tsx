@@ -1,8 +1,19 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { CopyIcon, DownloadIcon } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+
+import { useToast } from "@/components/toast";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { useAppTranslation } from "@/i18n";
 
 /* ------------------------------------------------------------------ */
 /*  LightboxBtn — toolbar icon button                                  */
@@ -21,10 +32,15 @@ function LightboxBtn({
     <button
       type="button"
       title={title}
-      onClick={onClick}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      aria-label={title}
       className="flex h-8 w-8 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15 hover:text-white"
     >
       <svg
+        aria-hidden="true"
         className="h-[18px] w-[18px]"
         viewBox="0 0 24 24"
         fill="none"
@@ -37,6 +53,63 @@ function LightboxBtn({
       </svg>
     </button>
   );
+}
+
+function normalizeImageFilename(name: string) {
+  const trimmed = name.trim() || "image";
+  return /\.[a-z0-9]+$/i.test(trimmed) ? trimmed : `${trimmed}.png`;
+}
+
+async function fetchImageBlob(src: string) {
+  const response = await fetch(src);
+  if (!response.ok) {
+    throw new Error("Unable to read image data.");
+  }
+  return await response.blob();
+}
+
+async function convertBlobToPng(blob: Blob) {
+  if (blob.type === "image/png") return blob;
+
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    bitmap.close();
+    throw new Error("Unable to prepare image data.");
+  }
+
+  context.drawImage(bitmap, 0, 0);
+  bitmap.close();
+
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((pngBlob) => {
+      if (pngBlob) {
+        resolve(pngBlob);
+      } else {
+        reject(new Error("Unable to prepare image data."));
+      }
+    }, "image/png");
+  });
+}
+
+async function copyImageToClipboard(src: string) {
+  if (
+    typeof ClipboardItem === "undefined" ||
+    typeof navigator.clipboard?.write !== "function"
+  ) {
+    throw new Error("Image clipboard writes are not supported.");
+  }
+
+  const blob = fetchImageBlob(src).then(convertBlobToPng);
+  await navigator.clipboard.write([
+    new ClipboardItem({
+      "image/png": blob,
+    }),
+  ]);
 }
 
 /* ------------------------------------------------------------------ */
@@ -57,6 +130,9 @@ export function ImageLightbox({
   const [flipX, setFlipX] = useState(1);
   const [flipY, setFlipY] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const { t } = useAppTranslation("chat");
+  const toast = useToast();
+  const menuActionRef = useRef({ copy: 0, download: 0 });
   const dragRef = useRef<{
     dragging: boolean;
     startX: number;
@@ -83,31 +159,43 @@ export function ImageLightbox({
   const handleRotateCCW = useCallback(() => setRotate((r) => r - 90), []);
   const handleFlipX = useCallback(() => setFlipX((f) => f * -1), []);
   const handleFlipY = useCallback(() => setFlipY((f) => f * -1), []);
-  const handleReset = useCallback(() => {
-    setScale(1);
-    setRotate(0);
-    setFlipX(1);
-    setFlipY(1);
-    setTranslate({ x: 0, y: 0 });
-  }, []);
 
   const handleDownload = useCallback(async () => {
     try {
-      const res = await fetch(src);
-      const blob = await res.blob();
+      const blob = await fetchImageBlob(src);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = alt || "image";
+      a.download = normalizeImageFilename(alt);
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      // Fallback: open in new tab if download fails (e.g. CORS)
+      toast.error(t("lightbox.downloadFailed"));
       window.open(src, "_blank");
     }
-  }, [src, alt]);
+  }, [src, alt, t, toast]);
 
-  const overlayRef = useRef<HTMLDivElement>(null);
+  const handleCopyImage = useCallback(async () => {
+    try {
+      await copyImageToClipboard(src);
+      toast.success(t("lightbox.copyImageSuccess"));
+    } catch (error) {
+      console.warn("[image-lightbox] copy image failed:", error);
+      toast.error(t("lightbox.copyImageFailed"));
+    }
+  }, [src, t, toast]);
+
+  const runMenuAction = useCallback(
+    (action: "copy" | "download", handler: () => Promise<void>) => {
+      const now = Date.now();
+      if (now - menuActionRef.current[action] < 500) return;
+      menuActionRef.current[action] = now;
+      void handler();
+    },
+    [],
+  );
+
+  const overlayRef = useRef<HTMLDialogElement>(null);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -165,49 +253,77 @@ export function ImageLightbox({
   }, []);
 
   return createPortal(
-    <motion.div
+    <motion.dialog
       ref={overlayRef}
+      open
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.15 }}
-      className="fixed inset-0 z-[2000] flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-[2000] m-0 flex h-auto max-h-none w-auto max-w-none flex-col items-center justify-center border-0 bg-black/70 p-0 backdrop-blur-sm"
       onClick={onClose}
-      role="dialog"
       aria-modal="true"
-      aria-label="Image viewer"
+      aria-label={t("lightbox.viewerLabel")}
     >
       {/* Image */}
-      <div
-        className="flex flex-1 w-full items-center justify-center overflow-hidden"
-        onClick={onClose}
-      >
-        <img
-          draggable
-          src={src}
-          alt={alt}
-          className="max-h-[85vh] max-w-[90vw] object-contain select-none"
-          style={{
-            transform: `translate3d(${translate.x}px, ${translate.y}px, 0) scale3d(${scale * flipX}, ${scale * flipY}, 1) rotate(${rotate}deg)`,
-            transition: dragRef.current.dragging
-              ? "none"
-              : "transform 0.2s ease",
-            cursor: scale > 1 ? "grab" : "default",
+      <ContextMenu>
+        <ContextMenuTrigger
+          className="flex flex-1 w-full items-center justify-center overflow-hidden"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              onClose();
+            }
           }}
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-        />
-      </div>
+        >
+          <img
+            draggable
+            src={src}
+            alt={alt}
+            className="max-h-[85vh] max-w-[90vw] object-contain select-none"
+            style={{
+              transform: `translate3d(${translate.x}px, ${translate.y}px, 0) scale3d(${scale * flipX}, ${scale * flipY}, 1) rotate(${rotate}deg)`,
+              transition: dragRef.current.dragging
+                ? "none"
+                : "transform 0.2s ease",
+              cursor: scale > 1 ? "grab" : "default",
+            }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+          />
+        </ContextMenuTrigger>
+        <ContextMenuContent
+          className="z-[2200] w-40"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <ContextMenuGroup>
+            <ContextMenuItem
+              onPointerDown={() => runMenuAction("copy", handleCopyImage)}
+              onClick={() => runMenuAction("copy", handleCopyImage)}
+            >
+              <CopyIcon />
+              {t("lightbox.copyImage")}
+            </ContextMenuItem>
+            <ContextMenuItem
+              onPointerDown={() => runMenuAction("download", handleDownload)}
+              onClick={() => runMenuAction("download", handleDownload)}
+            >
+              <DownloadIcon />
+              {t("lightbox.downloadImage")}
+            </ContextMenuItem>
+          </ContextMenuGroup>
+        </ContextMenuContent>
+      </ContextMenu>
 
       {/* Close button */}
       <button
         type="button"
-        title="\u5173\u95ed (Esc)"
+        title={t("lightbox.close")}
+        aria-label={t("lightbox.close")}
         onClick={onClose}
         className="absolute top-4 right-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white/80 backdrop-blur-md transition-colors hover:bg-black/60 hover:text-white"
       >
         <svg
+          aria-hidden="true"
           className="h-5 w-5"
           viewBox="0 0 24 24"
           fill="none"
@@ -221,49 +337,50 @@ export function ImageLightbox({
       </button>
 
       {/* Toolbar */}
-      <div
-        className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/50 px-2 py-1.5 backdrop-blur-md"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <LightboxBtn title="\u7f29\u5c0f (-)" onClick={handleZoomOut}>
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/50 px-2 py-1.5 backdrop-blur-md">
+        <LightboxBtn title={t("lightbox.zoomOut")} onClick={handleZoomOut}>
           <path d="M5 12h14" />
         </LightboxBtn>
         <span className="min-w-[42px] text-center text-xs text-white/80 select-none">
           {Math.round(scale * 100)}%
         </span>
-        <LightboxBtn title="\u653e\u5927 (+)" onClick={handleZoomIn}>
+        <LightboxBtn title={t("lightbox.zoomIn")} onClick={handleZoomIn}>
           <path d="M12 5v14M5 12h14" />
         </LightboxBtn>
         <div className="mx-1 h-4 w-px bg-white/20" />
-        <LightboxBtn title="\u5de6\u53f3\u7ffb\u8f6c" onClick={handleFlipX}>
+        <LightboxBtn title={t("lightbox.flipHorizontal")} onClick={handleFlipX}>
           <path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3" />
           <path d="M16 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3" />
           <path d="M12 20V4" />
         </LightboxBtn>
-        <LightboxBtn title="\u4e0a\u4e0b\u7ffb\u8f6c" onClick={handleFlipY}>
+        <LightboxBtn title={t("lightbox.flipVertical")} onClick={handleFlipY}>
           <path d="M3 8V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3" />
           <path d="M3 16v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3" />
           <path d="M4 12h16" />
         </LightboxBtn>
         <div className="mx-1 h-4 w-px bg-white/20" />
-        <LightboxBtn title="\u9006\u65f6\u9488\u65cb\u8f6c" onClick={handleRotateCCW}>
+        <LightboxBtn
+          title={t("lightbox.rotateCounterClockwise")}
+          onClick={handleRotateCCW}
+        >
           <path d="M3.51 15a9 9 0 1 0 2.13-9.36L3 8" />
           <path d="M3 3v5h5" />
         </LightboxBtn>
-        <LightboxBtn title="\u987a\u65f6\u9488\u65cb\u8f6c (R)" onClick={handleRotateCW}>
+        <LightboxBtn
+          title={t("lightbox.rotateClockwise")}
+          onClick={handleRotateCW}
+        >
           <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
           <path d="M21 3v5h-5" />
         </LightboxBtn>
-        <div className="mx-1 h-4 w-px bg-white/20" />
-        <LightboxBtn title="\u91cd\u7f6e" onClick={handleReset}>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-        </LightboxBtn>
-        <LightboxBtn title="\u4e0b\u8f7d" onClick={handleDownload}>
+        <LightboxBtn
+          title={t("lightbox.downloadImage")}
+          onClick={handleDownload}
+        >
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
         </LightboxBtn>
       </div>
-    </motion.div>,
+    </motion.dialog>,
     document.body,
   );
 }
@@ -283,14 +400,16 @@ export const ChatImage = React.memo(function ChatImage({
 }) {
   const [open, setOpen] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const { t } = useAppTranslation("chat");
 
   if (loadError) {
     return (
       <div
         className={`${className} flex items-center justify-center bg-muted text-muted-foreground text-xs`}
-        title="Image failed to load"
+        title={t("lightbox.imageFailedToLoad")}
       >
         <svg
+          aria-hidden="true"
           className="h-5 w-5 opacity-40"
           viewBox="0 0 24 24"
           fill="none"
@@ -305,20 +424,21 @@ export const ChatImage = React.memo(function ChatImage({
 
   return (
     <>
-      <img
-        src={src}
-        alt={alt}
-        className={`${className} cursor-zoom-in`}
-        loading="lazy"
+      <button
+        type="button"
+        className={`${className} block cursor-zoom-in overflow-hidden bg-transparent p-0 text-left`}
         onClick={() => setOpen(true)}
-        onError={() => setLoadError(true)}
-      />
-      {open && (
-        <ImageLightbox
+      >
+        <img
           src={src}
           alt={alt}
-          onClose={() => setOpen(false)}
+          className="block max-w-full"
+          loading="lazy"
+          onError={() => setLoadError(true)}
         />
+      </button>
+      {open && (
+        <ImageLightbox src={src} alt={alt} onClose={() => setOpen(false)} />
       )}
     </>
   );
@@ -341,7 +461,7 @@ export const ImagePill = React.memo(function ImagePill({
     y: number;
     above: boolean;
   } | null>(null);
-  const pillRef = useRef<HTMLSpanElement>(null);
+  const pillRef = useRef<HTMLButtonElement>(null);
 
   const handleMouseEnter = useCallback(() => {
     if (!pillRef.current) return;
@@ -374,20 +494,13 @@ export const ImagePill = React.memo(function ImagePill({
 
   return (
     <>
-      <span
+      <button
+        type="button"
         ref={pillRef}
         onClick={() => setLightbox(true)}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className="inline-flex h-[22px] items-center gap-1 rounded-md px-1 mx-0.5 border-[0.5px] border-muted-foreground text-foreground hover:bg-muted cursor-pointer align-middle"
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setLightbox(true);
-          }
-        }}
+        className="inline-flex h-[22px] items-center gap-1 rounded-md px-1 mx-0.5 border-[0.5px] border-muted-foreground bg-transparent text-foreground hover:bg-muted cursor-pointer align-middle"
       >
         <span className="inline-block relative h-3.5 w-3.5 shrink-0 overflow-hidden rounded-sm">
           <img
@@ -400,7 +513,7 @@ export const ImagePill = React.memo(function ImagePill({
         <span className="max-w-[100px] truncate text-[11px] leading-none text-foreground">
           {name}
         </span>
-      </span>
+      </button>
 
       {/* Hover preview portal */}
       {preview &&

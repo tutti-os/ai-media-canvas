@@ -890,6 +890,13 @@ license: MIT
           path: "/workspace-skills/canvas-director/SKILL.md",
           content: expect.stringContaining("Inspect the real element bounds"),
         }),
+        expect.objectContaining({
+          name: "imagegen",
+          path: "/workspace-skills/imagegen/SKILL.md",
+          content: expect.stringContaining(
+            "Use the app's canonical `generate_image` tool",
+          ),
+        }),
       ]),
     );
   });

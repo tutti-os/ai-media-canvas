@@ -43,6 +43,22 @@
     "placeholder": "Start with an idea, or type \"@\" to mention",
     "send": "Send message"
   },
+  "lightbox": {
+    "close": "Close (Esc)",
+    "copyImage": "Copy image",
+    "copyImageFailed": "Image copy failed",
+    "copyImageSuccess": "Image copied",
+    "downloadFailed": "Image download failed",
+    "downloadImage": "Download image",
+    "flipHorizontal": "Flip horizontally",
+    "flipVertical": "Flip vertically",
+    "imageFailedToLoad": "Image failed to load",
+    "rotateClockwise": "Rotate clockwise (R)",
+    "rotateCounterClockwise": "Rotate counterclockwise",
+    "viewerLabel": "Image viewer",
+    "zoomIn": "Zoom in (+)",
+    "zoomOut": "Zoom out (-)"
+  },
   "media": {
     "generationCanceled": "Canceled",
     "imageGenerating": "Generating image...",
