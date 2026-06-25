@@ -22,7 +22,6 @@ import {
   buildLocalAgentModels,
   createDefaultLocalAgentModelDiscovery,
 } from "../agent/local-agent-models.js";
-import { createManagedAgentCredentialHeaders } from "../agent/managed-agent-headers.js";
 import type { ServerEnv } from "../config/env.js";
 import {
   LOCAL_WORKSPACE_ID,
@@ -272,15 +271,13 @@ export async function registerModelRoutes(
 
   const sendModels = async (
     reply: FastifyReply,
-    input: { managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders } = {},
+    input: { headers?: ManagedAgentInvocationCredentialHeaders } = {},
   ) => {
     const models = await listAgentModels({
       env,
       localAgentModelDiscovery,
       logger: app.log,
-      ...(input.managedAgentHeaders
-        ? { managedAgentHeaders: input.managedAgentHeaders }
-        : {}),
+      ...(input.headers ? { managedAgentHeaders: input.headers } : {}),
       ...(options?.tuttiManagedCredentials
         ? { tuttiManagedCredentials: options.tuttiManagedCredentials }
         : {}),
@@ -290,21 +287,11 @@ export async function registerModelRoutes(
   };
 
   app.get("/api/models", async (request, reply) => {
-    const managedAgentHeaders = createManagedAgentCredentialHeaders(
-      request.headers,
-    );
-    return sendModels(reply, {
-      ...(managedAgentHeaders ? { managedAgentHeaders } : {}),
-    });
+    return sendModels(reply, { headers: request.headers });
   });
 
   app.post("/api/models", async (request, reply) => {
-    const managedAgentHeaders = createManagedAgentCredentialHeaders(
-      request.headers,
-    );
-    return sendModels(reply, {
-      ...(managedAgentHeaders ? { managedAgentHeaders } : {}),
-    });
+    return sendModels(reply, { headers: request.headers });
   });
 
   app.post(
