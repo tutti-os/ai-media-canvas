@@ -250,8 +250,12 @@ export function createLocalAgentRuntimeProvider(
       const systemPrompt = buildAimcSystemPrompt({
         brandKitId: readyContext.brandKitId,
       });
-      const managedRunContext = run.loadManagedAgentRunContext
-        ? await run.loadManagedAgentRunContext()
+      const loadManagedAgentRunContext = run.loadManagedAgentRunContext;
+      if (loadManagedAgentRunContext) {
+        delete run.loadManagedAgentRunContext;
+      }
+      const managedRunContext = loadManagedAgentRunContext
+        ? await loadManagedAgentRunContext()
         : undefined;
       const managed = Boolean(managedRunContext);
       const runDirectory = managedRunContext
