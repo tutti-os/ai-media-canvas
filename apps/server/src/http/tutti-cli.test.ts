@@ -489,9 +489,10 @@ describe("registerTuttiCliRoutes", () => {
             "canceled",
             "dead_letter",
           ],
+          initialDelayMs: 15_000,
           pollIntervalMs: 5_000,
           maxWaitMs: 600_000,
-          guidance: expect.stringContaining("Sleep pollIntervalMs"),
+          guidance: expect.stringContaining("wait initialDelayMs"),
         },
       },
     });
@@ -680,6 +681,7 @@ describe("registerTuttiCliRoutes", () => {
         },
         nextAction: {
           command: "aimc jobs get --job-id job-video-1",
+          initialDelayMs: 60_000,
           pollIntervalMs: 30_000,
           maxWaitMs: 7_200_000,
           guidance: expect.stringContaining("job reaches a terminal status"),
@@ -710,7 +712,8 @@ describe("registerTuttiCliRoutes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
+    const body = response.json();
+    expect(body).toMatchObject({
       kind: "json",
       value: {
         job: {
@@ -725,6 +728,7 @@ describe("registerTuttiCliRoutes", () => {
         },
       },
     });
+    expect(body.value.nextAction).not.toHaveProperty("initialDelayMs");
   });
 
   it("prefers an explicit canvas id over the project primary canvas for video generation", async () => {

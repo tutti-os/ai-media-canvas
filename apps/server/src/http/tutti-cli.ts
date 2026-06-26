@@ -62,6 +62,8 @@ type AppOpenRequester = (input: {
 
 const IMAGE_GENERATION_POLL_INTERVAL_MS = 5_000;
 const VIDEO_GENERATION_POLL_INTERVAL_MS = 30_000;
+const IMAGE_GENERATION_INITIAL_DELAY_MS = 15_000;
+const VIDEO_GENERATION_INITIAL_DELAY_MS = 60_000;
 const IMAGE_GENERATION_MAX_WAIT_MS = 10 * 60_000;
 const VIDEO_GENERATION_MAX_WAIT_MS = 2 * 60 * 60_000;
 
@@ -393,7 +395,10 @@ export async function registerTuttiCliRoutes(
           ? { localCanvasClient: options.localCanvasClient }
           : {}),
       });
-      return withGenerationJobNextAction(result, "image_generation");
+      return withGenerationJobNextAction(result, {
+        initialDelayMs: IMAGE_GENERATION_INITIAL_DELAY_MS,
+        jobType: "image_generation",
+      });
     },
     201,
   );
@@ -443,7 +448,10 @@ export async function registerTuttiCliRoutes(
           ? { localCanvasClient: options.localCanvasClient }
           : {}),
       });
-      return withGenerationJobNextAction(result, "video_generation");
+      return withGenerationJobNextAction(result, {
+        initialDelayMs: VIDEO_GENERATION_INITIAL_DELAY_MS,
+        jobType: "video_generation",
+      });
     },
     201,
   );
@@ -716,21 +724,26 @@ function readJobId(value: unknown) {
 
 function withGenerationJobNextAction<T>(
   value: T,
-  fallbackJobType?: "image_generation" | "video_generation",
+  options: {
+    initialDelayMs?: number;
+    jobType?: "image_generation" | "video_generation";
+  } = {},
 ): T {
   if (!isRecord(value)) return value;
   const jobId = readJobId(value);
-  const polling = getGenerationJobPollingConfig(value, fallbackJobType);
+  const polling = getGenerationJobPollingConfig(value, options.jobType);
+  const initialDelayMs = options.initialDelayMs ?? 0;
   return {
     ...value,
     nextAction: {
       command: `aimc jobs get --job-id ${jobId ?? "<job-id>"}`,
       intermediateStatuses: ["queued", "running"],
       terminalStatuses: ["succeeded", "failed", "canceled", "dead_letter"],
+      ...(initialDelayMs > 0 ? { initialDelayMs } : {}),
       pollIntervalMs: polling.pollIntervalMs,
       maxWaitMs: polling.maxWaitMs,
       guidance:
-        "Sleep pollIntervalMs between polls while status is queued or running. Do not tell the user the generation failed or finished until the job reaches a terminal status. On succeeded, report the generated asset from job.result and mention that the canvas node was updated.",
+        "After a generation command, wait initialDelayMs before the first poll when present. Then sleep pollIntervalMs between polls while status is queued or running. Do not tell the user the generation failed or finished until the job reaches a terminal status. On succeeded, report the generated asset from job.result and mention that the canvas node was updated.",
     },
   };
 }
