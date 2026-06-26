@@ -112,6 +112,7 @@ export async function executeVideoGenerationJob(
   const stored = store.uploadFile({
     bucket: "project-assets",
     fileName: `${provider}-${Date.now()}`,
+    displayName: payload.title ?? payload.prompt,
     fileBuffer: buffer,
     mimeType,
     ...(job.project_id ? { projectId: job.project_id } : {}),

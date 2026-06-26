@@ -27,6 +27,7 @@ export type BackgroundJobType = z.infer<typeof backgroundJobTypeSchema>;
 
 export const imageGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
+  title: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   aspect_ratio: z.string().min(1).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
@@ -43,6 +44,7 @@ export type ImageGenerationPayload = z.infer<
 
 export const videoGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
+  title: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   duration: z.number().int().min(1).optional(),
   resolution: z.string().min(1).optional(),
@@ -66,6 +68,7 @@ export const createImageJobRequestSchema = z.object({
   session_id: sessionIdSchema.optional(),
   thread_id: identifierSchema.optional(),
   prompt: z.string().min(1),
+  title: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   aspect_ratio: z.string().min(1).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
@@ -84,6 +87,7 @@ export const createVideoJobRequestSchema = z.object({
   session_id: sessionIdSchema.optional(),
   thread_id: identifierSchema.optional(),
   prompt: z.string().min(1),
+  title: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   duration: z.number().int().min(1).optional(),
   resolution: z.string().min(1).optional(),

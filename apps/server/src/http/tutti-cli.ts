@@ -106,6 +106,7 @@ const jobListCliBodySchema = z.object({
 });
 const generationImageCliBodySchema = z.object({
   prompt: z.string().min(1),
+  title: z.string().min(1).optional(),
   model: z.string().min(1),
   "project-id": z.string().min(1),
   "canvas-id": z.string().min(1).optional(),
@@ -121,6 +122,7 @@ const generationImageCliBodySchema = z.object({
 });
 const generationVideoCliBodySchema = z.object({
   prompt: z.string().min(1),
+  title: z.string().min(1).optional(),
   model: z.string().min(1),
   "project-id": z.string().min(1),
   "canvas-id": z.string().min(1).optional(),
@@ -353,6 +355,7 @@ export async function registerTuttiCliRoutes(
       const result = await options.jobOperations.createImageJob(
         createImageJobRequestSchema.parse({
           prompt: payload.prompt,
+          ...(payload.title ? { title: payload.title } : {}),
           model: payload.model,
           project_id: projectId,
           canvas_id: canvasId,
@@ -400,6 +403,7 @@ export async function registerTuttiCliRoutes(
       const result = await options.jobOperations.createVideoJob(
         createVideoJobRequestSchema.parse({
           prompt: payload.prompt,
+          ...(payload.title ? { title: payload.title } : {}),
           model: payload.model,
           project_id: projectId,
           canvas_id: canvasId,
