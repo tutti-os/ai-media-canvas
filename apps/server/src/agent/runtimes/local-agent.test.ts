@@ -5,13 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentRuntimeProvider } from "@aimc/shared";
-import {
-  MANAGED_AGENT_MCP_ATTACHMENT_ENV,
-  createLocalAgentRuntime,
-  type AgentEvent,
-  type LaunchPlan,
-  type LocalAgentProviderPlugin,
-} from "@tutti-os/agent-acp-kit";
+import { type LocalAgentProviderPlugin } from "@tutti-os/agent-acp-kit";
 
 import {
   createLocalAgentRunDirectory,
@@ -94,12 +88,6 @@ async function collect<T>(stream: AsyncIterable<T>) {
 function expectOrdinaryEnvOmitsToolToken(env?: Record<string, string>) {
   expect(env ?? {}).not.toHaveProperty("AIMC_TOOL_TOKEN");
   expect(JSON.stringify(env ?? {})).not.toContain("tool-token");
-}
-
-function decodeManagedMcpAttachment(env?: Record<string, string>) {
-  const encoded = env?.[MANAGED_AGENT_MCP_ATTACHMENT_ENV];
-  expect(encoded).toBeTruthy();
-  return JSON.parse(Buffer.from(encoded ?? "", "base64").toString("utf8"));
 }
 
 afterEach(() => {
@@ -198,119 +186,6 @@ describe("createLocalAgentRuntimeProvider", () => {
     expectOrdinaryEnvOmitsToolToken(params?.env);
     expect(context.run.managedAgentInvocationCredential).toBeUndefined();
     expect(revokeSession).toHaveBeenCalledWith("tool-token");
-  });
-
-  it("hands managed stdio MCP servers to tsh without executionSide metadata", async () => {
-    let capturedPlan: LaunchPlan | undefined;
-    const plugin: LocalAgentProviderPlugin<"local-agent", AgentRuntimeProvider> =
-      {
-        id: "codex",
-        displayName: "Codex",
-        kind: "local-agent",
-        async detect() {
-          return null;
-        },
-        capabilities() {
-          return {
-            cancel: true,
-            nativeResume: false,
-            streaming: true,
-            toolGateway: true,
-            maxConcurrentRuns: 1,
-          };
-        },
-        createAdapter() {
-          return {
-            async buildLaunchPlan(params) {
-              return {
-                args: [],
-                command: "codex",
-                cwd: params.cwd,
-                env: params.env,
-                mcpServers: params.mcpServers,
-                prompt: params.prompt,
-                promptInput: "stdin",
-                transport: "plain",
-              };
-            },
-            async *parseEvents(stream) {
-              for await (const event of stream) {
-                yield event as AgentEvent;
-              }
-            },
-            capabilities: () => ({}),
-          };
-        },
-        async buildLaunchPlan() {
-          throw new Error("not used");
-        },
-        async *run() {
-          yield* [];
-          throw new Error("not used");
-        },
-      };
-    const runtime = createLocalAgentRuntime<"local-agent", AgentRuntimeProvider>(
-      {
-        providers: [plugin],
-        transports: [
-          {
-            kind: "plain",
-            run(plan) {
-              capturedPlan = plan;
-              return (async function* () {
-                yield {
-                  type: "done",
-                  status: "completed",
-                  reason: "completed",
-                  exitCode: 0,
-                };
-              })();
-            },
-          },
-        ],
-      },
-    );
-
-    await collect(
-      runtime.run({
-        runId: "run-1",
-        provider: "codex",
-        cwd: "/tmp/managed-run",
-        prompt: "hello",
-        managedAgentInvocation: {
-          credential: "credential-run-1",
-          cwd: "/tmp/managed-run",
-        },
-        mcpServers: [
-          {
-            name: "aimc",
-            type: "stdio",
-            command: "node",
-            args: ["/package/server/tools-mcp.js"],
-            env: {
-              AIMC_TOOL_TOKEN: "tool-token",
-            },
-          },
-        ],
-      }),
-    );
-
-    expect(capturedPlan).toBeDefined();
-    expect(capturedPlan).not.toHaveProperty("mcpServers");
-    const attachment = decodeManagedMcpAttachment(capturedPlan?.env);
-    expect(attachment).toEqual({
-      mcpServers: {
-        aimc: {
-          type: "stdio",
-          command: "node",
-          args: ["/package/server/tools-mcp.js"],
-          env: {
-            AIMC_TOOL_TOKEN: "tool-token",
-          },
-        },
-      },
-    });
-    expect(JSON.stringify(attachment)).not.toContain("executionSide");
   });
 
   it("uses managed agent invocation for app data cwd values", async () => {

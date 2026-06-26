@@ -9,6 +9,3 @@ ignoredBuiltDependencies:
 onlyBuiltDependencies:
   - esbuild
   - sharp
-
-patchedDependencies:
-  '@tutti-os/agent-acp-kit@0.2.3-beta.4': patches/@tutti-os__agent-acp-kit@0.2.3-beta.4.patch
