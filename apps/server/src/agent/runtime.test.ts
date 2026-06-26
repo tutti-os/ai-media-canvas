@@ -108,6 +108,35 @@ describe("createAgentRunService", () => {
     expect(message.text).toContain('<human_image_model_mentions count="1">');
   });
 
+  it("adds image attachment dimensions to input image context when available", () => {
+    const message = buildUserMessage(
+      "根据图1生成另一张图",
+      [
+        {
+          assetId: "asset-1",
+          url: "http://127.0.0.1:3001/local-assets/asset-1",
+          mimeType: "image/jpeg",
+          name: "reference.jpg",
+        },
+      ],
+      undefined,
+      [],
+      undefined,
+      null,
+      {
+        "asset-1": {
+          width: 1491,
+          height: 1055,
+          orientation: "landscape",
+        },
+      },
+    );
+
+    expect(message.text).toContain(
+      '<image index="1" asset_id="asset-1" mime_type="image/jpeg" name="reference.jpg" width="1491" height="1055" orientation="landscape" />',
+    );
+  });
+
   it("prepends saved session messages and avoids duplicating the current user prompt", async () => {
     let capturedInput: unknown;
     const agentFactory = vi.fn(() => ({

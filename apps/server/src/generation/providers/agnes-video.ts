@@ -1,4 +1,4 @@
-import { type AgnesClientConfig, createAgnesClient } from "agnes-ai-cli";
+import { createAgnesClient } from "agnes-ai-cli";
 
 import type {
   GeneratedVideo,
@@ -7,6 +7,10 @@ import type {
   VideoProvider,
 } from "../types.js";
 import { GenerationError, withTimeout } from "../utils.js";
+import {
+  type AgnesMediaOptions,
+  resolveAgnesMediaOptions,
+} from "./agnes-media.js";
 
 const ICON_AGNES = "https://agnes-cdn.kiwiar.com/logo/agnes-icon-400x400.jpg";
 const DEFAULT_FRAME_RATE = 24;
@@ -313,16 +317,15 @@ export class AgnesVideoProvider implements VideoProvider {
   constructor(
     apiKey: string,
     baseUrl?: string,
-    options: Pick<AgnesClientConfig, "mediaProvider"> = {},
+    options: AgnesMediaOptions = {},
   ) {
     this.apiKey = apiKey;
     this.baseUrl = (baseUrl ?? DEFAULT_AGNES_BASE_URL).replace(/\/$/, "");
+    const mediaOptions = resolveAgnesMediaOptions(options);
     this.client = createAgnesClient({
       apiKey,
       ...(baseUrl ? { baseUrl } : {}),
-      ...(options.mediaProvider
-        ? { mediaProvider: options.mediaProvider }
-        : {}),
+      ...mediaOptions,
     });
   }
 

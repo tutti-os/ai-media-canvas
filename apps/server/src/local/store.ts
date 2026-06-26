@@ -803,6 +803,24 @@ export function createLocalStore(options: {
             source_url = excluded.source_url,
             package_name = excluded.package_name,
             is_catalog = 1,
+            installed = CASE
+              WHEN excluded.installed = 1
+                AND skills.installed = 0
+                AND skills.installed_at IS NULL THEN 1
+              ELSE skills.installed
+            END,
+            enabled = CASE
+              WHEN excluded.enabled = 1
+                AND skills.installed = 0
+                AND skills.installed_at IS NULL THEN 1
+              ELSE skills.enabled
+            END,
+            installed_at = CASE
+              WHEN excluded.installed = 1
+                AND skills.installed = 0
+                AND skills.installed_at IS NULL THEN excluded.installed_at
+              ELSE skills.installed_at
+            END,
             updated_at = excluded.updated_at
         `,
       ).run(

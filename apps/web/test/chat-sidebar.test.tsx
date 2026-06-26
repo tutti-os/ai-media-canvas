@@ -33,6 +33,7 @@ const {
   fetchVideoModelsMock,
   fetchModelsMock,
   fetchWorkspaceSettingsMock,
+  uploadFileMock,
   generationJobWatchMock,
 } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
@@ -43,6 +44,7 @@ const {
   fetchVideoModelsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
   fetchWorkspaceSettingsMock: vi.fn(),
+  uploadFileMock: vi.fn(),
   generationJobWatchMock: vi.fn(),
   fetchSessionsMock: vi.fn(),
   saveMessageMock: vi.fn(),
@@ -57,6 +59,7 @@ vi.mock("../src/lib/server-api", () => ({
   fetchModels: fetchModelsMock,
   fetchRunEvents: fetchRunEventsMock,
   fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
+  uploadFile: uploadFileMock,
   fetchMessages: fetchMessagesMock,
   fetchSessions: fetchSessionsMock,
   saveMessage: saveMessageMock,
@@ -166,6 +169,14 @@ describe("ChatSidebar", () => {
       value: vi.fn(),
       writable: true,
     });
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:preview"),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
     mockWs = createMockWs();
     createSessionMock.mockReset();
     createSessionMock.mockResolvedValue({
@@ -218,6 +229,11 @@ describe("ChatSidebar", () => {
         openAIApiKey: "",
         volcesApiKey: "",
       },
+    });
+    uploadFileMock.mockReset();
+    uploadFileMock.mockResolvedValue({
+      asset: { id: "asset-pasted-image" },
+      url: "http://localhost:3000/uploads/pasted.png",
     });
     generationJobWatchMock.mockReset();
     generationJobWatchMock.mockImplementation(() => ({
@@ -320,6 +336,40 @@ describe("ChatSidebar", () => {
     expect(input).toHaveValue("hello while disconnected");
     expect(saveMessageMock).not.toHaveBeenCalled();
     expect(mockWs.startRun).not.toHaveBeenCalled();
+  });
+
+  it("allows image clipboard paste to reach the canvas page composer", async () => {
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          canvasId="canvas-1"
+          projectId="project-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const pastedImage = new File(["image-bytes"], "copied.png", {
+      type: "image/png",
+    });
+
+    fireEvent.paste(input, {
+      clipboardData: {
+        items: [
+          {
+            type: "image/png",
+            getAsFile: () => pastedImage,
+          },
+        ],
+      },
+    });
+
+    await waitFor(() =>
+      expect(uploadFileMock).toHaveBeenCalledWith(pastedImage, "project-1"),
+    );
   });
 
   it("cancels the active run from the composer stop button", async () => {

@@ -1,6 +1,7 @@
 import type { AgentRuntimeProvider, ModelInfo } from "@aimc/shared";
 import {
   type AgentDetection,
+  type DetectContext,
   type LocalAgentRuntime,
   createLocalAgentRuntime,
 } from "@tutti-os/agent-acp-kit";
@@ -10,15 +11,47 @@ import {
   isAimcLocalAgentProvider,
 } from "./local-agent-providers.js";
 
-export type LocalAgentModelDiscovery = Pick<
-  LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
-  "detect"
->;
+type LocalAgentRuntimeDetect = LocalAgentRuntime<
+  "local-agent",
+  AgentRuntimeProvider
+>["detect"];
 
-export function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
+export type LocalAgentModelDetectContext = DetectContext & {
+  refresh?: boolean;
+};
+
+export type LocalAgentModelDiscovery = {
+  detect: (
+    context?: LocalAgentModelDetectContext,
+  ) => ReturnType<LocalAgentRuntimeDetect>;
+};
+
+function createAimcLocalAgentRuntime() {
   return createLocalAgentRuntime({
     providers: createAimcLocalAgentProviderPlugins(),
   });
+}
+
+function stripRefreshFromDetectContext(
+  context?: LocalAgentModelDetectContext,
+): DetectContext | undefined {
+  if (!context?.refresh) return context;
+
+  const { refresh: _refresh, ...detectContext } = context;
+  return Object.keys(detectContext).length > 0 ? detectContext : undefined;
+}
+
+export function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
+  let runtime = createAimcLocalAgentRuntime();
+
+  return {
+    detect(context) {
+      if (context?.refresh) {
+        runtime = createAimcLocalAgentRuntime();
+      }
+      return runtime.detect(stripRefreshFromDetectContext(context));
+    },
+  };
 }
 
 export function localAgentModelId(provider: string, modelId: string) {

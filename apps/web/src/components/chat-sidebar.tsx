@@ -753,12 +753,10 @@ export function ChatSidebar({
     window.addEventListener("keydown", isolateKeyEvent, true);
     window.addEventListener("copy", isolateEvent, true);
     window.addEventListener("cut", isolateEvent, true);
-    window.addEventListener("paste", isolateEvent, true);
     return () => {
       window.removeEventListener("keydown", isolateKeyEvent, true);
       window.removeEventListener("copy", isolateEvent, true);
       window.removeEventListener("cut", isolateEvent, true);
-      window.removeEventListener("paste", isolateEvent, true);
     };
   }, [open]);
 

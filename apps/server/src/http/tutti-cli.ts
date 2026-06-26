@@ -1,3 +1,6 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 
@@ -37,6 +40,8 @@ import type { SkillOperations } from "./skill-operations.js";
 import { isZodError, sendCliError, sendCliJson } from "./tutti-cli-output.js";
 import { listVideoModels } from "./video-models.js";
 
+const execFileAsync = promisify(execFile);
+
 type AgentCliOperations = {
   cancelRun: (runId: string) => Promise<unknown>;
   listRunEvents: (runId: string, cursor: number) => Promise<unknown>;
@@ -48,8 +53,17 @@ type AgentCliOperations = {
 };
 
 type CanvasWriterClient = Parameters<typeof insertImageGenerationNode>[0];
+type AppOpenRequester = (input: {
+  appId: string;
+  params?: Record<string, string>;
+  route: string;
+  tuttiCliPath?: string;
+}) => Promise<void>;
 
 const emptyBodySchema = z.object({}).passthrough().optional();
+const openCliBodySchema = z.object({
+  "project-id": z.string().min(1).optional(),
+});
 const projectCreateCliBodySchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1).optional(),
@@ -141,6 +155,7 @@ export async function registerTuttiCliRoutes(
     settingsService?: SettingsService;
     skillOperations: SkillOperations;
     localCanvasClient?: CanvasWriterClient;
+    appOpenRequester?: AppOpenRequester;
   },
 ) {
   const route = (
@@ -170,6 +185,23 @@ export async function registerTuttiCliRoutes(
         webOrigin: options.env.webOrigin,
         trustedLocalAgentMode: options.env.trustedLocalAgentMode,
       },
+    };
+  });
+
+  route("/tutti/cli/open", async (body) => {
+    const payload = openCliBodySchema.parse(body ?? {});
+    const target = payload["project-id"]
+      ? await resolveProjectOpenTarget(
+          options.projectOperations,
+          payload["project-id"],
+        )
+      : {
+          route: "/home",
+        };
+    await requestTuttiAppOpen(options.env, target, options.appOpenRequester);
+    return {
+      openRequested: true,
+      ...target,
     };
   });
 
@@ -501,6 +533,14 @@ async function resolvePrimaryCanvasId(
   projectOperations: ProjectOperations,
   projectId: string,
 ) {
+  const target = await resolveProjectOpenTarget(projectOperations, projectId);
+  return target.canvasId;
+}
+
+async function resolveProjectOpenTarget(
+  projectOperations: ProjectOperations,
+  projectId: string,
+) {
   const { projects } = await projectOperations.listProjects();
   const project = projects.find((item) => item.id === projectId);
   if (!project) {
@@ -510,7 +550,102 @@ async function resolvePrimaryCanvasId(
       404,
     );
   }
-  return project.primaryCanvas.id;
+  const canvasId = project.primaryCanvas.id;
+  return {
+    projectId,
+    canvasId,
+    route: "/canvas",
+    params: {
+      id: canvasId,
+    },
+  };
+}
+
+async function requestTuttiAppOpen(
+  env: ServerEnv,
+  target: {
+    params?: Record<string, string>;
+    route: string;
+  },
+  appOpenRequester: AppOpenRequester = invokeTuttiAppOpen,
+) {
+  const { route } = target;
+  if (!route.startsWith("/") || route.startsWith("//")) {
+    throw {
+      code: "open_unavailable",
+      message: "Open target route is invalid.",
+      statusCode: 500,
+    };
+  }
+  if (!env.tuttiAppId) {
+    throw {
+      code: "open_unavailable",
+      message: "Tutti app id is not configured for this runtime.",
+      statusCode: 503,
+    };
+  }
+  await appOpenRequester({
+    appId: env.tuttiAppId,
+    route,
+    ...(target.params ? { params: target.params } : {}),
+    ...(env.tuttiCliPath ? { tuttiCliPath: env.tuttiCliPath } : {}),
+  });
+}
+
+async function invokeTuttiAppOpen(input: {
+  appId: string;
+  params?: Record<string, string>;
+  route: string;
+  tuttiCliPath?: string;
+}) {
+  const tuttiCliPath = input.tuttiCliPath;
+  if (!tuttiCliPath) {
+    throw {
+      code: "open_unavailable",
+      message: "Tutti CLI is not configured for this runtime.",
+      statusCode: 503,
+    };
+  }
+
+  try {
+    const args = [
+      "app",
+      "open",
+      "--app-id",
+      input.appId,
+      "--route",
+      input.route,
+    ];
+    for (const [key, value] of Object.entries(input.params ?? {})) {
+      args.push("--param", `${key}=${value}`);
+    }
+    await execFileAsync(tuttiCliPath, args, {
+      timeout: 30_000,
+    });
+  } catch (error) {
+    throw {
+      code: "open_failed",
+      message: readProcessErrorMessage(error),
+      statusCode: 502,
+    };
+  }
+}
+
+function readProcessErrorMessage(error: unknown) {
+  if (isRecord(error)) {
+    const stderr = error.stderr;
+    if (typeof stderr === "string" && stderr.trim().length > 0) {
+      return stderr.trim();
+    }
+    if (Buffer.isBuffer(stderr) && stderr.length > 0) {
+      return stderr.toString("utf8").trim();
+    }
+    const message = error.message;
+    if (typeof message === "string" && message.length > 0) {
+      return message;
+    }
+  }
+  return "Unable to request app open.";
 }
 
 async function insertCliImageGenerationNode(input: {

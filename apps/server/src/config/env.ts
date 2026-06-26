@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 export const DEFAULT_SERVER_PORT = 3001;
 export const DEFAULT_WEB_ORIGIN = "http://localhost:3000";
@@ -37,6 +38,7 @@ export type ServerEnv = {
   tuttiApiBaseUrl?: string;
   tuttiAppId?: string;
   tuttiAppInstallationId?: string;
+  tuttiCliPath?: string;
   tuttiManagedFilesRoot?: string;
   tuttiAppServerToken?: string;
   tuttiWorkspaceId?: string;
@@ -139,16 +141,20 @@ export function loadServerEnv(
   const tuttiAppInstallationId =
     overrides.tuttiAppInstallationId ??
     normalizeOptionalString(source.TUTTI_APP_INSTALLATION_ID);
+  const tuttiCliPath =
+    overrides.tuttiCliPath ?? normalizeOptionalString(source.TUTTI_CLI);
+  const configuredTuttiManagedFilesRoot = normalizeOptionalString(
+    source.AIMC_TUTTI_MANAGED_FILES_ROOT ??
+      source.TUTTI_APP_MANAGED_FILES_ROOT ??
+      source.TUTTI_MANAGED_FILES_ROOT ??
+      source.TUTTI_APP_FILES_ROOT ??
+      source.TUTTI_APP_FILES_DIR ??
+      source.TUTTI_FILES_ROOT,
+  );
   const tuttiManagedFilesRoot =
     overrides.tuttiManagedFilesRoot ??
-    normalizeOptionalString(
-      source.AIMC_TUTTI_MANAGED_FILES_ROOT ??
-        source.TUTTI_APP_MANAGED_FILES_ROOT ??
-        source.TUTTI_MANAGED_FILES_ROOT ??
-        source.TUTTI_APP_FILES_ROOT ??
-        source.TUTTI_APP_FILES_DIR ??
-        source.TUTTI_FILES_ROOT,
-    );
+    configuredTuttiManagedFilesRoot ??
+    (dataRoot ? join(dataRoot, "uploads") : undefined);
   const tuttiAppServerToken =
     overrides.tuttiAppServerToken ??
     normalizeOptionalString(source.TUTTI_APP_SERVER_TOKEN);
@@ -258,6 +264,7 @@ export function loadServerEnv(
     ...(tuttiApiBaseUrl ? { tuttiApiBaseUrl } : {}),
     ...(tuttiAppId ? { tuttiAppId } : {}),
     ...(tuttiAppInstallationId ? { tuttiAppInstallationId } : {}),
+    ...(tuttiCliPath ? { tuttiCliPath } : {}),
     ...(tuttiManagedFilesRoot ? { tuttiManagedFilesRoot } : {}),
     ...(tuttiAppServerToken ? { tuttiAppServerToken } : {}),
     ...(tuttiWorkspaceId ? { tuttiWorkspaceId } : {}),

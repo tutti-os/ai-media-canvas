@@ -20,7 +20,6 @@ describe("createAimcToolsMcpServerConfig", () => {
     expect(config).toMatchObject({
       name: "aimc",
       type: "stdio",
-      executionSide: "vm",
       command: "node",
       args: ["/package/server/tools-mcp.js"],
       startupTimeoutMs: 120_000,
@@ -30,6 +29,7 @@ describe("createAimcToolsMcpServerConfig", () => {
         AIMC_TOOL_TOKEN: "tool-token",
       },
     });
+    expect(config).not.toHaveProperty("executionSide");
   });
 
   it("adds MCP timeout metadata for the development entrypoint", () => {

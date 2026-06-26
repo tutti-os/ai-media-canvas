@@ -25,6 +25,7 @@ import type { ConnectionManager } from "../../ws/connection-manager.js";
 import type { createPipelineLogger } from "../../ws/logger.js";
 import type { createAgentBackend } from "../backends/index.js";
 import type { AimcAgentFactory } from "../deep-agent.js";
+import type { ImageAttachmentMetadata } from "../image-attachment-metadata.js";
 import type { createLocalToolGatewayService } from "../local-agent-host/tool-gateway.js";
 import type { SubmitImageJobFn } from "../tools/image-generate.js";
 import type { SubmitVideoJobFn } from "../tools/video-generate.js";
@@ -102,6 +103,7 @@ export type BuildUserMessage = (
   mentions?: MessageMention[],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
+  attachmentMetadata?: Record<string, ImageAttachmentMetadata>,
 ) => { text: string };
 
 export type BuildAttachmentDataMap = (

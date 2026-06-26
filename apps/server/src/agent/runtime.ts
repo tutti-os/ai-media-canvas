@@ -65,6 +65,7 @@ import {
   createAimcDeepAgent,
   createDefaultModelSpecifier,
 } from "./deep-agent.js";
+import type { ImageAttachmentMetadata } from "./image-attachment-metadata.js";
 import {
   buildAgentImageJobPayload,
   buildAgentVideoJobPayload,
@@ -159,6 +160,7 @@ export function buildUserMessage(
   mentions: MessageMention[] = [],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
+  attachmentMetadata?: Record<string, ImageAttachmentMetadata>,
 ): { text: string } {
   const xmlBlocks: string[] = [];
 
@@ -167,7 +169,7 @@ export function buildUserMessage(
     xmlBlocks.push(`<canvas_state>\n${canvasSummary}\n</canvas_state>`);
   }
 
-  const inputImagesXml = buildInputImagesXml(attachments);
+  const inputImagesXml = buildInputImagesXml(attachments, attachmentMetadata);
   if (inputImagesXml) xmlBlocks.push(inputImagesXml);
 
   const imageGenerationPreferenceXml = buildImageGenerationPreferenceXml(
@@ -189,7 +191,10 @@ export function buildUserMessage(
   return { text: `${prompt}\n\n${xmlBlocks.join("\n\n")}` };
 }
 
-function buildInputImagesXml(attachments: ImageAttachment[]): string | null {
+function buildInputImagesXml(
+  attachments: ImageAttachment[],
+  attachmentMetadata?: Record<string, ImageAttachmentMetadata>,
+): string | null {
   if (attachments.length === 0) return null;
 
   const imageXml = attachments
@@ -197,7 +202,11 @@ function buildInputImagesXml(attachments: ImageAttachment[]): string | null {
       const nameAttr = attachment.name
         ? ` name="${escapeXmlAttribute(attachment.name)}"`
         : "";
-      return `<image index="${i + 1}" asset_id="${escapeXmlAttribute(attachment.assetId)}" mime_type="${escapeXmlAttribute(attachment.mimeType)}"${nameAttr} />`;
+      const metadata = attachmentMetadata?.[attachment.assetId];
+      const metadataAttrs = metadata
+        ? ` width="${metadata.width}" height="${metadata.height}" orientation="${metadata.orientation}"`
+        : "";
+      return `<image index="${i + 1}" asset_id="${escapeXmlAttribute(attachment.assetId)}" mime_type="${escapeXmlAttribute(attachment.mimeType)}"${nameAttr}${metadataAttrs} />`;
     })
     .join("\n  ");
 

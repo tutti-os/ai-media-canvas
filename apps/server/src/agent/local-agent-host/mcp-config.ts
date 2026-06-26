@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 import type { LocalAgentMcpServerConfig } from "@tutti-os/agent-acp-kit";
 
 export type AimcToolsMcpServerConfig = LocalAgentMcpServerConfig & {
-  executionSide?: "vm";
   startupTimeoutMs?: number;
   type: "stdio";
   toolTimeoutMs?: number;
@@ -27,7 +26,6 @@ export function createAimcToolsMcpServerConfig(input: {
     return {
       name: "aimc",
       type: "stdio",
-      executionSide: "vm",
       command: "node",
       args: [packagedMcpServerPath],
       ...timeoutConfig,

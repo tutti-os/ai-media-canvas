@@ -8,6 +8,10 @@ import type {
   LocalAgentProviderPlugin,
 } from "@tutti-os/agent-acp-kit";
 
+import {
+  type ImageAttachmentMetadata,
+  buildImageAttachmentMetadata,
+} from "../image-attachment-metadata.js";
 import { createAimcToolsMcpServerConfig } from "../local-agent-host/mcp-config.js";
 import {
   mapWorkspaceSkillsToLocalAgentManifest,
@@ -171,6 +175,7 @@ export function createLocalAgentRuntimeProvider(
         await deps.loadCanvasSummaryForRuntime(readyContext);
 
       let attachmentDataMap: Record<string, string> = {};
+      const attachmentMetadata: Record<string, ImageAttachmentMetadata> = {};
       if (run.attachments?.length) {
         const downloaded: Array<{
           assetId: string;
@@ -185,6 +190,9 @@ export function createLocalAgentRuntimeProvider(
                 /^data:([^;]+);base64,(.+)$/,
               );
               if (dataUriMatch) {
+                const buffer = Buffer.from(dataUriMatch[2] ?? "", "base64");
+                const metadata = buildImageAttachmentMetadata(buffer);
+                if (metadata) attachmentMetadata[attachment.assetId] = metadata;
                 downloaded.push({
                   assetId: attachment.assetId,
                   mimeType: dataUriMatch[1] ?? attachment.mimeType,
@@ -195,6 +203,8 @@ export function createLocalAgentRuntimeProvider(
 
               const response = await fetch(attachment.url);
               const buffer = Buffer.from(await response.arrayBuffer());
+              const metadata = buildImageAttachmentMetadata(buffer);
+              if (metadata) attachmentMetadata[attachment.assetId] = metadata;
               downloaded.push({
                 assetId: attachment.assetId,
                 mimeType:
@@ -219,6 +229,7 @@ export function createLocalAgentRuntimeProvider(
         run.mentions,
         run.videoGenerationPreference,
         canvasSummary,
+        attachmentMetadata,
       );
       const normalizedPrompt =
         normalizeWorkspaceSkillPathsForLocalAgent(enrichedPrompt);
