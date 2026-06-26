@@ -12,7 +12,7 @@ const createProjectMock = vi.fn();
 const fetchProjectsMock = vi.fn();
 const pushMock = vi.fn();
 const scrollIntoViewMock = vi.fn();
-const textareaFocusMock = vi.fn();
+const richTextFocusMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -83,7 +83,7 @@ describe("Home page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     Element.prototype.scrollIntoView = scrollIntoViewMock;
-    HTMLTextAreaElement.prototype.focus = textareaFocusMock;
+    HTMLElement.prototype.focus = richTextFocusMock;
     void i18n.changeLanguage("zh-CN");
     fetchProjectsMock.mockResolvedValue({
       projects: [
@@ -113,7 +113,7 @@ describe("Home page", () => {
 
     expect(await screen.findByText("AI Canvas")).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText("让 AI Canvas 帮你设计..."),
+      await screen.findByRole("textbox", { name: "提示词输入" }),
     ).toBeInTheDocument();
     expect(await screen.findByText("Recent Project")).toBeInTheDocument();
     expect(
@@ -156,7 +156,7 @@ describe("Home page", () => {
     await user.click(inspirationCard);
 
     expect(
-      screen.getByPlaceholderText("让 AI Canvas 帮你设计..."),
+      await screen.findByRole("textbox", { name: "提示词输入" }),
     ).toHaveValue(
       "请基于文化艺术中心这个灵感方向，为我做一套品牌探索，输出品牌关键词、主视觉方向、海报延展和社交媒体视觉提案。",
     );
@@ -167,9 +167,7 @@ describe("Home page", () => {
       });
     });
     await waitFor(() => {
-      expect(textareaFocusMock).toHaveBeenCalledWith({
-        preventScroll: true,
-      });
+      expect(richTextFocusMock).toHaveBeenCalled();
     });
     expect(createProjectMock).not.toHaveBeenCalled();
   });

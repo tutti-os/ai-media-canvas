@@ -118,10 +118,12 @@ describe("ChatInput", () => {
     expect(buttons.at(-1)).toBeDisabled();
   });
 
-  it("renders tooltip labels for prompt toolbar icon buttons", () => {
+  it("renders tooltip labels for prompt toolbar icon buttons", async () => {
     render(<ChatInput onSend={vi.fn()} onAddFiles={vi.fn()} />);
 
-    expect(screen.getByPlaceholderText("从一个想法开始")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("textbox", { name: "输入消息" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("添加图片")).toBeInTheDocument();
     expect(screen.getByText("图片/视频模型")).toBeInTheDocument();
     expect(

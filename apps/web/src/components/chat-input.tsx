@@ -3,7 +3,6 @@
 import {
   forwardRef,
   useCallback,
-  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -19,6 +18,10 @@ import type { CanvasSelectedElement } from "./canvas-editor";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
 import { SettingsDialog } from "./settings-dialog";
+import {
+  TuttiRichTextInput,
+  type TuttiRichTextInputHandle,
+} from "./tutti-rich-text-input";
 
 type ChatInputProps = {
   onSend: (message: string) => boolean | undefined;
@@ -70,7 +73,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     ref,
   ) {
     const [value, setValue] = useState("");
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const inputRef = useRef<TuttiRichTextInputHandle>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { preference } = useImageModelPreference();
     const agentRequirement = useAgentModelRequirement();
@@ -83,16 +86,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     useImperativeHandle(ref, () => ({
       focus() {
-        textareaRef.current?.focus();
+        inputRef.current?.focus();
       },
       setDraft(nextValue) {
         setValue(nextValue);
         window.requestAnimationFrame(() => {
-          if (textareaRef.current) {
-            textareaRef.current.style.height = "auto";
-            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-            textareaRef.current.focus();
-          }
+          inputRef.current?.focus();
         });
       },
     }));
@@ -118,9 +117,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       const sent = onSend(trimmed);
       if (sent === false) return;
       setValue("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
     }, [
       agentRequirement,
       attachments,
@@ -137,36 +133,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       setSettingsInitialTab("media");
       setSettingsOpen(true);
     }, []);
-
-    const handleKeyDown = useCallback(
-      (e: React.KeyboardEvent) => {
-        // Ignore Enter during IME composition (e.g. Chinese input confirming a candidate)
-        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-          e.preventDefault();
-          handleSubmit();
-        }
-      },
-      [handleSubmit],
-    );
-
-    // Auto-resize textarea when value changes
-    // biome-ignore lint/correctness/useExhaustiveDependencies: textarea height must recalculate whenever the input value changes.
-    useEffect(() => {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-      textarea.style.height = "auto";
-      const maxH = 240; // max-h-60
-      textarea.style.height = `${Math.min(textarea.scrollHeight, maxH)}px`;
-      textarea.style.overflowY =
-        textarea.scrollHeight > maxH ? "auto" : "hidden";
-    }, [value]);
-
-    const handleChange = useCallback(
-      (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        setValue(e.target.value);
-      },
-      [],
-    );
 
     const handleFileChange = useCallback(
       (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -294,18 +260,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               {...(onRetryAttachment ? { onRetry: onRetryAttachment } : {})}
             />
           )}
-          <textarea
-            ref={textareaRef}
-            data-chat-input
-            value={value}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
+          <TuttiRichTextInput
+            ref={inputRef}
+            ariaLabel={t("input.ariaLabel")}
+            className="aimc-rich-text-field"
+            disabled={disabled}
+            editorClassName="aimc-rich-text-editor aimc-chat-rich-text-editor min-h-[48px] max-h-60 overflow-y-auto bg-transparent px-1 text-sm leading-[1.8] text-foreground focus:outline-none"
+            menuAnchor="editor"
+            menuPlacement="top-start"
+            placeholderClassName="aimc-rich-text-placeholder aimc-chat-rich-text-placeholder min-h-[48px] px-1 text-sm leading-[1.8] text-muted-foreground"
             placeholder={t("input.placeholder")}
-            aria-label={t("input.ariaLabel")}
-            rows={1}
-            style={{ scrollbarWidth: "none" }}
-            className="min-h-[48px] max-h-60 resize-none bg-transparent px-1 text-sm leading-[1.8] text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-scrollbar]:hidden"
+            rootClassName="aimc-rich-text-root"
+            value={value}
+            onChange={setValue}
+            onPaste={handlePaste}
+            onSubmit={handleSubmit}
           />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1">

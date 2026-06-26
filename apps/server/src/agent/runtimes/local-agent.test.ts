@@ -1,4 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,8 +12,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentRuntimeProvider } from "@aimc/shared";
 import {
-  MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER,
   type LocalAgentProviderPlugin,
+  MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER,
   createManagedAgentRunContextFromHeaders,
 } from "@tutti-os/agent-acp-kit";
 
@@ -427,6 +433,90 @@ describe("createLocalAgentRuntimeProvider", () => {
     expect(localAgentRuntimeRun.mock.calls[0]?.[0]).not.toHaveProperty("env");
   });
 
+  it("merges Tutti CLI skill context into local-agent runs", async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "aimc-tutti-skill-context-"));
+    const tuttiCliPath = join(tempRoot, "tutti");
+    writeFileSync(
+      tuttiCliPath,
+      [
+        "#!/bin/sh",
+        "cat <<'JSON'",
+        JSON.stringify({
+          provider: "codex",
+          agentSessionId: "run-1",
+          recommendedSystemPrompt: {
+            content: "Use the mentioned Tutti app when relevant.",
+          },
+          skills: [
+            {
+              skillId: "workspace-app",
+              slug: "workspace-app",
+              deliveryMode: "prompt-injection",
+              content: "Call the mentioned workspace app through Tutti CLI.",
+            },
+          ],
+        }),
+        "JSON",
+      ].join("\n"),
+      "utf8",
+    );
+    chmodSync(tuttiCliPath, 0o755);
+
+    const localAgentRuntimeRun = vi.fn(async function* () {
+      yield {
+        type: "done" as const,
+        status: "completed" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+    const runDir = join(tempRoot, "run");
+    mkdirSync(runDir, { recursive: true });
+    const provider = createLocalAgentRuntimeProvider(
+      {
+        buildAttachmentDataMap: vi.fn(() => ({})),
+        buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
+        createRunDirectory: vi.fn(async () => runDir),
+        loadCanvasSummaryForRuntime: vi.fn(async () => null),
+        localAgentRuntime: { run: localAgentRuntimeRun },
+        now: () => "2026-06-17T00:00:00.000Z",
+        toolGateway: {
+          createSession: vi.fn(() => ({ token: "tool-token" })),
+          revokeSession: vi.fn(),
+        } as never,
+        toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+      },
+      createProviderPlugin("codex"),
+    );
+
+    try {
+      const context = createRuntimeContext();
+      context.runtimeEnv = {
+        ...context.runtimeEnv,
+        tuttiCliPath,
+      };
+      await collect(provider.streamRun(context));
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+
+    const params = localAgentRuntimeRun.mock.calls[0]?.[0];
+    expect(params?.env).toEqual({ TUTTI_CLI: tuttiCliPath });
+    expect(params?.systemPrompt).toContain(
+      "Additional Tutti CLI skill guidance:",
+    );
+    expect(params?.systemPrompt).toContain(
+      "Use the mentioned Tutti app when relevant.",
+    );
+    expect(params?.skillManifest).toContainEqual(
+      expect.objectContaining({
+        skillId: "workspace-app",
+        slug: "workspace-app",
+        deliveryMode: "prompt-injection",
+      }),
+    );
+  });
+
   it("revokes tool gateway token when local-agent run fails", async () => {
     const localAgentRuntimeRun = vi.fn(async function* () {
       yield {
@@ -459,5 +549,4 @@ describe("createLocalAgentRuntimeProvider", () => {
 
     expect(revokeSession).toHaveBeenCalledWith("tool-token");
   });
-
 });

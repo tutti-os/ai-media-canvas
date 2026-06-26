@@ -9,6 +9,7 @@ import { ImagePill } from "./chat/image-lightbox";
 import { MarkdownRenderer } from "./chat/markdown-renderer";
 import { ThinkingBlockView } from "./chat/thinking-block-view";
 import { ToolBlockView } from "./chat/tool-block-view";
+import { TuttiRichTextMessage } from "./tutti-rich-text-message";
 
 // Re-export types for backward compatibility with existing consumers
 export type { ContentBlock, ToolArtifact };
@@ -169,9 +170,10 @@ const UserMessage = React.memo(function UserMessage({
           data-chat-bubble
           className="inline-block rounded-xl bg-muted px-3 py-2.5 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground"
         >
-          <span className="cursor-text select-text [word-break:break-word]">
-            {text}
-          </span>
+          <TuttiRichTextMessage
+            className="cursor-text select-text [word-break:break-word]"
+            value={text}
+          />
           {imageBlocks.length > 0 && (
             <span className="inline">
               {imageBlocks.map((block, idx) => (

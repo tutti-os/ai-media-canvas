@@ -46,9 +46,9 @@ export type RuntimeRunRecord = {
   delegationConsent?: RunCreateRequest["delegationConsent"];
   envOverride?: ServerEnv | undefined;
   imageGenerationPreference?: ImageGenerationPreference | undefined;
-  loadManagedAgentRunContext?: () => Promise<
-    ManagedAgentRunContext | undefined
-  >;
+  loadManagedAgentRunContext?:
+    | (() => Promise<ManagedAgentRunContext | undefined>)
+    | undefined;
   modelOverride?: string | undefined;
   prompt: string;
   resumeContext?:

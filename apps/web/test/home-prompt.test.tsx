@@ -4,10 +4,10 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
-  cloneElement,
-  isValidElement,
   type ReactElement,
   type ReactNode,
+  cloneElement,
+  isValidElement,
 } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -62,21 +62,20 @@ vi.mock("../src/components/image-model-preference", () => ({
     onOpenChange?: (open: boolean) => void;
     onOpenSettings?: () => void;
     trigger?: ReactNode;
-  }) =>
-    (
-      <>
-        {isValidElement(trigger)
-          ? cloneElement(trigger as ReactElement<{ onClick?: () => void }>, {
-              onClick: () => onOpenChange?.(true),
-            })
-          : trigger}
-        {open ? (
-          <button type="button" onClick={onOpenSettings}>
-            Open media settings
-          </button>
-        ) : null}
-      </>
-    ),
+  }) => (
+    <>
+      {isValidElement(trigger)
+        ? cloneElement(trigger as ReactElement<{ onClick?: () => void }>, {
+            onClick: () => onOpenChange?.(true),
+          })
+        : trigger}
+      {open ? (
+        <button type="button" onClick={onOpenSettings}>
+          Open media settings
+        </button>
+      ) : null}
+    </>
+  ),
 }));
 
 vi.mock("../src/lib/server-api", () => ({
@@ -101,6 +100,10 @@ vi.mock("../src/hooks/use-video-model-preference", () => ({
     preference: { mode: "auto", models: [] },
   }),
 }));
+
+function findPromptInput() {
+  return screen.findByRole("textbox", { name: "提示词输入" });
+}
 
 describe("HomePrompt", () => {
   afterEach(() => {
@@ -170,7 +173,7 @@ describe("HomePrompt", () => {
     );
 
     await user.type(
-      screen.getByPlaceholderText("让 AI Canvas 帮你设计..."),
+      await findPromptInput(),
       "请把这张自拍扩展成时尚杂志封面方案",
     );
     await user.click(screen.getByRole("button", { name: "提交 prompt" }));
@@ -232,10 +235,7 @@ describe("HomePrompt", () => {
 
     render(<HomePrompt onSubmit={onSubmit} />);
 
-    await user.type(
-      screen.getByPlaceholderText("让 AI Canvas 帮你设计..."),
-      "生成一张海报",
-    );
+    await user.type(await findPromptInput(), "生成一张海报");
     await user.click(screen.getByRole("button", { name: "提交 prompt" }));
 
     expect(onSubmit).not.toHaveBeenCalled();
