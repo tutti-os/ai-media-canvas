@@ -489,7 +489,7 @@ describe("registerTuttiCliRoutes", () => {
             "canceled",
             "dead_letter",
           ],
-          pollIntervalMs: 3_000,
+          pollIntervalMs: 5_000,
           maxWaitMs: 600_000,
           guidance: expect.stringContaining("Sleep pollIntervalMs"),
         },
@@ -680,7 +680,7 @@ describe("registerTuttiCliRoutes", () => {
         },
         nextAction: {
           command: "aimc jobs get --job-id job-video-1",
-          pollIntervalMs: 10_000,
+          pollIntervalMs: 30_000,
           maxWaitMs: 7_200_000,
           guidance: expect.stringContaining("job reaches a terminal status"),
         },
@@ -719,7 +719,7 @@ describe("registerTuttiCliRoutes", () => {
         },
         nextAction: {
           command: "aimc jobs get --job-id job-1",
-          pollIntervalMs: 10_000,
+          pollIntervalMs: 30_000,
           maxWaitMs: 7_200_000,
           guidance: expect.stringContaining("Do not tell the user"),
         },
