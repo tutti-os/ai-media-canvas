@@ -7,10 +7,6 @@ import type {
   AgentEvent,
   LocalAgentProviderPlugin,
 } from "@tutti-os/agent-acp-kit";
-import {
-  MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER,
-  createManagedAgentRunContextFromHeaders,
-} from "@tutti-os/agent-acp-kit";
 
 import {
   type ImageAttachmentMetadata,
@@ -265,23 +261,14 @@ export function createLocalAgentRuntimeProvider(
       const systemPrompt = buildAimcSystemPrompt({
         brandKitId: readyContext.brandKitId,
       });
-      const managedAgentInvocationCredential =
-        run.managedAgentInvocationCredential?.trim();
-      const managed = Boolean(managedAgentInvocationCredential);
-      run.managedAgentInvocationCredential = undefined;
-
-      const managedRunContext = managedAgentInvocationCredential
-        ? await createManagedAgentRunContextFromHeaders(
-            {
-              [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]:
-                managedAgentInvocationCredential,
-            },
-            {
-              providerId: runtimeProvider,
-              runId: run.runId,
-            },
-          )
+      const loadManagedAgentRunContext = run.loadManagedAgentRunContext;
+      if (loadManagedAgentRunContext) {
+        delete run.loadManagedAgentRunContext;
+      }
+      const managedRunContext = loadManagedAgentRunContext
+        ? await loadManagedAgentRunContext()
         : undefined;
+      const managed = Boolean(managedRunContext);
       const runDirectory = managedRunContext
         ? undefined
         : normalizeRunDirectoryResult(

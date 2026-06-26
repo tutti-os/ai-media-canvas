@@ -1,8 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { getManagedAgentInvocationCredentialFromHeaders } from "@tutti-os/agent-acp-kit";
 
 import {
-  type RunCreateRequest,
   applicationErrorResponseSchema,
   runCancelResponseSchema,
   runCreateRequestSchema,
@@ -20,10 +18,6 @@ import type { ServerEnv } from "../config/env.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { RequestAuthenticator } from "../auth/request.js";
 
-type ServerRunCreateRequest = RunCreateRequest & {
-  managedAgentInvocationCredential?: string | undefined;
-};
-
 export async function registerRunRoutes(
   app: FastifyInstance,
   agentRuns: AgentRunService,
@@ -37,14 +31,6 @@ export async function registerRunRoutes(
   app.post("/api/agent/runs", async (request, reply) => {
     try {
       const parsedPayload = runCreateRequestSchema.parse(request.body);
-      const managedAgentInvocationCredential =
-        getManagedAgentInvocationCredentialFromHeaders(request.headers);
-      const payload: ServerRunCreateRequest = managedAgentInvocationCredential
-        ? {
-            ...parsedPayload,
-            managedAgentInvocationCredential,
-          }
-        : parsedPayload;
       const hasAuthorization = hasBearerAuthorization(
         request.headers.authorization,
       );
@@ -61,7 +47,7 @@ export async function registerRunRoutes(
         authenticatedUser && options?.threadService
           ? await options.threadService.resolveOwnedSessionThread(
               authenticatedUser,
-              payload.sessionId,
+              parsedPayload.sessionId,
             )
           : null;
 
@@ -88,9 +74,10 @@ export async function registerRunRoutes(
       }
 
       const response = runCreateResponseSchema.parse(
-        agentRuns.createRun(payload, {
+        agentRuns.createRun(parsedPayload, {
           ...(authenticatedUser ? { accessToken: authenticatedUser.accessToken, userId: authenticatedUser.id } : {}),
           ...(runEnv ? { env: runEnv } : {}),
+          managedAgentHeaders: request.headers,
           ...(model ? { model } : {}),
           ...(sessionThread ? { threadId: sessionThread.threadId } : {}),
         }),

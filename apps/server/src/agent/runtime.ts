@@ -21,8 +21,11 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { InMemoryStore } from "@langchain/langgraph";
 import {
+  type ManagedAgentInvocationCredentialHeaders,
+  type ManagedAgentRunContext,
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
+  createManagedAgentRunContextFromHeaders,
   createLocalAgentRuntime,
 } from "@tutti-os/agent-acp-kit";
 
@@ -381,9 +384,7 @@ type RuntimeRunStatus =
   | "failed"
   | "running";
 
-type RuntimeRunCreateInput = RunCreateRequest & {
-  managedAgentInvocationCredential?: string | undefined;
-};
+type RuntimeRunCreateInput = RunCreateRequest;
 
 type RuntimeRunRecord = RuntimeRunCreateInput & {
   accessToken?: string;
@@ -394,7 +395,9 @@ type RuntimeRunRecord = RuntimeRunCreateInput & {
   codexImagegenDelegation?: "ask" | "always" | "never";
   codexImagegenConsentBudget?: number;
   envOverride?: ServerEnv;
-  managedAgentInvocationCredential?: string | undefined;
+  loadManagedAgentRunContext?: () => Promise<
+    ManagedAgentRunContext | undefined
+  >;
   modelOverride?: string;
   resumeContext?: {
     mode: "provider-local" | "handoff" | "fresh";
@@ -685,6 +688,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         assistantMessageId?: string;
         connectionId?: string;
         env?: ServerEnv;
+        managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders;
         model?: string;
         runtimeKind?: RuntimeKind;
         runtimeProvider?: AgentRuntimeProvider;
@@ -721,8 +725,19 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         initialRuntimeTarget?.kind ?? requestedRuntimeKind;
       const persistedRuntimeProvider =
         initialRuntimeTarget?.provider ?? requestedRuntimeProvider;
-      const keepManagedAgentInvocationCredential =
-        persistedRuntimeKind === "local-agent";
+      const loadManagedAgentRunContext =
+        persistedRuntimeKind === "local-agent" &&
+        persistedRuntimeProvider &&
+        runOptions?.managedAgentHeaders
+          ? () =>
+              createManagedAgentRunContextFromHeaders(
+                runOptions.managedAgentHeaders,
+                {
+                  providerId: persistedRuntimeProvider,
+                  runId,
+                },
+              )
+          : undefined;
       const previousRun = runInput.resumeFromRunId
         ? options.agentRunStore?.getRun?.(runInput.resumeFromRunId)
         : undefined;
@@ -773,9 +788,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       runs.set(runId, {
         ...runInput,
-        ...(keepManagedAgentInvocationCredential
-          ? {}
-          : { managedAgentInvocationCredential: undefined }),
         ...(runOptions?.accessToken
           ? { accessToken: runOptions.accessToken }
           : {}),
@@ -788,6 +800,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
+        ...(loadManagedAgentRunContext ? { loadManagedAgentRunContext } : {}),
         ...(runOptions?.codexImagegenDelegation
           ? { codexImagegenDelegation: runOptions.codexImagegenDelegation }
           : {}),
@@ -1477,7 +1490,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         run.runtimeKind = resolvedRuntimeTarget.kind;
         run.runtimeProvider = resolvedRuntimeTarget.provider;
         if (resolvedRuntimeTarget.kind !== "local-agent") {
-          run.managedAgentInvocationCredential = undefined;
+          delete run.loadManagedAgentRunContext;
         }
         runtimeLease = runtimeControlPlane.acquireRuntimeLease(
           resolvedRuntimeTarget,
@@ -1593,7 +1606,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         yield failedEvent;
         return;
       } finally {
-        run.managedAgentInvocationCredential = undefined;
+        delete run.loadManagedAgentRunContext;
         runtimeLease?.release();
         if (backendResult.sandboxDir) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(

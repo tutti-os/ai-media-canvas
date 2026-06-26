@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentRuntimeProvider } from "@aimc/shared";
-import { type LocalAgentProviderPlugin } from "@tutti-os/agent-acp-kit";
+import {
+  MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER,
+  type LocalAgentProviderPlugin,
+  createManagedAgentRunContextFromHeaders,
+} from "@tutti-os/agent-acp-kit";
 
 import {
   createLocalAgentRunDirectory,
@@ -90,6 +94,22 @@ function expectOrdinaryEnvOmitsToolToken(env?: Record<string, string>) {
   expect(JSON.stringify(env ?? {})).not.toContain("tool-token");
 }
 
+function createManagedRunContext(
+  credential = "credential-run-1",
+  providerId: AgentRuntimeProvider = "codex",
+  runId = "run-1",
+) {
+  return createManagedAgentRunContextFromHeaders(
+    {
+      [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: credential,
+    },
+    {
+      providerId,
+      runId,
+    },
+  );
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
@@ -128,7 +148,7 @@ describe("createLocalAgentRuntimeProvider", () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-managed-run-"));
     vi.stubEnv("TUTTI_APP_DATA_DIR", tempRoot);
     const context = createRuntimeContext({
-      managedAgentInvocationCredential: "credential-run-1",
+      loadManagedAgentRunContext: () => createManagedRunContext(),
     });
     context.runtimeEnv = {
       ...context.runtimeEnv,
@@ -184,7 +204,7 @@ describe("createLocalAgentRuntimeProvider", () => {
     });
     expect(params).not.toHaveProperty("env");
     expectOrdinaryEnvOmitsToolToken(params?.env);
-    expect(context.run.managedAgentInvocationCredential).toBeUndefined();
+    expect(context.run).not.toHaveProperty("managedAgentInvocationCredential");
     expect(revokeSession).toHaveBeenCalledWith("tool-token");
   });
 
@@ -201,7 +221,7 @@ describe("createLocalAgentRuntimeProvider", () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-managed-run-"));
     vi.stubEnv("TUTTI_APP_DATA_DIR", tempRoot);
     const context = createRuntimeContext({
-      managedAgentInvocationCredential: "credential-run-1",
+      loadManagedAgentRunContext: () => createManagedRunContext(),
     });
     context.runtimeEnv = {
       ...context.runtimeEnv,
@@ -259,7 +279,7 @@ describe("createLocalAgentRuntimeProvider", () => {
       };
     });
     const context = createRuntimeContext({
-      managedAgentInvocationCredential: "credential-run-1",
+      loadManagedAgentRunContext: () => createManagedRunContext(),
     });
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-managed-run-"));
     vi.stubEnv("TUTTI_APP_DATA_DIR", tempRoot);
@@ -343,7 +363,7 @@ describe("createLocalAgentRuntimeProvider", () => {
         provider.streamRun(
           (() => {
             const context = createRuntimeContext({
-              managedAgentInvocationCredential: "credential-run-1",
+              loadManagedAgentRunContext: () => createManagedRunContext(),
             });
             context.runtimeEnv = {
               ...context.runtimeEnv,
