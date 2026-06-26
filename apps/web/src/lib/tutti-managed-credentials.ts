@@ -14,6 +14,10 @@ type TuttiManagedGrantResult = {
   models?: TuttiManagedModel[];
 };
 
+export type TuttiLocalAgentManagerProvider = "codex" | "claude";
+
+type TuttiWorkspaceAgentManagerProvider = "codex" | "claude-code";
+
 type TuttiAppContext = {
   appId?: string;
   contextToken?: string;
@@ -42,6 +46,12 @@ type TuttiBridge = {
       provider?: TuttiManagedProviderId;
     }) => Promise<void>;
   };
+  workspace?: {
+    openFeature?: (input: {
+      feature: "agent-manage";
+      provider?: TuttiWorkspaceAgentManagerProvider;
+    }) => Promise<void>;
+  };
 };
 
 declare global {
@@ -61,6 +71,33 @@ export function hasTuttiManagedCredentialBridge() {
     typeof bridge?.app?.getContext === "function" &&
     typeof bridge?.permissions?.request === "function"
   );
+}
+
+export function hasTuttiAgentManagerBridge() {
+  const bridge = getManagedCredentialBridge();
+  return typeof bridge?.workspace?.openFeature === "function";
+}
+
+function mapLocalAgentProviderForTuttiManager(
+  provider: TuttiLocalAgentManagerProvider,
+): TuttiWorkspaceAgentManagerProvider {
+  return provider === "claude" ? "claude-code" : provider;
+}
+
+export async function openTuttiAgentManager(
+  provider?: TuttiLocalAgentManagerProvider,
+) {
+  const openFeature = getManagedCredentialBridge()?.workspace?.openFeature;
+  if (typeof openFeature !== "function") {
+    throw new Error("Tutti agent manager bridge is unavailable.");
+  }
+
+  await openFeature({
+    feature: "agent-manage",
+    ...(provider
+      ? { provider: mapLocalAgentProviderForTuttiManager(provider) }
+      : {}),
+  });
 }
 
 export async function requestTuttiManagedGrant(): Promise<TuttiManagedGrantCreateRequest> {

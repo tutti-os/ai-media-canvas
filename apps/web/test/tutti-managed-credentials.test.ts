@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fetchTuttiManagedConnection } from "../src/lib/server-api";
 import {
+  hasTuttiAgentManagerBridge,
   hasTuttiManagedCredentialBridge,
+  openTuttiAgentManager,
   openTuttiManagedModelSettings,
   requestTuttiManagedGrant,
 } from "../src/lib/tutti-managed-credentials";
@@ -27,6 +29,9 @@ type HostBridge = {
   };
   settings?: {
     open?: ReturnType<typeof vi.fn>;
+  };
+  workspace?: {
+    openFeature?: ReturnType<typeof vi.fn>;
   };
 };
 
@@ -138,5 +143,45 @@ describe("Tutti managed credential bridge", () => {
       tab: "models",
       provider: "openai",
     });
+  });
+
+  it("opens the Tutti agent manager for Codex", async () => {
+    const openFeature = vi.fn().mockResolvedValue(undefined);
+    setHostBridge({
+      workspace: { openFeature },
+    });
+
+    expect(hasTuttiAgentManagerBridge()).toBe(true);
+
+    await openTuttiAgentManager("codex");
+
+    expect(openFeature).toHaveBeenCalledWith({
+      feature: "agent-manage",
+      provider: "codex",
+    });
+  });
+
+  it("maps the local Claude provider to the Tutti bridge provider id", async () => {
+    const openFeature = vi.fn().mockResolvedValue(undefined);
+    setHostBridge({
+      workspace: { openFeature },
+    });
+
+    await openTuttiAgentManager("claude");
+
+    expect(openFeature).toHaveBeenCalledWith({
+      feature: "agent-manage",
+      provider: "claude-code",
+    });
+  });
+
+  it("rejects when the Tutti agent manager bridge is unavailable", async () => {
+    setHostBridge({});
+
+    expect(hasTuttiAgentManagerBridge()).toBe(false);
+
+    await expect(openTuttiAgentManager("codex")).rejects.toThrow(
+      "Tutti agent manager bridge is unavailable.",
+    );
   });
 });

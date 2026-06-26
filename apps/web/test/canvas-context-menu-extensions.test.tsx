@@ -182,9 +182,67 @@ describe("CanvasContextMenuExtensions", () => {
 
     expect(anchorClick).toHaveBeenCalledTimes(1);
     expect(downloadAnchor?.href).toBe("data:image/png;base64,b3JpZ2luYWw=");
-    expect(downloadAnchor?.download).toBe("ai-media-canvas-image.png");
+    expect(downloadAnchor?.download).toBe("ai-media-canvas-image-1.png");
     expect(exportToBlobMock).not.toHaveBeenCalled();
     expect(screen.queryByText("下载成功")).not.toBeInTheDocument();
+  });
+
+  it("uses the image title as the downloaded filename when available", async () => {
+    const user = userEvent.setup();
+    const anchorClick = vi.fn();
+    const originalCreateElement = document.createElement.bind(document);
+    let downloadAnchor: HTMLAnchorElement | null = null;
+
+    vi.spyOn(document, "createElement").mockImplementation((tagName) => {
+      const element = originalCreateElement(tagName);
+      if (tagName === "a") {
+        downloadAnchor = element as HTMLAnchorElement;
+        Object.defineProperty(element, "click", {
+          configurable: true,
+          value: anchorClick,
+        });
+      }
+      return element;
+    });
+
+    document.body.innerHTML = `
+      <div class="excalidraw">
+        <ul class="context-menu"></ul>
+      </div>
+    `;
+
+    const excalidrawApi = {
+      getAppState: () => ({
+        selectedElementIds: { "image-1": true },
+      }),
+      getFiles: () => ({
+        "file-1": { dataURL: "data:image/png;base64,b3JpZ2luYWw=" },
+      }),
+      getSceneElements: () => [
+        {
+          id: "image-1",
+          type: "image",
+          fileId: "file-1",
+          isDeleted: false,
+          customData: { title: "参考/图: 01.png" },
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 120,
+        },
+      ],
+    };
+
+    render(
+      <ToastProvider>
+        <CanvasContextMenuExtensions excalidrawApi={excalidrawApi} />
+      </ToastProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "下载图片" }));
+
+    expect(anchorClick).toHaveBeenCalledTimes(1);
+    expect(downloadAnchor?.download).toBe("参考-图- 01.png");
   });
 
   it("uses the save picker and shows success after writing a downloaded image", async () => {
@@ -238,7 +296,7 @@ describe("CanvasContextMenuExtensions", () => {
     await user.click(await screen.findByRole("button", { name: "下载图片" }));
 
     expect(showSaveFilePicker).toHaveBeenCalledWith({
-      suggestedName: "ai-media-canvas-image.png",
+      suggestedName: "ai-media-canvas-image-1.png",
       types: [
         {
           accept: { "image/png": [".png"] },
@@ -260,7 +318,7 @@ describe("CanvasContextMenuExtensions", () => {
         <ul class="context-menu">
           <li>
             <button type="button" class="context-menu-item">
-              <div class="context-menu-item__label">Cut</div>
+              <div class="context-menu-item__label">拷贝</div>
             </button>
           </li>
           <li>
@@ -304,13 +362,15 @@ describe("CanvasContextMenuExtensions", () => {
       );
     });
 
+    const copyNodeLabels = screen.getAllByText("复制节点");
     expect(screen.getByText("用画框包裹选区")).toBeInTheDocument();
+    expect(copyNodeLabels).toHaveLength(2);
     expect(screen.getByText("复制图片").closest("li")).not.toBeVisible();
     expect(screen.getByText("复制对象链接")).toBeInTheDocument();
-    expect(screen.getByText("复制节点").closest("li")).toHaveClass(
+    expect(copyNodeLabels[1].closest("li")).toHaveClass(
       "aimc-context-menu-section-start",
     );
-    expect(screen.getByText("Cut").closest("li")).not.toHaveClass(
+    expect(copyNodeLabels[0].closest("li")).not.toHaveClass(
       "aimc-context-menu-section-start",
     );
   });
@@ -377,7 +437,7 @@ describe("CanvasContextMenuExtensions", () => {
         <ul class="context-menu">
           <li data-testid="copy">
             <button type="button" class="context-menu-item">
-              <div class="context-menu-item__label">拷贝</div>
+              <div class="context-menu-item__label">Copy</div>
             </button>
           </li>
           <li data-testid="copyAsPng">
@@ -430,7 +490,7 @@ describe("CanvasContextMenuExtensions", () => {
       </ToastProvider>,
     );
 
-    await user.click(screen.getByRole("button", { name: "拷贝" }));
+    await user.click(screen.getByRole("button", { name: "复制节点" }));
 
     expect(nativeCopyClick).toHaveBeenCalledTimes(1);
     expect(clipboardWrite).not.toHaveBeenCalled();

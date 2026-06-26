@@ -234,7 +234,7 @@ function loadDirectoryBundledSkills(): BundledSkillDefinition[] {
             path: `skills/${slug}/SKILL.md`,
             files: fileManifest,
           },
-          installedByDefault: false,
+          installedByDefault: slug === "imagegen",
         },
       ];
     });

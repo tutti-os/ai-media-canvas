@@ -21,8 +21,11 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { InMemoryStore } from "@langchain/langgraph";
 import {
+  type ManagedAgentInvocationCredentialHeaders,
+  type ManagedAgentRunContext,
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
+  createManagedAgentRunContextFromHeaders,
   createLocalAgentRuntime,
 } from "@tutti-os/agent-acp-kit";
 
@@ -62,6 +65,7 @@ import {
   createAimcDeepAgent,
   createDefaultModelSpecifier,
 } from "./deep-agent.js";
+import type { ImageAttachmentMetadata } from "./image-attachment-metadata.js";
 import {
   buildAgentImageJobPayload,
   buildAgentVideoJobPayload,
@@ -156,6 +160,7 @@ export function buildUserMessage(
   mentions: MessageMention[] = [],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
+  attachmentMetadata?: Record<string, ImageAttachmentMetadata>,
 ): { text: string } {
   const xmlBlocks: string[] = [];
 
@@ -164,7 +169,7 @@ export function buildUserMessage(
     xmlBlocks.push(`<canvas_state>\n${canvasSummary}\n</canvas_state>`);
   }
 
-  const inputImagesXml = buildInputImagesXml(attachments);
+  const inputImagesXml = buildInputImagesXml(attachments, attachmentMetadata);
   if (inputImagesXml) xmlBlocks.push(inputImagesXml);
 
   const imageGenerationPreferenceXml = buildImageGenerationPreferenceXml(
@@ -186,7 +191,10 @@ export function buildUserMessage(
   return { text: `${prompt}\n\n${xmlBlocks.join("\n\n")}` };
 }
 
-function buildInputImagesXml(attachments: ImageAttachment[]): string | null {
+function buildInputImagesXml(
+  attachments: ImageAttachment[],
+  attachmentMetadata?: Record<string, ImageAttachmentMetadata>,
+): string | null {
   if (attachments.length === 0) return null;
 
   const imageXml = attachments
@@ -194,7 +202,11 @@ function buildInputImagesXml(attachments: ImageAttachment[]): string | null {
       const nameAttr = attachment.name
         ? ` name="${escapeXmlAttribute(attachment.name)}"`
         : "";
-      return `<image index="${i + 1}" asset_id="${escapeXmlAttribute(attachment.assetId)}" mime_type="${escapeXmlAttribute(attachment.mimeType)}"${nameAttr} />`;
+      const metadata = attachmentMetadata?.[attachment.assetId];
+      const metadataAttrs = metadata
+        ? ` width="${metadata.width}" height="${metadata.height}" orientation="${metadata.orientation}"`
+        : "";
+      return `<image index="${i + 1}" asset_id="${escapeXmlAttribute(attachment.assetId)}" mime_type="${escapeXmlAttribute(attachment.mimeType)}"${nameAttr}${metadataAttrs} />`;
     })
     .join("\n  ");
 
@@ -372,7 +384,9 @@ type RuntimeRunStatus =
   | "failed"
   | "running";
 
-type RuntimeRunRecord = RunCreateRequest & {
+type RuntimeRunCreateInput = RunCreateRequest;
+
+type RuntimeRunRecord = RuntimeRunCreateInput & {
   accessToken?: string;
   assistantMessageId?: string;
   connectionId?: string;
@@ -381,6 +395,9 @@ type RuntimeRunRecord = RunCreateRequest & {
   codexImagegenDelegation?: "ask" | "always" | "never";
   codexImagegenConsentBudget?: number;
   envOverride?: ServerEnv;
+  loadManagedAgentRunContext?: () => Promise<
+    ManagedAgentRunContext | undefined
+  >;
   modelOverride?: string;
   resumeContext?: {
     mode: "provider-local" | "handoff" | "fresh";
@@ -665,12 +682,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     },
 
     createRun(
-      input: RunCreateRequest,
+      input: RuntimeRunCreateInput,
       runOptions?: {
         accessToken?: string;
         assistantMessageId?: string;
         connectionId?: string;
         env?: ServerEnv;
+        managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders;
         model?: string;
         runtimeKind?: RuntimeKind;
         runtimeProvider?: AgentRuntimeProvider;
@@ -707,6 +725,19 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         initialRuntimeTarget?.kind ?? requestedRuntimeKind;
       const persistedRuntimeProvider =
         initialRuntimeTarget?.provider ?? requestedRuntimeProvider;
+      const loadManagedAgentRunContext =
+        persistedRuntimeKind === "local-agent" &&
+        persistedRuntimeProvider &&
+        runOptions?.managedAgentHeaders
+          ? () =>
+              createManagedAgentRunContextFromHeaders(
+                runOptions.managedAgentHeaders,
+                {
+                  providerId: persistedRuntimeProvider,
+                  runId,
+                },
+              )
+          : undefined;
       const previousRun = runInput.resumeFromRunId
         ? options.agentRunStore?.getRun?.(runInput.resumeFromRunId)
         : undefined;
@@ -769,6 +800,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
+        ...(loadManagedAgentRunContext ? { loadManagedAgentRunContext } : {}),
         ...(runOptions?.codexImagegenDelegation
           ? { codexImagegenDelegation: runOptions.codexImagegenDelegation }
           : {}),
@@ -1457,6 +1489,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         activeRuntimeTarget = resolvedRuntimeTarget;
         run.runtimeKind = resolvedRuntimeTarget.kind;
         run.runtimeProvider = resolvedRuntimeTarget.provider;
+        if (resolvedRuntimeTarget.kind !== "local-agent") {
+          delete run.loadManagedAgentRunContext;
+        }
         runtimeLease = runtimeControlPlane.acquireRuntimeLease(
           resolvedRuntimeTarget,
           run.runId,
@@ -1571,6 +1606,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         yield failedEvent;
         return;
       } finally {
+        delete run.loadManagedAgentRunContext;
         runtimeLease?.release();
         if (backendResult.sandboxDir) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(

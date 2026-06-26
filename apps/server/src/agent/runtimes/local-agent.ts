@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,10 @@ import type {
   LocalAgentProviderPlugin,
 } from "@tutti-os/agent-acp-kit";
 
+import {
+  type ImageAttachmentMetadata,
+  buildImageAttachmentMetadata,
+} from "../image-attachment-metadata.js";
 import { createAimcToolsMcpServerConfig } from "../local-agent-host/mcp-config.js";
 import {
   mapWorkspaceSkillsToLocalAgentManifest,
@@ -30,6 +34,72 @@ type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   "local-agent",
   AgentRuntimeProvider
 >;
+
+const LOCAL_AGENT_RUNS_DIR_NAME = ".aimc-agent-runs";
+
+function safeRunDirSegment(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+type LocalAgentRunDirectoryResult = {
+  runDir: string;
+  useManagedAgentInvocation: boolean;
+};
+
+export async function createLocalAgentRunDirectory(input: {
+  appDataDir?: string;
+  runId: string;
+  runtimeProvider: AgentRuntimeProvider;
+}): Promise<LocalAgentRunDirectoryResult> {
+  const appDataRunsDir = input.appDataDir
+    ? join(input.appDataDir, LOCAL_AGENT_RUNS_DIR_NAME)
+    : undefined;
+
+  if (appDataRunsDir) {
+    return createAppDataLocalAgentRunDirectory(input, appDataRunsDir);
+  }
+
+  return {
+    runDir: await mkdtemp(
+      join(tmpdir(), `aimc-local-agent-${input.runtimeProvider}-run-`),
+    ),
+    useManagedAgentInvocation: false,
+  };
+}
+
+async function createAppDataLocalAgentRunDirectory(
+  input: {
+    runId: string;
+    runtimeProvider: AgentRuntimeProvider;
+  },
+  appDataRunsDir: string,
+): Promise<LocalAgentRunDirectoryResult> {
+  const runDir = join(
+    appDataRunsDir,
+    `${safeRunDirSegment(input.runtimeProvider)}-${safeRunDirSegment(
+      input.runId,
+    )}`,
+  );
+  await mkdir(runDir, { recursive: true });
+  return {
+    runDir,
+    useManagedAgentInvocation: false,
+  };
+}
+
+function normalizeRunDirectoryResult(
+  result: string | LocalAgentRunDirectoryResult,
+  managed: boolean,
+): LocalAgentRunDirectoryResult {
+  if (typeof result !== "string") {
+    return result;
+  }
+
+  return {
+    runDir: result,
+    useManagedAgentInvocation: managed,
+  };
+}
 
 function mapResumeContext(
   resumeContext: RuntimeExecutionContext["run"]["resumeContext"],
@@ -105,6 +175,7 @@ export function createLocalAgentRuntimeProvider(
         await deps.loadCanvasSummaryForRuntime(readyContext);
 
       let attachmentDataMap: Record<string, string> = {};
+      const attachmentMetadata: Record<string, ImageAttachmentMetadata> = {};
       if (run.attachments?.length) {
         const downloaded: Array<{
           assetId: string;
@@ -119,6 +190,9 @@ export function createLocalAgentRuntimeProvider(
                 /^data:([^;]+);base64,(.+)$/,
               );
               if (dataUriMatch) {
+                const buffer = Buffer.from(dataUriMatch[2] ?? "", "base64");
+                const metadata = buildImageAttachmentMetadata(buffer);
+                if (metadata) attachmentMetadata[attachment.assetId] = metadata;
                 downloaded.push({
                   assetId: attachment.assetId,
                   mimeType: dataUriMatch[1] ?? attachment.mimeType,
@@ -129,6 +203,8 @@ export function createLocalAgentRuntimeProvider(
 
               const response = await fetch(attachment.url);
               const buffer = Buffer.from(await response.arrayBuffer());
+              const metadata = buildImageAttachmentMetadata(buffer);
+              if (metadata) attachmentMetadata[attachment.assetId] = metadata;
               downloaded.push({
                 assetId: attachment.assetId,
                 mimeType:
@@ -153,6 +229,7 @@ export function createLocalAgentRuntimeProvider(
         run.mentions,
         run.videoGenerationPreference,
         canvasSummary,
+        attachmentMetadata,
       );
       const normalizedPrompt =
         normalizeWorkspaceSkillPathsForLocalAgent(enrichedPrompt);
@@ -184,10 +261,37 @@ export function createLocalAgentRuntimeProvider(
       const systemPrompt = buildAimcSystemPrompt({
         brandKitId: readyContext.brandKitId,
       });
-
-      const runDir = await mkdtemp(
-        join(tmpdir(), `aimc-local-agent-${runtimeProvider}-run-`),
-      );
+      const loadManagedAgentRunContext = run.loadManagedAgentRunContext;
+      if (loadManagedAgentRunContext) {
+        delete run.loadManagedAgentRunContext;
+      }
+      const managedRunContext = loadManagedAgentRunContext
+        ? await loadManagedAgentRunContext()
+        : undefined;
+      const managed = Boolean(managedRunContext);
+      const runDirectory = managedRunContext
+        ? undefined
+        : normalizeRunDirectoryResult(
+            deps.createRunDirectory
+              ? await deps.createRunDirectory({
+                  managed,
+                  runId: run.runId,
+                  runtimeProvider,
+                })
+              : await createLocalAgentRunDirectory({
+                  ...(runtimeEnv.appDataDir
+                    ? { appDataDir: runtimeEnv.appDataDir }
+                    : {}),
+                  runId: run.runId,
+                  runtimeProvider,
+                }),
+            managed,
+          );
+      const runDir = managedRunContext?.cwd ?? runDirectory?.runDir;
+      if (!runDir) {
+        throw new Error("Local agent run directory is required.");
+      }
+      const managedAgentInvocation = managedRunContext?.managedAgentInvocation;
       await materializeWorkspaceSkillsForLocalAgent({
         runDir,
         workspaceSkills,
@@ -232,24 +336,6 @@ export function createLocalAgentRuntimeProvider(
         ...(run.userId ? { userId: run.userId } : {}),
       });
 
-      const history = await loadNormalizedSessionHistory({
-        currentPrompt: enrichedPrompt,
-        ...(deps.loadSessionMessages
-          ? { loadSessionMessages: deps.loadSessionMessages }
-          : {}),
-        sessionId: run.sessionId,
-      });
-      const skillManifest =
-        mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills);
-      const resume = mapResumeContext(run.resumeContext);
-      const mcpServers = [
-        createAimcToolsMcpServerConfig({
-          gatewayBaseUrl: deps.toolGatewayBaseUrl,
-          gatewayToken: gatewaySession.token,
-          startupTimeoutMs: DEFAULT_LOCAL_AGENT_MCP_STARTUP_TIMEOUT_MS,
-          toolTimeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
-        }),
-      ];
       const messageId = run.assistantMessageId ?? `message_${run.runId}`;
       let terminalEmitted = false;
       let lastError: Extract<AgentEvent, { type: "error" }> | undefined;
@@ -257,6 +343,26 @@ export function createLocalAgentRuntimeProvider(
       rlog.lap("local_agent_runtime_start", { provider: runtimeProvider });
 
       try {
+        const history = await loadNormalizedSessionHistory({
+          currentPrompt: enrichedPrompt,
+          ...(deps.loadSessionMessages
+            ? { loadSessionMessages: deps.loadSessionMessages }
+            : {}),
+          sessionId: run.sessionId,
+        });
+        const skillManifest =
+          mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills);
+        const resume = mapResumeContext(run.resumeContext);
+        const mcpServers = [
+          createAimcToolsMcpServerConfig({
+            gatewayBaseUrl: deps.toolGatewayBaseUrl,
+            gatewayToken: gatewaySession.token,
+            requireSandboxEntrypoint: Boolean(managedAgentInvocation),
+            startupTimeoutMs: DEFAULT_LOCAL_AGENT_MCP_STARTUP_TIMEOUT_MS,
+            toolTimeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
+          }),
+        ];
+
         yield {
           type: "run.started",
           runId: run.runId,
@@ -272,6 +378,7 @@ export function createLocalAgentRuntimeProvider(
           prompt,
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
+          ...(managedAgentInvocation ? { managedAgentInvocation } : {}),
           model: stripLocalAgentProviderPrefix(resolvedModel, runtimeProvider),
           runtimeKind: "local-agent",
           runtimeProvider,

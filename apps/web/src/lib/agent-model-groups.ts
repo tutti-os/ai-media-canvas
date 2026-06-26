@@ -12,7 +12,7 @@ const API_PROVIDER_IDS = new Set([
 ]);
 const MANAGED_MODEL_PREFIXES = ["tutti"];
 
-export const SUPPORTED_LOCAL_CLI_PROVIDERS = ["codex", "claude"];
+export const SUPPORTED_LOCAL_CLI_PROVIDERS = ["codex", "claude", "nexight"];
 
 export const LOCAL_CLI_PROVIDER_LABELS: Record<string, string> = {
   codex: "Codex",
@@ -24,6 +24,7 @@ export const LOCAL_CLI_PROVIDER_LABELS: Record<string, string> = {
   kilo: "Kilo",
   kimi: "Kimi CLI",
   kiro: "Kiro CLI",
+  nexight: "Nexight",
   opencode: "OpenCode",
   qoder: "Qoder CLI",
   qwen: "Qwen Code",
@@ -36,6 +37,7 @@ export const LOCAL_CLI_PROVIDER_FALLBACK_MARKS: Record<string, string> = {
   devin: "D",
   hermes: "H",
   kiro: "K",
+  nexight: "NX",
 };
 
 export function isApiProvider(provider: string) {

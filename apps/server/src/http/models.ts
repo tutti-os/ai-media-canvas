@@ -1,30 +1,28 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
-  type InstallableAgentProviderId,
   type ModelInfo,
   type WorkspaceSettings,
-  agentProviderInstallResponseSchema,
-  applicationErrorResponseSchema,
-  installableAgentProviderIdSchema,
   modelListResponseSchema,
 } from "@aimc/shared";
+import {
+  type DetectContext,
+  type ManagedAgentInvocationCredentialHeaders,
+  createManagedAgentDetectContextFromHeaders,
+} from "@tutti-os/agent-acp-kit";
 
 import {
-  type AgentProviderInstallResult,
-  installAgentProvider,
-} from "../agent/local-agent-provider-installer.js";
-import {
+  type LocalAgentModelDetectContext,
   type LocalAgentModelDiscovery,
   buildLocalAgentModels,
   createDefaultLocalAgentModelDiscovery,
 } from "../agent/local-agent-models.js";
 import type { ServerEnv } from "../config/env.js";
-import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 import {
   LOCAL_WORKSPACE_ID,
   type SettingsService,
 } from "../features/settings/settings-service.js";
+import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
 
 const OPENAI_MODELS: ModelInfo[] = [
   { id: "openai:gpt-5.5", name: "OpenAI GPT-5.5", provider: "openai" },
@@ -82,12 +80,26 @@ const AGNES_MODELS: ModelInfo[] = [
   { id: "agnes:agnes-1.5-flash", name: "Agnes 1.5 Flash", provider: "agnes" },
 ];
 
-type LocalAgentProviderInstaller = (
-  provider: InstallableAgentProviderId,
-) => Promise<AgentProviderInstallResult>;
 type ModelDiscoveryLogger = {
   warn: (payload: unknown, message: string) => void;
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function parseRefreshFlag(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(parseRefreshFlag);
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return false;
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function isModelRefreshRequested(input: unknown): boolean {
+  return isRecord(input) && parseRefreshFlag(input.refresh);
+}
 
 function withModelSource(
   models: ModelInfo[],
@@ -230,116 +242,66 @@ async function fetchOpenAICompatibleModels(
   return normalizeOpenAICompatibleModels(await response.json());
 }
 
-function localAgentProviderInstallMessage(
-  result: AgentProviderInstallResult,
-): string {
-  const providerName = result.provider === "codex" ? "Codex" : "Claude Code";
-
-  if (result.after.availability === "ready") {
-    return `${providerName} is installed and ready.`;
-  }
-
-  if (result.after.availability === "auth_required") {
-    return `${providerName} is installed. Sign in to finish setup.`;
-  }
-
-  if (result.status === "failed") {
-    return `${providerName} installation failed.`;
-  }
-
-  return `${providerName} installation needs attention.`;
-}
-
 export async function registerModelRoutes(
   app: FastifyInstance,
   env: ServerEnv,
   settingsService?: SettingsService,
   options?: {
     localAgentModelDiscovery?: LocalAgentModelDiscovery;
-    localAgentProviderInstaller?: LocalAgentProviderInstaller;
     tuttiManagedCredentials?: TuttiManagedCredentialService;
   },
 ) {
   const localAgentModelDiscovery =
     options?.localAgentModelDiscovery ??
     createDefaultLocalAgentModelDiscovery();
-  const localAgentProviderInstaller =
-    options?.localAgentProviderInstaller ?? installAgentProvider;
 
-  app.get("/api/models", async (_request, reply) => {
+  const sendModels = async (
+    reply: FastifyReply,
+    input: {
+      headers?: ManagedAgentInvocationCredentialHeaders;
+      refreshLocalAgentModels?: boolean;
+    } = {},
+  ) => {
     const models = await listAgentModels({
       env,
       localAgentModelDiscovery,
       logger: app.log,
+      ...(input.refreshLocalAgentModels
+        ? { refreshLocalAgentModels: true }
+        : {}),
+      ...(input.headers ? { managedAgentHeaders: input.headers } : {}),
       ...(options?.tuttiManagedCredentials
         ? { tuttiManagedCredentials: options.tuttiManagedCredentials }
         : {}),
       ...(settingsService ? { settingsService } : {}),
     });
     return reply.code(200).send(modelListResponseSchema.parse({ models }));
+  };
+
+  app.get("/api/models", async (request, reply) => {
+    return sendModels(reply, {
+      headers: request.headers,
+      refreshLocalAgentModels: isModelRefreshRequested(request.query),
+    });
   });
 
-  app.post(
-    "/api/local-agent/providers/:provider/install",
-    async (request, reply) => {
-      if (env.trustedLocalAgentMode === false) {
-        return reply.code(403).send(
-          applicationErrorResponseSchema.parse({
-            error: {
-              code: "application_error",
-              message: "Local agent installation is disabled.",
-            },
-          }),
-        );
-      }
-
-      const paramsResult = installableAgentProviderIdSchema.safeParse(
-        (request.params as { provider?: unknown }).provider,
-      );
-      if (!paramsResult.success) {
-        return reply.code(400).send(
-          applicationErrorResponseSchema.parse({
-            error: {
-              code: "application_error",
-              message: "Unsupported local agent provider.",
-            },
-          }),
-        );
-      }
-
-      try {
-        const result = await localAgentProviderInstaller(paramsResult.data);
-        return reply.code(200).send(
-          agentProviderInstallResponseSchema.parse({
-            provider: result.provider,
-            status: result.status,
-            availability: result.after.availability,
-            reason: result.after.reason,
-            message: localAgentProviderInstallMessage(result),
-          }),
-        );
-      } catch (error) {
-        app.log.error(
-          { err: error },
-          "Failed to install local agent provider.",
-        );
-        return reply.code(500).send(
-          applicationErrorResponseSchema.parse({
-            error: {
-              code: "application_error",
-              message: "Unable to install local agent provider.",
-            },
-          }),
-        );
-      }
-    },
-  );
+  app.post("/api/models", async (request, reply) => {
+    return sendModels(reply, {
+      headers: request.headers,
+      refreshLocalAgentModels:
+        isModelRefreshRequested(request.query) ||
+        isModelRefreshRequested(request.body),
+    });
+  });
 }
 
 export async function listAgentModels(options: {
   env: ServerEnv;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
+  managedAgentDetectContext?: DetectContext;
+  managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders;
+  refreshLocalAgentModels?: boolean;
   tuttiManagedCredentials?: TuttiManagedCredentialService;
   settingsService?: SettingsService;
 }) {
@@ -425,13 +387,21 @@ export async function listAgentModels(options: {
     );
   }
   if (effectiveEnv.trustedLocalAgentMode !== false) {
+    const managedAgentDetectContext =
+      options.managedAgentDetectContext ??
+      createManagedAgentDetectContextFromHeaders(options.managedAgentHeaders);
+    const localAgentDetectContext: LocalAgentModelDetectContext | undefined =
+      options.refreshLocalAgentModels
+        ? { ...(managedAgentDetectContext ?? {}), refresh: true }
+        : managedAgentDetectContext;
     try {
-      models.push(
-        ...buildLocalAgentModels(await localAgentModelDiscovery.detect()),
+      const detections = await localAgentModelDiscovery.detect(
+        localAgentDetectContext,
       );
+      models.push(...buildLocalAgentModels(detections));
     } catch (error) {
       options.logger?.warn(
-        { err: error },
+        managedAgentDetectContext ? {} : { err: error },
         "Failed to load local-agent models; omitting local providers.",
       );
     }

@@ -12,12 +12,15 @@ describe("isLocalAgentRuntimeRequested", () => {
     );
   });
 
-  it("detects all official local model prefixes", () => {
-    for (const provider of ["codex", "claude", "hermes", "kimi", "kiro"]) {
+  it("detects all AIMC-supported local model prefixes", () => {
+    for (const provider of ["codex", "claude", "nexight"]) {
       expect(
         isLocalAgentRuntimeRequested({ model: `${provider}:default` }),
       ).toBe(true);
     }
+    expect(isLocalAgentRuntimeRequested({ model: "nextop:default" })).toBe(
+      false,
+    );
   });
 
   it("does not treat server model specifiers as local-agent requests", () => {

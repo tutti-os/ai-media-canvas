@@ -30,7 +30,7 @@ export async function registerRunRoutes(
 ) {
   app.post("/api/agent/runs", async (request, reply) => {
     try {
-      const payload = runCreateRequestSchema.parse(request.body);
+      const parsedPayload = runCreateRequestSchema.parse(request.body);
       const hasAuthorization = hasBearerAuthorization(
         request.headers.authorization,
       );
@@ -47,7 +47,7 @@ export async function registerRunRoutes(
         authenticatedUser && options?.threadService
           ? await options.threadService.resolveOwnedSessionThread(
               authenticatedUser,
-              payload.sessionId,
+              parsedPayload.sessionId,
             )
           : null;
 
@@ -74,9 +74,10 @@ export async function registerRunRoutes(
       }
 
       const response = runCreateResponseSchema.parse(
-        agentRuns.createRun(payload, {
+        agentRuns.createRun(parsedPayload, {
           ...(authenticatedUser ? { accessToken: authenticatedUser.accessToken, userId: authenticatedUser.id } : {}),
           ...(runEnv ? { env: runEnv } : {}),
+          managedAgentHeaders: request.headers,
           ...(model ? { model } : {}),
           ...(sessionThread ? { threadId: sessionThread.threadId } : {}),
         }),

@@ -20,7 +20,7 @@ describe("createAimcToolsMcpServerConfig", () => {
     expect(config).toMatchObject({
       name: "aimc",
       type: "stdio",
-      command: process.execPath,
+      command: "node",
       args: ["/package/server/tools-mcp.js"],
       startupTimeoutMs: 120_000,
       toolTimeoutMs: 1_800_000,
@@ -29,6 +29,7 @@ describe("createAimcToolsMcpServerConfig", () => {
         AIMC_TOOL_TOKEN: "tool-token",
       },
     });
+    expect(config).not.toHaveProperty("executionSide");
   });
 
   it("adds MCP timeout metadata for the development entrypoint", () => {
@@ -45,6 +46,23 @@ describe("createAimcToolsMcpServerConfig", () => {
       command: "pnpm",
       startupTimeoutMs: 120_000,
       toolTimeoutMs: 1_800_000,
+      env: {
+        AIMC_TOOL_GATEWAY_URL: "http://127.0.0.1:4000/api/tools",
+        AIMC_TOOL_TOKEN: "tool-token",
+      },
     });
+    expect(config).not.toHaveProperty("executionSide");
+  });
+
+  it("requires a packaged MCP entrypoint for managed VM execution", () => {
+    expect(() =>
+      createAimcToolsMcpServerConfig({
+        gatewayBaseUrl: "http://127.0.0.1:4000/api/tools",
+        gatewayToken: "tool-token",
+        requireSandboxEntrypoint: true,
+      }),
+    ).toThrow(
+      "AIMC_TOOLS_MCP_PATH is required for managed local-agent MCP VM execution.",
+    );
   });
 });

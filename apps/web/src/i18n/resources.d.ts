@@ -27,6 +27,7 @@ export default interface Resources {
         "canvasAndShapeProperties": "画布和形状属性",
         "copyImage": "复制图片",
         "copyLinkToObject": "复制对象链接",
+        "copyNode": "复制节点",
         "cropImage": "裁剪图片",
         "duplicate": "复制节点",
         "paste": "粘贴",
@@ -203,6 +204,22 @@ export default interface Resources {
       "modelPreference": "图片/视频模型",
       "placeholder": "从一个想法开始，或输入 “@” 提及内容",
       "send": "发送消息"
+    },
+    "lightbox": {
+      "close": "关闭 (Esc)",
+      "copyImage": "复制图片",
+      "copyImageFailed": "图片复制失败",
+      "copyImageSuccess": "图片已复制",
+      "downloadFailed": "图片下载失败",
+      "downloadImage": "下载图片",
+      "flipHorizontal": "左右翻转",
+      "flipVertical": "上下翻转",
+      "imageFailedToLoad": "图片加载失败",
+      "rotateClockwise": "顺时针旋转 (R)",
+      "rotateCounterClockwise": "逆时针旋转",
+      "viewerLabel": "图片查看器",
+      "zoomIn": "放大 (+)",
+      "zoomOut": "缩小 (-)"
     },
     "media": {
       "generationCanceled": "已取消",
@@ -559,7 +576,6 @@ export default interface Resources {
         "workspaceModelsDescription": "从各 provider 下已配置的模型列表中选择。"
       },
       "feedback": {
-        "installFailed": "无法安装本地 Agent provider。",
         "updateFailed": "本地 Agent 设置更新失败，请重试。",
         "updated": "本地 Agent 设置已更新。"
       },
@@ -569,18 +585,22 @@ export default interface Resources {
         "customOption": "自定义（在下方输入）...",
         "description": "选择生成任务要使用的 CLI 路由。",
         "detectedCli": "已检测 CLI",
-        "empty": "暂未检测到本地 CLI 模型。安装或登录支持的本地 CLI 后重新扫描。",
+        "empty": "暂未检测到本地 CLI 模型。请在 Tutti 中管理支持的智能体，然后重新扫描。",
+        "feedback": {
+          "managerOpened": "已打开 Tutti 管理智能体。完成安装或登录后请重新扫描。",
+          "openManagerFailed": "请在 Tutti 中打开 AI Canvas 后管理本地 Agent。"
+        },
         "fetchedDescription": "当 CLI 暴露模型列表时会自动获取。自定义模式允许输入该 CLI 支持的任意模型 ID。",
-        "installHint": "安装 Codex 或 Claude Code 后重新扫描，即可启用本地 Agent 路由。",
-        "installRequired": "需要安装",
-        "installing": "安装中...",
+        "manageInTutti": "在 Tutti 中管理",
         "modelCountOne": "{{modelCount}} 个模型",
         "modelCountOther": "{{modelCount}} 个模型",
         "modelLabel": "模型",
         "noCliSelected": "未选择 CLI",
+        "openingManager": "打开中...",
         "rescan": "重新扫描",
         "selectCliFirst": "请先选择 CLI...",
-        "selectModel": "选择模型..."
+        "selectModel": "选择模型...",
+        "setupHint": "请在 Tutti 中安装或登录 Codex / Claude Code，然后重新扫描以启用本地 Agent 路由。"
       },
       "source": {
         "apiProvider": "API provider",

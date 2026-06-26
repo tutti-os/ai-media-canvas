@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -153,6 +153,56 @@ describe("buildApp", () => {
     expect(localAsset.body).toBe("fake");
   });
 
+  it("defaults managed file asset records to files under the data root uploads directory", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
+    dataRoots.push(dataRoot);
+    const uploadsRoot = join(dataRoot, "uploads");
+    await mkdir(uploadsRoot);
+    const managedFilePath = join(uploadsRoot, "managed-ref.png");
+    const managedFileBytes = Buffer.from("fake");
+    const managedFileSha256 = createHash("sha256")
+      .update(managedFileBytes)
+      .digest("hex");
+    await writeFile(managedFilePath, managedFileBytes);
+    const managedFileRealPath = await realpath(managedFilePath);
+
+    const app = buildApp({
+      env: {
+        dataRoot,
+      },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/uploads/managed-file",
+      payload: {
+        file: {
+          path: managedFilePath,
+          name: "ref.png",
+          mimeType: "image/png",
+          sizeBytes: managedFileBytes.byteLength,
+          sha256: managedFileSha256,
+        },
+      },
+    });
+    await app.close();
+
+    expect(response.statusCode).toBe(201);
+    const body = JSON.parse(response.body) as {
+      asset: {
+        objectPath: string;
+        source?: string;
+        displayName?: string | null;
+        sha256?: string | null;
+      };
+    };
+    expect(body.asset).toMatchObject({
+      objectPath: managedFileRealPath,
+      source: "managed-file",
+      displayName: "ref.png",
+      sha256: managedFileSha256,
+    });
+  });
+
   it("rejects managed file asset records outside the managed files root", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
     dataRoots.push(dataRoot);
@@ -220,6 +270,30 @@ describe("buildApp", () => {
     expect(response.headers["access-control-allow-origin"]).toBe(
       "http://localhost:3000",
     );
+  });
+
+  it("serves routed web pages when launch URLs include query params", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
+    const webDistDir = await mkdtemp(join(tmpdir(), "aimc-web-dist-"));
+    dataRoots.push(dataRoot, webDistDir);
+    await writeFile(join(webDistDir, "canvas.html"), "<main>canvas</main>");
+    await writeFile(join(webDistDir, "404.html"), "<main>missing</main>");
+
+    const app = buildApp({
+      env: {
+        dataRoot,
+        webDistDir,
+      },
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/canvas?id=1b69eb24-390e-4ea6-b737-b3741c3a53dc",
+    });
+    await app.close();
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/html");
+    expect(response.body).toBe("<main>canvas</main>");
   });
 
   it("does not reflect non-local origins that differ from the configured web origin", async () => {

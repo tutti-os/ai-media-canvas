@@ -16,6 +16,7 @@ import type {
   AgentEvent,
   LocalAgentProviderPlugin,
   LocalAgentRuntime,
+  ManagedAgentRunContext,
 } from "@tutti-os/agent-acp-kit";
 
 import type { UserDataClient } from "../../auth/request.js";
@@ -24,6 +25,7 @@ import type { ConnectionManager } from "../../ws/connection-manager.js";
 import type { createPipelineLogger } from "../../ws/logger.js";
 import type { createAgentBackend } from "../backends/index.js";
 import type { AimcAgentFactory } from "../deep-agent.js";
+import type { ImageAttachmentMetadata } from "../image-attachment-metadata.js";
 import type { createLocalToolGatewayService } from "../local-agent-host/tool-gateway.js";
 import type { SubmitImageJobFn } from "../tools/image-generate.js";
 import type { SubmitVideoJobFn } from "../tools/video-generate.js";
@@ -45,6 +47,9 @@ export type RuntimeRunRecord = {
   delegationConsent?: RunCreateRequest["delegationConsent"];
   envOverride?: ServerEnv | undefined;
   imageGenerationPreference?: ImageGenerationPreference | undefined;
+  loadManagedAgentRunContext?: () => Promise<
+    ManagedAgentRunContext | undefined
+  >;
   mentions?: MessageMention[] | undefined;
   modelOverride?: string | undefined;
   prompt: string;
@@ -98,6 +103,7 @@ export type BuildUserMessage = (
   mentions?: MessageMention[],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
+  attachmentMetadata?: Record<string, ImageAttachmentMetadata>,
 ) => { text: string };
 
 export type BuildAttachmentDataMap = (
@@ -117,6 +123,17 @@ export type LoadCanvasSummaryForRuntime = (
 export type LocalAgentRuntimeProviderDeps = {
   buildAttachmentDataMap: BuildAttachmentDataMap;
   buildUserMessage: BuildUserMessage;
+  createRunDirectory?: (input: {
+    managed: boolean;
+    runId: string;
+    runtimeProvider: AgentRuntimeProvider;
+  }) => Promise<
+    | string
+    | {
+        runDir: string;
+        useManagedAgentInvocation: boolean;
+      }
+  >;
   loadCanvasSummaryForRuntime: LoadCanvasSummaryForRuntime;
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
   localAgentRuntime: Pick<

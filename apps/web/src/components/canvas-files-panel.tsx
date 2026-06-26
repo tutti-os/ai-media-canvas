@@ -3,7 +3,10 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { useAppTranslation } from "@/i18n";
-import { downloadPngFile } from "@/lib/image-download";
+import {
+  createPngDownloadFilename,
+  downloadPngFile,
+} from "@/lib/image-download";
 import { useToast } from "./toast";
 
 // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API/element has no public type
@@ -186,7 +189,10 @@ export function CanvasFilesPanel({
       }
 
       try {
-        const filename = `${file.name}.png`;
+        const filename = createPngDownloadFilename({
+          name: file.name,
+          fallbackBaseName: file.id,
+        });
         const result = await downloadPngFile({
           filename,
           source: file.dataURL,

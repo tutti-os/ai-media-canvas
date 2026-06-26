@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
 
 const { createAgentBackendMock } = vi.hoisted(() => ({
   createAgentBackendMock: vi.fn(() => ({ factory: { kind: "backend" } })),
@@ -105,6 +106,35 @@ describe("createAgentRunService", () => {
     expect(message.text).toContain("codex/gpt-image-2");
     expect(message.text).not.toContain("black-forest-labs/flux-kontext-pro");
     expect(message.text).toContain('<human_image_model_mentions count="1">');
+  });
+
+  it("adds image attachment dimensions to input image context when available", () => {
+    const message = buildUserMessage(
+      "根据图1生成另一张图",
+      [
+        {
+          assetId: "asset-1",
+          url: "http://127.0.0.1:3001/local-assets/asset-1",
+          mimeType: "image/jpeg",
+          name: "reference.jpg",
+        },
+      ],
+      undefined,
+      [],
+      undefined,
+      null,
+      {
+        "asset-1": {
+          width: 1491,
+          height: 1055,
+          orientation: "landscape",
+        },
+      },
+    );
+
+    expect(message.text).toContain(
+      '<image index="1" asset_id="asset-1" mime_type="image/jpeg" name="reference.jpg" width="1491" height="1055" orientation="landscape" />',
+    );
   });
 
   it("prepends saved session messages and avoids duplicating the current user prompt", async () => {
@@ -1841,7 +1871,7 @@ describe("createAgentRunService", () => {
     );
   });
 
-  it("strips the local provider prefix before invoking generic ACP providers", async () => {
+  it("strips the local provider prefix before invoking Nexight", async () => {
     const localRun = vi.fn(async function* () {
       yield {
         type: "done" as const,
@@ -1863,8 +1893,8 @@ describe("createAgentRunService", () => {
       },
       localAgentProviderPlugins: [
         {
-          id: "hermes",
-          displayName: "Hermes",
+          id: "nexight",
+          displayName: "Nexight",
           kind: "local-agent",
           async detect() {
             return null;
@@ -1903,9 +1933,9 @@ describe("createAgentRunService", () => {
         sessionId: "session-1",
       },
       {
-        model: "hermes:openai-codex:gpt-5.4",
+        model: "nexight:openai-codex:gpt-5.4",
         runtimeKind: "local-agent",
-        runtimeProvider: "hermes",
+        runtimeProvider: "nexight",
       },
     );
 
@@ -1915,8 +1945,8 @@ describe("createAgentRunService", () => {
 
     expect(localRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        provider: "hermes",
-        runtimeProvider: "hermes",
+        provider: "nexight",
+        runtimeProvider: "nexight",
         model: "openai-codex:gpt-5.4",
       }),
     );
@@ -2852,5 +2882,79 @@ describe("createAgentRunService", () => {
       }),
       model: "agnes:agnes-2.0-flash",
     });
+  });
+
+  it("does not expose managed agent invocation credentials outside local-agent runs", async () => {
+    let capturedAgentOptions: unknown;
+    let capturedStreamConfig: unknown;
+    const agentFactory = vi.fn((agentOptions) => {
+      capturedAgentOptions = agentOptions;
+      return {
+        stream: vi.fn(),
+        streamEvents: vi.fn((_input: unknown, config: unknown) => {
+          capturedStreamConfig = config;
+          return (async function* () {
+            yield {
+              type: "run.completed" as const,
+              runId: "run-server",
+              timestamp: "2026-06-17T00:00:00.000Z",
+            };
+          })();
+        }),
+      };
+    });
+    const createRun = vi.fn();
+    const updateRun = vi.fn();
+    const runs = createAgentRunService({
+      agentFactory,
+      agentRunStore: {
+        createRun,
+        updateRun,
+      },
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      loadSessionMessages: async () => [],
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "hi",
+        sessionId: "session-1",
+      },
+      {
+        managedAgentHeaders: {
+          [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
+        },
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the server runtime reaches the agent factory.
+    }
+
+    expect(createRun).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        managedAgentInvocationCredential: "credential-run-1",
+      }),
+    );
+    expect(JSON.stringify(createRun.mock.calls)).not.toContain(
+      "credential-run-1",
+    );
+    expect(JSON.stringify(updateRun.mock.calls)).not.toContain(
+      "credential-run-1",
+    );
+    expect(JSON.stringify(capturedAgentOptions)).not.toContain(
+      "credential-run-1",
+    );
+    expect(JSON.stringify(capturedStreamConfig)).not.toContain(
+      "credential-run-1",
+    );
   });
 });

@@ -186,6 +186,34 @@ test("createCliManifest returns the Tutti CLI manifest contract", () => {
   assert.equal(manifest.documentation.file, "COMMANDS.md");
   assert.ok(manifest.commands.length >= 20);
   assert.deepEqual(
+    manifest.commands.find((command) => command.path.join(" ") === "open"),
+    {
+      path: ["open"],
+      summary: "Open AI Canvas",
+      description:
+        "Open AI Canvas in Tutti Desktop. When project-id is provided, open that project's primary canvas; otherwise open the app home page.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          "project-id": {
+            type: "string",
+            description: "Optional project id to open.",
+          },
+        },
+      },
+      output: {
+        defaultMode: "json",
+        json: true,
+      },
+      handler: {
+        kind: "http",
+        method: "POST",
+        path: "/tutti/cli/open",
+        timeoutMs: 30000,
+      },
+    },
+  );
+  assert.deepEqual(
     manifest.commands.find(
       (command) => command.path.join(" ") === "projects create",
     ),
@@ -242,6 +270,7 @@ test("renderCommandsGuide documents CLI commands", () => {
   const guide = renderCommandsGuide();
 
   assert.match(guide, /AI Canvas CLI Commands/);
+  assert.match(guide, /`aimc open --project-id`/);
   assert.match(guide, /`aimc projects create --name <required> --description`/);
   assert.match(guide, /\/tutti\/cli\/agent\/run/);
 });
@@ -254,10 +283,7 @@ test("renderBootstrap maps Tutti runtime env into AI Canvas env", () => {
     bootstrap,
     /package_dir="\$\{TUTTI_APP_PACKAGE_DIR:-\$script_dir\}"/,
   );
-  assert.match(
-    bootstrap,
-    /export HOST="\$\{TUTTI_APP_HOST:-127\.0\.0\.1\}"/,
-  );
+  assert.match(bootstrap, /export HOST="\$\{TUTTI_APP_HOST:-127\.0\.0\.1\}"/);
   assert.match(
     bootstrap,
     /export AIMC_SERVER_PORT="\$\{TUTTI_APP_PORT:-3001\}"/,
@@ -281,10 +307,7 @@ test("renderBootstrap maps Tutti runtime env into AI Canvas env", () => {
     bootstrap,
     /base_url="\$\{TUTTI_APP_BASE_URL:-http:\/\/\$HOST:\$AIMC_SERVER_PORT\}"/,
   );
-  assert.match(
-    bootstrap,
-    /node_bin="\$\{TUTTI_APP_NODE:-node\}"/,
-  );
+  assert.match(bootstrap, /node_bin="\$\{TUTTI_APP_NODE:-node\}"/);
   assert.match(
     bootstrap,
     /runtime_dir="\$\{TUTTI_APP_RUNTIME_DIR:-\$AIMC_DATA_ROOT\/\.runtime\}"/,
@@ -324,10 +347,11 @@ test("Tutti icon asset is a generated PNG with a contrast-safe tile", async () =
   const bounds = readPngAlphaBounds(icon);
 
   assert.ok(iconStat.size > 0);
-  assert.equal(bounds.width, 1024);
-  assert.equal(bounds.height, 1024);
+  assert.equal(bounds.width, 363);
+  assert.equal(bounds.height, 363);
   assert.ok(
-    bounds.contentWidth >= 900 && bounds.contentHeight >= 900,
+    bounds.contentWidth >= Math.floor(bounds.width * 0.88) &&
+      bounds.contentHeight >= Math.floor(bounds.height * 0.88),
     `icon content should fill most of the canvas, got ${bounds.contentWidth}x${bounds.contentHeight}`,
   );
 });
