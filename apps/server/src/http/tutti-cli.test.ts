@@ -489,7 +489,9 @@ describe("registerTuttiCliRoutes", () => {
             "canceled",
             "dead_letter",
           ],
-          guidance: expect.stringContaining("Keep polling"),
+          pollIntervalMs: 3_000,
+          maxWaitMs: 600_000,
+          guidance: expect.stringContaining("Sleep pollIntervalMs"),
         },
       },
     });
@@ -678,6 +680,8 @@ describe("registerTuttiCliRoutes", () => {
         },
         nextAction: {
           command: "aimc jobs get --job-id job-video-1",
+          pollIntervalMs: 10_000,
+          maxWaitMs: 7_200_000,
           guidance: expect.stringContaining("job reaches a terminal status"),
         },
       },
@@ -689,6 +693,7 @@ describe("registerTuttiCliRoutes", () => {
       getJob: vi.fn(async () => ({
         job: {
           id: "job-1",
+          job_type: "video_generation",
           result: null,
           status: "running",
         },
@@ -714,6 +719,8 @@ describe("registerTuttiCliRoutes", () => {
         },
         nextAction: {
           command: "aimc jobs get --job-id job-1",
+          pollIntervalMs: 10_000,
+          maxWaitMs: 7_200_000,
           guidance: expect.stringContaining("Do not tell the user"),
         },
       },
