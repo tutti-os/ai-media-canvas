@@ -43,6 +43,7 @@ export default interface Resources {
     "files": {
       "download": "下载 {{name}}",
       "downloadFailed": "下载失败",
+      "downloadStarted": "已开始下载",
       "downloadSuccess": "下载成功",
       "empty": "暂无生成文件",
       "end": "到底了",
