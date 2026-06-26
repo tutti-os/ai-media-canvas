@@ -106,6 +106,7 @@ export function createJobOperations(options: {
         jobType: "image_generation",
         payload: {
           prompt: payload.prompt,
+          ...(payload.title ? { title: payload.title } : {}),
           model,
           ...(payload.aspect_ratio
             ? { aspect_ratio: payload.aspect_ratio }
@@ -172,6 +173,7 @@ export function createJobOperations(options: {
         jobType: "video_generation",
         payload: {
           prompt: payload.prompt,
+          ...(payload.title ? { title: payload.title } : {}),
           model,
           ...(payload.duration ? { duration: payload.duration } : {}),
           ...(payload.resolution ? { resolution: payload.resolution } : {}),

@@ -63,6 +63,35 @@ function findUnassignedGroup(result: ListResponse) {
   return result.items.find((item) => item.id === "unassigned");
 }
 
+function createGeneratedOutput(
+  store: ReturnType<typeof createLocalStore>,
+  input: {
+    fileName: string;
+    jobType: "image_generation" | "video_generation";
+    mimeType: string;
+    projectId?: string;
+  },
+) {
+  const uploaded = store.uploadFile({
+    bucket: "project-assets",
+    fileName: input.fileName,
+    fileBuffer: Buffer.from(input.fileName),
+    mimeType: input.mimeType,
+    ...(input.projectId ? { projectId: input.projectId } : {}),
+  });
+  const job = store.createBackgroundJob({
+    jobType: input.jobType,
+    queueName: input.jobType,
+    payload: { prompt: `generate ${input.fileName}` },
+    ...(input.projectId ? { projectId: input.projectId } : {}),
+  });
+  store.markBackgroundJobSucceeded(job.id, {
+    asset_id: uploaded.asset.id,
+    mime_type: input.mimeType,
+  });
+  return uploaded;
+}
+
 describe("POST /tutti/references/list", () => {
   const dataRoots: string[] = [];
 
@@ -85,17 +114,15 @@ describe("POST /tutti/references/list", () => {
       dataRoot,
     });
     const project = store.createProject({ name: "Campaign A" });
-    const image = store.uploadFile({
-      bucket: "project-assets",
+    const image = createGeneratedOutput(store, {
       fileName: "hero.png",
-      fileBuffer: Buffer.from("img"),
+      jobType: "image_generation",
       mimeType: "image/png",
       projectId: project.id,
     });
-    const video = store.uploadFile({
-      bucket: "project-assets",
+    const video = createGeneratedOutput(store, {
       fileName: "promo.mp4",
-      fileBuffer: Buffer.from("vid"),
+      jobType: "video_generation",
       mimeType: "video/mp4",
       projectId: project.id,
     });
@@ -107,10 +134,9 @@ describe("POST /tutti/references/list", () => {
       mimeType: "application/json",
       projectId: project.id,
     });
-    const unassigned = store.uploadFile({
-      bucket: "project-assets",
+    const unassigned = createGeneratedOutput(store, {
       fileName: "stray.png",
-      fileBuffer: Buffer.from("stray"),
+      jobType: "image_generation",
       mimeType: "image/png",
     });
     return {
@@ -140,6 +166,51 @@ describe("POST /tutti/references/list", () => {
       displayName: "项目外资源",
       referenceCount: 1,
     });
+  });
+
+  it("does not expose ordinary media uploads as app references", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-ordinary-"));
+    dataRoots.push(dataRoot);
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = store.createProject({ name: "Manual Uploads" });
+    store.uploadFile({
+      bucket: "project-assets",
+      fileName: "uploaded.png",
+      fileBuffer: Buffer.from("image"),
+      mimeType: "image/png",
+      projectId: project.id,
+    });
+    store.uploadFile({
+      bucket: "project-assets",
+      fileName: "loose.mp4",
+      fileBuffer: Buffer.from("video"),
+      mimeType: "video/mp4",
+    });
+    const app = buildApp({ env: { dataRoot } });
+
+    const root = await listReferences(app, {});
+    const projectFiles = await listReferences(app, {
+      parentGroupId: `project:${project.id}`,
+    });
+    const unassignedFiles = await listReferences(app, {
+      parentGroupId: "unassigned",
+    });
+    const search = await searchReferences(app, {});
+    await app.close();
+
+    expect(findGroup(root, project.id)).toMatchObject({
+      type: "group",
+      id: `project:${project.id}`,
+      displayName: "Manual Uploads",
+      referenceCount: 0,
+    });
+    expect(findUnassignedGroup(root)).toBeUndefined();
+    expect(projectFiles.items).toEqual([]);
+    expect(unassignedFiles.items).toEqual([]);
+    expect(search.items).toEqual([]);
   });
 
   it("lists unassigned media assets under a special root group", async () => {
@@ -238,10 +309,9 @@ describe("POST /tutti/references/list", () => {
       fileBuffer: Buffer.from("generated"),
       mimeType: "image/png",
     });
-    const stray = store.uploadFile({
-      bucket: "project-assets",
+    const stray = createGeneratedOutput(store, {
       fileName: "stray.png",
-      fileBuffer: Buffer.from("stray"),
+      jobType: "image_generation",
       mimeType: "image/png",
     });
     store.saveCanvas(project.primaryCanvas.id, {
@@ -299,10 +369,9 @@ describe("POST /tutti/references/list", () => {
       dataRoot,
     });
     const project = store.createProject({ name: "Thumbnail Guard" });
-    const image = store.uploadFile({
-      bucket: "project-assets",
+    const image = createGeneratedOutput(store, {
       fileName: "usable.png",
-      fileBuffer: Buffer.from("image"),
+      jobType: "image_generation",
       mimeType: "image/png",
       projectId: project.id,
     });
@@ -405,12 +474,42 @@ describe("POST /tutti/references/search", () => {
         mimeType,
         ...(projectId ? { projectId } : {}),
       });
-    upload(projectA.id, "a-hero.png", "image/png");
-    upload(projectA.id, "a-promo.mp4", "video/mp4");
-    upload(projectB.id, "b-hero.jpg", "image/jpeg");
-    upload(projectB.id, "b-promo.mov", "video/quicktime");
+    createGeneratedOutput(store, {
+      projectId: projectA.id,
+      fileName: "a-hero.png",
+      jobType: "image_generation",
+      mimeType: "image/png",
+    });
+    createGeneratedOutput(store, {
+      projectId: projectA.id,
+      fileName: "a-promo.mp4",
+      jobType: "video_generation",
+      mimeType: "video/mp4",
+    });
+    createGeneratedOutput(store, {
+      projectId: projectB.id,
+      fileName: "b-hero.jpg",
+      jobType: "image_generation",
+      mimeType: "image/jpeg",
+    });
+    createGeneratedOutput(store, {
+      projectId: projectB.id,
+      fileName: "b-promo.mov",
+      jobType: "video_generation",
+      mimeType: "video/quicktime",
+    });
+    createGeneratedOutput(store, {
+      projectId: projectA.id,
+      fileName: "a-preview.svg",
+      jobType: "image_generation",
+      mimeType: "image/svg+xml",
+    });
     upload(projectA.id, "plan.json", "application/json"); // non-media, excluded
-    upload(undefined, "stray.png", "image/png");
+    createGeneratedOutput(store, {
+      fileName: "stray.png",
+      jobType: "image_generation",
+      mimeType: "image/png",
+    });
     return { dataRoot, projectA, projectB };
   }
 
@@ -421,8 +520,9 @@ describe("POST /tutti/references/search", () => {
     const result = await searchReferences(app, {});
     await app.close();
 
-    // 2 project images + 2 project videos + 1 unassigned image; json excluded.
-    expect(result.items).toHaveLength(5);
+    // 3 project images (including svg) + 2 project videos + 1 unassigned image;
+    // ordinary json is excluded.
+    expect(result.items).toHaveLength(6);
     for (const item of result.items) {
       const reference = item.reference as {
         kind: string;
@@ -446,9 +546,9 @@ describe("POST /tutti/references/search", () => {
     const result = await searchReferences(app, { filters: ["image"] });
     await app.close();
 
-    expect(result.items).toHaveLength(3);
+    expect(result.items).toHaveLength(4);
     for (const name of displayNames(result)) {
-      expect(name).toMatch(/\.(png|jpg|jpeg)$/);
+      expect(name).toMatch(/\.(png|jpg|jpeg|svg)$/);
     }
   });
 
@@ -485,7 +585,7 @@ describe("POST /tutti/references/search", () => {
     });
     await app.close();
 
-    expect(result.items).toHaveLength(5);
+    expect(result.items).toHaveLength(6);
   });
 
   it("ignores unknown category ids", async () => {
@@ -500,8 +600,8 @@ describe("POST /tutti/references/search", () => {
     });
     await app.close();
 
-    expect(unknownOnly.items).toHaveLength(5);
-    expect(mixed.items).toHaveLength(3);
+    expect(unknownOnly.items).toHaveLength(6);
+    expect(mixed.items).toHaveLength(4);
   });
 
   it("returns nothing for a category that matches no exposed assets", async () => {
