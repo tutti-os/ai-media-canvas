@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@tutti-os/agent-acp-kit@0.2.3-beta.4':
+    hash: 36bb2b8517607cef0434c74d5f56bf414788f89c2511c39aff45a21d427a0ec9
+    path: patches/@tutti-os__agent-acp-kit@0.2.3-beta.4.patch
+
 importers:
 
   .:
@@ -65,7 +70,7 @@ importers:
         version: 1.4.7(@langchain/core@1.1.48(openai@6.41.0(ws@8.20.0)(zod@4.3.6))(ws@8.20.0))(ws@8.20.0)
       '@tutti-os/agent-acp-kit':
         specifier: 0.2.3-beta.4
-        version: 0.2.3-beta.4(@cfworker/json-schema@4.1.1)
+        version: 0.2.3-beta.4(patch_hash=36bb2b8517607cef0434c74d5f56bf414788f89c2511c39aff45a21d427a0ec9)(@cfworker/json-schema@4.1.1)
       agnes-ai-cli:
         specifier: ^0.1.4
         version: 0.1.4
@@ -9675,7 +9680,7 @@ snapshots:
   '@turbo/windows-arm64@2.8.20':
     optional: true
 
-  '@tutti-os/agent-acp-kit@0.2.3-beta.4(@cfworker/json-schema@4.1.1)':
+  '@tutti-os/agent-acp-kit@0.2.3-beta.4(patch_hash=36bb2b8517607cef0434c74d5f56bf414788f89c2511c39aff45a21d427a0ec9)(@cfworker/json-schema@4.1.1)':
     dependencies:
       '@anthropic-ai/claude-agent-sdk': 0.2.101(@cfworker/json-schema@4.1.1)(zod@4.3.6)
       zod: 4.3.6

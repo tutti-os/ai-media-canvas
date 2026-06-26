@@ -1,0 +1,112 @@
+diff --git a/README.md b/README.md
+index 8e27fcc30c0c839be884c25c14e56858215f3020..7920dfa68b96d701f6bf81555342988c578461f1 100644
+--- a/README.md
++++ b/README.md
+@@ -373,8 +373,8 @@ When a managed Codex or Claude run includes `mcpServers`, the SDK does not ask
+ the provider to materialize provider-native MCP config. Instead it serializes a
+ normalized MCP attachment into
+ `TSH_MANAGED_AGENT_MCP_ATTACHMENT_B64` for the tsh shim. Managed MCP handoff v1
+-supports only VM-local stdio MCP servers, so callers must set
+-`executionSide: "vm"` on those servers. If that MCP server calls back into a
++supports only VM-local stdio MCP servers; VM execution is implicit and callers
++do not need to set an execution-side flag. If that MCP server calls back into a
+ host or app tool gateway, the injected gateway URL must be reachable from the VM
+ process. MCP env/header values and the handoff payload are added to run
+ redaction secrets.
+@@ -421,7 +421,6 @@ const mcpServers = [{
+   type: "stdio" as const,
+   command: "node",
+   args: ["/absolute/path/to/app-tools-mcp.js"],
+-  executionSide: "vm" as const,
+   env: { APP_TOOL_TOKEN: runScopedToken },
+   toolTimeoutMs: 30 * 60_000,
+   startupTimeoutMs: 2 * 60_000,
+diff --git a/dist/core/index.d.ts b/dist/core/index.d.ts
+index a64b90d88cd5d46f204dbad22c9ee32e8caf702f..32e32b482cacf2d7dd494aaf2d0bfb71e7740468 100644
+--- a/dist/core/index.d.ts
++++ b/dist/core/index.d.ts
+@@ -6,7 +6,7 @@ export type { LaunchPlan, TransportKind } from "./launch-plan.js";
+ export type { ManagedAgentInvocation, ManagedAgentContextOptions, ManagedAgentInvocationCredentialHeaders, ManagedAgentInvocationCredentialHeaderValue, ManagedAgentInvocationProviderId, ManagedAgentRunContext, ManagedAgentRunContextOptions, } from "./managed-invocation.js";
+ export type { ProviderAdapter, RawAgentEvent, RawAgentStream, Transport, TransportRunResult, } from "./transport.js";
+ export type { AgentRunInput } from "./run-input.js";
+-export type { LocalAgentMcpEnvEntry, LocalAgentMcpExecutionSide, LocalAgentMcpHttpServerConfig, LocalAgentMcpServerConfig, LocalAgentMcpStdioServerConfig, NormalizedLocalAgentMcpHttpServerConfig, NormalizedLocalAgentMcpServerConfig, NormalizedLocalAgentMcpStdioServerConfig, } from "./mcp.js";
++export type { LocalAgentMcpEnvEntry, LocalAgentMcpHttpServerConfig, LocalAgentMcpServerConfig, LocalAgentMcpStdioServerConfig, NormalizedLocalAgentMcpHttpServerConfig, NormalizedLocalAgentMcpServerConfig, NormalizedLocalAgentMcpStdioServerConfig, } from "./mcp.js";
+ export type { SkillMaterializationFile, SkillMaterializationRecord, } from "./skills.js";
+ export type { LocalAgentRuntimeErrorCode } from "./errors.js";
+ export { normalizeMcpEnvEntries, normalizeMcpServerConfig, normalizeMcpServerConfigs } from "./mcp.js";
+diff --git a/dist/core/managed-invocation.d.ts b/dist/core/managed-invocation.d.ts
+index 390d14944a7ead9cc66002a6e54ec79527f76ee8..dbbee4467fec57a6f5d60ff2595a9d2a40bd338b 100644
+--- a/dist/core/managed-invocation.d.ts
++++ b/dist/core/managed-invocation.d.ts
+@@ -32,7 +32,6 @@ export type ManagedAgentInvocationCredentialHeaders = Record<string, ManagedAgen
+ };
+ export type ManagedAgentMcpStdioAttachment = {
+     type: "stdio";
+-    executionSide: "vm";
+     command: string;
+     args: string[];
+     env: Record<string, string>;
+diff --git a/dist/core/managed-invocation.js b/dist/core/managed-invocation.js
+index 2ecb0f9961396c03bb24c8e776febf65aeb1b5e5..9696746b198c12f6e81692f17736b32e539035e5 100644
+--- a/dist/core/managed-invocation.js
++++ b/dist/core/managed-invocation.js
+@@ -239,9 +239,6 @@ function envEntriesToObject(entries) {
+     return Object.fromEntries(entries.map((entry) => [entry.key, entry.value]));
+ }
+ function buildManagedMcpStdioAttachment(server) {
+-    if (server.executionSide !== "vm") {
+-        throw new Error(`Managed MCP handoff v1 requires stdio MCP server "${server.name}" to set executionSide: "vm".`);
+-    }
+     const timeouts = {
+         ...(server.startupTimeoutMs
+             ? { startupTimeoutMs: server.startupTimeoutMs }
+@@ -250,7 +247,6 @@ function buildManagedMcpStdioAttachment(server) {
+     };
+     return {
+         type: "stdio",
+-        executionSide: "vm",
+         command: normalizeManagedMcpStdioCommand(server.name, server.command),
+         args: server.args ?? [],
+         env: envEntriesToObject(server.env),
+diff --git a/dist/core/mcp.d.ts b/dist/core/mcp.d.ts
+index 6cdf028380054bfa52f78dc4b647d7d7f7f3a37c..333d02e071fd292c92456ed4b445fb89275a6e43 100644
+--- a/dist/core/mcp.d.ts
++++ b/dist/core/mcp.d.ts
+@@ -6,14 +6,12 @@ type LocalAgentMcpTimeoutConfig = {
+     startupTimeoutMs?: number;
+     toolTimeoutMs?: number;
+ };
+-export type LocalAgentMcpExecutionSide = "vm" | "sandbox";
+ export type LocalAgentMcpStdioServerConfig = {
+     type?: "stdio";
+     name: string;
+     command: string;
+     args?: string[];
+     env?: Record<string, string> | LocalAgentMcpEnvEntry[];
+-    executionSide?: LocalAgentMcpExecutionSide;
+ } & LocalAgentMcpTimeoutConfig;
+ export type LocalAgentMcpHttpServerConfig = {
+     type: "http";
+diff --git a/dist/core/mcp.js b/dist/core/mcp.js
+index eda21aa27dae17d32fe43ab0d75f9b7b6f4fca40..c88d1d2df00b55d826aa2da197dff5c17d72ed08 100644
+--- a/dist/core/mcp.js
++++ b/dist/core/mcp.js
+@@ -38,7 +38,6 @@ export function normalizeMcpServerConfig(server) {
+         name: server.name,
+         command: server.command,
+         ...(server.args ? { args: server.args.slice() } : {}),
+-        ...(server.executionSide ? { executionSide: server.executionSide } : {}),
+         ...(startupTimeoutMs ? { startupTimeoutMs } : {}),
+         ...(toolTimeoutMs ? { toolTimeoutMs } : {}),
+         env: normalizeMcpEnvEntries(server.env),
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 875ba1bcea9ef2c9f3ff587b210f2c414621b72b..b7a191738784ee3ed5f5abd01619273f1d51b8fa 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -9,5 +9,5 @@ export { AGENT_PROVIDER_INSTALL_SPECS, getAgentProviderInstallStatus, installAge
+ export type { AgentProviderInstallAvailability, AgentProviderInstallCommandResult, AgentProviderInstallFailureReason, AgentProviderInstallOptions, AgentProviderInstallReason, AgentProviderInstallResult, AgentProviderInstallSpec, AgentProviderInstallStatus, InstallableAgentProviderId, } from "./providers/install.js";
+ export type { AcpProviderId, AcpProviderSpec, } from "./providers/acp-presets/index.js";
+ export { LocalAgentRuntimeError, DEFAULT_MANAGED_AGENT_RUNS_DIR_NAME, MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER, MANAGED_AGENT_INVOCATION_CREDENTIAL_ENV, MANAGED_AGENT_MCP_ATTACHMENT_ENV, MANAGED_AGENT_INVOCATION_PROVIDER_IDS, TUTTI_APP_DATA_DIR_ENV, createManagedAgentDetectContextFromHeaders, createManagedAgentRunContextFromHeaders, getManagedAgentInvocationCredentialFromHeaders, getRuntimeTarget, getRuntimeTargetKey, isManagedAgentInvocationCwd, isManagedAgentInvocationProviderId, normalizeMcpEnvEntries, normalizeMcpServerConfig, normalizeMcpServerConfigs, } from "./core/index.js";
+-export type { AgentDetection, AgentDetectionDiagnostic, AgentEvent, AgentModelOption, AgentRunInput, AgentRunMessage, AgentRunParams, AgentRuntimeCapabilities, AgentRuntimeMode, AgentRuntimeRecord, AgentRuntimeStatus, DetectContext, DetectionResult, LaunchPlan, LocalAgentMcpEnvEntry, LocalAgentMcpExecutionSide, LocalAgentMcpHttpServerConfig, LocalAgentMcpServerConfig, LocalAgentMcpStdioServerConfig, LocalAgentProviderAdapter, LocalAgentProviderPlugin, LocalAgentRuntimeErrorCode, ManagedAgentInvocation, ManagedAgentContextOptions, ManagedAgentInvocationCredentialHeaders, ManagedAgentInvocationCredentialHeaderValue, ManagedAgentInvocationProviderId, ManagedAgentRunContext, ManagedAgentRunContextOptions, ProviderAdapter, ProviderLaunchPlan, RawAgentEvent, RawAgentStream, RuntimeKindSelector, RuntimeKindSelectorInput, RuntimeLease, RuntimeProvider, RuntimeTarget, SkillMaterializationFile, SkillMaterializationRecord, Transport, TransportKind, TransportRunResult, } from "./core/index.js";
++export type { AgentDetection, AgentDetectionDiagnostic, AgentEvent, AgentModelOption, AgentRunInput, AgentRunMessage, AgentRunParams, AgentRuntimeCapabilities, AgentRuntimeMode, AgentRuntimeRecord, AgentRuntimeStatus, DetectContext, DetectionResult, LaunchPlan, LocalAgentMcpEnvEntry, LocalAgentMcpHttpServerConfig, LocalAgentMcpServerConfig, LocalAgentMcpStdioServerConfig, LocalAgentProviderAdapter, LocalAgentProviderPlugin, LocalAgentRuntimeErrorCode, ManagedAgentInvocation, ManagedAgentContextOptions, ManagedAgentInvocationCredentialHeaders, ManagedAgentInvocationCredentialHeaderValue, ManagedAgentInvocationProviderId, ManagedAgentRunContext, ManagedAgentRunContextOptions, ProviderAdapter, ProviderLaunchPlan, RawAgentEvent, RawAgentStream, RuntimeKindSelector, RuntimeKindSelectorInput, RuntimeLease, RuntimeProvider, RuntimeTarget, SkillMaterializationFile, SkillMaterializationRecord, Transport, TransportKind, TransportRunResult, } from "./core/index.js";
+ //# sourceMappingURL=index.d.ts.map
