@@ -1,17 +1,54 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ComponentProps } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { VideoCanvasElement } from "../src/components/canvas/video-canvas-element";
+import { ToastProvider } from "../src/components/toast";
+import { i18n } from "../src/i18n";
 
 describe("VideoCanvasElement", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
+
+  function renderVideoCanvasElement(
+    props: Partial<ComponentProps<typeof VideoCanvasElement>> = {},
+  ) {
+    return render(
+      <ToastProvider>
+        <VideoCanvasElement
+          src="/local-assets/video.mp4"
+          width={640}
+          height={360}
+          title="生成小女孩跳舞的视频"
+          prompt="生成小女孩跳舞的视频"
+          model="Hailuo 2.3"
+          durationSeconds={5}
+          resolution="768P"
+          aspectRatio="16:9"
+          zoom={0.5}
+          mimeType="video/mp4"
+          {...props}
+        />
+      </ToastProvider>,
+    );
+  }
 
   it("keeps video nodes compact and opens details/player only from corner actions", async () => {
     const user = userEvent.setup();
@@ -22,21 +59,7 @@ describe("VideoCanvasElement", () => {
       .spyOn(HTMLMediaElement.prototype, "pause")
       .mockImplementation(() => {});
 
-    const { container } = render(
-      <VideoCanvasElement
-        src="/local-assets/video.mp4"
-        width={640}
-        height={360}
-        title="生成小女孩跳舞的视频"
-        prompt="生成小女孩跳舞的视频"
-        model="Hailuo 2.3"
-        durationSeconds={5}
-        resolution="768P"
-        aspectRatio="16:9"
-        zoom={0.5}
-        mimeType="video/mp4"
-      />,
-    );
+    const { container } = renderVideoCanvasElement();
 
     expect(screen.getByText("00:05")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -91,5 +114,28 @@ describe("VideoCanvasElement", () => {
       await screen.findByRole("dialog", { name: "播放视频" }),
     ).toBeInTheDocument();
     expect(document.querySelector("video[controls]")).toBeInTheDocument();
+  });
+
+  it("uses a native download link and shows a started toast", async () => {
+    const user = userEvent.setup();
+
+    renderVideoCanvasElement();
+
+    await user.click(screen.getByRole("button", { name: "打开视频播放器" }));
+    const dialog = await screen.findByRole("dialog", { name: "播放视频" });
+    const playerVideo = dialog.querySelector("video[controls]");
+
+    expect(playerVideo).toHaveAttribute("controlsList", "nodownload");
+
+    const downloadLink = within(dialog).getByRole("link", {
+      name: "下载 生成小女孩跳舞的视频",
+    });
+    expect(downloadLink).toHaveAttribute("href", "/local-assets/video.mp4");
+    expect(downloadLink).toHaveAttribute("download");
+
+    downloadLink.addEventListener("click", (event) => event.preventDefault());
+    fireEvent.click(downloadLink);
+
+    expect(screen.getByText("已开始下载")).toBeInTheDocument();
   });
 });

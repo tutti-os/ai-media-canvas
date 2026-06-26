@@ -33,6 +33,7 @@
   "files": {
     "download": "Download {{name}}",
     "downloadFailed": "Download failed",
+    "downloadStarted": "Download started",
     "downloadSuccess": "Download successful",
     "empty": "No generated files",
     "end": "End of list",
