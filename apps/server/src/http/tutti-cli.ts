@@ -388,7 +388,7 @@ export async function registerTuttiCliRoutes(
           ? { localCanvasClient: options.localCanvasClient }
           : {}),
       });
-      return result;
+      return withGenerationJobNextAction(result);
     },
     201,
   );
@@ -438,7 +438,7 @@ export async function registerTuttiCliRoutes(
           ? { localCanvasClient: options.localCanvasClient }
           : {}),
       });
-      return result;
+      return withGenerationJobNextAction(result);
     },
     201,
   );
@@ -451,7 +451,9 @@ export async function registerTuttiCliRoutes(
     });
   });
   route("/tutti/cli/jobs/get", async (body) => {
-    return options.jobOperations.getJob(parseRequiredString(body, "job-id"));
+    return withGenerationJobNextAction(
+      await options.jobOperations.getJob(parseRequiredString(body, "job-id")),
+    );
   });
   route("/tutti/cli/jobs/cancel", async (body) => {
     return options.jobOperations.cancelJob(parseRequiredString(body, "job-id"));
@@ -705,6 +707,21 @@ function readJobId(value: unknown) {
   if (!job || typeof job !== "object") return null;
   const id = (job as { id?: unknown }).id;
   return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+function withGenerationJobNextAction<T>(value: T): T {
+  if (!isRecord(value)) return value;
+  const jobId = readJobId(value);
+  return {
+    ...value,
+    nextAction: {
+      command: `aimc jobs get --job-id ${jobId ?? "<job-id>"}`,
+      intermediateStatuses: ["queued", "running"],
+      terminalStatuses: ["succeeded", "failed", "canceled", "dead_letter"],
+      guidance:
+        "Keep polling while status is queued or running. Do not tell the user the generation failed or finished until the job reaches a terminal status. On succeeded, report the generated asset from job.result and mention that the canvas node was updated.",
+    },
+  };
 }
 
 function parseRequiredString(body: unknown, key: string) {
