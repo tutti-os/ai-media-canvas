@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { useAppTranslation } from "@/i18n";
 
 type CanvasEmptyHintProps = {
-  excalidrawApi: any;
+  excalidrawApi?: {
+    getSceneElements?: () => ReadonlyArray<{ isDeleted?: boolean }>;
+  } | null;
   onOpenChat: () => void;
 };
 
@@ -31,8 +33,8 @@ export function CanvasEmptyHint({
         setHasElements(false);
         return;
       }
-      const elements: any[] = excalidrawApi.getSceneElements?.() ?? [];
-      setHasElements(elements.some((el: any) => !el.isDeleted));
+      const elements = excalidrawApi.getSceneElements?.() ?? [];
+      setHasElements(elements.some((el) => !el.isDeleted));
     }
 
     check();
@@ -55,20 +57,16 @@ export function CanvasEmptyHint({
         e.preventDefault();
         onOpenChatRef.current();
 
-        // The textarea may not be in the DOM yet (sidebar was closed), so
+        // The chat input may not be in the DOM yet (sidebar was closed), so
         // retry focus with a short delay.
         requestAnimationFrame(() => {
-          const textarea = document.querySelector<HTMLTextAreaElement>(
-            "textarea[data-chat-input]",
-          );
-          if (textarea) {
-            textarea.focus();
+          const input = findChatInput();
+          if (input) {
+            input.focus();
           } else {
             // Sidebar might animate open; retry once more.
             setTimeout(() => {
-              document
-                .querySelector<HTMLTextAreaElement>("textarea[data-chat-input]")
-                ?.focus();
+              findChatInput()?.focus();
             }, 100);
           }
         });
@@ -86,4 +84,13 @@ export function CanvasEmptyHint({
       <p className="text-base text-muted-foreground/50">{t("empty")}</p>
     </div>
   );
+}
+
+function findChatInput() {
+  const root = document.querySelector<HTMLElement>("[data-chat-input]");
+  return root?.matches("textarea, [contenteditable='true'], [role='textbox']")
+    ? root
+    : root?.querySelector<HTMLElement>(
+        "textarea, [contenteditable='true'], [role='textbox']",
+      );
 }

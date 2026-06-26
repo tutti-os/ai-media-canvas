@@ -10,10 +10,10 @@ import { CanvasEditor } from "../../components/canvas-editor";
 import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
-import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { ChatSidebar } from "../../components/chat-sidebar";
+import type { CanvasImageItem } from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useToast } from "../../components/toast";
@@ -26,8 +26,8 @@ import {
   insertImageOnCanvas,
   insertVideoOnCanvas,
 } from "../../lib/canvas-elements";
-import { cancelGeneratingCanvasElementsForRun } from "../../lib/canvas-generation-cancel";
 import { resolveCanvasImageFiles } from "../../lib/canvas-file-serialization";
+import { cancelGeneratingCanvasElementsForRun } from "../../lib/canvas-generation-cancel";
 import { SHOW_BRAND_KIT_ENTRY_POINTS } from "../../lib/feature-flags";
 import {
   type GenerationJobSubscription,
@@ -364,23 +364,12 @@ function CanvasPageContent() {
     if (!api) return [];
     const elements = api.getSceneElements() ?? [];
     const files = api.getFiles() ?? {};
-    let idx = 0;
     return elements.filter(isCanvasImageElement).map((el) => {
-      idx++;
       const file = files[el.fileId];
       const dataURL = stringValue(file?.dataURL) ?? "";
-      const title =
-        stringValue(el.customData?.title) ??
-        stringValue(el.customData?.label) ??
-        `Image ${idx}`;
       return {
-        kind: "canvas-image",
-        id: el.id,
-        name: title,
-        thumbnailUrl: dataURL,
         assetId: el.id,
         url: stringValue(el.customData?.storageUrl) ?? dataURL,
-        mimeType: stringValue(file?.mimeType) ?? "image/png",
       };
     });
   }, []);
@@ -524,7 +513,6 @@ function CanvasPageContent() {
         initialSessionId={initialSessionId}
         onSessionChange={handleSessionChange}
         onRequestCanvasImages={handleRequestCanvasImages}
-        currentBrandKitId={SHOW_BRAND_KIT_ENTRY_POINTS ? brandKitId : null}
         ws={ws}
         selectedCanvasElements={selectedCanvasElements}
       />

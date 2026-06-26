@@ -7,7 +7,6 @@ import type {
   AgentModelSource,
   ContentBlock,
   ImageGenerationPreference,
-  MessageMention,
   StreamEvent,
   ToolArtifact,
   VideoGenerationPreference,
@@ -32,7 +31,6 @@ import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { useAppTranslation } from "../i18n";
-import { fetchBrandKit } from "../lib/brand-kit-api";
 import {
   type GenerationJobSubscription,
   type GenerationJobType,
@@ -45,13 +43,6 @@ import {
   saveMessage,
 } from "../lib/server-api";
 import type { CanvasSelectedElement } from "./canvas-editor";
-import {
-  type BrandKitMentionItem,
-  type CanvasImageItem,
-  type ImageModelMentionItem,
-  MessageMentionPicker,
-  type MessageMentionPickerItem,
-} from "./canvas-image-picker";
 import { ChatInput } from "./chat-input";
 import { ChatMessage } from "./chat-message";
 import { ChatTemplates } from "./chat-templates";
@@ -74,7 +65,6 @@ type ChatSidebarProps = {
   initialSessionId?: string | undefined;
   onSessionChange?: (sessionId: string) => void;
   onRequestCanvasImages?: () => CanvasImageItem[];
-  currentBrandKitId?: string | null;
   ws: WebSocketHandle;
   selectedCanvasElements?: CanvasSelectedElement[];
 };
@@ -86,6 +76,11 @@ type DeferredMediaJob = {
 };
 
 type SendFailureStage = "save_message" | "agent_run_ack" | "stream";
+
+export type CanvasImageItem = {
+  assetId: string;
+  url: string;
+};
 
 function summarizeReadyAttachments(attachments: ReadyAttachment[]) {
   return attachments.map((attachment, index) => {
@@ -285,17 +280,6 @@ function filterImageGenerationPreference(
   return models.length > 0 ? { mode: "manual", models } : undefined;
 }
 
-function filterMessageMentions(
-  mentions: MessageMention[],
-  availableImageModelIds: Set<string>,
-): MessageMention[] {
-  return mentions.filter(
-    (mention) =>
-      mention.mentionType !== "image-model" ||
-      availableImageModelIds.has(mention.id),
-  );
-}
-
 function getGenerationJobErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -312,7 +296,6 @@ export function ChatSidebar({
   initialSessionId,
   onSessionChange,
   onRequestCanvasImages,
-  currentBrandKitId,
   ws,
   selectedCanvasElements,
 }: ChatSidebarProps) {
@@ -348,16 +331,11 @@ export function ChatSidebar({
   const { applyStreamEvent, completeToolBlockWithArtifacts, failToolBlock } =
     useChatStream(updateSessionMessages);
 
-  // ── Mention & attachment state ──
-  const [atQuery, setAtQuery] = useState<string | null>(null);
-  const [messageMentions, setMessageMentions] = useState<MessageMention[]>([]);
-  const [brandKitMentionItems, setBrandKitMentionItems] = useState<
-    BrandKitMentionItem[]
-  >([]);
-  const [imageModelMentionItems, setImageModelMentionItems] = useState<
-    ImageModelMentionItem[]
-  >([]);
+  // ── Attachment state ──
   const chatInputRef = useRef<import("./chat-input").ChatInputHandle>(null);
+  const [availableImageModelIds, setAvailableImageModelIds] = useState<
+    Set<string>
+  >(new Set());
 
   const initialPromptSent = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -366,8 +344,6 @@ export function ChatSidebar({
   const activeRunIdsRef = useRef<Map<string, string>>(new Map());
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [cancelingRunId, setCancelingRunId] = useState<string | null>(null);
-  const messageMentionsRef = useRef(messageMentions);
-  messageMentionsRef.current = messageMentions;
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
   selectedCanvasElementsRef.current = selectedCanvasElements;
   const prevConnectedRef = useRef(false);
@@ -569,7 +545,6 @@ export function ChatSidebar({
   const {
     attachments: imageAttachments,
     addFiles,
-    addCanvasRef,
     retryUpload,
     removeAttachment,
     clearAll: clearAttachments,
@@ -770,68 +745,24 @@ export function ChatSidebar({
     scrollToBottom();
   }, [messages.length, scrollToBottom]);
 
-  // ── Fetch image models for @mention picker ──
   useEffect(() => {
     let cancelled = false;
 
     fetchImageModels()
       .then((data) => {
         if (cancelled) return;
-        setImageModelMentionItems(
-          data.models.map((model) => ({
-            kind: "image-model",
-            id: model.id,
-            label: model.displayName,
-            description: model.description,
-            ...(model.iconUrl ? { iconUrl: model.iconUrl } : {}),
-          })),
+        setAvailableImageModelIds(
+          new Set(data.models.map((model) => model.id)),
         );
       })
       .catch(() => {
-        if (!cancelled) setImageModelMentionItems([]);
+        if (!cancelled) setAvailableImageModelIds(new Set());
       });
 
     return () => {
       cancelled = true;
     };
   }, []);
-
-  // ── Fetch brand kit items for @mention picker ──
-  useEffect(() => {
-    if (!currentBrandKitId) {
-      setBrandKitMentionItems([]);
-      return;
-    }
-
-    let cancelled = false;
-    fetchBrandKit(currentBrandKitId)
-      .then((kit) => {
-        if (cancelled) return;
-        setBrandKitMentionItems(
-          kit.assets.map((asset) => ({
-            kind: "brand-kit-asset" as const,
-            id: asset.id,
-            label: asset.display_name,
-            assetType: asset.asset_type,
-            ...(asset.text_content !== null
-              ? { textContent: asset.text_content }
-              : {}),
-            ...(asset.file_url !== null ? { fileUrl: asset.file_url } : {}),
-            ...((asset.asset_type === "logo" || asset.asset_type === "image") &&
-            asset.file_url !== null
-              ? { thumbnailUrl: asset.file_url }
-              : {}),
-          })),
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setBrandKitMentionItems([]);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentBrandKitId]);
 
   // ── Send message ──
   const handleSend = useCallback(
@@ -840,7 +771,6 @@ export function ChatSidebar({
       attachmentsOverride?: ReadyAttachment[],
       imageGenerationPreferenceOverride?: ImageGenerationPreference,
       videoGenerationPreferenceOverride?: VideoGenerationPreference,
-      mentionsOverride?: MessageMention[],
     ) => {
       const currentSessionId = activeSessionIdRef.current;
       if (
@@ -899,9 +829,6 @@ export function ChatSidebar({
             ];
           }
         }
-        const availableImageModelIds = new Set(
-          imageModelMentionItems.map((item) => item.id),
-        );
         const currentImageGenerationPreference =
           filterImageGenerationPreference(
             imageGenerationPreferenceOverride ??
@@ -911,10 +838,6 @@ export function ChatSidebar({
         const currentVideoGenerationPreference =
           videoGenerationPreferenceOverride ??
           activeVideoGenerationPreferenceRef.current;
-        const currentMentions = filterMessageMentions(
-          mentionsOverride ?? messageMentionsRef.current,
-          availableImageModelIds,
-        );
         const agentPromptText = text;
 
         // Add user message locally
@@ -926,59 +849,17 @@ export function ChatSidebar({
           source: a.source,
           ...(a.name ? { name: a.name } : {}),
         }));
-        const mentionBlocks: ContentBlock[] = currentMentions.map((mention) => {
-          if (mention.mentionType === "image-model") {
-            return {
-              type: "mention" as const,
-              mentionType: "image-model" as const,
-              id: mention.id,
-              label: mention.label,
-            };
-          }
-
-          if (mention.mentionType === "skill") {
-            return {
-              type: "mention" as const,
-              mentionType: "skill" as const,
-              id: mention.id,
-              label: mention.label,
-              slug: mention.slug,
-            };
-          }
-
-          return {
-            type: "mention" as const,
-            mentionType: "brand-kit-asset" as const,
-            id: mention.id,
-            label: mention.label,
-            assetType: mention.assetType,
-            ...(mention.textContent !== undefined
-              ? { textContent: mention.textContent }
-              : {}),
-            ...(mention.fileUrl !== undefined
-              ? { fileUrl: mention.fileUrl }
-              : {}),
-          };
-        });
         const userMsg = {
           id: `user-${Date.now()}`,
           role: "user" as const,
-          contentBlocks: [
-            { type: "text" as const, text },
-            ...mentionBlocks,
-            ...imageBlocks,
-          ],
+          contentBlocks: [{ type: "text" as const, text }, ...imageBlocks],
         };
         updateSessionMessages(currentSessionId, (prev) => [...prev, userMsg]);
 
         const userMessagePayload = {
           role: "user" as const,
           content: text,
-          contentBlocks: [
-            { type: "text" as const, text },
-            ...mentionBlocks,
-            ...imageBlocks,
-          ],
+          contentBlocks: [{ type: "text" as const, text }, ...imageBlocks],
         };
         const userMessageSave = saveMessage(
           currentSessionId,
@@ -1129,9 +1010,6 @@ export function ChatSidebar({
             ...(currentAttachments.length > 0
               ? { attachments: currentAttachments }
               : {}),
-            ...(currentMentions.length > 0
-              ? { mentions: currentMentions }
-              : {}),
             ...(currentImageGenerationPreference
               ? {
                   imageGenerationPreference: currentImageGenerationPreference,
@@ -1191,7 +1069,6 @@ export function ChatSidebar({
             });
           });
           clearAttachments();
-          setMessageMentions([]);
 
           failureStage = "stream";
           await streamDone;
@@ -1250,7 +1127,7 @@ export function ChatSidebar({
       activeSessionIdRef,
       ensureAgentModelConfigured,
       openSettings,
-      imageModelMentionItems,
+      availableImageModelIds,
       setStreaming,
       showToast,
     ],
@@ -1261,70 +1138,6 @@ export function ChatSidebar({
     setCancelingRunId(activeRunId);
     ws.cancelRun(activeRunId);
   }, [activeRunId, cancelingRunId, ws]);
-
-  // ── Mention picker ──
-  const mentionPickerItems: MessageMentionPickerItem[] = [
-    ...(onRequestCanvasImages ? onRequestCanvasImages() : []),
-    ...brandKitMentionItems,
-    ...imageModelMentionItems,
-  ];
-
-  const handleMentionSelect = useCallback(
-    (item: MessageMentionPickerItem) => {
-      if (item.kind === "canvas-image") {
-        addCanvasRef({
-          assetId: item.assetId,
-          url: item.url,
-          mimeType: item.mimeType,
-          name: item.name,
-        });
-        return;
-      }
-
-      setMessageMentions((prev) => {
-        let nextMention: MessageMention;
-        if (item.kind === "image-model") {
-          nextMention = {
-            mentionType: "image-model",
-            id: item.id,
-            label: item.label,
-          };
-        } else {
-          nextMention = {
-            mentionType: "brand-kit-asset",
-            id: item.id,
-            label: item.label,
-            assetType: item.assetType,
-            ...(item.textContent !== undefined
-              ? { textContent: item.textContent }
-              : {}),
-            ...(item.fileUrl !== undefined ? { fileUrl: item.fileUrl } : {}),
-          };
-        }
-
-        if (
-          prev.some(
-            (m) =>
-              m.mentionType === nextMention.mentionType &&
-              m.id === nextMention.id,
-          )
-        ) {
-          return prev;
-        }
-        return [...prev, nextMention];
-      });
-    },
-    [addCanvasRef],
-  );
-
-  const handleRemoveMention = useCallback((mention: MessageMention) => {
-    setMessageMentions((prev) =>
-      prev.filter(
-        (item) =>
-          !(item.mentionType === mention.mentionType && item.id === mention.id),
-      ),
-    );
-  }, []);
 
   // ── Auto-send initial prompt ──
   useEffect(() => {
@@ -1780,9 +1593,7 @@ export function ChatSidebar({
             </div>
           ) : messages.length === 0 ? (
             <ChatTemplates
-              onSend={(prompt) =>
-                handleSend(prompt, [], undefined, undefined, [])
-              }
+              onSend={(prompt) => handleSend(prompt, [], undefined, undefined)}
             />
           ) : (
             messages.map((msg) => (
@@ -1804,19 +1615,7 @@ export function ChatSidebar({
       </ErrorBoundary>
 
       {/* Input */}
-      <div className="relative">
-        {atQuery !== null && mentionPickerItems.length > 0 && (
-          <MessageMentionPicker
-            items={mentionPickerItems}
-            query={atQuery}
-            onSelect={(item) => {
-              handleMentionSelect(item);
-              chatInputRef.current?.clearAtQuery();
-              setAtQuery(null);
-            }}
-            onClose={() => setAtQuery(null)}
-          />
-        )}
+      <div>
         <ChatInput
           ref={chatInputRef}
           onSend={handleSend}
@@ -1830,9 +1629,6 @@ export function ChatSidebar({
           onRemoveAttachment={removeAttachment}
           onRetryAttachment={retryUpload}
           isUploading={isUploading}
-          onAtQuery={setAtQuery}
-          mentions={messageMentions}
-          onRemoveMention={handleRemoveMention}
           {...(selectedCanvasElements ? { selectedCanvasElements } : {})}
         />
       </div>

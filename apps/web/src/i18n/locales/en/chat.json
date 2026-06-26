@@ -39,8 +39,11 @@
     "ariaLabel": "Message input",
     "attachImages": "Attach images",
     "cancel": "Cancel generation",
+    "mentionEmpty": "No matches",
+    "mentionLoading": "Searching...",
+    "mentionRemove": "Remove reference",
     "modelPreference": "Image/Video model",
-    "placeholder": "Start with an idea, or type \"@\" to mention",
+    "placeholder": "Start with an idea",
     "send": "Send message"
   },
   "lightbox": {
@@ -93,9 +96,6 @@
       "image": "Image Renderer",
       "video": "Video Planner"
     }
-  },
-  "mentions": {
-    "remove": "Remove mention"
   },
   "reconnecting": "Connection lost, reconnecting...",
   "selection": {

@@ -8,7 +8,6 @@ import type {
   ChatMessage,
   ImageAttachment,
   ImageGenerationPreference,
-  MessageMention,
   RunCancelResponse,
   RunCreateRequest,
   RunCreateResponse,
@@ -21,12 +20,12 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { InMemoryStore } from "@langchain/langgraph";
 import {
-  type ManagedAgentInvocationCredentialHeaders,
-  type ManagedAgentRunContext,
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
-  createManagedAgentRunContextFromHeaders,
+  type ManagedAgentInvocationCredentialHeaders,
+  type ManagedAgentRunContext,
   createLocalAgentRuntime,
+  createManagedAgentRunContextFromHeaders,
 } from "@tutti-os/agent-acp-kit";
 
 import type { AuthenticatedUser, UserDataClient } from "../auth/request.js";
@@ -157,7 +156,6 @@ export function buildUserMessage(
   prompt: string,
   attachments: ImageAttachment[],
   imageGenerationPreference?: ImageGenerationPreference,
-  mentions: MessageMention[] = [],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
   attachmentMetadata?: Record<string, ImageAttachmentMetadata>,
@@ -183,9 +181,6 @@ export function buildUserMessage(
   );
   if (videoGenerationPreferenceXml)
     xmlBlocks.push(videoGenerationPreferenceXml);
-
-  const mentionXmlBlocks = buildMentionXmlBlocks(mentions);
-  xmlBlocks.push(...mentionXmlBlocks);
 
   if (!xmlBlocks.length) return { text: prompt };
   return { text: `${prompt}\n\n${xmlBlocks.join("\n\n")}` };
@@ -257,78 +252,6 @@ function buildVideoGenerationPreferenceXml(
     .join("\n  ");
 
   return `<human_video_generation_preference mode="manual" count="${videoGenerationPreference.models.length}">\n  ${modelXml}\n</human_video_generation_preference>`;
-}
-
-function buildMentionXmlBlocks(mentions: MessageMention[]): string[] {
-  const xmlBlocks: string[] = [];
-  const availableImageModelIds = new Set(
-    getAvailableImageModels().map((m) => m.id),
-  );
-
-  const mentionedModels = mentions.filter(
-    (
-      mention,
-    ): mention is Extract<MessageMention, { mentionType: "image-model" }> =>
-      mention.mentionType === "image-model" &&
-      availableImageModelIds.has(mention.id),
-  );
-  if (mentionedModels.length > 0) {
-    const modelXml = mentionedModels
-      .map(
-        (mention, i) =>
-          `<model index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" display_name="${escapeXmlAttribute(mention.label)}" />`,
-      )
-      .join("\n  ");
-
-    xmlBlocks.push(
-      `<human_image_model_mentions count="${mentionedModels.length}">\n  ${modelXml}\n</human_image_model_mentions>`,
-    );
-  }
-
-  const mentionedBrandKitAssets = mentions.filter(
-    (
-      mention,
-    ): mention is Extract<MessageMention, { mentionType: "brand-kit-asset" }> =>
-      mention.mentionType === "brand-kit-asset",
-  );
-  if (mentionedBrandKitAssets.length > 0) {
-    const assetXml = mentionedBrandKitAssets
-      .map((mention, i) => {
-        const textContentAttr =
-          mention.textContent != null
-            ? ` text_content="${escapeXmlAttribute(mention.textContent)}"`
-            : "";
-        const fileUrlAttr =
-          mention.fileUrl != null
-            ? ` file_url="${escapeXmlAttribute(mention.fileUrl)}"`
-            : "";
-        return `<brand_kit_asset index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" type="${escapeXmlAttribute(mention.assetType)}" display_name="${escapeXmlAttribute(mention.label)}"${textContentAttr}${fileUrlAttr} />`;
-      })
-      .join("\n  ");
-
-    xmlBlocks.push(
-      `<human_brand_kit_mentions count="${mentionedBrandKitAssets.length}">\n  ${assetXml}\n</human_brand_kit_mentions>`,
-    );
-  }
-
-  // Skill mentions — tell the agent to read and follow the mentioned skill
-  const mentionedSkills = mentions.filter(
-    (mention): mention is Extract<MessageMention, { mentionType: "skill" }> =>
-      mention.mentionType === "skill",
-  );
-  if (mentionedSkills.length > 0) {
-    const skillXml = mentionedSkills
-      .map(
-        (mention, i) =>
-          `<skill index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" name="${escapeXmlAttribute(mention.label)}" slug="${escapeXmlAttribute(mention.slug)}">\nThe user explicitly requested this skill. Read \`/workspace-skills/${mention.slug}/SKILL.md\` for full instructions and follow them.\n</skill>`,
-      )
-      .join("\n  ");
-    xmlBlocks.push(
-      `<human_skill_mentions count="${mentionedSkills.length}">\n  ${skillXml}\n</human_skill_mentions>`,
-    );
-  }
-
-  return xmlBlocks;
 }
 
 function escapeXmlAttribute(value: string): string {

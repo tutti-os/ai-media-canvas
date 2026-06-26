@@ -213,6 +213,192 @@
   animation: bounce-dot 1.4s infinite ease-in-out both;
 }
 
+.aimc-rich-text-field,
+.aimc-rich-text-root {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.aimc-rich-text-editor {
+  overflow: auto;
+  white-space: pre-wrap;
+  scrollbar-width: none;
+  text-align: left;
+}
+
+.aimc-rich-text-editor::-webkit-scrollbar {
+  display: none;
+}
+
+.aimc-rich-text-editor.ProseMirror p,
+.aimc-rich-text-placeholder p,
+.aimc-rich-text-message-paragraph {
+  margin: 0;
+}
+
+.aimc-rich-text-placeholder {
+  pointer-events: none;
+  text-align: left;
+}
+
+.aimc-rich-text-editor [data-rich-text-mention-reference],
+.aimc-rich-text-editor [data-rich-text-workspace-reference] {
+  display: inline-flex;
+  max-width: 100%;
+  vertical-align: baseline;
+}
+
+.aimc-rich-text-editor [data-rich-text-mention-reference] > span,
+.aimc-rich-text-editor [data-slot="mention-pill"] {
+  display: inline-flex;
+  max-width: 16rem;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--foreground);
+  padding: 1px 7px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 18px;
+  vertical-align: baseline;
+}
+
+.aimc-rich-text-editor [data-rich-text-mention-icon] {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.aimc-rich-text-editor [data-rich-text-mention-icon] img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.aimc-rich-text-editor [data-rich-text-mention-reference].is-selected > span,
+.aimc-rich-text-editor
+  [data-rich-text-workspace-reference].is-selected
+  [data-slot="mention-pill"] {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+.aimc-rich-text-message {
+  --tutti-rich-text-mention-active-bg: color-mix(
+    in srgb,
+    var(--accent) 30%,
+    transparent
+  );
+  --tutti-rich-text-mention-active-fg: var(--foreground);
+  --tutti-rich-text-mention-disabled-bg: color-mix(
+    in srgb,
+    var(--accent) 16%,
+    transparent
+  );
+  --tutti-rich-text-mention-disabled-fg: var(--muted-foreground);
+  --tutti-rich-text-mention-loading-bg: color-mix(
+    in srgb,
+    var(--accent) 18%,
+    transparent
+  );
+  --tutti-rich-text-mention-loading-fg: var(--foreground);
+  --tutti-rich-text-mention-missing-bg: color-mix(
+    in srgb,
+    var(--accent) 14%,
+    transparent
+  );
+  --tutti-rich-text-mention-missing-fg: var(--muted-foreground);
+  display: inline;
+}
+
+.aimc-rich-text-message .tutti-rich-text-mention {
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  font-weight: 650;
+}
+
+.tutti-rich-text-at-menu {
+  z-index: 2300;
+  max-height: 256px;
+  width: min(28rem, calc(100vw - 24px));
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  padding: 4px;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.18);
+  scrollbar-width: none;
+}
+
+.tutti-rich-text-at-menu::-webkit-scrollbar {
+  display: none;
+}
+
+.tutti-rich-text-at-menu button {
+  display: flex;
+  width: 100%;
+  cursor: pointer;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--popover-foreground);
+  padding: 8px 10px;
+  text-align: left;
+  outline: 0;
+}
+
+.tutti-rich-text-at-menu button:hover,
+.tutti-rich-text-at-menu button[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.tutti-rich-text-at-menu [data-rich-text-trigger-thumbnail] {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.tutti-rich-text-at-menu [data-rich-text-trigger-thumbnail] img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.tutti-rich-text-at-menu .tutti-rich-text-at-menu-item__label,
+.tutti-rich-text-at-menu button > div:first-child {
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 20px;
+}
+
+.tutti-rich-text-at-menu .tutti-rich-text-at-menu-item__subtitle,
+.tutti-rich-text-at-menu button > div + div {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 /* Loading screen — logo float + breathing */
 @keyframes logo-float {
   0%, 100% {

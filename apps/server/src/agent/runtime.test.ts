@@ -2,8 +2,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
 import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { createAgentBackendMock } = vi.hoisted(() => ({
   createAgentBackendMock: vi.fn(() => ({ factory: { kind: "backend" } })),
@@ -58,54 +58,16 @@ describe("createAgentRunService", () => {
       },
     });
 
-    const message = buildUserMessage(
-      "生成一张海报",
-      [],
-      {
-        mode: "manual",
-        models: ["black-forest-labs/flux-kontext-pro", "codex/gpt-image-2"],
-      },
-      [],
-    );
+    const message = buildUserMessage("生成一张海报", [], {
+      mode: "manual",
+      models: ["black-forest-labs/flux-kontext-pro", "codex/gpt-image-2"],
+    });
 
     expect(message.text).toContain("codex/gpt-image-2");
     expect(message.text).not.toContain("black-forest-labs/flux-kontext-pro");
     expect(message.text).toContain(
       '<human_image_generation_preference mode="manual" count="1">',
     );
-  });
-
-  it("drops unavailable image model mentions from user context", () => {
-    registerImageProvider({
-      name: "codex-imagegen",
-      models: [
-        {
-          id: "codex/gpt-image-2",
-          displayName: "GPT Image 2",
-          description: "Codex image generation",
-        },
-      ],
-      async generate() {
-        throw new Error("not used");
-      },
-    });
-
-    const message = buildUserMessage("生成一张海报", [], undefined, [
-      {
-        mentionType: "image-model",
-        id: "black-forest-labs/flux-kontext-pro",
-        label: "Flux Kontext Pro",
-      },
-      {
-        mentionType: "image-model",
-        id: "codex/gpt-image-2",
-        label: "GPT Image 2",
-      },
-    ]);
-
-    expect(message.text).toContain("codex/gpt-image-2");
-    expect(message.text).not.toContain("black-forest-labs/flux-kontext-pro");
-    expect(message.text).toContain('<human_image_model_mentions count="1">');
   });
 
   it("adds image attachment dimensions to input image context when available", () => {
@@ -120,7 +82,6 @@ describe("createAgentRunService", () => {
         },
       ],
       undefined,
-      [],
       undefined,
       null,
       {
@@ -2225,14 +2186,6 @@ describe("createAgentRunService", () => {
       {
         canvasId: project.primaryCanvas.id,
         conversationId: project.primaryCanvas.id,
-        mentions: [
-          {
-            id: "skill-system-canvas-director",
-            label: "Canvas Director",
-            mentionType: "skill",
-            slug: "canvas-director",
-          },
-        ],
         prompt: "有看到 Canvas Director 这一个 skill 吗",
         sessionId: "session-1",
       },
@@ -2260,10 +2213,10 @@ describe("createAgentRunService", () => {
       }),
     );
     expect(capturedPrompt).toContain(
-      "workspace-skills/canvas-director/SKILL.md",
-    );
-    expect(capturedPrompt).toContain(
       "use relative paths such as `workspace-skills/<slug>/SKILL.md`",
+    );
+    expect(capturedPrompt).not.toContain(
+      "workspace-skills/canvas-director/SKILL.md",
     );
     expect(capturedPrompt).not.toContain(
       "/workspace-skills/canvas-director/SKILL.md",
@@ -2311,14 +2264,6 @@ describe("createAgentRunService", () => {
       {
         canvasId: project.primaryCanvas.id,
         conversationId: project.primaryCanvas.id,
-        mentions: [
-          {
-            id: "skill-system-canvas-director",
-            label: "Canvas Director",
-            mentionType: "skill",
-            slug: "canvas-director",
-          },
-        ],
         prompt: "使用 Canvas Director 这个 skill 看一下画布",
         sessionId: "session-1",
       },

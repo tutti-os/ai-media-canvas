@@ -1,6 +1,6 @@
 import { createInputImage } from "./home-seed-media";
 
-export type InputMention = {
+export type SeedInputItem = {
   type: "image" | "tool";
   name: string;
   imgSrc: string;
@@ -11,7 +11,7 @@ export type HomeExampleCard = {
   title: string;
   prompt: string;
   previewImages: string[];
-  inputMentions: InputMention[];
+  inputItems: SeedInputItem[];
 };
 
 export type HomeExampleCategory = {
@@ -29,7 +29,7 @@ export type HomeExampleSelection = {
   title: string;
   prompt: string;
   previewImages: string[];
-  inputMentions: InputMention[];
+  inputItems: SeedInputItem[];
 };
 
 function example(
@@ -37,12 +37,12 @@ function example(
   title: string,
   prompt: string,
   previewImages: string[],
-  inputMentions: InputMention[],
+  inputItems: SeedInputItem[],
 ): HomeExampleCard {
-  return { id, title, prompt, previewImages, inputMentions };
+  return { id, title, prompt, previewImages, inputItems };
 }
 
-function generatedImage(name: string, file: string): InputMention {
+function generatedImage(name: string, file: string): SeedInputItem {
   return {
     type: "image",
     name,
@@ -50,7 +50,7 @@ function generatedImage(name: string, file: string): InputMention {
   };
 }
 
-function tool(name: string, accent = "#1d4ed8"): InputMention {
+function tool(name: string, accent = "#1d4ed8"): SeedInputItem {
   return { type: "tool", name, imgSrc: createInputImage(name, accent) };
 }
 

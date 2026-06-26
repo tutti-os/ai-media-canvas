@@ -19,7 +19,11 @@ import type { WebSocketHandle } from "../src/hooks/use-websocket";
 import { i18n } from "../src/i18n";
 
 const settingsDialogSpy = vi.fn();
-const chatInputPlaceholder = /从一个想法开始/;
+const chatInputName = "输入消息";
+
+function findChatInput() {
+  return screen.findByRole("textbox", { name: chatInputName });
+}
 
 const {
   createSessionMock,
@@ -281,7 +285,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "hello loom{Enter}");
 
     await waitFor(() =>
@@ -330,10 +334,11 @@ describe("ChatSidebar", () => {
     expect(
       await screen.findByText("连接已断开，正在重连..."),
     ).toBeInTheDocument();
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
+    expect(input).toBeDisabled();
     await userEvent.type(input, "hello while disconnected{Enter}");
 
-    expect(input).toHaveValue("hello while disconnected");
+    expect(input).toHaveValue("");
     expect(saveMessageMock).not.toHaveBeenCalled();
     expect(mockWs.startRun).not.toHaveBeenCalled();
   });
@@ -351,7 +356,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     const pastedImage = new File(["image-bytes"], "copied.png", {
       type: "image/png",
     });
@@ -385,7 +390,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "please stop later{Enter}");
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
 
@@ -425,7 +430,7 @@ describe("ChatSidebar", () => {
 
     await waitFor(() => expect(fetchImageModelsMock).toHaveBeenCalledTimes(1));
     await act(async () => {});
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "generate image{Enter}");
 
     await waitFor(() =>
@@ -520,7 +525,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "preserve order{Enter}");
 
     await waitFor(() => expect(saveMessageMock).toHaveBeenCalledTimes(1));
@@ -554,7 +559,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "use claude{Enter}");
 
     await waitFor(() =>
@@ -606,7 +611,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "hello without model{Enter}");
 
     await waitFor(() => expect(mockWs.startRun).not.toHaveBeenCalled());
@@ -629,7 +634,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "double send");
 
     fireEvent.keyDown(input, {
@@ -660,7 +665,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "first run{Enter}");
 
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
@@ -668,7 +673,7 @@ describe("ChatSidebar", () => {
     await userEvent.click(screen.getByRole("button", { name: "新建对话" }));
     await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
 
-    const nextInput = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const nextInput = await findChatInput();
     await waitFor(() => expect(nextInput).not.toBeDisabled());
     await userEvent.type(nextInput, "second run{Enter}");
 
@@ -695,14 +700,14 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "first run{Enter}");
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
 
     await userEvent.click(screen.getByRole("button", { name: "新建对话" }));
     await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
 
-    const nextInput = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const nextInput = await findChatInput();
     await waitFor(() => expect(nextInput).not.toBeDisabled());
     await userEvent.type(nextInput, "second run{Enter}");
 
@@ -738,7 +743,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await waitFor(() => expect(mockWs.resumeCanvas).toHaveBeenCalled());
     await userEvent.type(input, "header handles credentials{Enter}");
 
@@ -814,7 +819,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "describe this{Enter}");
 
     await waitFor(() => expect(saveMessageMock).toHaveBeenCalledTimes(1));
@@ -876,7 +881,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "generate image{Enter}");
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
 
@@ -963,7 +968,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "generate image{Enter}");
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
 
@@ -1034,7 +1039,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "generate image{Enter}");
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
 
@@ -1106,7 +1111,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "generate image{Enter}");
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
 
@@ -1169,7 +1174,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "generate image{Enter}");
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
 
@@ -1251,7 +1256,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(chatInputPlaceholder);
+    const input = await findChatInput();
     await userEvent.type(input, "generate image{Enter}");
     await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
 

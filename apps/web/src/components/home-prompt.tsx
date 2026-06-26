@@ -8,7 +8,6 @@ import type {
 import {
   forwardRef,
   useCallback,
-  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -18,6 +17,10 @@ import { AgentModelSelector } from "@/components/agent-model-selector";
 import { ImageAttachmentBar } from "@/components/image-attachment-bar";
 import { ImageModelPreferencePopover } from "@/components/image-model-preference";
 import { SettingsDialog } from "@/components/settings-dialog";
+import {
+  TuttiRichTextInput,
+  type TuttiRichTextInputHandle,
+} from "@/components/tutti-rich-text-input";
 import { useAgentModelRequirement } from "@/hooks/use-agent-model-requirement";
 import type {
   ImageAttachmentState,
@@ -86,17 +89,17 @@ function buildSeedImageAttachments(
 ): ReadyAttachment[] {
   if (!selectedSeed) return [];
 
-  return selectedSeed.inputMentions
-    .filter((mention) => mention.type === "image")
-    .map((mention, index) => ({
-      assetId: `seed-${selectedSeed.categoryKey}-${index}-${mention.name
+  return selectedSeed.inputItems
+    .filter((item) => item.type === "image")
+    .map((item, index) => ({
+      assetId: `seed-${selectedSeed.categoryKey}-${index}-${item.name
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-|-$/g, "")}`,
-      url: new URL(mention.imgSrc, window.location.origin).href,
-      mimeType: inferImageMimeType(mention.imgSrc),
+      url: new URL(item.imgSrc, window.location.origin).href,
+      mimeType: inferImageMimeType(item.imgSrc),
       source: "upload" as const,
-      name: mention.name,
+      name: item.name,
     }));
 }
 
@@ -125,7 +128,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     ref,
   ) {
     const [value, setValue] = useState("");
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const inputRef = useRef<TuttiRichTextInputHandle>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -143,22 +146,19 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     } = agentRequirement;
     const { missingImageModel, missingVideoModel } =
       useMediaModelConfigurationStatus();
-    const seedImageMentions =
-      selectedSeed?.inputMentions.filter(
-        (mention) => mention.type === "image",
-      ) ?? [];
+    const seedImageItems =
+      selectedSeed?.inputItems.filter((item) => item.type === "image") ?? [];
 
     useImperativeHandle(ref, () => ({
       fill(text: string) {
         setValue(text);
         requestAnimationFrame(() => {
-          const textarea = textareaRef.current;
-          if (!textarea) return;
-          textarea.style.height = "auto";
-          textarea.style.height = `${textarea.scrollHeight}px`;
-          textarea.scrollIntoView({ behavior: "smooth", block: "center" });
+          inputRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
           window.setTimeout(() => {
-            textarea.focus({ preventScroll: true });
+            inputRef.current?.focus();
           }, 220);
         });
       },
@@ -208,9 +208,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
         agentModel ? (agentModelSource ?? undefined) : undefined,
       );
       setValue("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
     }, [
       agentModel,
       agentModelSource,
@@ -227,20 +224,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       missingImageModel,
       missingVideoModel,
     ]);
-
-    const handleKeyDown = useCallback(
-      (event: React.KeyboardEvent) => {
-        if (
-          event.key === "Enter" &&
-          !event.shiftKey &&
-          !event.nativeEvent.isComposing
-        ) {
-          event.preventDefault();
-          handleSubmit();
-        }
-      },
-      [handleSubmit],
-    );
 
     const handleOpenMediaSettings = useCallback(() => {
       setModelPopoverOpen(false);
@@ -262,13 +245,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       },
       [onAddFiles],
     );
-
-    const handleInput = useCallback(() => {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-      textarea.style.height = "auto";
-      textarea.style.height = `${textarea.scrollHeight}px`;
-    }, []);
 
     return (
       <div className="space-y-2">
@@ -303,16 +279,16 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
                 ) : null}
               </div>
 
-              {seedImageMentions.length > 0 ? (
+              {seedImageItems.length > 0 ? (
                 <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
-                  {seedImageMentions.map((mention) => (
+                  {seedImageItems.map((item) => (
                     <div
-                      key={`${selectedSeed.title}-${mention.imgSrc}`}
+                      key={`${selectedSeed.title}-${item.imgSrc}`}
                       className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-border bg-background"
                     >
                       <img
-                        src={mention.imgSrc}
-                        alt={mention.name}
+                        src={item.imgSrc}
+                        alt={item.name}
                         className="h-full w-full object-cover"
                       />
                     </div>
@@ -322,17 +298,21 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             </div>
           ) : null}
 
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            onInput={handleInput}
-            placeholder={t("prompt.placeholder")}
+          <TuttiRichTextInput
+            ref={inputRef}
+            ariaLabel={t("prompt.ariaLabel")}
+            className="aimc-rich-text-field px-3 pt-3 pb-2 sm:px-4 sm:pt-4"
             disabled={disabled}
-            rows={2}
-            className="w-full resize-none bg-transparent px-3 pt-3 pb-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50 sm:px-4 sm:pt-4"
+            editorClassName="aimc-rich-text-editor aimc-home-rich-text-editor min-h-[52px] bg-transparent text-sm leading-relaxed text-foreground focus:outline-none"
+            menuAnchor="cursor"
+            menuPlacement="bottom-start"
+            placeholderClassName="aimc-rich-text-placeholder aimc-home-rich-text-placeholder min-h-[52px] text-sm leading-relaxed text-muted-foreground"
+            placeholder={t("prompt.placeholder")}
+            rootClassName="aimc-rich-text-root"
+            value={value}
+            onChange={setValue}
+            onPaste={handlePaste}
+            onSubmit={handleSubmit}
           />
 
           <div className="flex items-center justify-between px-2 pb-2 sm:px-3 sm:pb-3">
