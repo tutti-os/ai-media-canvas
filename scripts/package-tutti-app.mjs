@@ -231,7 +231,7 @@ const CLI_COMMANDS = [
     path: ["generation", "image"],
     summary: "Queue image generation",
     description:
-      "Queue an image generation job under a project. Create or choose a project first, pass its id with --project-id; when --canvas-id is omitted, the app uses the project's primary canvas and auto-places the generation node in available space. Use aimc models image to inspect available model ids, pass one with --model, and use jobs get or jobs list to monitor status. Direct user calls may use --direct-user true. Otherwise this command is treated as an external CLI/agent call; when a non-Codex agent calls Codex image generation on the user's behalf, ask for confirmation first unless settings get shows codexImagegenDelegation=always; pass --caller-provider and --codex-imagegen-consent allow-once after a one-time user approval.",
+      "Queue an image generation job under a project. Create or choose a project first, pass its id with --project-id; when --canvas-id is omitted, the app uses the project's primary canvas and auto-places the generation node in available space. Use aimc models image to inspect available model ids, pass one with --model, then poll aimc jobs get --job-id with the returned job.id until status is succeeded, failed, canceled, or dead_letter; queued and running are intermediate states, not final results or failures. On succeeded, report the generated asset from job.result and mention that the canvas node was updated. Direct user calls may use --direct-user true. Otherwise this command is treated as an external CLI/agent call; when a non-Codex agent calls Codex image generation on the user's behalf, ask for confirmation first unless settings get shows codexImagegenDelegation=always; pass --caller-provider and --codex-imagegen-consent allow-once after a one-time user approval.",
     properties: {
       prompt: { type: "string", description: "Image prompt." },
       model: {
@@ -284,7 +284,7 @@ const CLI_COMMANDS = [
     path: ["generation", "video"],
     summary: "Queue video generation",
     description:
-      "Queue a video generation job under a project. Create or choose a project first, pass its id with --project-id; when --canvas-id is omitted, the app uses the project's primary canvas and auto-places the generation node in available space. Use aimc models video to inspect available model ids first, pass one with --model, and use jobs get or jobs list to monitor status.",
+      "Queue a video generation job under a project. Create or choose a project first, pass its id with --project-id; when --canvas-id is omitted, the app uses the project's primary canvas and auto-places the generation node in available space. Use aimc models video to inspect available model ids first, pass one with --model, then poll aimc jobs get --job-id with the returned job.id until status is succeeded, failed, canceled, or dead_letter; queued and running are intermediate states, not final results or failures. On succeeded, report the generated asset from job.result and mention that the canvas node was updated.",
     properties: {
       prompt: { type: "string", description: "Video prompt." },
       model: {
@@ -345,7 +345,8 @@ const CLI_COMMANDS = [
   {
     path: ["jobs", "get"],
     summary: "Get a job",
-    description: "Return one background job by job-id.",
+    description:
+      "Return one background job by job-id. queued and running mean the job is still in progress; keep polling before giving the user a final answer. Treat only succeeded, failed, canceled, and dead_letter as terminal statuses.",
     properties: {
       "job-id": { type: "string", description: "Job id to load." },
     },
