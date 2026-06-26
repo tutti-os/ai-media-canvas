@@ -236,7 +236,6 @@ async function authenticateAndBind(
             ...(p.videoGenerationPreference !== undefined
               ? { videoGenerationPreference: p.videoGenerationPreference }
               : {}),
-            ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
             ...(p.model !== undefined ? { model: p.model } : {}),
             ...(p.modelSource !== undefined
               ? { modelSource: p.modelSource }

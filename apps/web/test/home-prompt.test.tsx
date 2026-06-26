@@ -141,7 +141,7 @@ describe("HomePrompt", () => {
     });
   });
 
-  it("sends selected example image mentions as initial attachments", async () => {
+  it("sends selected example reference images as initial attachments", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     const selectedSeed: HomeExampleSelection = {
@@ -151,7 +151,7 @@ describe("HomePrompt", () => {
       title: "Turn a selfie into a magazine cover",
       prompt: "Make this editorial",
       previewImages: [],
-      inputMentions: [
+      inputItems: [
         {
           type: "image",
           name: "Selfie",
@@ -195,7 +195,7 @@ describe("HomePrompt", () => {
     );
   });
 
-  it("does not render an empty preview strip when the selected seed has no image mentions", () => {
+  it("does not render an empty preview strip when the selected seed has no reference images", () => {
     const onSubmit = vi.fn();
     const designSeed = homeExampleSeedCategories.find(
       (category) => category.key === "design",
@@ -213,7 +213,7 @@ describe("HomePrompt", () => {
           title: designSeed?.title ?? "",
           prompt: designSeed?.prompt ?? "",
           previewImages: designSeed?.previewImages ?? [],
-          inputMentions: designSeed?.inputMentions ?? [],
+          inputItems: designSeed?.inputItems ?? [],
         }}
       />,
     );

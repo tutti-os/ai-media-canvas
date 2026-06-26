@@ -7,7 +7,6 @@ import type { ContentBlock, ToolArtifact, ToolBlock } from "@aimc/shared";
 import { toRuntimeAssetUrl } from "../lib/local-assets";
 import { ImagePill } from "./chat/image-lightbox";
 import { MarkdownRenderer } from "./chat/markdown-renderer";
-import { MentionPill } from "./chat/mention-pill";
 import { ThinkingBlockView } from "./chat/thinking-block-view";
 import { ToolBlockView } from "./chat/tool-block-view";
 
@@ -41,15 +40,6 @@ function imageBlockKey(block: ContentBlock) {
   return `image:${imageBlock.assetId ?? ""}:${imageBlock.url ?? ""}`;
 }
 
-function mentionBlockKey(block: ContentBlock) {
-  const mentionBlock = block as {
-    id?: string;
-    label?: string;
-    mentionType?: string;
-  };
-  return `mention:${mentionBlock.mentionType ?? ""}:${mentionBlock.id ?? mentionBlock.label ?? ""}`;
-}
-
 function assistantBlockKey(block: ContentBlock) {
   if (block.type === "thinking") {
     return `thinking:${stableStringHash(block.thinking)}`;
@@ -63,7 +53,7 @@ function assistantBlockKey(block: ContentBlock) {
   if (block.type === "image") {
     return imageBlockKey(block);
   }
-  return mentionBlockKey(block);
+  return `block:${(block as { type?: string }).type ?? "unknown"}`;
 }
 
 function getMediaCapabilityKey(block: ContentBlock) {
@@ -74,10 +64,7 @@ function getMediaCapabilityKey(block: ContentBlock) {
   if (!raw || typeof raw !== "object") return null;
 
   const capability = (raw as { capability?: unknown }).capability;
-  if (
-    capability !== "image_generation" &&
-    capability !== "video_generation"
-  ) {
+  if (capability !== "image_generation" && capability !== "video_generation") {
     return null;
   }
 
@@ -152,25 +139,21 @@ const UserMessage = React.memo(function UserMessage({
   contentBlocks: ContentBlock[];
 }) {
   // Categorize blocks once per render
-  const { text, imageBlocks, mentionBlocks } = useMemo(() => {
+  const { text, imageBlocks } = useMemo(() => {
     const textParts: string[] = [];
     const images: ContentBlock[] = [];
-    const mentions: ContentBlock[] = [];
 
     for (const block of contentBlocks) {
       if (block.type === "text") {
         textParts.push(block.text);
       } else if (block.type === "image") {
         images.push(block);
-      } else if (block.type === "mention") {
-        mentions.push(block);
       }
     }
 
     return {
       text: textParts.join(""),
       imageBlocks: images,
-      mentionBlocks: mentions,
     };
   }, [contentBlocks]);
 
@@ -189,26 +172,6 @@ const UserMessage = React.memo(function UserMessage({
           <span className="cursor-text select-text [word-break:break-word]">
             {text}
           </span>
-          {mentionBlocks.length > 0 && (
-            <span className="inline">
-              {mentionBlocks.map((block, idx) => (
-                <MentionPill
-                  key={mentionBlockKey(block)}
-                  label={(block as { label: string }).label}
-                  kind={
-                    (
-                      block as {
-                        mentionType:
-                          | "image-model"
-                          | "brand-kit-asset"
-                          | "skill";
-                      }
-                    ).mentionType
-                  }
-                />
-              ))}
-            </span>
-          )}
           {imageBlocks.length > 0 && (
             <span className="inline">
               {imageBlocks.map((block, idx) => (
@@ -222,24 +185,11 @@ const UserMessage = React.memo(function UserMessage({
           )}
         </div>
       )}
-      {!text && (imageBlocks.length > 0 || mentionBlocks.length > 0) && (
+      {!text && imageBlocks.length > 0 && (
         <div
           data-chat-bubble
           className="inline-block rounded-xl bg-muted px-3 py-2.5"
         >
-          {mentionBlocks.map((block, idx) => (
-            <MentionPill
-              key={mentionBlockKey(block)}
-              label={(block as { label: string }).label}
-              kind={
-                (
-                  block as {
-                    mentionType: "image-model" | "brand-kit-asset" | "skill";
-                  }
-                ).mentionType
-              }
-            />
-          ))}
           {imageBlocks.map((block, idx) => (
             <ImagePill
               key={imageBlockKey(block)}

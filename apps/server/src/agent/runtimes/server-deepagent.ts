@@ -179,7 +179,6 @@ export function createServerDeepAgentRuntimeProvider(
           run.prompt,
           attachments,
           run.imageGenerationPreference,
-          run.mentions,
           run.videoGenerationPreference,
           canvasSummary,
           attachmentMetadata,
@@ -197,7 +196,6 @@ export function createServerDeepAgentRuntimeProvider(
           run.prompt,
           [],
           run.imageGenerationPreference,
-          run.mentions,
           run.videoGenerationPreference,
           canvasSummary,
         );

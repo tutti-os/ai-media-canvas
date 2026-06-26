@@ -10,7 +10,6 @@
  */
 
 export { ImageLightbox, ChatImage, ImagePill } from "./image-lightbox";
-export { MentionPill } from "./mention-pill";
 export { ThinkingBlockView } from "./thinking-block-view";
 export { MarkdownRenderer } from "./markdown-renderer";
 export { ToolBlockView } from "./tool-block-view";

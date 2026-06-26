@@ -11,7 +11,6 @@ import {
 } from "react";
 
 import { useAppTranslation } from "@/i18n";
-import type { MessageMention } from "@aimc/shared";
 import { useAgentModelRequirement } from "../hooks/use-agent-model-requirement";
 import type { ImageAttachmentState } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
@@ -33,15 +32,10 @@ type ChatInputProps = {
   onRemoveAttachment?: (id: string) => void;
   onRetryAttachment?: (id: string) => void;
   isUploading?: boolean;
-  onAtQuery?: (query: string | null) => void;
-  mentions?: MessageMention[];
-  onRemoveMention?: (mention: MessageMention) => void;
   selectedCanvasElements?: CanvasSelectedElement[];
 };
 
 export type ChatInputHandle = {
-  /** Remove the @query text from input after picker selection */
-  clearAtQuery: () => void;
   focus: () => void;
   setDraft: (value: string) => void;
 };
@@ -71,9 +65,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       onRemoveAttachment,
       onRetryAttachment,
       isUploading,
-      onAtQuery,
-      mentions,
-      onRemoveMention,
       selectedCanvasElements,
     },
     ref,
@@ -91,13 +82,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const { t } = useAppTranslation("chat");
 
     useImperativeHandle(ref, () => ({
-      clearAtQuery() {
-        setValue((prev) => {
-          const lastAtIdx = prev.lastIndexOf("@");
-          if (lastAtIdx === -1) return prev;
-          return prev.slice(0, lastAtIdx);
-        });
-      },
       focus() {
         textareaRef.current?.focus();
       },
@@ -179,36 +163,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const handleChange = useCallback(
       (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        const newValue = e.target.value;
-        setValue(newValue);
-
-        if (!onAtQuery) return;
-
-        // Find last @ in text to detect mention mode
-        const lastAtIdx = newValue.lastIndexOf("@");
-        if (lastAtIdx === -1) {
-          onAtQuery(null); // close picker
-          return;
-        }
-
-        // Only trigger if @ is at start or preceded by whitespace
-        const charBefore = lastAtIdx > 0 ? newValue[lastAtIdx - 1] : " ";
-        if (charBefore !== " " && charBefore !== "\n" && lastAtIdx !== 0) {
-          onAtQuery(null);
-          return;
-        }
-
-        // Extract query after @
-        const query = newValue.slice(lastAtIdx + 1);
-        // Close if user typed a space after query (finished mentioning)
-        if (query.includes(" ") || query.includes("\n")) {
-          onAtQuery(null);
-          return;
-        }
-
-        onAtQuery(query);
+        setValue(e.target.value);
       },
-      [onAtQuery],
+      [],
     );
 
     const handleFileChange = useCallback(
@@ -336,34 +293,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               onRemove={onRemoveAttachment}
               {...(onRetryAttachment ? { onRetry: onRetryAttachment } : {})}
             />
-          )}
-          {mentions && mentions.length > 0 && onRemoveMention && (
-            <div className="flex flex-wrap items-center gap-1 px-2 py-1">
-              {mentions.map((mention) => (
-                <button
-                  key={`${mention.mentionType}:${mention.id}`}
-                  type="button"
-                  onClick={() => onRemoveMention(mention)}
-                  className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted/80"
-                  title={t("mentions.remove")}
-                >
-                  <span className="text-muted-foreground">@</span>
-                  <span className="max-w-[180px] truncate">
-                    {mention.label}
-                  </span>
-                  <svg
-                    aria-hidden="true"
-                    className="h-3 w-3 text-muted-foreground"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path d="M18 6 6 18M6 6l12 12" />
-                  </svg>
-                </button>
-              ))}
-            </div>
           )}
           <textarea
             ref={textareaRef}

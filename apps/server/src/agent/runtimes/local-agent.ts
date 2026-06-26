@@ -226,7 +226,6 @@ export function createLocalAgentRuntimeProvider(
         run.prompt,
         run.attachments ?? [],
         run.imageGenerationPreference,
-        run.mentions,
         run.videoGenerationPreference,
         canvasSummary,
         attachmentMetadata,

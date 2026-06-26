@@ -3,7 +3,6 @@ import type {
   ChatMessage,
   ImageAttachment,
   ImageGenerationPreference,
-  MessageMention,
   RunCreateRequest,
   RuntimeKind,
   StreamEvent,
@@ -50,7 +49,6 @@ export type RuntimeRunRecord = {
   loadManagedAgentRunContext?: () => Promise<
     ManagedAgentRunContext | undefined
   >;
-  mentions?: MessageMention[] | undefined;
   modelOverride?: string | undefined;
   prompt: string;
   resumeContext?:
@@ -100,7 +98,6 @@ export type BuildUserMessage = (
   prompt: string,
   attachments: ImageAttachment[],
   imageGenerationPreference?: ImageGenerationPreference,
-  mentions?: MessageMention[],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
   attachmentMetadata?: Record<string, ImageAttachmentMetadata>,

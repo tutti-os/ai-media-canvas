@@ -202,7 +202,7 @@ export default interface Resources {
       "attachImages": "添加图片",
       "cancel": "取消生成",
       "modelPreference": "图片/视频模型",
-      "placeholder": "从一个想法开始，或输入 “@” 提及内容",
+      "placeholder": "从一个想法开始",
       "send": "发送消息"
     },
     "lightbox": {
@@ -255,9 +255,6 @@ export default interface Resources {
         "image": "图片渲染器",
         "video": "视频规划器"
       }
-    },
-    "mentions": {
-      "remove": "移除提及"
     },
     "reconnecting": "连接已断开，正在重连...",
     "selection": {

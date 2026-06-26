@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { toolArtifactSchema } from "./artifacts.js";
-import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
 
 export const identifierSchema = z.string().min(1);
 export const timestampSchema = z.string().datetime({ offset: true });
@@ -29,34 +28,6 @@ export const imageAttachmentSchema = z.object({
   mimeType: z.string().min(1),
   name: z.string().min(1).optional(),
 });
-
-export const imageModelMentionSchema = z.object({
-  mentionType: z.literal("image-model"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-});
-
-export const brandKitAssetMentionSchema = z.object({
-  mentionType: z.literal("brand-kit-asset"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-  assetType: brandKitAssetTypeSchema,
-  textContent: z.string().nullable().optional(),
-  fileUrl: z.string().url().nullable().optional(),
-});
-
-export const skillMentionSchema = z.object({
-  mentionType: z.literal("skill"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-  slug: z.string().min(1),
-});
-
-export const messageMentionSchema = z.discriminatedUnion("mentionType", [
-  imageModelMentionSchema,
-  brandKitAssetMentionSchema,
-  skillMentionSchema,
-]);
 
 export const imageGenerationPreferenceSchema = z.object({
   mode: z.enum(["auto", "manual"]),
@@ -101,7 +72,6 @@ export const runCreateRequestSchema = z
     attachments: z.array(imageAttachmentSchema).optional(),
     imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
     videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
-    mentions: z.array(messageMentionSchema).optional(),
     model: z.string().optional(),
     modelSource: z
       .enum(["local-agent", "tutti-managed", "api-provider"])
@@ -334,43 +304,11 @@ export const imageBlockSchema = z.object({
   name: z.string().min(1).optional(),
 });
 
-export const imageModelMentionBlockSchema = z.object({
-  type: z.literal("mention"),
-  mentionType: z.literal("image-model"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-});
-
-export const brandKitAssetMentionBlockSchema = z.object({
-  type: z.literal("mention"),
-  mentionType: z.literal("brand-kit-asset"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-  assetType: brandKitAssetTypeSchema,
-  textContent: z.string().nullable().optional(),
-  fileUrl: z.string().url().nullable().optional(),
-});
-
-export const skillMentionBlockSchema = z.object({
-  type: z.literal("mention"),
-  mentionType: z.literal("skill"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-  slug: z.string().min(1),
-});
-
-export const mentionBlockSchema = z.union([
-  imageModelMentionBlockSchema,
-  brandKitAssetMentionBlockSchema,
-  skillMentionBlockSchema,
-]);
-
 export const contentBlockSchema = z.union([
   textBlockSchema,
   thinkingBlockSchema,
   toolBlockSchema,
   imageBlockSchema,
-  mentionBlockSchema,
 ]);
 
 export const chatMessageSchema = z.object({
@@ -413,8 +351,6 @@ export type TextBlock = z.infer<typeof textBlockSchema>;
 export type ThinkingBlock = z.infer<typeof thinkingBlockSchema>;
 export type ToolBlock = z.infer<typeof toolBlockSchema>;
 export type ImageBlock = z.infer<typeof imageBlockSchema>;
-export type MessageMention = z.infer<typeof messageMentionSchema>;
-export type MentionBlock = z.infer<typeof mentionBlockSchema>;
 export type ImageAttachment = z.infer<typeof imageAttachmentSchema>;
 export type ImageGenerationPreference = z.infer<
   typeof imageGenerationPreferenceSchema

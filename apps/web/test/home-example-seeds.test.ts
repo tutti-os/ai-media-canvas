@@ -57,8 +57,8 @@ describe("homeExampleSeedCategories", () => {
   it("keeps no-image example prompts self-contained", () => {
     for (const category of homeExampleSeedCategories) {
       for (const example of category.examples) {
-        const hasImageInput = example.inputMentions.some(
-          (mention) => mention.type === "image",
+        const hasImageInput = example.inputItems.some(
+          (item) => item.type === "image",
         );
         if (hasImageInput) continue;
 

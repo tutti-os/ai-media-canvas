@@ -114,7 +114,7 @@ function toSelection(
     title: example.title,
     prompt: example.prompt,
     previewImages: example.previewImages,
-    inputMentions: example.inputMentions,
+    inputItems: example.inputItems,
   };
 }
 
