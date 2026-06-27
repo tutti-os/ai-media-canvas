@@ -357,7 +357,7 @@ describe("AgnesVideoProvider", () => {
 
   it("times out if Agnes video task creation never returns", async () => {
     const provider = new AgnesVideoProvider("agnes-test-key");
-    videoGenerateMock.mockReturnValueOnce(new Promise(() => {}));
+    videoGenerateMock.mockReturnValue(new Promise(() => {}));
     vi.useFakeTimers();
 
     try {
@@ -369,14 +369,47 @@ describe("AgnesVideoProvider", () => {
       });
       const rejection = expect(resultPromise).rejects.toMatchObject({
         code: "timeout",
-        message: "Agnes video task creation timed out after 600000ms.",
+        message: "Agnes video task creation timed out after 60000ms.",
         provider: "agnes-video",
       });
 
-      await vi.advanceTimersByTimeAsync(600_000);
+      await vi.advanceTimersByTimeAsync(180_000);
 
       await rejection;
+      expect(videoGenerateMock).toHaveBeenCalledTimes(3);
       expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries Agnes video task creation after a one-minute no-response timeout", async () => {
+    const provider = new AgnesVideoProvider("agnes-test-key");
+    videoGenerateMock
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValueOnce({
+        ok: true,
+        taskId: "task_123",
+        status: "queued",
+        model: "agnes-video-v2.0",
+        raw: {},
+      });
+    vi.useFakeTimers();
+
+    try {
+      const resultPromise = provider.generate({
+        prompt: "Retry a stuck Agnes create request",
+        model: "agnes-video/agnes-video-v2.0",
+        aspectRatio: "16:9",
+        resolution: "720p",
+      });
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      const result = await resultPromise;
+
+      expect(videoGenerateMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalled();
+      expect(result.url).toBe("https://cdn.agnes.example/generated.mp4");
     } finally {
       vi.useRealTimers();
     }
