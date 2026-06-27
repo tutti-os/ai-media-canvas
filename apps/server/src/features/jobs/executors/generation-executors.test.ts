@@ -85,6 +85,7 @@ describe("generation executors", () => {
 
     const asset = store.getAssetResponse(result.asset_id as string);
     if (!asset) throw new Error("Expected generated image asset to be stored.");
+    expect(result.file_path).toBe(asset.filePath);
     expect(asset?.mimeType).toBe("image/png");
     expect(readFileSync(asset.filePath)).toEqual(imageBytes);
   });
@@ -363,6 +364,7 @@ describe("generation executors", () => {
 
     const asset = store.getAssetResponse(result.asset_id as string);
     if (!asset) throw new Error("Expected generated video asset to be stored.");
+    expect(result.file_path).toBe(asset.filePath);
     expect(asset?.mimeType).toBe("video/mp4");
     expect(readFileSync(asset.filePath)).toEqual(videoBytes);
   });
