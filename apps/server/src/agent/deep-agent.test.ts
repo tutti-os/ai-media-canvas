@@ -148,7 +148,7 @@ describe("createAimcDeepAgent", () => {
 
     const config = createDeepAgentMock.mock.calls.at(-1)?.[0];
     expect(config?.systemPrompt).toContain(
-      "reply in the primary language of the latest user message when it is clearly Chinese or English",
+      "reply in the primary language of the latest user message when it is clear",
     );
     expect(config?.systemPrompt).toContain(
       "If the latest user message is mixed or ambiguous, reply in English.",
