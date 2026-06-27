@@ -8,4 +8,4 @@
 - 修复方案: Agnes 视频 Provider 在创建远端任务时每 60s 无回包即重新发起 create，最多 3 次；若仍拿不到 `taskId`，再让后台 job 进入失败终态，不再由 job 层额外重试一整轮。远端 task 已创建后的轮询超时仍保持不可重试并可通过已持久化 remote task id 恢复。
 - 验证方式和结果: 实测 `POST /v1/videos` 最小 text-to-video create 请求 75s 无 response byte 并由 curl 超时，文本接口同 key 9s 返回，确认卡点在视频 create；`pnpm --filter @aimc/server exec vitest run src/generation/providers/agnes-video.test.ts src/features/jobs/executors/generation-executors.test.ts` 通过；`pnpm exec biome check apps/server/src/generation/providers/agnes-video.ts apps/server/src/generation/providers/agnes-video.test.ts apps/server/src/features/jobs/executors/video-generation.ts apps/server/src/features/jobs/executors/generation-executors.test.ts` 通过；`pnpm --filter @aimc/server typecheck` 通过。
 - 是否已修复完: 是
-- commit hash: `a906c0b`
+- commit hash: `a906c0b`, `91c1986`
