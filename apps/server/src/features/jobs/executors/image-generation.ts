@@ -157,6 +157,7 @@ export async function executeImageGenerationJob(
     asset_id: stored.asset.id,
     signed_url: stored.url,
     object_path: stored.asset.objectPath,
+    file_path: stored.filePath,
     width: generated.width,
     height: generated.height,
     mime_type: stored.asset.mimeType ?? mimeType,
