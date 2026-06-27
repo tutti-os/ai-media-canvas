@@ -168,6 +168,53 @@ describe("POST /tutti/references/list", () => {
     });
   });
 
+  it("orders root project groups by updated time descending", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-project-order-"));
+    dataRoots.push(dataRoot);
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const older = store.createProject({ name: "Chronology Alpha Older" });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const newer = store.createProject({ name: "Chronology Zed Newer" });
+    const app = buildApp({ env: { dataRoot } });
+
+    const root = await listReferences(app, { filterText: "chronology" });
+    await app.close();
+
+    expect(root.items.map((item) => item.id)).toEqual([
+      `project:${newer.id}`,
+      `project:${older.id}`,
+    ]);
+  });
+
+  it("filters root project groups by project id and display name", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-project-filter-"));
+    dataRoots.push(dataRoot);
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = store.createProject({ name: "Searchable Campaign" });
+    const app = buildApp({ env: { dataRoot } });
+
+    const byId = await listReferences(app, {
+      filterText: project.id.slice(0, 8),
+    });
+    const byDisplayName = await listReferences(app, {
+      filterText: "searchable",
+    });
+    await app.close();
+
+    expect(byId.items.map((item) => item.id)).toEqual([
+      `project:${project.id}`,
+    ]);
+    expect(byDisplayName.items.map((item) => item.id)).toEqual([
+      `project:${project.id}`,
+    ]);
+  });
+
   it("does not expose ordinary media uploads as app references", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-ordinary-"));
     dataRoots.push(dataRoot);
@@ -537,6 +584,24 @@ describe("POST /tutti/references/search", () => {
         /^Campaign [AB]$|^项目外资源$/,
       );
     }
+  });
+
+  it("matches search queries against project ids and project display names", async () => {
+    const { dataRoot, projectA } = await seedStore();
+    const app = buildApp({ env: { dataRoot } });
+
+    const byId = await searchReferences(app, {
+      query: projectA.id.slice(0, 8),
+    });
+    const byDisplayName = await searchReferences(app, { query: "campaign a" });
+    await app.close();
+
+    expect(
+      byId.items.map((item) => (item.reference as { parentGroupLabel?: string }).parentGroupLabel),
+    ).toEqual(["Campaign A", "Campaign A", "Campaign A"]);
+    expect(
+      byDisplayName.items.map((item) => (item.reference as { parentGroupLabel?: string }).parentGroupLabel),
+    ).toEqual(["Campaign A", "Campaign A", "Campaign A"]);
   });
 
   it("filters to images only via the image category id (filter-only)", async () => {

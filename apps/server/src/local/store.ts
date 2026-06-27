@@ -1573,7 +1573,7 @@ export function createLocalStore(options: {
           SELECT id, name, slug, description, primary_canvas_id, thumbnail_asset_id, created_at, updated_at
           FROM projects
           WHERE archived_at IS NULL
-          ORDER BY updated_at DESC
+          ORDER BY updated_at DESC, created_at DESC, id DESC
         `,
       )
       .all() as Array<{
@@ -4031,7 +4031,7 @@ export function createLocalStore(options: {
   // unassigned media assets when any exist. referenceCount only includes
   // in-range reusable media assets; projects with no reusable outputs remain
   // navigable empty groups so newly created projects are visible in Tutti.
-  // Keyset paginated on (group name, group id).
+  // Keyset paginated on (updated_at desc, group id desc).
   function listReferenceProjectGroups(input: {
     filterText?: string | undefined;
     fromMs?: number | undefined;
@@ -4086,8 +4086,8 @@ export function createLocalStore(options: {
       unassignedParams.push(toIso);
     }
     if (input.filterText) {
-      conditions.push("p.name LIKE ? COLLATE NOCASE");
-      params.push(`%${input.filterText}%`);
+      conditions.push("(p.id LIKE ? COLLATE NOCASE OR p.name LIKE ? COLLATE NOCASE)");
+      params.push(`%${input.filterText}%`, `%${input.filterText}%`);
       unassignedConditions.push("? LIKE ? COLLATE NOCASE");
       unassignedParams.push(
         UNASSIGNED_REFERENCE_GROUP_LABEL,
@@ -4098,10 +4098,12 @@ export function createLocalStore(options: {
     const cursorParams: SQLInputValue[] = [];
     const cursor = decodeReferenceCursor(input.cursor);
     if (cursor && cursor.length === 2) {
-      const cursorName = cursor[0] ?? "";
+      const cursorUpdatedAt = cursor[0] ?? "";
       const cursorId = cursor[1] ?? "";
-      cursorConditions.push("(name > ? OR (name = ? AND group_id > ?))");
-      cursorParams.push(cursorName, cursorName, cursorId);
+      cursorConditions.push(
+        "(updated_at < ? OR (updated_at = ? AND group_id < ?))",
+      );
+      cursorParams.push(cursorUpdatedAt, cursorUpdatedAt, cursorId);
     }
     const limit = Math.max(1, Math.min(50, input.limit));
     const outerWhere =
@@ -4111,17 +4113,18 @@ export function createLocalStore(options: {
     const rows = db
       .prepare(
         `
-          SELECT group_id, project_id, name, reference_count
+          SELECT group_id, project_id, name, updated_at, reference_count
           FROM (
             SELECT
               'project:' || p.id AS group_id,
               p.id AS project_id,
               p.name AS name,
+              p.updated_at AS updated_at,
               COUNT(a.id) AS reference_count
             FROM projects p
             LEFT JOIN assets a ON ${joinConditions.join(" AND ")}
             WHERE ${conditions.join(" AND ")}
-            GROUP BY p.id, p.name
+            GROUP BY p.id, p.name, p.updated_at
 
             UNION ALL
 
@@ -4129,13 +4132,14 @@ export function createLocalStore(options: {
               ? AS group_id,
               NULL AS project_id,
               ? AS name,
+              COALESCE(MAX(a.created_at), '') AS updated_at,
               COUNT(a.id) AS reference_count
             FROM assets a
             WHERE ${unassignedConditions.join(" AND ")}
             HAVING COUNT(a.id) > 0
           )
           ${outerWhere}
-          ORDER BY name ASC, group_id ASC
+          ORDER BY updated_at DESC, group_id DESC
           LIMIT ?
         `,
       )
@@ -4151,6 +4155,7 @@ export function createLocalStore(options: {
       group_id: string;
       project_id: string | null;
       name: string;
+      updated_at: string;
       reference_count: number;
     }>;
     const hasMore = rows.length > limit;
@@ -4172,7 +4177,7 @@ export function createLocalStore(options: {
       })),
       nextCursor:
         hasMore && last
-          ? encodeReferenceCursor([last.name, last.group_id])
+          ? encodeReferenceCursor([last.updated_at, last.group_id])
           : null,
     };
   }
@@ -4401,9 +4406,14 @@ export function createLocalStore(options: {
     const params: SQLInputValue[] = [...generatedAssetIds];
     if (input.query) {
       conditions.push(
-        "(a.object_path LIKE ? COLLATE NOCASE OR a.display_name LIKE ? COLLATE NOCASE)",
+        "(a.object_path LIKE ? COLLATE NOCASE OR a.display_name LIKE ? COLLATE NOCASE OR p.id LIKE ? COLLATE NOCASE OR p.name LIKE ? COLLATE NOCASE)",
       );
-      params.push(`%${input.query}%`, `%${input.query}%`);
+      params.push(
+        `%${input.query}%`,
+        `%${input.query}%`,
+        `%${input.query}%`,
+        `%${input.query}%`,
+      );
     }
     // Build the OR group of file-type categories. Each known extension maps to a
     // suffix match; `other` matches anything whose extension is not recognized.
