@@ -13,8 +13,6 @@
 
 - When invoking Agnes with local files, data URLs, or private/local asset URLs that need a temporary public URL, prefer Uguu as the first temporary upload provider.
 - For `agnes-ai-cli` or its JS client, use `temporaryMediaProviderOrder: ["uguu", "litterbox", "tmpfiles", "x0"]` when provider order is configurable, while preserving explicit caller overrides.
-- If Uguu fails during a live request, allow the existing fallback providers to run instead of failing solely because Uguu was unavailable.
-
-<!-- subspace-session:start -->
+- If Uguu fails during a live request, allow the existing fallback providers to run instead of failing solely because Uguu was unavailable.<!-- subspace-session:start -->
 
 <!-- subspace-session:end -->

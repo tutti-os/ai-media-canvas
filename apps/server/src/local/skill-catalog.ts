@@ -69,7 +69,8 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
     id: "skill-system-canvas-director",
     name: "Canvas Director",
     slug: "canvas-director",
-    description: "帮助 Agent 先梳理画布结构、镜头顺序和版式层级，再给出下一步操作建议。",
+    description:
+      "帮助 Agent 先梳理画布结构、镜头顺序和版式层级，再给出下一步操作建议。",
     author: "AI Canvas",
     version: "1.0.0",
     category: "design",
@@ -107,7 +108,8 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
     id: "skill-system-brand-keeper",
     name: "Brand Keeper",
     slug: "brand-keeper",
-    description: "让 Agent 在输出建议时主动参考本地 Brand Kit 里的字体、颜色和 Logo 资产。",
+    description:
+      "让 Agent 在输出建议时主动参考本地 Brand Kit 里的字体、颜色和 Logo 资产。",
     author: "AI Canvas",
     version: "1.0.0",
     category: "writing",
@@ -210,8 +212,10 @@ function loadDirectoryBundledSkills(): BundledSkillDefinition[] {
         frontmatter.description ??
         extractSection(body, "Description") ??
         "Local bundled skill";
-      const author = frontmatter.metadata.author ?? frontmatter.author ?? "AI Canvas";
-      const version = frontmatter.metadata.version ?? frontmatter.version ?? "1.0.0";
+      const author =
+        frontmatter.metadata.author ?? frontmatter.author ?? "AI Canvas";
+      const version =
+        frontmatter.metadata.version ?? frontmatter.version ?? "1.0.0";
 
       return [
         {
@@ -256,7 +260,7 @@ function parseFrontmatter(markdown: string) {
   const frontmatter = emptyFrontmatter();
   let inMetadata = false;
 
-  for (const rawLine of match[1]!.split("\n")) {
+  for (const rawLine of (match[1] ?? "").split("\n")) {
     const line = rawLine.replace(/\r$/, "");
     if (!line.trim()) {
       continue;
@@ -330,14 +334,25 @@ function resolveDisplayName(
 }
 
 function extractSection(markdown: string, heading: string) {
-  const regex = new RegExp(`##\\s+${heading}\\s+([\\s\\S]*?)(?:\\n##\\s+|$)`, "i");
+  const regex = new RegExp(
+    `##\\s+${heading}\\s+([\\s\\S]*?)(?:\\n##\\s+|$)`,
+    "i",
+  );
   const match = markdown.match(regex);
   return match?.[1]?.trim() ?? null;
 }
 
-function inferCategory(slug: string, description: string, body: string): SkillCategory {
+function inferCategory(
+  slug: string,
+  description: string,
+  body: string,
+): SkillCategory {
   const haystack = `${slug} ${description} ${body}`.toLowerCase();
-  if (haystack.includes("design") || haystack.includes("canvas") || haystack.includes("poster")) {
+  if (
+    haystack.includes("design") ||
+    haystack.includes("canvas") ||
+    haystack.includes("poster")
+  ) {
     return "design";
   }
   if (

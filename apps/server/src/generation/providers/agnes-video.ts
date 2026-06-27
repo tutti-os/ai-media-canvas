@@ -16,7 +16,8 @@ const ICON_AGNES = "https://agnes-cdn.kiwiar.com/logo/agnes-icon-400x400.jpg";
 const DEFAULT_FRAME_RATE = 24;
 const DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
 const DEFAULT_AGNES_MEDIA_TTL = "1h" as const;
-const AGNES_VIDEO_CREATE_TIMEOUT_MS = 120_000;
+const AGNES_VIDEO_CREATE_TIMEOUT_MS = 60_000;
+const AGNES_VIDEO_CREATE_MAX_ATTEMPTS = 3;
 const AGNES_VIDEO_POLL_REQUEST_TIMEOUT_MS = 30_000;
 const AGNES_VIDEO_POLL_INTERVAL_SECONDS = 10;
 const AGNES_VIDEO_POLL_TIMEOUT_SECONDS = 7_200;
@@ -334,7 +335,7 @@ export class AgnesVideoProvider implements VideoProvider {
     const metadata = getAgnesRemoteTaskMetadata(params);
 
     try {
-      const task = await withTimeout(
+      const task = await this.createTaskWithRetry(() =>
         request.mode === "text2video"
           ? this.client.video.generate({
               mode: request.mode,
@@ -377,13 +378,6 @@ export class AgnesVideoProvider implements VideoProvider {
                   ? { negativePrompt: params.negativePrompt }
                   : {}),
               }),
-        AGNES_VIDEO_CREATE_TIMEOUT_MS,
-        () =>
-          new GenerationError(
-            this.name,
-            "timeout",
-            `Agnes video task creation timed out after ${AGNES_VIDEO_CREATE_TIMEOUT_MS}ms.`,
-          ),
       );
 
       const taskWithVideoId = task as typeof task & { videoId?: string };
@@ -443,6 +437,44 @@ export class AgnesVideoProvider implements VideoProvider {
         error instanceof Error ? error.message : "Unknown Agnes video error",
       );
     }
+  }
+
+  private async createTaskWithRetry(
+    createTask: () => ReturnType<typeof this.client.video.generate>,
+  ) {
+    for (
+      let attempt = 1;
+      attempt <= AGNES_VIDEO_CREATE_MAX_ATTEMPTS;
+      attempt += 1
+    ) {
+      try {
+        return await withTimeout(
+          createTask(),
+          AGNES_VIDEO_CREATE_TIMEOUT_MS,
+          () =>
+            new GenerationError(
+              this.name,
+              "timeout",
+              `Agnes video task creation timed out after ${AGNES_VIDEO_CREATE_TIMEOUT_MS}ms.`,
+            ),
+        );
+      } catch (error) {
+        if (
+          !(
+            error instanceof GenerationError &&
+            error.code === "timeout" &&
+            attempt < AGNES_VIDEO_CREATE_MAX_ATTEMPTS
+          )
+        ) {
+          throw error;
+        }
+      }
+    }
+    throw new GenerationError(
+      this.name,
+      "timeout",
+      `Agnes video task creation timed out after ${AGNES_VIDEO_CREATE_TIMEOUT_MS}ms.`,
+    );
   }
 
   private async pollTask(
