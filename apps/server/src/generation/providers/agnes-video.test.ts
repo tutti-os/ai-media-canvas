@@ -369,11 +369,11 @@ describe("AgnesVideoProvider", () => {
       });
       const rejection = expect(resultPromise).rejects.toMatchObject({
         code: "timeout",
-        message: "Agnes video task creation timed out after 120000ms.",
+        message: "Agnes video task creation timed out after 600000ms.",
         provider: "agnes-video",
       });
 
-      await vi.advanceTimersByTimeAsync(120_000);
+      await vi.advanceTimersByTimeAsync(600_000);
 
       await rejection;
       expect(fetchMock).not.toHaveBeenCalled();

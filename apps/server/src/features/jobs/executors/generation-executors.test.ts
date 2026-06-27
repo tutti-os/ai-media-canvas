@@ -406,6 +406,18 @@ describe("generation executors", () => {
     ).toBe(false);
   });
 
+  it("does not retry Agnes video creation timeout to avoid duplicate submissions", () => {
+    expect(
+      isRetryableVideoGenerationError(
+        new GenerationError(
+          "agnes-video",
+          "timeout",
+          "Agnes video task creation timed out.",
+        ),
+      ),
+    ).toBe(false);
+  });
+
   it("persists Agnes video_id as the resumable remote video task id", async () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-job-video-id-"));
     tempDirs.push(dataRoot);

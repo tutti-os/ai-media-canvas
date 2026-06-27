@@ -132,14 +132,16 @@ export async function executeVideoGenerationJob(
 }
 
 export function isRetryableVideoGenerationError(error: unknown) {
-  return error instanceof GenerationError
-    ? ![
-        "provider_not_found",
-        "model_not_found",
-        "invalid_input",
-        "input_fetch_error",
-        "safety_filter",
-        "poll_timeout",
-      ].includes(error.code)
-    : true;
+  if (!(error instanceof GenerationError)) return true;
+  if (error.provider === "agnes-video" && error.code === "timeout") {
+    return false;
+  }
+  return ![
+    "provider_not_found",
+    "model_not_found",
+    "invalid_input",
+    "input_fetch_error",
+    "safety_filter",
+    "poll_timeout",
+  ].includes(error.code);
 }
