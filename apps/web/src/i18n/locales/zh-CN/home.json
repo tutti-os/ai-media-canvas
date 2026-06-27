@@ -129,6 +129,7 @@
     "title": "让创意设计更简单"
   },
   "prompt": {
+    "ariaLabel": "提示词输入",
     "attachImages": "添加图片",
     "clear": "清除",
     "modelPreference": "图片/视频模型",

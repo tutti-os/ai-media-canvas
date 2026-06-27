@@ -8,7 +8,6 @@ import type {
   ChatMessage,
   ImageAttachment,
   ImageGenerationPreference,
-  MessageMention,
   RunCancelResponse,
   RunCreateRequest,
   RunCreateResponse,
@@ -23,7 +22,10 @@ import { InMemoryStore } from "@langchain/langgraph";
 import {
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
+  type ManagedAgentInvocationCredentialHeaders,
+  type ManagedAgentRunContext,
   createLocalAgentRuntime,
+  createManagedAgentRunContextFromHeaders,
 } from "@tutti-os/agent-acp-kit";
 
 import type { AuthenticatedUser, UserDataClient } from "../auth/request.js";
@@ -154,7 +156,6 @@ export function buildUserMessage(
   prompt: string,
   attachments: ImageAttachment[],
   imageGenerationPreference?: ImageGenerationPreference,
-  mentions: MessageMention[] = [],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
   attachmentMetadata?: Record<string, ImageAttachmentMetadata>,
@@ -180,9 +181,6 @@ export function buildUserMessage(
   );
   if (videoGenerationPreferenceXml)
     xmlBlocks.push(videoGenerationPreferenceXml);
-
-  const mentionXmlBlocks = buildMentionXmlBlocks(mentions);
-  xmlBlocks.push(...mentionXmlBlocks);
 
   if (!xmlBlocks.length) return { text: prompt };
   return { text: `${prompt}\n\n${xmlBlocks.join("\n\n")}` };
@@ -256,78 +254,6 @@ function buildVideoGenerationPreferenceXml(
   return `<human_video_generation_preference mode="manual" count="${videoGenerationPreference.models.length}">\n  ${modelXml}\n</human_video_generation_preference>`;
 }
 
-function buildMentionXmlBlocks(mentions: MessageMention[]): string[] {
-  const xmlBlocks: string[] = [];
-  const availableImageModelIds = new Set(
-    getAvailableImageModels().map((m) => m.id),
-  );
-
-  const mentionedModels = mentions.filter(
-    (
-      mention,
-    ): mention is Extract<MessageMention, { mentionType: "image-model" }> =>
-      mention.mentionType === "image-model" &&
-      availableImageModelIds.has(mention.id),
-  );
-  if (mentionedModels.length > 0) {
-    const modelXml = mentionedModels
-      .map(
-        (mention, i) =>
-          `<model index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" display_name="${escapeXmlAttribute(mention.label)}" />`,
-      )
-      .join("\n  ");
-
-    xmlBlocks.push(
-      `<human_image_model_mentions count="${mentionedModels.length}">\n  ${modelXml}\n</human_image_model_mentions>`,
-    );
-  }
-
-  const mentionedBrandKitAssets = mentions.filter(
-    (
-      mention,
-    ): mention is Extract<MessageMention, { mentionType: "brand-kit-asset" }> =>
-      mention.mentionType === "brand-kit-asset",
-  );
-  if (mentionedBrandKitAssets.length > 0) {
-    const assetXml = mentionedBrandKitAssets
-      .map((mention, i) => {
-        const textContentAttr =
-          mention.textContent != null
-            ? ` text_content="${escapeXmlAttribute(mention.textContent)}"`
-            : "";
-        const fileUrlAttr =
-          mention.fileUrl != null
-            ? ` file_url="${escapeXmlAttribute(mention.fileUrl)}"`
-            : "";
-        return `<brand_kit_asset index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" type="${escapeXmlAttribute(mention.assetType)}" display_name="${escapeXmlAttribute(mention.label)}"${textContentAttr}${fileUrlAttr} />`;
-      })
-      .join("\n  ");
-
-    xmlBlocks.push(
-      `<human_brand_kit_mentions count="${mentionedBrandKitAssets.length}">\n  ${assetXml}\n</human_brand_kit_mentions>`,
-    );
-  }
-
-  // Skill mentions — tell the agent to read and follow the mentioned skill
-  const mentionedSkills = mentions.filter(
-    (mention): mention is Extract<MessageMention, { mentionType: "skill" }> =>
-      mention.mentionType === "skill",
-  );
-  if (mentionedSkills.length > 0) {
-    const skillXml = mentionedSkills
-      .map(
-        (mention, i) =>
-          `<skill index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" name="${escapeXmlAttribute(mention.label)}" slug="${escapeXmlAttribute(mention.slug)}">\nThe user explicitly requested this skill. Read \`/workspace-skills/${mention.slug}/SKILL.md\` for full instructions and follow them.\n</skill>`,
-      )
-      .join("\n  ");
-    xmlBlocks.push(
-      `<human_skill_mentions count="${mentionedSkills.length}">\n  ${skillXml}\n</human_skill_mentions>`,
-    );
-  }
-
-  return xmlBlocks;
-}
-
 function escapeXmlAttribute(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -381,9 +307,7 @@ type RuntimeRunStatus =
   | "failed"
   | "running";
 
-type RuntimeRunCreateInput = RunCreateRequest & {
-  managedAgentInvocationCredential?: string | undefined;
-};
+type RuntimeRunCreateInput = RunCreateRequest;
 
 type RuntimeRunRecord = RuntimeRunCreateInput & {
   accessToken?: string;
@@ -394,7 +318,9 @@ type RuntimeRunRecord = RuntimeRunCreateInput & {
   codexImagegenDelegation?: "ask" | "always" | "never";
   codexImagegenConsentBudget?: number;
   envOverride?: ServerEnv;
-  managedAgentInvocationCredential?: string | undefined;
+  loadManagedAgentRunContext?: () => Promise<
+    ManagedAgentRunContext | undefined
+  >;
   modelOverride?: string;
   resumeContext?: {
     mode: "provider-local" | "handoff" | "fresh";
@@ -685,6 +611,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         assistantMessageId?: string;
         connectionId?: string;
         env?: ServerEnv;
+        managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders;
         model?: string;
         runtimeKind?: RuntimeKind;
         runtimeProvider?: AgentRuntimeProvider;
@@ -721,8 +648,19 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         initialRuntimeTarget?.kind ?? requestedRuntimeKind;
       const persistedRuntimeProvider =
         initialRuntimeTarget?.provider ?? requestedRuntimeProvider;
-      const keepManagedAgentInvocationCredential =
-        persistedRuntimeKind === "local-agent";
+      const loadManagedAgentRunContext =
+        persistedRuntimeKind === "local-agent" &&
+        persistedRuntimeProvider &&
+        runOptions?.managedAgentHeaders
+          ? () =>
+              createManagedAgentRunContextFromHeaders(
+                runOptions.managedAgentHeaders,
+                {
+                  providerId: persistedRuntimeProvider,
+                  runId,
+                },
+              )
+          : undefined;
       const previousRun = runInput.resumeFromRunId
         ? options.agentRunStore?.getRun?.(runInput.resumeFromRunId)
         : undefined;
@@ -773,9 +711,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       runs.set(runId, {
         ...runInput,
-        ...(keepManagedAgentInvocationCredential
-          ? {}
-          : { managedAgentInvocationCredential: undefined }),
         ...(runOptions?.accessToken
           ? { accessToken: runOptions.accessToken }
           : {}),
@@ -788,6 +723,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
+        ...(loadManagedAgentRunContext ? { loadManagedAgentRunContext } : {}),
         ...(runOptions?.codexImagegenDelegation
           ? { codexImagegenDelegation: runOptions.codexImagegenDelegation }
           : {}),
@@ -1477,7 +1413,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         run.runtimeKind = resolvedRuntimeTarget.kind;
         run.runtimeProvider = resolvedRuntimeTarget.provider;
         if (resolvedRuntimeTarget.kind !== "local-agent") {
-          run.managedAgentInvocationCredential = undefined;
+          delete run.loadManagedAgentRunContext;
         }
         runtimeLease = runtimeControlPlane.acquireRuntimeLease(
           resolvedRuntimeTarget,
@@ -1593,7 +1529,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         yield failedEvent;
         return;
       } finally {
-        run.managedAgentInvocationCredential = undefined;
+        delete run.loadManagedAgentRunContext;
         runtimeLease?.release();
         if (backendResult.sandboxDir) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(

@@ -11,7 +11,6 @@ import {
   wsCommandSchema,
   wsRpcResponseSchema,
 } from "@aimc/shared";
-import { getManagedAgentInvocationCredentialFromHeaders } from "@tutti-os/agent-acp-kit";
 import {
   AgentRunModelResolutionError,
   type AgentRunOrchestrator,
@@ -79,10 +78,6 @@ type RegisterWsOptions = {
   settingsService?: SettingsService;
   threadService?: ThreadService;
   viewerService?: ViewerService;
-};
-
-type ServerRunCreateRequest = Omit<RunCreateRequest, "accessToken"> & {
-  managedAgentInvocationCredential?: string | undefined;
 };
 
 export async function registerWsRoute(
@@ -158,8 +153,6 @@ async function authenticateAndBind(
   const connectionId =
     urlForParams.searchParams.get("connectionId") || randomUUID();
   connectionManager.register(connectionId, authenticatedUser.id, socket);
-  const managedAgentInvocationCredential =
-    getManagedAgentInvocationCredentialFromHeaders(request.headers);
 
   // Heartbeat with pong timeout (spec §1.3: 60s no-pong → disconnect)
   let lastPong = Date.now();
@@ -243,15 +236,9 @@ async function authenticateAndBind(
             ...(p.videoGenerationPreference !== undefined
               ? { videoGenerationPreference: p.videoGenerationPreference }
               : {}),
-            ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
             ...(p.model !== undefined ? { model: p.model } : {}),
             ...(p.modelSource !== undefined
               ? { modelSource: p.modelSource }
-              : {}),
-            ...(managedAgentInvocationCredential !== undefined
-              ? {
-                  managedAgentInvocationCredential,
-                }
               : {}),
             ...(p.runtimeKind !== undefined
               ? { runtimeKind: p.runtimeKind }
@@ -263,6 +250,7 @@ async function authenticateAndBind(
           agentRuns,
           connectionManager,
           options,
+          request.headers,
         );
       } else if (msg.action === "agent.cancel") {
         log.info("run_cancel", {
@@ -360,10 +348,11 @@ async function authenticateAndBind(
 async function handleRunCommand(
   authenticatedUser: AuthenticatedUser,
   connectionId: string,
-  payload: ServerRunCreateRequest,
+  payload: Omit<RunCreateRequest, "accessToken">,
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
   services: RegisterWsOptions,
+  managedAgentHeaders: FastifyRequest["headers"],
 ) {
   const log = createPipelineLogger("agent.run", {
     userId: authenticatedUser.id,
@@ -500,6 +489,7 @@ async function handleRunCommand(
     ...(assistantMessageId ? { assistantMessageId } : {}),
     connectionId,
     ...(runtimeEnv ? { env: runtimeEnv } : {}),
+    managedAgentHeaders,
     userId: authenticatedUser.id,
     ...(runtimeModel ? { model: runtimeModel } : {}),
     ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),

@@ -1,6 +1,6 @@
 "use client";
 
-import { Expand, Info, Play, X } from "lucide-react";
+import { Download, Expand, Info, Play, X } from "lucide-react";
 import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { useToast } from "@/components/toast";
 import { useAppTranslation } from "../../i18n";
 
 type VideoCanvasElementProps = {
@@ -55,6 +56,7 @@ export function VideoCanvasElement({
   dragging = false,
 }: VideoCanvasElementProps) {
   const { t } = useAppTranslation("canvas");
+  const { success: toastSuccess } = useToast();
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const infoDialogRef = useRef<HTMLDialogElement>(null);
@@ -112,6 +114,10 @@ export function VideoCanvasElement({
       playPreview();
     }
   }, [pausePreview, playPreview, playing]);
+
+  const handleDownloadVideo = useCallback(() => {
+    toastSuccess(t("files.downloadStarted"));
+  }, [t, toastSuccess]);
 
   const togglePreview = useCallback(
     (event: React.MouseEvent) => {
@@ -417,6 +423,7 @@ export function VideoCanvasElement({
                 <video
                   src={src}
                   controls
+                  controlsList="nodownload"
                   autoPlay
                   playsInline
                   className="max-h-[70vh] w-full bg-black object-contain"
@@ -428,6 +435,18 @@ export function VideoCanvasElement({
                     label={t("tools.videoPanel.captions")}
                   />
                 </video>
+              </div>
+              <div className="flex items-center justify-end border-t border-border/70 px-3 py-2">
+                <a
+                  href={src}
+                  download
+                  onClick={handleDownloadVideo}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/80"
+                  aria-label={t("files.download", { name: readableTitle })}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {t("common:actions.download")}
+                </a>
               </div>
             </dialog>
           </div>,

@@ -250,6 +250,23 @@ describe("local server API", () => {
     });
   });
 
+  it("fetchModels sends a refresh hint when requested", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ models: [] }),
+    });
+
+    await fetchModels({ refresh: true });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/models?refresh=1",
+      {
+        cache: "no-store",
+      },
+    );
+  });
+
   it("uploadFile uses the local multipart endpoint outside Tutti", async () => {
     const payload = {
       asset: {

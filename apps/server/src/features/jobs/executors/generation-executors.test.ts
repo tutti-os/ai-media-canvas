@@ -85,8 +85,64 @@ describe("generation executors", () => {
 
     const asset = store.getAssetResponse(result.asset_id as string);
     if (!asset) throw new Error("Expected generated image asset to be stored.");
+    expect(result.file_path).toBe(asset.filePath);
     expect(asset?.mimeType).toBe("image/png");
     expect(readFileSync(asset.filePath)).toEqual(imageBytes);
+  });
+
+  it("uses the image generation title as the exposed reference name", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-job-image-title-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const imageBytes = Buffer.from("named-image-binary");
+    registerImageProvider({
+      name: "test-image",
+      models: [
+        {
+          id: "test/image-model",
+          displayName: "Test Image",
+          description: "Test image provider",
+        },
+      ],
+      async generate() {
+        return {
+          url: `data:image/png;base64,${imageBytes.toString("base64")}`,
+          mimeType: "image/png",
+          width: 1024,
+          height: 768,
+        };
+      },
+    });
+
+    const project = store.createProject({ name: "Named Image Project" });
+    const job = store.createBackgroundJob({
+      jobType: "image_generation",
+      queueName: "image_generation_jobs",
+      projectId: project.id,
+      payload: {
+        prompt: "A dramatic sky",
+        title: "Dramatic sky over Tokyo",
+        model: "test/image-model",
+        aspect_ratio: "4:3",
+      },
+    });
+
+    const result = await executeImageGenerationJob(store, job);
+    store.markBackgroundJobSucceeded(job.id, result);
+
+    const references = store.listReferenceProjectAssets({
+      projectId: project.id,
+      limit: 10,
+    });
+
+    expect(references.files[0]?.displayName).toBe(
+      "Dramatic sky over Tokyo.png",
+    );
   });
 
   it("inserts completed image jobs into their bound canvas", async () => {
@@ -308,8 +364,78 @@ describe("generation executors", () => {
 
     const asset = store.getAssetResponse(result.asset_id as string);
     if (!asset) throw new Error("Expected generated video asset to be stored.");
+    expect(result.file_path).toBe(asset.filePath);
     expect(asset?.mimeType).toBe("video/mp4");
     expect(readFileSync(asset.filePath)).toEqual(videoBytes);
+  });
+
+  it("uses the video generation title as the exposed reference name", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-job-video-title-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const videoBytes = Buffer.from("named-video-binary");
+    registerVideoProvider({
+      name: "test-video",
+      models: [
+        {
+          id: "test/video-model",
+          displayName: "Test Video",
+          description: "Test video provider",
+          capabilities: {
+            textToVideo: true,
+            imageToVideo: true,
+            videoToVideo: false,
+            audio: false,
+          },
+          limits: {
+            maxDuration: 8,
+            maxResolution: "1080p",
+            maxInputImages: 2,
+          },
+        },
+      ],
+      async generate() {
+        return {
+          url: `data:video/mp4;base64,${videoBytes.toString("base64")}`,
+          mimeType: "video/mp4",
+          width: 1280,
+          height: 720,
+          durationSeconds: 6,
+        };
+      },
+    });
+
+    const project = store.createProject({ name: "Named Video Project" });
+    const job = store.createBackgroundJob({
+      jobType: "video_generation",
+      queueName: "video_generation_jobs",
+      projectId: project.id,
+      payload: {
+        prompt: "A cinematic flythrough",
+        title: "Cinematic harbor flythrough",
+        model: "test/video-model",
+        duration: 6,
+        aspect_ratio: "16:9",
+        resolution: "720p",
+      },
+    });
+
+    const result = await executeVideoGenerationJob(store, job);
+    store.markBackgroundJobSucceeded(job.id, result);
+
+    const references = store.listReferenceProjectAssets({
+      projectId: project.id,
+      limit: 10,
+    });
+
+    expect(references.files[0]?.displayName).toBe(
+      "Cinematic harbor flythrough.mp4",
+    );
   });
 
   it("forwards Agnes phase-2 video controls through the video executor", async () => {

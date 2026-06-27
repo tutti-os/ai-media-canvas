@@ -119,6 +119,7 @@ export async function executeImageGenerationJob(
   const stored = store.uploadFile({
     bucket: "project-assets",
     fileName: `${provider}-${Date.now()}`,
+    displayName: payload.title ?? payload.prompt,
     fileBuffer: buffer,
     mimeType,
     ...(job.project_id ? { projectId: job.project_id } : {}),
@@ -156,6 +157,7 @@ export async function executeImageGenerationJob(
     asset_id: stored.asset.id,
     signed_url: stored.url,
     object_path: stored.asset.objectPath,
+    file_path: stored.filePath,
     width: generated.width,
     height: generated.height,
     mime_type: stored.asset.mimeType ?? mimeType,

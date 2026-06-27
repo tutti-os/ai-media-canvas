@@ -21,6 +21,7 @@ export function buildAgentVideoJobPayload(
 ) {
   return {
     prompt: input.prompt,
+    title: input.title,
     model: input.model,
     ...(input.duration != null ? { duration: input.duration } : {}),
     ...(input.resolution ? { resolution: input.resolution } : {}),
@@ -29,12 +30,8 @@ export function buildAgentVideoJobPayload(
     ...(input.inputVideo ? { input_video: input.inputVideo } : {}),
     ...(input.videoMode ? { video_mode: input.videoMode } : {}),
     ...(input.seed !== undefined ? { seed: input.seed } : {}),
-    ...(input.negativePrompt
-      ? { negative_prompt: input.negativePrompt }
-      : {}),
-    ...(input.frameRate !== undefined
-      ? { frame_rate: input.frameRate }
-      : {}),
+    ...(input.negativePrompt ? { negative_prompt: input.negativePrompt } : {}),
+    ...(input.frameRate !== undefined ? { frame_rate: input.frameRate } : {}),
     ...(input.numFrames !== undefined ? { num_frames: input.numFrames } : {}),
     ...(input.enableAudio != null ? { enable_audio: input.enableAudio } : {}),
   };

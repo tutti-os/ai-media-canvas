@@ -473,6 +473,29 @@ describe("registerTuttiCliRoutes", () => {
       canvas_id: "canvas-1",
       caller_provider: "external-cli",
     });
+    expect(response.json()).toMatchObject({
+      kind: "json",
+      value: {
+        job: {
+          id: "job-1",
+          status: "queued",
+        },
+        nextAction: {
+          command: "aimc jobs get --job-id job-1",
+          intermediateStatuses: ["queued", "running"],
+          terminalStatuses: [
+            "succeeded",
+            "failed",
+            "canceled",
+            "dead_letter",
+          ],
+          initialDelayMs: 15_000,
+          pollIntervalMs: 5_000,
+          maxWaitMs: 600_000,
+          guidance: expect.stringContaining("wait initialDelayMs"),
+        },
+      },
+    });
   });
 
   it("allows explicit direct-user generation image commands without caller metadata", async () => {
@@ -649,6 +672,63 @@ describe("registerTuttiCliRoutes", () => {
       project_id: "project-1",
       canvas_id: "canvas-1",
     });
+    expect(response.json()).toMatchObject({
+      kind: "json",
+      value: {
+        job: {
+          id: "job-video-1",
+          status: "queued",
+        },
+        nextAction: {
+          command: "aimc jobs get --job-id job-video-1",
+          initialDelayMs: 60_000,
+          pollIntervalMs: 30_000,
+          maxWaitMs: 7_200_000,
+          guidance: expect.stringContaining("job reaches a terminal status"),
+        },
+      },
+    });
+  });
+
+  it("adds polling guidance to CLI job get responses", async () => {
+    const jobOperations = {
+      getJob: vi.fn(async () => ({
+        job: {
+          id: "job-1",
+          job_type: "video_generation",
+          result: null,
+          status: "running",
+        },
+      })),
+    };
+    const app = buildTestApp({ jobOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/jobs/get",
+      payload: {
+        "job-id": "job-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toMatchObject({
+      kind: "json",
+      value: {
+        job: {
+          id: "job-1",
+          status: "running",
+        },
+        nextAction: {
+          command: "aimc jobs get --job-id job-1",
+          pollIntervalMs: 30_000,
+          maxWaitMs: 7_200_000,
+          guidance: expect.stringContaining("Do not tell the user"),
+        },
+      },
+    });
+    expect(body.value.nextAction).not.toHaveProperty("initialDelayMs");
   });
 
   it("prefers an explicit canvas id over the project primary canvas for video generation", async () => {

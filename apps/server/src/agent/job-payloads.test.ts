@@ -34,6 +34,7 @@ describe("agent job payload helpers", () => {
     expect(
       buildAgentVideoJobPayload({
         prompt: "Lantern move",
+        title: "Lantern motion",
         model: "agnes-video/agnes-video-v2.0",
         duration: 5,
         resolution: "720p",
@@ -48,6 +49,7 @@ describe("agent job payload helpers", () => {
       }),
     ).toEqual({
       prompt: "Lantern move",
+      title: "Lantern motion",
       model: "agnes-video/agnes-video-v2.0",
       duration: 5,
       resolution: "720p",

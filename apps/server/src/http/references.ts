@@ -9,7 +9,8 @@ import type { LocalStore } from "../local/store.js";
 // v1 exposes project-attributed media assets as a two-level tree:
 //   root            -> one group per project (displayName = project name)
 //   group "project:<id>" -> file references (displayName = file name)
-// Assets without a project (project_id IS NULL) are intentionally not exposed.
+// Generated assets without a project are exposed under a special unassigned
+// group so Tutti can still browse reusable agent outputs.
 
 const PROJECT_GROUP_PREFIX = "project:";
 const UNASSIGNED_GROUP_ID = "unassigned";

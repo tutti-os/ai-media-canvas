@@ -6,11 +6,12 @@ import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 import type {
   AgentEvent,
   LocalAgentProviderPlugin,
+  SkillMaterializationRecord,
 } from "@tutti-os/agent-acp-kit";
 import {
-  MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER,
-  createManagedAgentRunContextFromHeaders,
-} from "@tutti-os/agent-acp-kit";
+  type TuttiRecommendedSystemPrompt,
+  loadTuttiAgentSkillContext,
+} from "@tutti-os/agent-acp-kit/tutti";
 
 import {
   type ImageAttachmentMetadata,
@@ -38,6 +39,10 @@ type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   "local-agent",
   AgentRuntimeProvider
 >;
+type TuttiLocalAgentSkillContext = {
+  recommendedSystemPrompt?: TuttiRecommendedSystemPrompt;
+  skillManifest: SkillMaterializationRecord[];
+};
 
 const LOCAL_AGENT_RUNS_DIR_NAME = ".aimc-agent-runs";
 
@@ -130,6 +135,63 @@ function stripLocalAgentProviderPrefix(model: string, provider: string) {
 
 function normalizeWorkspaceSkillPathsForLocalAgent(prompt: string) {
   return prompt.replaceAll("/workspace-skills/", "workspace-skills/");
+}
+
+function joinPromptParts(...parts: Array<string | undefined>) {
+  return parts
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function formatTuttiSkillGuidance(systemPrompt: string | undefined) {
+  const trimmed = systemPrompt?.trim();
+  return trimmed
+    ? `Additional Tutti CLI skill guidance:\n${trimmed}`
+    : undefined;
+}
+
+function tuttiWorkspaceCwd(fallback: string) {
+  return process.env.TUTTI_WORKSPACE_ROOT?.trim() || fallback;
+}
+
+function tuttiCliEnv(tuttiCliPath: string) {
+  return { TUTTI_CLI: tuttiCliPath };
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function loadTuttiLocalAgentSkillContext(input: {
+  cwd: string;
+  provider: AgentRuntimeProvider;
+  runId: string;
+  tuttiCliPath?: string;
+}): Promise<TuttiLocalAgentSkillContext> {
+  if (!input.tuttiCliPath) {
+    return { skillManifest: [] };
+  }
+
+  try {
+    const context = await loadTuttiAgentSkillContext({
+      command: input.tuttiCliPath,
+      cwd: tuttiWorkspaceCwd(input.cwd),
+      provider: input.provider,
+      agentSessionId: input.runId,
+    });
+    return {
+      skillManifest: context.skillManifest,
+      ...(context.recommendedSystemPrompt
+        ? { recommendedSystemPrompt: context.recommendedSystemPrompt }
+        : {}),
+    };
+  } catch (error) {
+    console.warn(
+      `[aimc] Unable to load Tutti agent skill bundle: ${errorMessage(error)}`,
+    );
+    return { skillManifest: [] };
+  }
 }
 
 const DEFAULT_LOCAL_AGENT_TIMEOUT_MS = 30 * 60_000;
@@ -230,7 +292,6 @@ export function createLocalAgentRuntimeProvider(
         run.prompt,
         run.attachments ?? [],
         run.imageGenerationPreference,
-        run.mentions,
         run.videoGenerationPreference,
         canvasSummary,
         attachmentMetadata,
@@ -262,26 +323,14 @@ export function createLocalAgentRuntimeProvider(
         handoffSection,
         normalizedPrompt,
       ].join("\n\n");
-      const systemPrompt = buildAimcSystemPrompt({
-        brandKitId: readyContext.brandKitId,
-      });
-      const managedAgentInvocationCredential =
-        run.managedAgentInvocationCredential?.trim();
-      const managed = Boolean(managedAgentInvocationCredential);
-      run.managedAgentInvocationCredential = undefined;
-
-      const managedRunContext = managedAgentInvocationCredential
-        ? await createManagedAgentRunContextFromHeaders(
-            {
-              [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]:
-                managedAgentInvocationCredential,
-            },
-            {
-              providerId: runtimeProvider,
-              runId: run.runId,
-            },
-          )
+      const loadManagedAgentRunContext = run.loadManagedAgentRunContext;
+      if (loadManagedAgentRunContext) {
+        run.loadManagedAgentRunContext = undefined;
+      }
+      const managedRunContext = loadManagedAgentRunContext
+        ? await loadManagedAgentRunContext()
         : undefined;
+      const managed = Boolean(managedRunContext);
       const runDirectory = managedRunContext
         ? undefined
         : normalizeRunDirectoryResult(
@@ -363,8 +412,26 @@ export function createLocalAgentRuntimeProvider(
             : {}),
           sessionId: run.sessionId,
         });
-        const skillManifest =
-          mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills);
+        const tuttiSkillContext = await loadTuttiLocalAgentSkillContext({
+          cwd: runDir,
+          provider: runtimeProvider,
+          runId: run.runId,
+          ...(runtimeEnv.tuttiCliPath
+            ? { tuttiCliPath: runtimeEnv.tuttiCliPath }
+            : {}),
+        });
+        const skillManifest = [
+          ...mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills),
+          ...tuttiSkillContext.skillManifest,
+        ];
+        const systemPrompt = joinPromptParts(
+          buildAimcSystemPrompt({
+            brandKitId: readyContext.brandKitId,
+          }),
+          formatTuttiSkillGuidance(
+            tuttiSkillContext.recommendedSystemPrompt?.content,
+          ),
+        );
         const resume = mapResumeContext(run.resumeContext);
         const mcpServers = [
           createAimcToolsMcpServerConfig({
@@ -399,6 +466,9 @@ export function createLocalAgentRuntimeProvider(
           ...(resume ? { resume } : {}),
           signal: run.controller.signal,
           skillManifest,
+          ...(runtimeEnv.tuttiCliPath
+            ? { env: tuttiCliEnv(runtimeEnv.tuttiCliPath) }
+            : {}),
           timeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
         })) {
           if (event.type === "error") {

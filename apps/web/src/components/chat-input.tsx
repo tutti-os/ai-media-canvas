@@ -3,7 +3,6 @@
 import {
   forwardRef,
   useCallback,
-  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -11,7 +10,6 @@ import {
 } from "react";
 
 import { useAppTranslation } from "@/i18n";
-import type { MessageMention } from "@aimc/shared";
 import { useAgentModelRequirement } from "../hooks/use-agent-model-requirement";
 import type { ImageAttachmentState } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
@@ -20,6 +18,10 @@ import type { CanvasSelectedElement } from "./canvas-editor";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
 import { SettingsDialog } from "./settings-dialog";
+import {
+  TuttiRichTextInput,
+  type TuttiRichTextInputHandle,
+} from "./tutti-rich-text-input";
 
 type ChatInputProps = {
   onSend: (message: string) => boolean | undefined;
@@ -33,15 +35,10 @@ type ChatInputProps = {
   onRemoveAttachment?: (id: string) => void;
   onRetryAttachment?: (id: string) => void;
   isUploading?: boolean;
-  onAtQuery?: (query: string | null) => void;
-  mentions?: MessageMention[];
-  onRemoveMention?: (mention: MessageMention) => void;
   selectedCanvasElements?: CanvasSelectedElement[];
 };
 
 export type ChatInputHandle = {
-  /** Remove the @query text from input after picker selection */
-  clearAtQuery: () => void;
   focus: () => void;
   setDraft: (value: string) => void;
 };
@@ -71,15 +68,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       onRemoveAttachment,
       onRetryAttachment,
       isUploading,
-      onAtQuery,
-      mentions,
-      onRemoveMention,
       selectedCanvasElements,
     },
     ref,
   ) {
     const [value, setValue] = useState("");
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const inputRef = useRef<TuttiRichTextInputHandle>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { preference } = useImageModelPreference();
     const agentRequirement = useAgentModelRequirement();
@@ -91,24 +85,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const { t } = useAppTranslation("chat");
 
     useImperativeHandle(ref, () => ({
-      clearAtQuery() {
-        setValue((prev) => {
-          const lastAtIdx = prev.lastIndexOf("@");
-          if (lastAtIdx === -1) return prev;
-          return prev.slice(0, lastAtIdx);
-        });
-      },
       focus() {
-        textareaRef.current?.focus();
+        inputRef.current?.focus();
       },
       setDraft(nextValue) {
         setValue(nextValue);
         window.requestAnimationFrame(() => {
-          if (textareaRef.current) {
-            textareaRef.current.style.height = "auto";
-            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-            textareaRef.current.focus();
-          }
+          inputRef.current?.focus();
         });
       },
     }));
@@ -134,9 +117,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       const sent = onSend(trimmed);
       if (sent === false) return;
       setValue("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
     }, [
       agentRequirement,
       attachments,
@@ -153,63 +133,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       setSettingsInitialTab("media");
       setSettingsOpen(true);
     }, []);
-
-    const handleKeyDown = useCallback(
-      (e: React.KeyboardEvent) => {
-        // Ignore Enter during IME composition (e.g. Chinese input confirming a candidate)
-        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-          e.preventDefault();
-          handleSubmit();
-        }
-      },
-      [handleSubmit],
-    );
-
-    // Auto-resize textarea when value changes
-    // biome-ignore lint/correctness/useExhaustiveDependencies: textarea height must recalculate whenever the input value changes.
-    useEffect(() => {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-      textarea.style.height = "auto";
-      const maxH = 240; // max-h-60
-      textarea.style.height = `${Math.min(textarea.scrollHeight, maxH)}px`;
-      textarea.style.overflowY =
-        textarea.scrollHeight > maxH ? "auto" : "hidden";
-    }, [value]);
-
-    const handleChange = useCallback(
-      (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        const newValue = e.target.value;
-        setValue(newValue);
-
-        if (!onAtQuery) return;
-
-        // Find last @ in text to detect mention mode
-        const lastAtIdx = newValue.lastIndexOf("@");
-        if (lastAtIdx === -1) {
-          onAtQuery(null); // close picker
-          return;
-        }
-
-        // Only trigger if @ is at start or preceded by whitespace
-        const charBefore = lastAtIdx > 0 ? newValue[lastAtIdx - 1] : " ";
-        if (charBefore !== " " && charBefore !== "\n" && lastAtIdx !== 0) {
-          onAtQuery(null);
-          return;
-        }
-
-        // Extract query after @
-        const query = newValue.slice(lastAtIdx + 1);
-        // Close if user typed a space after query (finished mentioning)
-        if (query.includes(" ") || query.includes("\n")) {
-          onAtQuery(null);
-          return;
-        }
-
-        onAtQuery(query);
-      },
-      [onAtQuery],
-    );
 
     const handleFileChange = useCallback(
       (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -337,46 +260,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               {...(onRetryAttachment ? { onRetry: onRetryAttachment } : {})}
             />
           )}
-          {mentions && mentions.length > 0 && onRemoveMention && (
-            <div className="flex flex-wrap items-center gap-1 px-2 py-1">
-              {mentions.map((mention) => (
-                <button
-                  key={`${mention.mentionType}:${mention.id}`}
-                  type="button"
-                  onClick={() => onRemoveMention(mention)}
-                  className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted/80"
-                  title={t("mentions.remove")}
-                >
-                  <span className="text-muted-foreground">@</span>
-                  <span className="max-w-[180px] truncate">
-                    {mention.label}
-                  </span>
-                  <svg
-                    aria-hidden="true"
-                    className="h-3 w-3 text-muted-foreground"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path d="M18 6 6 18M6 6l12 12" />
-                  </svg>
-                </button>
-              ))}
-            </div>
-          )}
-          <textarea
-            ref={textareaRef}
-            data-chat-input
-            value={value}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
+          <TuttiRichTextInput
+            ref={inputRef}
+            ariaLabel={t("input.ariaLabel")}
+            className="aimc-rich-text-field"
+            disabled={disabled}
+            editorClassName="aimc-rich-text-editor aimc-chat-rich-text-editor min-h-[48px] max-h-60 overflow-y-auto bg-transparent px-1 text-sm leading-[1.8] text-foreground focus:outline-none"
+            menuAnchor="editor"
+            menuPlacement="top-start"
+            placeholderClassName="aimc-rich-text-placeholder aimc-chat-rich-text-placeholder min-h-[48px] px-1 text-sm leading-[1.8] text-muted-foreground"
             placeholder={t("input.placeholder")}
-            aria-label={t("input.ariaLabel")}
-            rows={1}
-            style={{ scrollbarWidth: "none" }}
-            className="min-h-[48px] max-h-60 resize-none bg-transparent px-1 text-sm leading-[1.8] text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-scrollbar]:hidden"
+            rootClassName="aimc-rich-text-root"
+            value={value}
+            onChange={setValue}
+            onPaste={handlePaste}
+            onSubmit={handleSubmit}
           />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1">

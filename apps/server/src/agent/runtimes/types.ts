@@ -3,7 +3,6 @@ import type {
   ChatMessage,
   ImageAttachment,
   ImageGenerationPreference,
-  MessageMention,
   RunCreateRequest,
   RuntimeKind,
   StreamEvent,
@@ -16,6 +15,7 @@ import type {
   AgentEvent,
   LocalAgentProviderPlugin,
   LocalAgentRuntime,
+  ManagedAgentRunContext,
 } from "@tutti-os/agent-acp-kit";
 
 import type { UserDataClient } from "../../auth/request.js";
@@ -46,8 +46,9 @@ export type RuntimeRunRecord = {
   delegationConsent?: RunCreateRequest["delegationConsent"];
   envOverride?: ServerEnv | undefined;
   imageGenerationPreference?: ImageGenerationPreference | undefined;
-  managedAgentInvocationCredential?: string | undefined;
-  mentions?: MessageMention[] | undefined;
+  loadManagedAgentRunContext?:
+    | (() => Promise<ManagedAgentRunContext | undefined>)
+    | undefined;
   modelOverride?: string | undefined;
   prompt: string;
   resumeContext?:
@@ -97,7 +98,6 @@ export type BuildUserMessage = (
   prompt: string,
   attachments: ImageAttachment[],
   imageGenerationPreference?: ImageGenerationPreference,
-  mentions?: MessageMention[],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
   attachmentMetadata?: Record<string, ImageAttachmentMetadata>,

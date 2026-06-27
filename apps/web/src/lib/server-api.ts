@@ -1,10 +1,8 @@
 import type {
-  AgentProviderInstallResponse,
   AssetSignedUrlResponse,
   CanvasDetail,
   ChatMessageCreateRequest,
   GenerationModelSchema,
-  InstallableAgentProviderId,
   JobResponse,
   ManagedFileAssetMetadata,
   MessageCreateResponse,
@@ -199,8 +197,17 @@ export async function updateWorkspaceSettings(
   return (await response.json()) as WorkspaceSettingsResponse;
 }
 
-export async function fetchModels(): Promise<ModelListResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/models`, {
+export type FetchModelsOptions = {
+  refresh?: boolean;
+};
+
+export async function fetchModels(
+  options: FetchModelsOptions = {},
+): Promise<ModelListResponse> {
+  const url = `${getServerBaseUrl()}/api/models${
+    options.refresh ? "?refresh=1" : ""
+  }`;
+  const response = await fetch(url, {
     cache: "no-store",
   });
   if (!response.ok) {
@@ -240,17 +247,6 @@ export async function disconnectTuttiManagedModels(): Promise<TuttiManagedConnec
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as TuttiManagedConnectionResponse;
-}
-
-export async function installAgentProvider(
-  provider: InstallableAgentProviderId,
-): Promise<AgentProviderInstallResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/local-agent/providers/${provider}/install`,
-    { method: "POST" },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as AgentProviderInstallResponse;
 }
 
 // --- Chat Session API ---

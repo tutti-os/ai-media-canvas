@@ -60,6 +60,13 @@ type AppOpenRequester = (input: {
   tuttiCliPath?: string;
 }) => Promise<void>;
 
+const IMAGE_GENERATION_POLL_INTERVAL_MS = 5_000;
+const VIDEO_GENERATION_POLL_INTERVAL_MS = 30_000;
+const IMAGE_GENERATION_INITIAL_DELAY_MS = 15_000;
+const VIDEO_GENERATION_INITIAL_DELAY_MS = 60_000;
+const IMAGE_GENERATION_MAX_WAIT_MS = 10 * 60_000;
+const VIDEO_GENERATION_MAX_WAIT_MS = 2 * 60 * 60_000;
+
 const emptyBodySchema = z.object({}).passthrough().optional();
 const openCliBodySchema = z.object({
   "project-id": z.string().min(1).optional(),
@@ -106,6 +113,7 @@ const jobListCliBodySchema = z.object({
 });
 const generationImageCliBodySchema = z.object({
   prompt: z.string().min(1),
+  title: z.string().min(1).optional(),
   model: z.string().min(1),
   "project-id": z.string().min(1),
   "canvas-id": z.string().min(1).optional(),
@@ -121,6 +129,7 @@ const generationImageCliBodySchema = z.object({
 });
 const generationVideoCliBodySchema = z.object({
   prompt: z.string().min(1),
+  title: z.string().min(1).optional(),
   model: z.string().min(1),
   "project-id": z.string().min(1),
   "canvas-id": z.string().min(1).optional(),
@@ -353,6 +362,7 @@ export async function registerTuttiCliRoutes(
       const result = await options.jobOperations.createImageJob(
         createImageJobRequestSchema.parse({
           prompt: payload.prompt,
+          ...(payload.title ? { title: payload.title } : {}),
           model: payload.model,
           project_id: projectId,
           canvas_id: canvasId,
@@ -385,7 +395,10 @@ export async function registerTuttiCliRoutes(
           ? { localCanvasClient: options.localCanvasClient }
           : {}),
       });
-      return result;
+      return withGenerationJobNextAction(result, {
+        initialDelayMs: IMAGE_GENERATION_INITIAL_DELAY_MS,
+        jobType: "image_generation",
+      });
     },
     201,
   );
@@ -400,6 +413,7 @@ export async function registerTuttiCliRoutes(
       const result = await options.jobOperations.createVideoJob(
         createVideoJobRequestSchema.parse({
           prompt: payload.prompt,
+          ...(payload.title ? { title: payload.title } : {}),
           model: payload.model,
           project_id: projectId,
           canvas_id: canvasId,
@@ -434,7 +448,10 @@ export async function registerTuttiCliRoutes(
           ? { localCanvasClient: options.localCanvasClient }
           : {}),
       });
-      return result;
+      return withGenerationJobNextAction(result, {
+        initialDelayMs: VIDEO_GENERATION_INITIAL_DELAY_MS,
+        jobType: "video_generation",
+      });
     },
     201,
   );
@@ -447,7 +464,9 @@ export async function registerTuttiCliRoutes(
     });
   });
   route("/tutti/cli/jobs/get", async (body) => {
-    return options.jobOperations.getJob(parseRequiredString(body, "job-id"));
+    return withGenerationJobNextAction(
+      await options.jobOperations.getJob(parseRequiredString(body, "job-id")),
+    );
   });
   route("/tutti/cli/jobs/cancel", async (body) => {
     return options.jobOperations.cancelJob(parseRequiredString(body, "job-id"));
@@ -701,6 +720,56 @@ function readJobId(value: unknown) {
   if (!job || typeof job !== "object") return null;
   const id = (job as { id?: unknown }).id;
   return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+function withGenerationJobNextAction<T>(
+  value: T,
+  options: {
+    initialDelayMs?: number;
+    jobType?: "image_generation" | "video_generation";
+  } = {},
+): T {
+  if (!isRecord(value)) return value;
+  const jobId = readJobId(value);
+  const polling = getGenerationJobPollingConfig(value, options.jobType);
+  const initialDelayMs = options.initialDelayMs ?? 0;
+  return {
+    ...value,
+    nextAction: {
+      command: `aimc jobs get --job-id ${jobId ?? "<job-id>"}`,
+      intermediateStatuses: ["queued", "running"],
+      terminalStatuses: ["succeeded", "failed", "canceled", "dead_letter"],
+      ...(initialDelayMs > 0 ? { initialDelayMs } : {}),
+      pollIntervalMs: polling.pollIntervalMs,
+      maxWaitMs: polling.maxWaitMs,
+      guidance:
+        "After a generation command, wait initialDelayMs before the first poll when present. Then sleep pollIntervalMs between polls while status is queued or running. Do not tell the user the generation failed or finished until the job reaches a terminal status. On succeeded, report the generated asset from job.result and mention that the canvas node was updated.",
+    },
+  };
+}
+
+function getGenerationJobPollingConfig(
+  value: unknown,
+  fallbackJobType?: "image_generation" | "video_generation",
+) {
+  const jobType = readJobType(value) ?? fallbackJobType;
+  return jobType === "video_generation"
+    ? {
+        pollIntervalMs: VIDEO_GENERATION_POLL_INTERVAL_MS,
+        maxWaitMs: VIDEO_GENERATION_MAX_WAIT_MS,
+      }
+    : {
+        pollIntervalMs: IMAGE_GENERATION_POLL_INTERVAL_MS,
+        maxWaitMs: IMAGE_GENERATION_MAX_WAIT_MS,
+      };
+}
+
+function readJobType(value: unknown) {
+  if (!isRecord(value) || !isRecord(value.job)) return null;
+  return value.job.job_type === "image_generation" ||
+    value.job.job_type === "video_generation"
+    ? value.job.job_type
+    : null;
 }
 
 function parseRequiredString(body: unknown, key: string) {
