@@ -553,7 +553,9 @@ async function handleRunCommand(
     createAgentRunOrchestrator({
       eventPersistence: services.agentRunPersistence,
     });
-  const assistantProjection = orchestrator.createAssistantProjection();
+  const assistantProjection = orchestrator.createAssistantProjection({
+    locale: payload.locale,
+  });
   const publishEvent = (input: {
     envelope: { eventId?: string; seq?: number };
     event: StreamEvent;

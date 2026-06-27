@@ -427,6 +427,7 @@ export function createLocalAgentRuntimeProvider(
         const systemPrompt = joinPromptParts(
           buildAimcSystemPrompt({
             brandKitId: readyContext.brandKitId,
+            locale: run.locale,
           }),
           formatTuttiSkillGuidance(
             tuttiSkillContext.recommendedSystemPrompt?.content,

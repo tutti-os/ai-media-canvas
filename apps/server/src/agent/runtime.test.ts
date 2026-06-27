@@ -29,7 +29,7 @@ import {
 } from "../generation/providers/registry.js";
 import { createLocalStore } from "../local/store.js";
 import { createLocalUserClient } from "../local/user-client.js";
-import { AIMC_SYSTEM_PROMPT } from "./prompts/aimc-main.js";
+import { buildAimcSystemPrompt } from "./prompts/aimc-main.js";
 import { buildUserMessage, createAgentRunService } from "./runtime.js";
 
 const tempDirs: string[] = [];
@@ -2113,6 +2113,7 @@ describe("createAgentRunService", () => {
       {
         canvasId: "canvas-1",
         conversationId: "canvas-1",
+        locale: "en",
         prompt: "继续",
         sessionId: "session-1",
       },
@@ -2129,7 +2130,7 @@ describe("createAgentRunService", () => {
 
     expect(localRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        systemPrompt: AIMC_SYSTEM_PROMPT,
+        systemPrompt: buildAimcSystemPrompt({ locale: "en" }),
       }),
     );
   });

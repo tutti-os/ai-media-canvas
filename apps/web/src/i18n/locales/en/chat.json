@@ -34,6 +34,7 @@
     "videoDescription": "After that, I can continue and create the video from your prompt.",
     "videoTitle": "Connect video generation first"
   },
+  "connectionReconnecting": "Connection lost. Reconnecting...",
   "conversation": "Conversation",
   "input": {
     "ariaLabel": "Message input",
@@ -97,6 +98,7 @@
       "video": "Video Planner"
     }
   },
+  "previewModelUnstable": "The current preview model is unstable. Try switching models and retrying.",
   "reconnecting": "Connection lost, reconnecting...",
   "selection": {
     "image": "image",
@@ -145,5 +147,7 @@
     },
     "title": "Try these local creation templates"
   },
-  "thinking": "Thinking"
+  "thinking": "Thinking",
+  "thinkingCollapsed": "Thought for a moment",
+  "thinkingToggle": "Toggle thinking content"
 }

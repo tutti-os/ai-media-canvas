@@ -1106,7 +1106,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           }
         : undefined;
       const assistantMessageState =
-        agentRunOrchestrator.createAssistantProjection();
+        agentRunOrchestrator.createAssistantProjection({
+          locale: options.payload.locale,
+        });
       const updateAssistantMessage = async () => {
         if (!options.runState.assistantMessageId) return;
         await chatService.updateMessage(

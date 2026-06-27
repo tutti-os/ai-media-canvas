@@ -294,6 +294,7 @@ describe("ChatSidebar", () => {
           sessionId: "session-real",
           conversationId: "canvas-1",
           prompt: "hello loom",
+          locale: "zh-CN",
           canvasId: "canvas-1",
         }),
         expect.any(Function),
@@ -310,6 +311,37 @@ describe("ChatSidebar", () => {
         sessionId: "session-canvas-1",
       }),
       expect.anything(),
+    );
+  });
+
+  it("passes the active English locale when starting a run", async () => {
+    await i18n.changeLanguage("en");
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByRole("textbox", {
+      name: "Message input",
+    });
+    await userEvent.type(input, "expand the tarot card{Enter}");
+
+    await waitFor(() =>
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          locale: "en",
+          prompt: "expand the tarot card",
+        }),
+        expect.any(Function),
+      ),
     );
   });
 

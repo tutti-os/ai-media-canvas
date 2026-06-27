@@ -3,12 +3,17 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ContentBlock } from "@aimc/shared";
 import { ChatMessage } from "../src/components/chat-message";
+import { i18n } from "../src/i18n";
 
 describe("ChatMessage", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+
   afterEach(() => {
     cleanup();
   });
@@ -17,6 +22,15 @@ describe("ChatMessage", () => {
     renderAssistantMessage([]);
 
     expect(screen.getByText("思考中")).toBeInTheDocument();
+  });
+
+  it("shows the pending thinking indicator in English", async () => {
+    await i18n.changeLanguage("en");
+
+    renderAssistantMessage([]);
+
+    expect(screen.getByText("Thinking")).toBeInTheDocument();
+    expect(screen.queryByText("思考中")).not.toBeInTheDocument();
   });
 
   it("keeps a thinking indicator below a completed tool while streaming continues", () => {

@@ -1,6 +1,7 @@
 import type {
   AgentRuntimeProvider,
   ContentBlock,
+  RunCreateRequest,
   RuntimeKind,
   StreamEvent,
   ToolBlock,
@@ -201,14 +202,27 @@ export function inferAimcRuntimeTarget(
 
 export type AssistantMessageProjection = {
   blocks: ContentBlock[];
+  locale?: RunCreateRequest["locale"];
   textParts: string[];
 };
 
-export function createAssistantMessageProjection(): AssistantMessageProjection {
+export function createAssistantMessageProjection(options?: {
+  locale?: RunCreateRequest["locale"];
+}): AssistantMessageProjection {
   return {
     blocks: [],
+    ...(options?.locale ? { locale: options.locale } : {}),
     textParts: [],
   };
+}
+
+function formatRunFailureMessage(input: {
+  errorMessage: string;
+  locale?: RunCreateRequest["locale"];
+}) {
+  return input.locale === "en"
+    ? `Sorry, something went wrong while processing: ${input.errorMessage}`
+    : `抱歉，处理过程中遇到问题：${input.errorMessage}`;
 }
 
 export function projectStreamEventToAssistantMessage(
@@ -278,7 +292,10 @@ export function projectStreamEventToAssistantMessage(
   }
 
   if (event.type === "run.failed" && state.textParts.length === 0) {
-    const message = `抱歉，处理过程中遇到问题：${event.error.message}`;
+    const message = formatRunFailureMessage({
+      errorMessage: event.error.message,
+      locale: state.locale,
+    });
     state.blocks.push({ type: "text", text: message });
     state.textParts.push(message);
   }
@@ -427,7 +444,9 @@ export type AgentRunRecordStore = {
 };
 
 export type AgentRunOrchestrator = {
-  createAssistantProjection(): AssistantMessageProjection;
+  createAssistantProjection(options?: {
+    locale?: RunCreateRequest["locale"];
+  }): AssistantMessageProjection;
   emitTerminalCancel(input: {
     canvasId?: string;
     now?: () => string;
@@ -492,8 +511,8 @@ export function createAgentRunOrchestrator(input: {
   runStore?: AgentRunRecordStore | undefined;
 }): AgentRunOrchestrator {
   return {
-    createAssistantProjection() {
-      return createAssistantMessageProjection();
+    createAssistantProjection(options) {
+      return createAssistantMessageProjection(options);
     },
 
     async emitTerminalCancel(cancelInput) {

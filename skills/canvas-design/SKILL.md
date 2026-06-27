@@ -53,21 +53,20 @@ Use the `execute` tool to run Python code that generates the artwork.
 
 ### IMPORTANT: Path Rules
 
-**虚拟路径 vs 真实路径**：`ls` 和 `read_file` 工具使用虚拟路径（如 `/skills/...`），
-但 `execute` 工具运行在真实 shell 中。Python 代码里**必须使用真实路径**。
+**Virtual paths vs real paths**: the `ls` and `read_file` tools use virtual paths such as `/skills/...`, but the `execute` tool runs in a real shell. Python code **must use real paths**.
 
-规则：
-1. **字体路径**：永远用 `os.environ["FONT_DIR"]`，不要硬编码
-2. **输出文件**：永远用相对路径保存（如 `output.png`），文件会在沙箱工作目录中
-3. **不要**把 `ls /skills/...` 看到的虚拟路径用在 Python 代码里
+Rules:
+1. **Font paths**: always use `os.environ["FONT_DIR"]`; do not hard-code paths.
+2. **Output files**: always save with relative paths such as `output.png`; files are created in the sandbox working directory.
+3. **Do not** use virtual paths from `ls /skills/...` inside Python code.
 
 ### Font Usage
 
-字体通过 `$FONT_DIR` 环境变量访问（已在沙箱中预设）：
+Fonts are accessed through the `$FONT_DIR` environment variable, which is preset in the sandbox:
 
 ```python
 import os
-font_dir = os.environ["FONT_DIR"]  # 必须用环境变量，不要硬编码路径
+font_dir = os.environ["FONT_DIR"]  # Use the environment variable; do not hard-code paths.
 fonts = [f for f in os.listdir(font_dir) if f.endswith(".ttf")]
 ```
 
@@ -109,22 +108,22 @@ pdfmetrics.registerFont(TTFont("WorkSans", os.path.join(font_dir, "WorkSans-Bold
 
 Write a complete Python script, then execute it.
 
-**所有路径必须用相对路径**（多用户并发时绝对路径会冲突）：
+**All write paths must be relative**. Absolute paths can collide across concurrent users:
 
 ```
-1. write_file path="generate.py"       ← 相对路径，不要用 /tmp/xxx
+1. write_file path="generate.py"       <- relative path, not /tmp/xxx
 2. execute: python3 generate.py
-3. Output: img.save("output.png")      ← 相对路径
-4. execute: pwd                        ← 获取当前工作目录的完整路径
-5. persist_sandbox_file filePath="{pwd输出}/output.png"
+3. Output: img.save("output.png")      <- relative path
+4. execute: pwd                        <- get the current working directory
+5. persist_sandbox_file filePath="{pwd output}/output.png"
 ```
 
-**禁止使用绝对路径写文件**：
-- ❌ `write_file path="/tmp/script.py"` — 多用户会覆盖
-- ✅ `write_file path="script.py"` — 每个用户独立沙箱
+**Do not write files with absolute paths**:
+- Bad: `write_file path="/tmp/script.py"` because users can overwrite each other.
+- Good: `write_file path="script.py"` because each user has an independent sandbox.
 
 **Critical**: In Python scripts:
-- Use `os.environ["FONT_DIR"]` for font paths（唯一允许的绝对路径）
+- Use `os.environ["FONT_DIR"]` for font paths. This is the only allowed absolute path.
 - Save output with RELATIVE paths (e.g., `img.save("poster.png")`)
 - Do NOT use `/skills/...` paths — those are virtual backend paths, not real filesystem
 

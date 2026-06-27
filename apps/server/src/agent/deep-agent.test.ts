@@ -114,18 +114,42 @@ describe("createAimcDeepAgent", () => {
     });
 
     const config = createDeepAgentMock.mock.calls.at(-1)?.[0];
-    expect(config?.systemPrompt).toContain("常规画布工具不提供删除能力");
     expect(config?.systemPrompt).toContain(
-      "不要在生成图片后自动添加标题、说明、按钮、装饰形状或分隔线",
+      "Normal canvas tools do not provide deletion.",
     );
     expect(config?.systemPrompt).toContain(
-      "必须先 inspect_canvas 读取真实元素坐标和尺寸",
+      "Do not automatically add titles, descriptions, buttons, decorative shapes, or dividers after image generation.",
     );
     expect(config?.systemPrompt).toContain(
-      "不得与未参与本次移动的可见元素相交",
+      "inspect_canvas must read real element coordinates and sizes first",
     );
-    expect(config?.systemPrompt).toContain("生图任务的停止条件");
-    expect(config?.systemPrompt).toContain("优先单次调用 generate_image");
+    expect(config?.systemPrompt).toContain(
+      "must not intersect visible elements that are not being moved",
+    );
+    expect(config?.systemPrompt).toContain(
+      "Stop condition for image-generation tasks",
+    );
+    expect(config?.systemPrompt).toContain("prefer a single generate_image call");
+  });
+
+  it("tells the agent to follow the latest user message language when clear", () => {
+    createAimcDeepAgent({
+      canvasId: "canvas-1",
+      env: {
+        agentBackendMode: "state",
+        agentModel: "openai:gpt-4.1",
+        openAIApiKey: "openai-test-key",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      locale: "en",
+    });
+
+    const config = createDeepAgentMock.mock.calls.at(-1)?.[0];
+    expect(config?.systemPrompt).toContain(
+      "If no response language is specified, reply in the primary language of the latest user message.",
+    );
   });
 
   it("passes the LangGraph store through to deepagents", () => {

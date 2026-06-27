@@ -197,6 +197,7 @@ export default interface Resources {
       "videoDescription": "连接后，我会继续按你的描述生成视频。",
       "videoTitle": "先连接视频生成能力"
     },
+    "connectionReconnecting": "连接已断开，正在重连...",
     "conversation": "对话",
     "input": {
       "ariaLabel": "输入消息",
@@ -260,6 +261,7 @@ export default interface Resources {
         "video": "视频规划器"
       }
     },
+    "previewModelUnstable": "当前 Preview 模型请求不稳定，建议切换模型后重试",
     "reconnecting": "连接已断开，正在重连...",
     "selection": {
       "image": "张图片",
@@ -308,7 +310,9 @@ export default interface Resources {
       },
       "title": "试试这些本地创作模板"
     },
-    "thinking": "思考中"
+    "thinking": "思考中",
+    "thinkingCollapsed": "已思考片刻",
+    "thinkingToggle": "展开或收起思考内容"
   },
   "common": {
     "actions": {

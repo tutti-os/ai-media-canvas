@@ -362,6 +362,27 @@ describe("agent run orchestrator", () => {
     ]);
   });
 
+  it("projects run failures in the active locale", () => {
+    const projection = createAssistantMessageProjection({ locale: "en" });
+
+    projectStreamEventToAssistantMessage(projection, {
+      type: "run.failed",
+      runId: "run_1",
+      error: { code: "run_failed", message: "model unavailable" },
+      timestamp: "2026-06-04T00:00:03.000Z",
+    });
+
+    expect(projection.textParts).toEqual([
+      "Sorry, something went wrong while processing: model unavailable",
+    ]);
+    expect(projection.blocks).toEqual([
+      {
+        type: "text",
+        text: "Sorry, something went wrong while processing: model unavailable",
+      },
+    ]);
+  });
+
   it("resolves provider-local and handoff resume modes", () => {
     expect(
       resolveResumeMode({
