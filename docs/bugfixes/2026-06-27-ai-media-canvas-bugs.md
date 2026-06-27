@@ -8,4 +8,4 @@
 - 修复方案: 将 Agnes 视频创建阶段等待窗口从 120s 调整为 10 分钟，适配视频创建请求可能较慢的现实耗时；同时将 Agnes 视频创建超时标记为不可重试，避免在不知道远端是否已经接收请求时重复提交同一个视频任务。远端 task 已创建后的轮询超时仍保持不可重试并可通过已持久化 remote task id 恢复。
 - 验证方式和结果: `pnpm --filter @aimc/server exec vitest run src/generation/providers/agnes-video.test.ts src/features/jobs/executors/generation-executors.test.ts` 通过（2 个文件、27 个测试）；`pnpm exec biome check apps/server/src/generation/providers/agnes-video.ts apps/server/src/generation/providers/agnes-video.test.ts apps/server/src/features/jobs/executors/video-generation.ts apps/server/src/features/jobs/executors/generation-executors.test.ts` 通过；`pnpm --filter @aimc/server typecheck` 通过。
 - 是否已修复完: 是
-- commit hash: 待提交后回填
+- commit hash: `a906c0b`
