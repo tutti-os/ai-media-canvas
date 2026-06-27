@@ -27,6 +27,7 @@ export type BundledSkillDefinition = {
 const DEFAULT_LOCAL_SKILLS_ROOT = fileURLToPath(
   new URL("../../../../skills/", import.meta.url),
 );
+const DEFAULT_INSTALLED_LOCAL_SKILLS = new Set(["imagegen", "video-prompting"]);
 
 let bundledSkillCache: BundledSkillDefinition[] | null = null;
 
@@ -234,7 +235,7 @@ function loadDirectoryBundledSkills(): BundledSkillDefinition[] {
             path: `skills/${slug}/SKILL.md`,
             files: fileManifest,
           },
-          installedByDefault: slug === "imagegen",
+          installedByDefault: DEFAULT_INSTALLED_LOCAL_SKILLS.has(slug),
         },
       ];
     });

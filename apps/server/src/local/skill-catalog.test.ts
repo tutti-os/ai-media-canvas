@@ -54,4 +54,19 @@ describe("local bundled skill catalog", () => {
       ]),
     );
   });
+
+  it("marks the bundled video-prompting directory skill as installed by default", async () => {
+    vi.stubEnv("AIMC_SKILLS_ROOT", "");
+    vi.resetModules();
+    const { getBundledSkills } = await import("./skill-catalog.js");
+
+    expect(getBundledSkills()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "skill-local-video-prompting",
+          installedByDefault: true,
+        }),
+      ]),
+    );
+  });
 });
