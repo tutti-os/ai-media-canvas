@@ -132,7 +132,7 @@ function buildVideoGenerateSchema(models: AvailableVideoModel[]) {
       .string()
       .min(1)
       .describe(
-        "Short descriptive title for the generated video, used as metadata so the video content is understood without re-analysis (e.g. 'Autumn forest bus scene', '恐龙追逐镜头')",
+        "Short descriptive title for the generated video, used as metadata so the video content is understood without re-analysis (e.g. 'Autumn forest bus scene', 'Dinosaur chase shot')",
       ),
     prompt: z
       .string()

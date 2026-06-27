@@ -45,6 +45,7 @@ export type AimcAgentFactory = (options: {
   createUserClient?: (accessToken: string) => unknown;
   env: ServerEnv;
   getWorkspaceSettings?: ReadWorkspaceSettings;
+  locale?: "zh-CN" | "en";
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
   store?: BaseStore;
@@ -75,6 +76,7 @@ export function createAimcDeepAgent(options: {
   createUserClient?: (accessToken: string) => unknown;
   env: ServerEnv;
   getWorkspaceSettings?: ReadWorkspaceSettings;
+  locale?: "zh-CN" | "en";
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
   store?: BaseStore;
@@ -106,7 +108,10 @@ export function createAimcDeepAgent(options: {
       );
     });
 
-  let systemPrompt = buildAimcSystemPrompt({ brandKitId: options.brandKitId });
+  let systemPrompt = buildAimcSystemPrompt({
+    brandKitId: options.brandKitId,
+    locale: options.locale,
+  });
 
   // Inject enabled skills (both system and user-created) into the system prompt.
   // All skills are loaded from the database via loadWorkspaceSkills() in runtime.ts.

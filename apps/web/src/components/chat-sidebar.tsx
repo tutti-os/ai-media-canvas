@@ -299,7 +299,7 @@ export function ChatSidebar({
   ws,
   selectedCanvasElements,
 }: ChatSidebarProps) {
-  const { t } = useAppTranslation("chat");
+  const { i18n, t } = useAppTranslation("chat");
   const breakpoint = useBreakpoint();
   const isOverlay = breakpoint !== "desktop";
 
@@ -985,10 +985,7 @@ export function ChatSidebar({
             if (event.type === "run.failed") {
               const currentModel = agentModelRef.current ?? "";
               if (currentModel.includes("preview")) {
-                showToast(
-                  "当前 Preview 模型请求不稳定，建议切换模型后重试",
-                  "error",
-                );
+                showToast(t("previewModelUnstable"), "error");
               }
             }
 
@@ -1006,6 +1003,10 @@ export function ChatSidebar({
             sessionId: currentSessionId,
             conversationId: canvasId,
             prompt: agentPromptText,
+            locale:
+              i18n.resolvedLanguage === "en"
+                ? ("en" as const)
+                : ("zh-CN" as const),
             canvasId,
             ...(currentAttachments.length > 0
               ? { attachments: currentAttachments }
@@ -1498,7 +1499,7 @@ export function ChatSidebar({
               d="M18.25 3c2.071 0 3.946 2.16 3.946 4.23L22 15.75a3.75 3.75 0 0 1-3.75 3.75h-2.874a.25.25 0 0 0-.16.058l-2.098 1.738a1.75 1.75 0 0 1-2.24-.007l-2.065-1.73a.25.25 0 0 0-.162-.059H5.75A3.75 3.75 0 0 1 2 15.75v-9A3.75 3.75 0 0 1 5.75 3zM7.5 10q-.053 0-.104.005a1.25 1.25 0 0 0-1.14 1.117l-.006.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 7.5 10m4.5 0q-.053 0-.104.005a1.25 1.25 0 0 0-1.14 1.117l-.006.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 12 10m4.5 0q-.053 0-.105.005a1.25 1.25 0 0 0-1.138 1.117l-.007.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 16.5 10"
             />
           </svg>
-          对话
+          {t("conversation")}
         </button>
       </div>
     );
@@ -1571,7 +1572,7 @@ export function ChatSidebar({
         <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b border-border">
           <div className="h-2 w-2 rounded-full bg-red-500 animate-[pulse_1.2s_ease-in-out_infinite]" />
           <span className="text-[11px] text-muted-foreground">
-            连接已断开，正在重连...
+            {t("connectionReconnecting")}
           </span>
         </div>
       )}

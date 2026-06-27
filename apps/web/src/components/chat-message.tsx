@@ -10,6 +10,7 @@ import { MarkdownRenderer } from "./chat/markdown-renderer";
 import { ThinkingBlockView } from "./chat/thinking-block-view";
 import { ToolBlockView } from "./chat/tool-block-view";
 import { TuttiRichTextMessage } from "./tutti-rich-text-message";
+import { useAppTranslation } from "../i18n";
 
 // Re-export types for backward compatibility with existing consumers
 export type { ContentBlock, ToolArtifact };
@@ -290,9 +291,11 @@ const AssistantMessage = React.memo(function AssistantMessage({
 
 const PendingThinkingIndicator = React.memo(
   function PendingThinkingIndicator() {
+    const { t } = useAppTranslation("chat");
+
     return (
       <div className="flex items-center gap-1 text-sm text-muted-foreground">
-        <span>{"\u601d\u8003\u4e2d"}</span>
+        <span>{t("thinking")}</span>
         <span
           className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-bounce-dot"
           style={{ animationDelay: "0ms" }}

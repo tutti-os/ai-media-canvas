@@ -68,6 +68,7 @@ export const runCreateRequestSchema = z
     sessionId: sessionIdSchema,
     conversationId: conversationIdSchema,
     prompt: z.string(),
+    locale: z.enum(["zh-CN", "en"]).optional(),
     canvasId: canvasIdSchema.optional(),
     attachments: z.array(imageAttachmentSchema).optional(),
     imageGenerationPreference: imageGenerationPreferenceSchema.optional(),

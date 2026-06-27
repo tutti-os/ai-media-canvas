@@ -109,6 +109,7 @@ export function createServerDeepAgentRuntimeProvider(
           : {}),
         env: runtimeEnv,
         ...(getWorkspaceSettings ? { getWorkspaceSettings } : {}),
+        ...(run.locale ? { locale: run.locale } : {}),
         ...(resolvedModel ? { model: resolvedModel } : {}),
         ...(persistImage ? { persistImage } : {}),
         ...(submitImageJob ? { submitImageJob } : {}),

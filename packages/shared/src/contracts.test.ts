@@ -76,6 +76,21 @@ describe("runCreateRequestSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts supported app locales on run creation", () => {
+    expect(
+      runCreateRequestSchema.safeParse({
+        ...baseRunCreateRequest,
+        locale: "en",
+      }).success,
+    ).toBe(true);
+    expect(
+      runCreateRequestSchema.safeParse({
+        ...baseRunCreateRequest,
+        locale: "fr",
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects malformed local provider ids", () => {
     expect(
       runCreateRequestSchema.safeParse({

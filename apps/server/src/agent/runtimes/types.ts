@@ -49,6 +49,7 @@ export type RuntimeRunRecord = {
   loadManagedAgentRunContext?:
     | (() => Promise<ManagedAgentRunContext | undefined>)
     | undefined;
+  locale?: RunCreateRequest["locale"];
   modelOverride?: string | undefined;
   prompt: string;
   resumeContext?:
