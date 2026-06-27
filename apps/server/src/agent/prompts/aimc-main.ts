@@ -105,10 +105,10 @@ export function buildAimcSystemPrompt(
     ? `${AIMC_SYSTEM_PROMPT}\n\nThe current project has a bound Brand Kit. For design-related work, call get_brand_kit first and use the brand information so the design follows the brand guidelines.`
     : AIMC_SYSTEM_PROMPT;
   if (options.locale === "en") {
-    return `${prompt}\n\n## Response Language\nThe current app language is English. If the user explicitly asks for a response language, follow that request. Otherwise, reply in the primary language of the latest user message when it is clear. If the latest user message is mixed or ambiguous, reply in English.`;
+    return `${prompt}\n\n## Response Language\nReply in the language explicitly requested by the user. If no response language is specified, reply in the primary language of the latest user message.`;
   }
   if (options.locale === "zh-CN") {
-    return `${prompt}\n\n## Response Language\nThe current app language is Simplified Chinese. If the user explicitly asks for a response language, follow that request. Otherwise, reply in the primary language of the latest user message when it is clear. If the latest user message is mixed or ambiguous, reply in Simplified Chinese.`;
+    return `${prompt}\n\n## Response Language\nReply in the language explicitly requested by the user. If no response language is specified, reply in the primary language of the latest user message.`;
   }
   return prompt;
 }
