@@ -246,6 +246,7 @@
 .aimc-rich-text-editor [data-rich-text-mention-reference],
 .aimc-rich-text-editor [data-rich-text-workspace-reference] {
   display: inline-flex;
+  align-items: center;
   max-width: 100%;
   vertical-align: baseline;
 }
@@ -253,17 +254,20 @@
 .aimc-rich-text-editor [data-rich-text-mention-reference] > span,
 .aimc-rich-text-editor [data-slot="mention-pill"] {
   display: inline-flex;
+  position: relative;
+  top: 3px;
   max-width: 16rem;
   align-items: center;
+  border-width: 0;
   gap: 4px;
   overflow: hidden;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  background: transparent;
   color: var(--foreground);
-  padding: 1px 7px;
-  font-size: 12px;
+  padding: 2px 6px;
+  font-size: 13px;
   font-weight: 650;
-  line-height: 18px;
+  line-height: 20px;
   vertical-align: baseline;
 }
 
@@ -289,8 +293,8 @@
 .aimc-rich-text-editor
   [data-rich-text-workspace-reference].is-selected
   [data-slot="mention-pill"] {
-  background: color-mix(in srgb, var(--accent) 45%, transparent);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  background: transparent;
+  box-shadow: none;
 }
 
 .aimc-rich-text-message {
