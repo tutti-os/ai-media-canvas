@@ -132,6 +132,29 @@ describe("createAimcDeepAgent", () => {
     expect(config?.systemPrompt).toContain("prefer a single generate_image call");
   });
 
+  it("tells the agent to follow the latest user message language when clear", () => {
+    createAimcDeepAgent({
+      canvasId: "canvas-1",
+      env: {
+        agentBackendMode: "state",
+        agentModel: "openai:gpt-4.1",
+        openAIApiKey: "openai-test-key",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      locale: "en",
+    });
+
+    const config = createDeepAgentMock.mock.calls.at(-1)?.[0];
+    expect(config?.systemPrompt).toContain(
+      "reply in the primary language of the latest user message when it is clearly Chinese or English",
+    );
+    expect(config?.systemPrompt).toContain(
+      "If the latest user message is mixed or ambiguous, reply in English.",
+    );
+  });
+
   it("passes the LangGraph store through to deepagents", () => {
     const store = { kind: "test-store" };
 
