@@ -197,7 +197,7 @@ export function CanvasFilesPanel({
           filename,
           source: file.dataURL,
         });
-        if (result === "saved") {
+        if (result === "saved" || result === "started") {
           toastSuccess(t("files.downloadSuccess"));
         }
       } catch (error) {

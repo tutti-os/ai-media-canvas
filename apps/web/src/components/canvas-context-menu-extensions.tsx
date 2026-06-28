@@ -714,7 +714,7 @@ export function CanvasContextMenuExtensions({
             dataUrl ??
             (await exportSelectedImageToPngBlob(excalidrawApi, elements)),
         });
-        if (result === "saved") {
+        if (result === "saved" || result === "started") {
           toastSuccess(t("files.downloadSuccess"));
         }
       } catch (error) {
