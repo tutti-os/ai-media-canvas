@@ -1,0 +1,4 @@
+interface:
+  display_name: "Video Prompting"
+  short_description: "Model-ready AI video prompt director"
+  default_prompt: "Use $video-prompting to turn this idea into a model-ready video prompt."

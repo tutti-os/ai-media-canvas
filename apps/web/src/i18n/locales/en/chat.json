@@ -7,39 +7,78 @@
   "agentModelSelector": {
     "apiProvider": "API provider",
     "assistantMode": "Assistant Mode",
-    "connectNextopManaged": "Connect in settings",
+    "connectTuttiManaged": "Connect in settings",
     "customModelId": "Custom model ID",
     "localAgent": "Local agent",
     "localAssistant": "Local Assistant",
-    "nextopManaged": "Nextop Managed",
     "noApiProviderModels": "No API provider models configured.",
     "noLocalCliModels": "No local CLI models detected.",
-    "noNextopManagedModels": "No Nextop Managed models connected.",
+    "noTuttiManagedModels": "No Tutti Managed models connected.",
     "openSettings": "Open agent settings",
     "settings": "Settings",
     "tooltip": "Select agent model",
+    "tuttiManaged": "Tutti Managed",
     "useCustomModel": "Use custom model",
     "usesConfiguredDefaultRoute": "Uses your configured default route",
     "usesDefaultModel": "Uses default model: {{model}}"
   },
   "assistant": {
-    "title": "AI Media Canvas Assistant"
+    "title": "AI Canvas Assistant"
   },
+  "capabilityRequired": {
+    "configureMedia": "Connect",
+    "continueAfterSave": "Media model saved. Send \"Continue\" to retry the generation.",
+    "continueDraft": "Continue",
+    "imageDescription": "After that, I can continue and create the image from your prompt.",
+    "imageTitle": "Connect image generation first",
+    "videoDescription": "After that, I can continue and create the video from your prompt.",
+    "videoTitle": "Connect video generation first"
+  },
+  "connectionReconnecting": "Connection lost. Reconnecting...",
   "conversation": "Conversation",
   "input": {
     "ariaLabel": "Message input",
     "attachImages": "Attach images",
+    "cancel": "Cancel generation",
+    "mentionEmpty": "No matches",
+    "mentionLoading": "Searching...",
+    "mentionRemove": "Remove reference",
     "modelPreference": "Image/Video model",
-    "placeholder": "Start with an idea, or type \"@\" to mention",
+    "placeholder": "Start with an idea",
     "send": "Send message"
+  },
+  "lightbox": {
+    "close": "Close (Esc)",
+    "copyImage": "Copy image",
+    "copyImageFailed": "Image copy failed",
+    "copyImageSuccess": "Image copied",
+    "downloadFailed": "Image download failed",
+    "downloadImage": "Download image",
+    "flipHorizontal": "Flip horizontally",
+    "flipVertical": "Flip vertically",
+    "imageFailedToLoad": "Image failed to load",
+    "rotateClockwise": "Rotate clockwise (R)",
+    "rotateCounterClockwise": "Rotate counterclockwise",
+    "viewerLabel": "Image viewer",
+    "zoomIn": "Zoom in (+)",
+    "zoomOut": "Zoom out (-)"
+  },
+  "media": {
+    "generationCanceled": "Canceled",
+    "imageGenerating": "Generating image...",
+    "imageGenerationCanceled": "Image generation canceled",
+    "imageGenerationFailed": "Image generation failed",
+    "videoGenerating": "Generating video...",
+    "videoGenerationCanceled": "Video generation canceled",
+    "videoGenerationFailed": "Video generation failed"
   },
   "mediaModelPreference": {
     "configure": "Configure media models",
     "description": {
-      "autoImage": "AI Media Canvas uses the built-in local renderer for image tasks.",
-      "autoVideo": "AI Media Canvas uses local video-planning presets for storyboard and motion tasks.",
-      "manualImage": "AI Media Canvas keeps using the local renderer while prioritizing your pinned presets.",
-      "manualVideo": "AI Media Canvas keeps using your chosen local video-planning presets."
+      "autoImage": "AI Canvas uses the built-in local renderer for image tasks.",
+      "autoVideo": "AI Canvas uses local video-planning presets for storyboard and motion tasks.",
+      "manualImage": "AI Canvas keeps using the local renderer while prioritizing your pinned presets.",
+      "manualVideo": "AI Canvas keeps using your chosen local video-planning presets."
     },
     "empty": {
       "image": "No configured image models",
@@ -59,9 +98,7 @@
       "video": "Video Planner"
     }
   },
-  "mentions": {
-    "remove": "Remove mention"
-  },
+  "previewModelUnstable": "The current preview model is unstable. Try switching models and retrying.",
   "reconnecting": "Connection lost, reconnecting...",
   "selection": {
     "image": "image",
@@ -110,5 +147,7 @@
     },
     "title": "Try these local creation templates"
   },
-  "thinking": "Thinking"
+  "thinking": "Thinking",
+  "thinkingCollapsed": "Thought for a moment",
+  "thinkingToggle": "Toggle thinking content"
 }

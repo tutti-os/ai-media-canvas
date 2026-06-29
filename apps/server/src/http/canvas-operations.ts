@@ -48,13 +48,21 @@ export function createCanvasOperations(options: {
       );
       return canvasGetResponseSchema.parse({ canvas });
     },
-    async saveCanvas(canvasId: string, content: CanvasContent) {
-      await options.canvasService.saveCanvasContent(
+    async saveCanvas(
+      canvasId: string,
+      content: CanvasContent,
+      saveOptions: { baseRevision?: number } = {},
+    ) {
+      const result = await options.canvasService.saveCanvasContent(
         options.localUser,
         canvasId,
         content,
+        saveOptions,
       );
-      return canvasSaveResponseSchema.parse({ ok: true });
+      return canvasSaveResponseSchema.parse({
+        ok: true,
+        revision: result.revision,
+      });
     },
     async importImageFile(input: {
       canvasId: string;

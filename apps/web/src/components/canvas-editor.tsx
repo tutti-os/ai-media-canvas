@@ -17,9 +17,14 @@ import {
   normalizeCanvasElementIndices,
   normalizeCanvasElements,
 } from "../lib/canvas-normalize";
+import { prepareThumbnailExportScene } from "../lib/canvas-thumbnail-export";
 import { getServerBaseUrl } from "../lib/env";
 import { toRuntimeAssetUrl } from "../lib/local-assets";
-import { saveCanvas, uploadThumbnail } from "../lib/server-api";
+import {
+  ApiApplicationError,
+  saveCanvas,
+  uploadThumbnail,
+} from "../lib/server-api";
 import { CanvasContextMenuExtensions } from "./canvas-context-menu-extensions";
 import { CanvasToolMenu } from "./canvas-tool-menu";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
@@ -62,6 +67,7 @@ export type CanvasSelectedElement = {
 type CanvasEditorProps = {
   canvasId: string;
   projectId: string;
+  initialRevision?: number;
   initialContent: {
     elements: Record<string, unknown>[];
     appState: Record<string, unknown>;
@@ -71,6 +77,7 @@ type CanvasEditorProps = {
   ws?: WebSocketHandle;
   leftPanelOpen?: boolean;
   onSelectionChange?: (elements: CanvasSelectedElement[]) => void;
+  onSaveConflict?: () => void;
 };
 
 type CanvasFileRecord = Record<string, unknown>;
@@ -113,7 +120,7 @@ type ExcalidrawApi = {
 };
 
 const SAVE_DEBOUNCE_MS = 1500;
-const THUMBNAIL_DEBOUNCE_MS = 10_000;
+const THUMBNAIL_DEBOUNCE_MS = 8_000;
 const THUMBNAIL_MAX_SIZE = 800;
 const REMOTE_SYNC_SAVE_SUPPRESSION_MS = 1200;
 
@@ -148,11 +155,13 @@ function isLiveElement(element: unknown): element is CanvasSceneElement {
 export function CanvasEditor({
   canvasId,
   projectId,
+  initialRevision = 0,
   initialContent,
   onApiReady,
   ws,
   leftPanelOpen,
   onSelectionChange,
+  onSaveConflict,
 }: CanvasEditorProps) {
   const { resolvedTheme } = useTheme();
   const { i18n } = useAppTranslation();
@@ -163,14 +172,25 @@ export function CanvasEditor({
     : "zh-CN";
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbnailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const thumbnailIdleRef = useRef<number | null>(null);
+  const thumbnailExportingRef = useRef(false);
+  const thumbnailDirtyRef = useRef(false);
+  const lastThumbnailSignatureRef = useRef<string | null>(null);
+  const scheduleThumbnailExportRef = useRef<() => void>(() => {});
   const canvasIdRef = useRef(canvasId);
   canvasIdRef.current = canvasId;
+  const baseRevisionRef = useRef(initialRevision);
+  useEffect(() => {
+    baseRevisionRef.current = initialRevision;
+  }, [initialRevision]);
   const [excalidrawApi, setExcalidrawApi] = useState<ExcalidrawApi | null>(
     null,
   );
   const prevSelectedIdsRef = useRef<string>("");
   const onSelectionChangeRef = useRef(onSelectionChange);
   onSelectionChangeRef.current = onSelectionChange;
+  const onSaveConflictRef = useRef(onSaveConflict);
+  onSaveConflictRef.current = onSaveConflict;
   // Tracks whether the one-time normalization pass has already run
   const normalizedRef = useRef(false);
   const suppressSaveUntilRef = useRef(0);
@@ -207,6 +227,111 @@ export function CanvasEditor({
   const initialIndicesChangedRef = useRef(initialIndicesChanged);
   initialIndicesChangedRef.current = initialIndicesChanged;
 
+  // Ref to hold recovered file metadata for storageUrl lookup in handleChange
+  // without adding the full initialContent to the dependency array.
+  const initialFilesRef = useRef(initialFiles);
+  initialFilesRef.current = initialFiles;
+
+  const saveCanvasWithRevision = useCallback(
+    async (
+      targetCanvasId: string,
+      content: {
+        elements: Record<string, unknown>[];
+        appState: Record<string, unknown>;
+        files: Record<string, Record<string, unknown>>;
+      },
+    ) => {
+      try {
+        const result = await saveCanvas(targetCanvasId, content, {
+          baseRevision: baseRevisionRef.current,
+        });
+        baseRevisionRef.current = result.revision;
+      } catch (err) {
+        if (
+          err instanceof ApiApplicationError &&
+          err.code === "canvas_conflict"
+        ) {
+          pendingSaveRef.current = null;
+          onSaveConflictRef.current?.();
+          return;
+        }
+        throw err;
+      }
+    },
+    [],
+  );
+
+  const executeThumbnailExport = useCallback(async () => {
+    if (!excalidrawApi) return;
+    if (thumbnailExportingRef.current) {
+      thumbnailDirtyRef.current = true;
+      return;
+    }
+
+    thumbnailExportingRef.current = true;
+    thumbnailDirtyRef.current = false;
+    try {
+      const { exportToBlob } = await import("@excalidraw/excalidraw");
+      const sceneElements = excalidrawApi.getSceneElements();
+      const sceneFiles = excalidrawApi.getFiles();
+      const liveElements = sceneElements.filter(isLiveElement);
+      if (!liveElements.length) return;
+      const appState = excalidrawApi.getAppState();
+      const signature = JSON.stringify({
+        elements: liveElements,
+        files: sceneFiles,
+        background: appState.viewBackgroundColor,
+      });
+      if (signature === lastThumbnailSignatureRef.current) return;
+
+      const thumbnailScene = await prepareThumbnailExportScene({
+        elements: sceneElements,
+        files: sceneFiles,
+      });
+
+      const blob = await exportToBlob({
+        elements: thumbnailScene.elements as never,
+        appState: { exportBackground: true },
+        files: thumbnailScene.files as never,
+        mimeType: "image/webp",
+        quality: 0.8,
+        maxWidthOrHeight: THUMBNAIL_MAX_SIZE,
+      });
+
+      console.log("[canvas-editor] uploading thumbnail, blob size:", blob.size);
+      await uploadThumbnail(projectId, blob);
+      lastThumbnailSignatureRef.current = signature;
+      console.log("[canvas-editor] thumbnail uploaded OK");
+    } catch (err) {
+      console.warn("[canvas-editor] thumbnail generation/upload failed:", err);
+    } finally {
+      thumbnailExportingRef.current = false;
+      if (thumbnailDirtyRef.current) {
+        scheduleThumbnailExportRef.current();
+      }
+    }
+  }, [excalidrawApi, projectId]);
+
+  const scheduleThumbnailExport = useCallback(() => {
+    if (!excalidrawApi) return;
+    thumbnailDirtyRef.current = true;
+    if (thumbnailExportingRef.current) return;
+    if (thumbnailTimerRef.current) clearTimeout(thumbnailTimerRef.current);
+    if (thumbnailIdleRef.current != null) {
+      cic(thumbnailIdleRef.current);
+      thumbnailIdleRef.current = null;
+    }
+
+    thumbnailTimerRef.current = setTimeout(() => {
+      thumbnailTimerRef.current = null;
+      thumbnailIdleRef.current = ric(() => {
+        thumbnailIdleRef.current = null;
+        void executeThumbnailExport();
+      });
+    }, THUMBNAIL_DEBOUNCE_MS);
+  }, [excalidrawApi, executeThumbnailExport]);
+  scheduleThumbnailExportRef.current = scheduleThumbnailExport;
+
   useEffect(() => {
     const handleRemoteSync = (event: Event) => {
       const detail = (event as CustomEvent<{ canvasId?: string }>).detail;
@@ -218,17 +343,13 @@ export function CanvasEditor({
         saveTimerRef.current = null;
       }
       pendingSaveRef.current = null;
+      scheduleThumbnailExportRef.current();
     };
     window.addEventListener("aimc:canvas-remote-sync", handleRemoteSync);
     return () => {
       window.removeEventListener("aimc:canvas-remote-sync", handleRemoteSync);
     };
   }, []);
-
-  // Ref to hold recovered file metadata for storageUrl lookup in handleChange
-  // without adding the full initialContent to the dependency array.
-  const initialFilesRef = useRef(initialFiles);
-  initialFilesRef.current = initialFiles;
 
   // Lazily resolve storage URLs and inject into Excalidraw
   useEffect(() => {
@@ -313,7 +434,7 @@ export function CanvasEditor({
             serializeExcalidrawFiles(rawFiles, initialFilesRef.current),
           );
           const appState = excalidrawApi.getAppState();
-          saveCanvas(canvasIdRef.current, {
+          saveCanvasWithRevision(canvasIdRef.current, {
             elements: mutableElements.filter(isLiveElement),
             appState: pickPersistedAppState(appState),
             files,
@@ -332,7 +453,7 @@ export function CanvasEditor({
       hydratedRef.current = true;
     });
     return () => cic(idleHandle);
-  }, [excalidrawApi]);
+  }, [excalidrawApi, saveCanvasWithRevision]);
 
   const handleChange = useCallback(
     (elements: readonly unknown[], appStateInput: unknown) => {
@@ -380,7 +501,7 @@ export function CanvasEditor({
           }
           pendingSaveRef.current = content;
 
-          saveCanvas(canvasId, content)
+          saveCanvasWithRevision(canvasId, content)
             .then(() => {
               if (pendingSaveRef.current === content) {
                 pendingSaveRef.current = null;
@@ -388,40 +509,10 @@ export function CanvasEditor({
             })
             .catch((err) => console.error("[canvas-editor] save failed:", err));
         }, SAVE_DEBOUNCE_MS);
-
-        // --- 2. Debounced thumbnail (runs much less frequently than save) ---
-        if (thumbnailTimerRef.current) clearTimeout(thumbnailTimerRef.current);
-        thumbnailTimerRef.current = setTimeout(async () => {
-          if (!excalidrawApi) return;
-          try {
-            const { exportToBlob } = await import("@excalidraw/excalidraw");
-            const sceneElements = excalidrawApi.getSceneElements();
-            const sceneFiles = excalidrawApi.getFiles();
-            if (!sceneElements.length) return;
-
-            const blob = await exportToBlob({
-              elements: sceneElements as never,
-              appState: { exportBackground: true },
-              files: sceneFiles as never,
-              mimeType: "image/webp",
-              quality: 0.8,
-              maxWidthOrHeight: THUMBNAIL_MAX_SIZE,
-            });
-
-            console.log(
-              "[canvas-editor] uploading thumbnail, blob size:",
-              blob.size,
-            );
-            await uploadThumbnail(projectId, blob);
-            console.log("[canvas-editor] thumbnail uploaded OK");
-          } catch (err) {
-            console.warn(
-              "[canvas-editor] thumbnail generation/upload failed:",
-              err,
-            );
-          }
-        }, THUMBNAIL_DEBOUNCE_MS);
       }
+
+      // --- 2. Debounced thumbnail (runs much less frequently than save) ---
+      if (elements.some(isLiveElement)) scheduleThumbnailExport();
 
       // --- 3. Selection change detection ---
       // Cheap string comparison avoids unnecessary downstream re-renders.
@@ -484,7 +575,7 @@ export function CanvasEditor({
         }
       }
     },
-    [canvasId, projectId, excalidrawApi],
+    [canvasId, excalidrawApi, saveCanvasWithRevision, scheduleThumbnailExport],
   );
 
   // Register screenshot RPC handler so the server can request canvas captures
@@ -637,7 +728,10 @@ export function CanvasEditor({
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ content: payload }),
+          body: JSON.stringify({
+            content: payload,
+            baseRevision: baseRevisionRef.current,
+          }),
           keepalive: true,
         });
       } catch {
@@ -654,17 +748,20 @@ export function CanvasEditor({
       // Cancel pending debounce timers
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       if (thumbnailTimerRef.current) clearTimeout(thumbnailTimerRef.current);
+      if (thumbnailIdleRef.current != null) cic(thumbnailIdleRef.current);
 
       // Flush pending save on component unmount (e.g. SPA navigation)
       if (pendingSaveRef.current) {
         const payload = buildSavePayloadRef.current();
         if (payload) {
-          saveCanvas(canvasIdRef.current, payload).catch(console.error);
+          saveCanvasWithRevision(canvasIdRef.current, payload).catch(
+            console.error,
+          );
         }
         pendingSaveRef.current = null;
       }
     };
-  }, []);
+  }, [saveCanvasWithRevision]);
 
   const renderEmbeddable = useCallback((element: unknown) => {
     const record =
@@ -676,17 +773,51 @@ export function CanvasEditor({
         ? (record.customData as Record<string, unknown>)
         : {};
     const link = record.link;
-    if (
-      typeof link === "string" &&
-      (isVideoUrl(link) || customData.isVideo === true)
-    ) {
+    const videoUrl =
+      typeof customData.videoUrl === "string"
+        ? customData.videoUrl
+        : typeof link === "string"
+          ? link
+          : null;
+    if (videoUrl && (isVideoUrl(videoUrl) || customData.isVideo === true)) {
       const assetId =
         typeof customData.assetId === "string" ? customData.assetId : null;
       return (
         <VideoCanvasElement
-          src={toRuntimeAssetUrl(link, assetId)}
+          src={toRuntimeAssetUrl(videoUrl, assetId)}
           width={typeof record.width === "number" ? record.width : 640}
           height={typeof record.height === "number" ? record.height : 360}
+          title={
+            typeof customData.title === "string" ? customData.title : undefined
+          }
+          prompt={
+            typeof customData.prompt === "string"
+              ? customData.prompt
+              : undefined
+          }
+          model={
+            typeof customData.model === "string" ? customData.model : undefined
+          }
+          durationSeconds={
+            typeof customData.durationSeconds === "number"
+              ? customData.durationSeconds
+              : undefined
+          }
+          resolution={
+            typeof customData.resolution === "string"
+              ? customData.resolution
+              : undefined
+          }
+          aspectRatio={
+            typeof customData.aspectRatio === "string"
+              ? customData.aspectRatio
+              : undefined
+          }
+          mimeType={
+            typeof customData.mimeType === "string"
+              ? customData.mimeType
+              : undefined
+          }
         />
       );
     }
@@ -699,7 +830,7 @@ export function CanvasEditor({
     <ErrorBoundary
       onError={(err) => console.error("[canvas-editor] render crashed:", err)}
     >
-      <div className="h-full w-full relative">
+      <div className="h-full w-full relative @container/canvas">
         <Excalidraw
           theme={resolvedTheme === "dark" ? "dark" : "light"}
           langCode={excalidrawLangCode}

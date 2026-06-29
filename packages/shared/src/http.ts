@@ -7,12 +7,13 @@ import {
   chatMessageSchema,
   chatSessionSummarySchema,
   modelInfoSchema,
-  nextopManagedConnectChallengeSchema,
-  nextopManagedConnectionSchema,
-  nextopManagedGrantRequestSchema,
-  nextopManagedPublicConnectionSchema,
+  projectIdSchema,
   projectSummarySchema,
   runIdSchema,
+  tuttiManagedConnectChallengeSchema,
+  tuttiManagedConnectionSchema,
+  tuttiManagedGrantRequestSchema,
+  tuttiManagedPublicConnectionSchema,
   viewerProfileSchema,
   workspaceSettingsSchema,
 } from "./contracts.js";
@@ -78,6 +79,7 @@ export const applicationErrorCodeSchema = z.enum([
   "brand_kit_asset_not_found",
   "brand_kit_asset_create_failed",
   "canvas_not_found",
+  "canvas_conflict",
   "canvas_save_failed",
   "chat_error",
   "profile_update_failed",
@@ -94,6 +96,7 @@ export const applicationErrorCodeSchema = z.enum([
   "asset_not_found",
   "variant_not_found",
   "generation_failed",
+  "invalid_input",
   "job_not_found",
   "job_create_failed",
   "job_query_failed",
@@ -122,11 +125,13 @@ export const canvasGetResponseSchema = z.object({
 });
 
 export const canvasSaveRequestSchema = z.object({
+  baseRevision: z.number().int().nonnegative().optional(),
   content: canvasContentSchema,
 });
 
 export const canvasSaveResponseSchema = z.object({
   ok: z.literal(true),
+  revision: z.number().int().nonnegative(),
 });
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
@@ -154,26 +159,18 @@ export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),
 });
 
-export const nextopManagedConnectionResponseSchema = z.object({
-  connectChallenge: nextopManagedConnectChallengeSchema.optional(),
-  connection: nextopManagedPublicConnectionSchema,
+export const modelListRequestSchema = z.object({});
+
+export const tuttiManagedConnectionResponseSchema = z.object({
+  connectChallenge: tuttiManagedConnectChallengeSchema.optional(),
+  connection: tuttiManagedPublicConnectionSchema,
 });
 
-export const nextopManagedGrantResponseSchema =
-  nextopManagedConnectionResponseSchema;
+export const tuttiManagedGrantResponseSchema =
+  tuttiManagedConnectionResponseSchema;
 
-export const nextopManagedGrantCreateRequestSchema =
-  nextopManagedGrantRequestSchema;
-
-export const installableAgentProviderIdSchema = z.enum(["codex", "claude"]);
-
-export const agentProviderInstallResponseSchema = z.object({
-  provider: installableAgentProviderIdSchema,
-  status: z.enum(["succeeded", "failed", "skipped"]),
-  availability: z.enum(["ready", "not_installed", "auth_required", "unknown"]),
-  reason: z.string().min(1),
-  message: z.string().min(1),
-});
+export const tuttiManagedGrantCreateRequestSchema =
+  tuttiManagedGrantRequestSchema;
 
 export const sessionListResponseSchema = z.object({
   sessions: z.array(chatSessionSummarySchema),
@@ -206,20 +203,15 @@ export type WorkspaceSettingsUpdateRequest = z.infer<
   typeof workspaceSettingsUpdateRequestSchema
 >;
 export type ModelListResponse = z.infer<typeof modelListResponseSchema>;
-export type NextopManagedConnectionResponse = z.infer<
-  typeof nextopManagedConnectionResponseSchema
+export type ModelListRequest = z.infer<typeof modelListRequestSchema>;
+export type TuttiManagedConnectionResponse = z.infer<
+  typeof tuttiManagedConnectionResponseSchema
 >;
-export type NextopManagedGrantCreateRequest = z.infer<
-  typeof nextopManagedGrantCreateRequestSchema
+export type TuttiManagedGrantCreateRequest = z.infer<
+  typeof tuttiManagedGrantCreateRequestSchema
 >;
-export type NextopManagedGrantResponse = z.infer<
-  typeof nextopManagedGrantResponseSchema
->;
-export type InstallableAgentProviderId = z.infer<
-  typeof installableAgentProviderIdSchema
->;
-export type AgentProviderInstallResponse = z.infer<
-  typeof agentProviderInstallResponseSchema
+export type TuttiManagedGrantResponse = z.infer<
+  typeof tuttiManagedGrantResponseSchema
 >;
 
 export const uploadResponseSchema = z.object({
@@ -227,11 +219,30 @@ export const uploadResponseSchema = z.object({
   url: z.string().min(1),
 });
 
+export const managedFileAssetMetadataSchema = z.object({
+  path: z.string().min(1),
+  name: z.string().min(1),
+  mimeType: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative(),
+  sha256: z.string().min(1),
+});
+
+export const managedFileAssetCreateRequestSchema = z.object({
+  file: managedFileAssetMetadataSchema,
+  projectId: projectIdSchema.optional(),
+});
+
 export const assetSignedUrlResponseSchema = z.object({
   url: z.string().min(1),
 });
 
 export type UploadResponse = z.infer<typeof uploadResponseSchema>;
+export type ManagedFileAssetMetadata = z.infer<
+  typeof managedFileAssetMetadataSchema
+>;
+export type ManagedFileAssetCreateRequest = z.infer<
+  typeof managedFileAssetCreateRequestSchema
+>;
 export type AssetSignedUrlResponse = z.infer<
   typeof assetSignedUrlResponseSchema
 >;

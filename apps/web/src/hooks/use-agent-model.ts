@@ -6,7 +6,7 @@ import type { AgentModelSource } from "@aimc/shared";
 const STORAGE_KEY = "aimc:agent-model";
 const SOURCE_STORAGE_KEY = "aimc:agent-model-source";
 
-type AgentModel = string | null; // null = let AI Media Canvas pick a sensible local default
+type AgentModel = string | null; // null = let AI Canvas pick a sensible local default
 type AgentModelSelection = {
   model: AgentModel;
   source: AgentModelSource | null;
@@ -27,7 +27,7 @@ let cachedSelection: AgentModelSelection = EMPTY_SELECTION;
 
 function normalizeSource(value: string | null): AgentModelSource | null {
   return value === "local-agent" ||
-    value === "nextop-managed" ||
+    value === "tutti-managed" ||
     value === "api-provider"
     ? value
     : null;

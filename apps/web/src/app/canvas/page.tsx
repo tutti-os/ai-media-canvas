@@ -10,10 +10,10 @@ import { CanvasEditor } from "../../components/canvas-editor";
 import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
-import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { ChatSidebar } from "../../components/chat-sidebar";
+import type { CanvasImageItem } from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useToast } from "../../components/toast";
@@ -27,6 +27,7 @@ import {
   insertVideoOnCanvas,
 } from "../../lib/canvas-elements";
 import { resolveCanvasImageFiles } from "../../lib/canvas-file-serialization";
+import { cancelGeneratingCanvasElementsForRun } from "../../lib/canvas-generation-cancel";
 import { SHOW_BRAND_KIT_ENTRY_POINTS } from "../../lib/feature-flags";
 import {
   type GenerationJobSubscription,
@@ -84,6 +85,7 @@ function isCanvasImageElement(
 
 function CanvasPageContent() {
   const { t } = useAppTranslation("errors");
+  const { t: tCanvas } = useAppTranslation("canvas");
   const searchParams = useSearchParams();
   const canvasId = searchParams.get("id");
   const initialSessionId = searchParams.get("session") ?? undefined;
@@ -98,6 +100,7 @@ function CanvasPageContent() {
     id: string;
     name: string;
     projectId: string;
+    revision: number;
     content: {
       elements: Record<string, unknown>[];
       appState: Record<string, unknown>;
@@ -106,8 +109,10 @@ function CanvasPageContent() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
-  // Default chat open on desktop, closed on mobile/tablet to avoid blocking canvas
+  const shouldOpenChatFromUrl = Boolean(initialPrompt || initialSessionId);
+  // Default chat open on desktop; keep chat-led entries visible on narrow screens.
   const [chatOpen, setChatOpen] = useState(() => {
+    if (shouldOpenChatFromUrl) return true;
     if (typeof window === "undefined") return true;
     return window.innerWidth >= 1024;
   });
@@ -173,6 +178,14 @@ function CanvasPageContent() {
 
   const handleStreamEvent = useCallback(
     (event: StreamEvent) => {
+      if (event.type === "run.canceled") {
+        cancelGeneratingCanvasElementsForRun(
+          excalidrawApiRef.current,
+          event.runId,
+          tCanvas("tools.generateCanceled"),
+        );
+        return;
+      }
       if (event.type !== "tool.completed") return;
       const output = event.output as
         | {
@@ -218,6 +231,13 @@ function CanvasPageContent() {
           }
           if (isVideo) {
             const durationSeconds = result.duration_seconds;
+            const prompt = result.prompt;
+            const model = result.model;
+            const aspectRatio =
+              typeof result.aspectRatio === "string"
+                ? result.aspectRatio
+                : result.aspect_ratio;
+            const resolution = result.resolution;
             handleImageGenerated({
               type: "video",
               ...(typeof assetId === "string" ? { assetId } : {}),
@@ -228,6 +248,10 @@ function CanvasPageContent() {
               ...(typeof durationSeconds === "number"
                 ? { durationSeconds }
                 : {}),
+              ...(typeof prompt === "string" ? { prompt } : {}),
+              ...(typeof model === "string" ? { model } : {}),
+              ...(typeof aspectRatio === "string" ? { aspectRatio } : {}),
+              ...(typeof resolution === "string" ? { resolution } : {}),
               jobId,
             });
           } else {
@@ -251,7 +275,7 @@ function CanvasPageContent() {
       });
       fallbackSubscriptionsRef.current.push(subscription);
     },
-    [handleImageGenerated],
+    [handleImageGenerated, tCanvas],
   );
 
   useEffect(() => {
@@ -304,6 +328,23 @@ function CanvasPageContent() {
         elements: resolved.elements,
         captureUpdate: "NONE",
       });
+      setCanvasData((current) =>
+        current && current.id === canvas.id
+          ? {
+              ...current,
+              revision: canvas.revision,
+              content: {
+                elements: canvas.content.elements ?? [],
+                appState: canvas.content.appState ?? {},
+                files:
+                  ((canvas.content as Record<string, unknown>).files as Record<
+                    string,
+                    Record<string, unknown>
+                  >) ?? {},
+              },
+            }
+          : current,
+      );
     } catch (err) {
       console.warn("Failed to sync canvas:", err);
     }
@@ -323,23 +364,12 @@ function CanvasPageContent() {
     if (!api) return [];
     const elements = api.getSceneElements() ?? [];
     const files = api.getFiles() ?? {};
-    let idx = 0;
     return elements.filter(isCanvasImageElement).map((el) => {
-      idx++;
       const file = files[el.fileId];
       const dataURL = stringValue(file?.dataURL) ?? "";
-      const title =
-        stringValue(el.customData?.title) ??
-        stringValue(el.customData?.label) ??
-        `Image ${idx}`;
       return {
-        kind: "canvas-image",
-        id: el.id,
-        name: title,
-        thumbnailUrl: dataURL,
         assetId: el.id,
         url: stringValue(el.customData?.storageUrl) ?? dataURL,
-        mimeType: stringValue(file?.mimeType) ?? "image/png",
       };
     });
   }, []);
@@ -366,6 +396,7 @@ function CanvasPageContent() {
           id: c.id,
           name: c.name,
           projectId: c.projectId,
+          revision: c.revision,
           content: {
             elements: c.content.elements ?? [],
             appState: c.content.appState ?? {},
@@ -439,11 +470,13 @@ function CanvasPageContent() {
           key={canvasData.id}
           canvasId={canvasData.id}
           projectId={canvasData.projectId}
+          initialRevision={canvasData.revision}
           initialContent={canvasData.content}
           onApiReady={handleApiReady}
           ws={ws}
           leftPanelOpen={layersOpen || filesOpen}
           onSelectionChange={setSelectedCanvasElements}
+          onSaveConflict={handleCanvasSync}
         />
         <CanvasEmptyHint
           excalidrawApi={excalidrawApi}
@@ -480,7 +513,6 @@ function CanvasPageContent() {
         initialSessionId={initialSessionId}
         onSessionChange={handleSessionChange}
         onRequestCanvasImages={handleRequestCanvasImages}
-        currentBrandKitId={SHOW_BRAND_KIT_ENTRY_POINTS ? brandKitId : null}
         ws={ws}
         selectedCanvasElements={selectedCanvasElements}
       />

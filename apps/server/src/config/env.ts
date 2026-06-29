@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 export const DEFAULT_SERVER_PORT = 3001;
 export const DEFAULT_WEB_ORIGIN = "http://localhost:3000";
-export const DEFAULT_AGENT_MODEL = "openai:gpt-5-mini";
+export const DEFAULT_AGENT_MODEL = "openai:gpt-5.4-mini";
 export const DEFAULT_GOOGLE_AGENT_MODEL = "gemini-2.5-flash";
 export const DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
 export const DEFAULT_AGNES_AGENT_MODEL = "agnes:agnes-2.0-flash";
@@ -17,19 +18,30 @@ export type ServerEnv = {
   agnesDefaultModel?: string;
   anthropicApiKey?: string;
   anthropicBaseUrl?: string;
+  codexImagegenCodexHome?: string;
+  codexImagegenEnabled?: boolean;
+  codexImagegenAgentModel?: string;
+  codexImagegenAgentModelConfigured?: boolean;
+  codexImagegenTimeoutMs?: number;
+  appDataDir?: string;
   dataRoot?: string;
   googleApiKey?: string;
   googleApplicationCredentials?: string;
   googleVertexLocation?: string;
   googleVertexProject?: string;
   googleVertexVideoLocation?: string;
+  kieApiKey?: string;
+  kieBaseUrl?: string;
+  kieUploadBaseUrl?: string;
   openAIApiBase?: string;
   openAIApiKey?: string;
-  nextopApiBaseUrl?: string;
-  nextopAppId?: string;
-  nextopAppInstallationId?: string;
-  nextopAppServerToken?: string;
-  nextopWorkspaceId?: string;
+  tuttiApiBaseUrl?: string;
+  tuttiAppId?: string;
+  tuttiAppInstallationId?: string;
+  tuttiCliPath?: string;
+  tuttiManagedFilesRoot?: string;
+  tuttiAppServerToken?: string;
+  tuttiWorkspaceId?: string;
   port: number;
   replicateApiToken?: string;
   skillsRoot?: string;
@@ -52,6 +64,10 @@ export function loadServerEnv(
     overrides.webDistDir ?? normalizeOptionalString(source.AIMC_WEB_DIST);
   const dataRoot =
     overrides.dataRoot ?? normalizeOptionalString(source.AIMC_DATA_ROOT);
+  const appDataDir =
+    overrides.appDataDir ??
+    normalizeOptionalString(source.TUTTI_APP_DATA_DIR) ??
+    dataRoot;
   const agentBackendMode =
     overrides.agentBackendMode ??
     parseAgentBackendMode(
@@ -79,8 +95,7 @@ export function loadServerEnv(
       source.AIMC_AGNES_MODEL ?? source.AGNES_DEFAULT_MODEL,
     );
   const agnesBaseUrl =
-    agnesBaseUrlSource ??
-    (agnesApiKey ? DEFAULT_AGNES_BASE_URL : undefined);
+    agnesBaseUrlSource ?? (agnesApiKey ? DEFAULT_AGNES_BASE_URL : undefined);
   const agnesDefaultModel =
     agnesDefaultModelSource ??
     (agnesApiKey ? DEFAULT_AGNES_AGENT_MODEL : undefined);
@@ -94,52 +109,63 @@ export function loadServerEnv(
     normalizeOptionalString(
       source.AIMC_ANTHROPIC_BASE_URL ?? source.ANTHROPIC_BASE_URL,
     );
+  const codexImagegenEnabled =
+    overrides.codexImagegenEnabled ??
+    parseOptionalBoolean(source.AIMC_CODEX_IMAGEGEN_ENABLED, true);
+  const codexImagegenTimeoutMs =
+    overrides.codexImagegenTimeoutMs ??
+    parseOptionalInt(source.AIMC_CODEX_IMAGEGEN_TIMEOUT_MS);
+  const codexImagegenCodexHome =
+    overrides.codexImagegenCodexHome ??
+    normalizeOptionalString(source.AIMC_CODEX_HOME ?? source.CODEX_HOME);
+  const codexImagegenAgentModel =
+    overrides.codexImagegenAgentModel ??
+    normalizeOptionalString(source.AIMC_CODEX_IMAGEGEN_AGENT_MODEL);
   const agentModel =
-    configuredAgentModel ??
-    agnesDefaultModel ??
-    DEFAULT_AGENT_MODEL;
+    configuredAgentModel ?? agnesDefaultModel ?? DEFAULT_AGENT_MODEL;
   const openAIApiBase =
     overrides.openAIApiBase ??
-    normalizeOptionalString(source.AIMC_OPENAI_API_BASE ?? source.OPENAI_API_BASE);
+    normalizeOptionalString(
+      source.AIMC_OPENAI_API_BASE ?? source.OPENAI_API_BASE,
+    );
   const openAIApiKey =
     overrides.openAIApiKey ??
-    normalizeOptionalString(source.AIMC_OPENAI_API_KEY ?? source.OPENAI_API_KEY);
-  const nextopApiBaseUrl =
-    overrides.nextopApiBaseUrl ??
     normalizeOptionalString(
-      source.TUTTI_API_BASE_URL ??
-        source.NEXTOP_API_BASE_URL ??
-        source.AIMC_NEXTOP_API_BASE_URL,
+      source.AIMC_OPENAI_API_KEY ?? source.OPENAI_API_KEY,
     );
-  const nextopAppId =
-    overrides.nextopAppId ??
-    normalizeOptionalString(
-      source.TUTTI_APP_ID ?? source.NEXTOP_APP_ID ?? source.AIMC_NEXTOP_APP_ID,
-    );
-  const nextopAppInstallationId =
-    overrides.nextopAppInstallationId ??
-    normalizeOptionalString(
-      source.TUTTI_APP_INSTALLATION_ID ??
-        source.NEXTOP_APP_INSTALLATION_ID ??
-        source.AIMC_NEXTOP_APP_INSTALLATION_ID,
-    );
-  const nextopAppServerToken =
-    overrides.nextopAppServerToken ??
-    normalizeOptionalString(
-      source.TUTTI_APP_SERVER_TOKEN ??
-        source.NEXTOP_APP_SERVER_TOKEN ??
-        source.AIMC_NEXTOP_APP_SERVER_TOKEN,
-    );
-  const nextopWorkspaceId =
-    overrides.nextopWorkspaceId ??
-    normalizeOptionalString(
-      source.TUTTI_WORKSPACE_ID ??
-        source.NEXTOP_WORKSPACE_ID ??
-        source.AIMC_NEXTOP_WORKSPACE_ID,
-    );
+  const tuttiApiBaseUrl =
+    overrides.tuttiApiBaseUrl ??
+    normalizeOptionalString(source.TUTTI_API_BASE_URL);
+  const tuttiAppId =
+    overrides.tuttiAppId ?? normalizeOptionalString(source.TUTTI_APP_ID);
+  const tuttiAppInstallationId =
+    overrides.tuttiAppInstallationId ??
+    normalizeOptionalString(source.TUTTI_APP_INSTALLATION_ID);
+  const tuttiCliPath =
+    overrides.tuttiCliPath ?? normalizeOptionalString(source.TUTTI_CLI);
+  const configuredTuttiManagedFilesRoot = normalizeOptionalString(
+    source.AIMC_TUTTI_MANAGED_FILES_ROOT ??
+      source.TUTTI_APP_MANAGED_FILES_ROOT ??
+      source.TUTTI_MANAGED_FILES_ROOT ??
+      source.TUTTI_APP_FILES_ROOT ??
+      source.TUTTI_APP_FILES_DIR ??
+      source.TUTTI_FILES_ROOT,
+  );
+  const tuttiManagedFilesRoot =
+    overrides.tuttiManagedFilesRoot ??
+    configuredTuttiManagedFilesRoot ??
+    (dataRoot ? join(dataRoot, "uploads") : undefined);
+  const tuttiAppServerToken =
+    overrides.tuttiAppServerToken ??
+    normalizeOptionalString(source.TUTTI_APP_SERVER_TOKEN);
+  const tuttiWorkspaceId =
+    overrides.tuttiWorkspaceId ??
+    normalizeOptionalString(source.TUTTI_WORKSPACE_ID);
   const googleApiKey =
     overrides.googleApiKey ??
-    normalizeOptionalString(source.AIMC_GOOGLE_API_KEY ?? source.GOOGLE_API_KEY);
+    normalizeOptionalString(
+      source.AIMC_GOOGLE_API_KEY ?? source.GOOGLE_API_KEY,
+    );
   const googleApplicationCredentials =
     overrides.googleApplicationCredentials ??
     normalizeOptionalString(
@@ -167,6 +193,17 @@ export function loadServerEnv(
     normalizeOptionalString(
       source.AIMC_REPLICATE_API_TOKEN ?? source.REPLICATE_API_TOKEN,
     );
+  const kieApiKey =
+    overrides.kieApiKey ??
+    normalizeOptionalString(source.AIMC_KIE_API_KEY ?? source.KIE_API_KEY);
+  const kieBaseUrl =
+    overrides.kieBaseUrl ??
+    normalizeOptionalString(source.AIMC_KIE_BASE_URL ?? source.KIE_BASE_URL);
+  const kieUploadBaseUrl =
+    overrides.kieUploadBaseUrl ??
+    normalizeOptionalString(
+      source.AIMC_KIE_UPLOAD_BASE_URL ?? source.KIE_UPLOAD_BASE_URL,
+    );
   const skillsRoot =
     overrides.skillsRoot ??
     normalizeOptionalString(source.AIMC_SKILLS_ROOT ?? source.SKILLS_ROOT);
@@ -175,10 +212,14 @@ export function loadServerEnv(
     parseOptionalBoolean(source.AIMC_TRUSTED_LOCAL_AGENT_MODE, true);
   const volcesApiKey =
     overrides.volcesApiKey ??
-    normalizeOptionalString(source.AIMC_VOLCES_API_KEY ?? source.VOLCES_API_KEY);
+    normalizeOptionalString(
+      source.AIMC_VOLCES_API_KEY ?? source.VOLCES_API_KEY,
+    );
   const volcesBaseUrl =
     overrides.volcesBaseUrl ??
-    normalizeOptionalString(source.AIMC_VOLCES_BASE_URL ?? source.VOLCES_BASE_URL);
+    normalizeOptionalString(
+      source.AIMC_VOLCES_BASE_URL ?? source.VOLCES_BASE_URL,
+    );
   const workerId =
     overrides.workerId ??
     normalizeOptionalString(source.AIMC_WORKER_ID ?? source.WORKER_ID);
@@ -204,6 +245,7 @@ export function loadServerEnv(
       readServerVersion(),
     webOrigin:
       overrides.webOrigin ?? source.AIMC_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
+    ...(appDataDir ? { appDataDir } : {}),
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(dataRoot ? { dataRoot } : {}),
     ...(webDistDir ? { webDistDir } : {}),
@@ -212,19 +254,29 @@ export function loadServerEnv(
     ...(agnesDefaultModel ? { agnesDefaultModel } : {}),
     ...(anthropicApiKey ? { anthropicApiKey } : {}),
     ...(anthropicBaseUrl ? { anthropicBaseUrl } : {}),
+    codexImagegenEnabled,
+    codexImagegenAgentModelConfigured: codexImagegenAgentModel !== undefined,
+    ...(codexImagegenAgentModel ? { codexImagegenAgentModel } : {}),
+    ...(codexImagegenTimeoutMs ? { codexImagegenTimeoutMs } : {}),
+    ...(codexImagegenCodexHome ? { codexImagegenCodexHome } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
     ...(openAIApiKey ? { openAIApiKey } : {}),
-    ...(nextopApiBaseUrl ? { nextopApiBaseUrl } : {}),
-    ...(nextopAppId ? { nextopAppId } : {}),
-    ...(nextopAppInstallationId ? { nextopAppInstallationId } : {}),
-    ...(nextopAppServerToken ? { nextopAppServerToken } : {}),
-    ...(nextopWorkspaceId ? { nextopWorkspaceId } : {}),
+    ...(tuttiApiBaseUrl ? { tuttiApiBaseUrl } : {}),
+    ...(tuttiAppId ? { tuttiAppId } : {}),
+    ...(tuttiAppInstallationId ? { tuttiAppInstallationId } : {}),
+    ...(tuttiCliPath ? { tuttiCliPath } : {}),
+    ...(tuttiManagedFilesRoot ? { tuttiManagedFilesRoot } : {}),
+    ...(tuttiAppServerToken ? { tuttiAppServerToken } : {}),
+    ...(tuttiWorkspaceId ? { tuttiWorkspaceId } : {}),
     ...(googleApiKey ? { googleApiKey } : {}),
     ...(googleApplicationCredentials ? { googleApplicationCredentials } : {}),
     ...(googleVertexProject ? { googleVertexProject } : {}),
     ...(googleVertexLocation ? { googleVertexLocation } : {}),
     ...(googleVertexVideoLocation ? { googleVertexVideoLocation } : {}),
     ...(replicateApiToken ? { replicateApiToken } : {}),
+    ...(kieApiKey ? { kieApiKey } : {}),
+    ...(kieBaseUrl ? { kieBaseUrl } : {}),
+    ...(kieUploadBaseUrl ? { kieUploadBaseUrl } : {}),
     ...(skillsRoot ? { skillsRoot } : {}),
     trustedLocalAgentMode,
     ...(volcesApiKey ? { volcesApiKey } : {}),
@@ -278,9 +330,7 @@ function parseAgentBackendMode(
     return rawMode;
   }
 
-  throw new Error(
-    `Invalid AIMC_AGENT_BACKEND_MODE value: ${rawMode}`,
-  );
+  throw new Error(`Invalid AIMC_AGENT_BACKEND_MODE value: ${rawMode}`);
 }
 
 function readServerVersion() {

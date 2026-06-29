@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { toolArtifactSchema } from "./artifacts.js";
-import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
 
 export const identifierSchema = z.string().min(1);
 export const timestampSchema = z.string().datetime({ offset: true });
@@ -30,34 +29,6 @@ export const imageAttachmentSchema = z.object({
   name: z.string().min(1).optional(),
 });
 
-export const imageModelMentionSchema = z.object({
-  mentionType: z.literal("image-model"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-});
-
-export const brandKitAssetMentionSchema = z.object({
-  mentionType: z.literal("brand-kit-asset"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-  assetType: brandKitAssetTypeSchema,
-  textContent: z.string().nullable().optional(),
-  fileUrl: z.string().url().nullable().optional(),
-});
-
-export const skillMentionSchema = z.object({
-  mentionType: z.literal("skill"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-  slug: z.string().min(1),
-});
-
-export const messageMentionSchema = z.discriminatedUnion("mentionType", [
-  imageModelMentionSchema,
-  brandKitAssetMentionSchema,
-  skillMentionSchema,
-]);
-
 export const imageGenerationPreferenceSchema = z.object({
   mode: z.enum(["auto", "manual"]),
   models: z.array(z.string().min(1)),
@@ -68,10 +39,13 @@ export const videoGenerationPreferenceSchema = z.object({
   models: z.array(z.string().min(1)),
 });
 
-export const runtimeKindSchema = z.enum([
-  "server-deepagent",
-  "local-agent",
-]);
+export const codexImagegenDelegationSchema = z.enum(["ask", "always", "never"]);
+
+export const codexImagegenDelegationConsentSchema = z.object({
+  codexImagegen: z.enum(["allow-once"]),
+});
+
+export const runtimeKindSchema = z.enum(["server-deepagent", "local-agent"]);
 
 export const agentRuntimeProviderSchema = z
   .string()
@@ -94,19 +68,20 @@ export const runCreateRequestSchema = z
     sessionId: sessionIdSchema,
     conversationId: conversationIdSchema,
     prompt: z.string(),
+    locale: z.enum(["zh-CN", "en"]).optional(),
     canvasId: canvasIdSchema.optional(),
     attachments: z.array(imageAttachmentSchema).optional(),
     imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
     videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
-    mentions: z.array(messageMentionSchema).optional(),
     model: z.string().optional(),
     modelSource: z
-      .enum(["local-agent", "nextop-managed", "api-provider"])
+      .enum(["local-agent", "tutti-managed", "api-provider"])
       .optional(),
     resumeFromRunId: runIdSchema.optional(),
     resumeMode: agentRunResumeModeSchema.optional(),
     runtimeKind: runtimeKindSchema.optional(),
     runtimeProvider: agentRuntimeProviderSchema.optional(),
+    delegationConsent: codexImagegenDelegationConsentSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (value.runtimeProvider && value.runtimeKind !== "local-agent") {
@@ -123,7 +98,11 @@ export const runCreateRequestSchema = z
         path: ["runtimeProvider"],
       });
     }
-    if (value.resumeMode && value.resumeMode !== "fresh" && !value.resumeFromRunId) {
+    if (
+      value.resumeMode &&
+      value.resumeMode !== "fresh" &&
+      !value.resumeFromRunId
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "resumeMode requires resumeFromRunId unless resumeMode=fresh.",
@@ -177,6 +156,7 @@ export const canvasDetailSchema = z.object({
   id: canvasIdSchema,
   name: z.string().min(1),
   projectId: projectIdSchema,
+  revision: z.number().int().nonnegative(),
   content: canvasContentSchema,
 });
 
@@ -187,7 +167,7 @@ export const profileUpdateRequestSchema = z.object({
 export const workspaceSettingsSchema = z.object({
   defaultModel: z.string(),
   defaultModelSource: z
-    .enum(["local-agent", "nextop-managed", "api-provider"])
+    .enum(["local-agent", "tutti-managed", "api-provider"])
     .optional(),
   providerModels: z.object({
     openai: z.array(z.string().min(1)),
@@ -208,13 +188,16 @@ export const workspaceSettingsSchema = z.object({
   googleVertexLocation: z.string(),
   googleVertexVideoLocation: z.string(),
   replicateApiToken: z.string(),
+  kieApiKey: z.string(),
+  kieBaseUrl: z.string(),
   volcesApiKey: z.string(),
   volcesBaseUrl: z.string(),
+  codexImagegenDelegation: codexImagegenDelegationSchema.default("ask"),
 });
 
 export const agentModelSourceSchema = z.enum([
   "local-agent",
-  "nextop-managed",
+  "tutti-managed",
   "api-provider",
 ]);
 
@@ -226,45 +209,45 @@ export const modelInfoSchema = z.object({
   source: agentModelSourceSchema.optional(),
 });
 
-export const nextopManagedProviderIdSchema = z.enum([
+export const tuttiManagedProviderIdSchema = z.enum([
   "agnes",
   "openai",
   "anthropic",
 ]);
 
-export const nextopManagedModelSchema = z.object({
+export const tuttiManagedModelSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  provider: nextopManagedProviderIdSchema,
+  provider: tuttiManagedProviderIdSchema,
 });
 
-export const nextopManagedConnectionSchema = z.object({
+export const tuttiManagedConnectionSchema = z.object({
   connected: z.boolean(),
   grantRef: z.string().min(1).optional(),
   expiresAt: timestampSchema.optional(),
-  providers: z.array(nextopManagedProviderIdSchema),
-  models: z.array(nextopManagedModelSchema),
+  providers: z.array(tuttiManagedProviderIdSchema),
+  models: z.array(tuttiManagedModelSchema),
 });
 
-export const nextopManagedPublicConnectionSchema =
-  nextopManagedConnectionSchema.omit({
+export const tuttiManagedPublicConnectionSchema =
+  tuttiManagedConnectionSchema.omit({
     grantRef: true,
   });
 
-export const nextopManagedConnectChallengeSchema = z.object({
+export const tuttiManagedConnectChallengeSchema = z.object({
   expiresAt: timestampSchema,
   nonce: z.string().trim().min(16),
   state: z.string().trim().min(16),
 });
 
-export const nextopManagedGrantRequestSchema = z.object({
+export const tuttiManagedGrantRequestSchema = z.object({
   contextToken: z.string().trim().min(1),
   grantCode: z.string().trim().min(1),
   nonce: z.string().trim().min(16),
   state: z.string().trim().min(16),
   expiresAt: timestampSchema.optional(),
-  providers: z.array(nextopManagedProviderIdSchema).optional(),
-  models: z.array(nextopManagedModelSchema).optional(),
+  providers: z.array(tuttiManagedProviderIdSchema).optional(),
+  models: z.array(tuttiManagedModelSchema).optional(),
 });
 
 export const toolStatusSchema = z.enum([
@@ -322,43 +305,11 @@ export const imageBlockSchema = z.object({
   name: z.string().min(1).optional(),
 });
 
-export const imageModelMentionBlockSchema = z.object({
-  type: z.literal("mention"),
-  mentionType: z.literal("image-model"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-});
-
-export const brandKitAssetMentionBlockSchema = z.object({
-  type: z.literal("mention"),
-  mentionType: z.literal("brand-kit-asset"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-  assetType: brandKitAssetTypeSchema,
-  textContent: z.string().nullable().optional(),
-  fileUrl: z.string().url().nullable().optional(),
-});
-
-export const skillMentionBlockSchema = z.object({
-  type: z.literal("mention"),
-  mentionType: z.literal("skill"),
-  id: z.string().min(1),
-  label: z.string().min(1),
-  slug: z.string().min(1),
-});
-
-export const mentionBlockSchema = z.union([
-  imageModelMentionBlockSchema,
-  brandKitAssetMentionBlockSchema,
-  skillMentionBlockSchema,
-]);
-
 export const contentBlockSchema = z.union([
   textBlockSchema,
   thinkingBlockSchema,
   toolBlockSchema,
   imageBlockSchema,
-  mentionBlockSchema,
 ]);
 
 export const chatMessageSchema = z.object({
@@ -378,6 +329,7 @@ export const chatMessageCreateRequestSchema = z.object({
 });
 
 export const assetBucketSchema = z.enum(["project-assets", "user-avatars"]);
+export const assetSourceSchema = z.enum(["local", "managed-file"]);
 
 export const assetObjectSchema = z.object({
   id: identifierSchema,
@@ -387,17 +339,19 @@ export const assetObjectSchema = z.object({
   byteSize: z.number().int().nonnegative().nullable(),
   projectId: projectIdSchema.nullable(),
   createdAt: timestampSchema,
+  source: assetSourceSchema.optional(),
+  displayName: z.string().min(1).nullable().optional(),
+  sha256: z.string().min(1).nullable().optional(),
 });
 
 export type AssetBucket = z.infer<typeof assetBucketSchema>;
+export type AssetSource = z.infer<typeof assetSourceSchema>;
 export type AssetObject = z.infer<typeof assetObjectSchema>;
 
 export type TextBlock = z.infer<typeof textBlockSchema>;
 export type ThinkingBlock = z.infer<typeof thinkingBlockSchema>;
 export type ToolBlock = z.infer<typeof toolBlockSchema>;
 export type ImageBlock = z.infer<typeof imageBlockSchema>;
-export type MessageMention = z.infer<typeof messageMentionSchema>;
-export type MentionBlock = z.infer<typeof mentionBlockSchema>;
 export type ImageAttachment = z.infer<typeof imageAttachmentSchema>;
 export type ImageGenerationPreference = z.infer<
   typeof imageGenerationPreferenceSchema
@@ -407,32 +361,32 @@ export type VideoGenerationPreference = z.infer<
 >;
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 export type RuntimeKind = z.infer<typeof runtimeKindSchema>;
-export type AgentRuntimeProvider = z.infer<
-  typeof agentRuntimeProviderSchema
->;
+export type AgentRuntimeProvider = z.infer<typeof agentRuntimeProviderSchema>;
 export type AgentModelSource = z.infer<typeof agentModelSourceSchema>;
 export type AgentRunResumeMode = z.infer<typeof agentRunResumeModeSchema>;
 export type ChatSessionSummary = z.infer<typeof chatSessionSummarySchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
-export type ChatMessageCreateRequest = z.infer<typeof chatMessageCreateRequestSchema>;
+export type ChatMessageCreateRequest = z.infer<
+  typeof chatMessageCreateRequestSchema
+>;
 export type ChatToolActivity = z.infer<typeof chatToolActivitySchema>;
 export type ProfileUpdateRequest = z.infer<typeof profileUpdateRequestSchema>;
 export type ModelInfo = z.infer<typeof modelInfoSchema>;
-export type NextopManagedProviderId = z.infer<
-  typeof nextopManagedProviderIdSchema
+export type TuttiManagedProviderId = z.infer<
+  typeof tuttiManagedProviderIdSchema
 >;
-export type NextopManagedModel = z.infer<typeof nextopManagedModelSchema>;
-export type NextopManagedConnection = z.infer<
-  typeof nextopManagedConnectionSchema
+export type TuttiManagedModel = z.infer<typeof tuttiManagedModelSchema>;
+export type TuttiManagedConnection = z.infer<
+  typeof tuttiManagedConnectionSchema
 >;
-export type NextopManagedPublicConnection = z.infer<
-  typeof nextopManagedPublicConnectionSchema
+export type TuttiManagedPublicConnection = z.infer<
+  typeof tuttiManagedPublicConnectionSchema
 >;
-export type NextopManagedConnectChallenge = z.infer<
-  typeof nextopManagedConnectChallengeSchema
+export type TuttiManagedConnectChallenge = z.infer<
+  typeof tuttiManagedConnectChallengeSchema
 >;
-export type NextopManagedGrantRequest = z.infer<
-  typeof nextopManagedGrantRequestSchema
+export type TuttiManagedGrantRequest = z.infer<
+  typeof tuttiManagedGrantRequestSchema
 >;
 export type RunCreateRequest = z.infer<typeof runCreateRequestSchema>;
 export type RunCreateResponse = z.infer<typeof runCreateResponseSchema>;

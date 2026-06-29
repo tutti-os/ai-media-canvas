@@ -1,16 +1,18 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { generationJobService } from "../src/lib/generation-job-service";
 import {
-  fetchWorkspaceSettings,
-  fetchViewer,
-  fetchProjects,
   createProject,
-  updateWorkspaceSettings,
+  fetchModels,
+  fetchProjects,
+  fetchViewer,
+  fetchWorkspaceSettings,
   generateImageDirect,
   generateVideoDirect,
+  updateWorkspaceSettings,
+  uploadFile,
 } from "../src/lib/server-api";
-import { generationJobService } from "../src/lib/generation-job-service";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -26,19 +28,31 @@ describe("local server API", () => {
     vi.clearAllMocks();
     generationJobService.clearForTest();
     vi.stubEnv("AIMC_SERVER_BASE_URL", "http://localhost:3001");
+    (window as Window & { tutti?: unknown }).tutti = undefined;
   });
 
   afterEach(() => {
     generationJobService.clearForTest();
     vi.useRealTimers();
+    (window as Window & { tuttiExternal?: unknown }).tuttiExternal = undefined;
     vi.unstubAllEnvs();
+    (window as Window & { tutti?: unknown }).tutti = undefined;
   });
 
   it("fetchViewer calls the local viewer endpoint and returns the viewer", async () => {
     const viewer = {
-      profile: { id: "u1", email: "a@b.com", displayName: "A", avatarUrl: null },
+      profile: {
+        id: "u1",
+        email: "a@b.com",
+        displayName: "A",
+        avatarUrl: null,
+      },
     };
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => viewer });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => viewer,
+    });
 
     const result = await fetchViewer();
     expect(mockFetch).toHaveBeenCalledWith("http://localhost:3001/api/viewer");
@@ -48,12 +62,20 @@ describe("local server API", () => {
   it("createProject sends POST without auth headers and handles 201", async () => {
     const project = {
       project: {
-        id: "p1", name: "Test", slug: "test", description: null,
+        id: "p1",
+        name: "Test",
+        slug: "test",
+        description: null,
         primaryCanvas: { id: "c1", name: "Main Canvas", isPrimary: true },
-        createdAt: "2026-03-23T00:00:00Z", updatedAt: "2026-03-23T00:00:00Z",
+        createdAt: "2026-03-23T00:00:00Z",
+        updatedAt: "2026-03-23T00:00:00Z",
       },
     };
-    mockFetch.mockResolvedValue({ ok: true, status: 201, json: async () => project });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => project,
+    });
 
     const result = await createProject({ name: "Test" });
     expect(mockFetch).toHaveBeenCalledWith(
@@ -69,10 +91,16 @@ describe("local server API", () => {
 
   it("fetchProjects returns the local project list", async () => {
     const list = { projects: [{ id: "p1", name: "Test", slug: "test" }] };
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => list });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => list,
+    });
 
     const result = await fetchProjects();
-    expect(mockFetch).toHaveBeenCalledWith("http://localhost:3001/api/projects");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/projects",
+    );
     expect(result.projects).toHaveLength(1);
   });
 
@@ -85,13 +113,11 @@ describe("local server API", () => {
       }),
     });
 
-    await expect(createProject({ name: "Dup" })).rejects.toThrow(
-      "Slug taken.",
-    );
+    await expect(createProject({ name: "Dup" })).rejects.toThrow("Slug taken.");
     try {
       await createProject({ name: "Dup" });
     } catch (err) {
-      expect((err as any).code).toBe("project_slug_taken");
+      expect((err as { code?: unknown }).code).toBe("project_slug_taken");
     }
   });
 
@@ -135,11 +161,17 @@ describe("local server API", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
     };
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => payload,
+    });
 
     const result = await fetchWorkspaceSettings();
     expect(mockFetch).toHaveBeenCalledWith(
@@ -164,11 +196,17 @@ describe("local server API", () => {
         googleVertexLocation: "global",
         googleVertexVideoLocation: "us-central1",
         replicateApiToken: "replicate-local-token",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
     };
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => payload,
+    });
 
     const result = await updateWorkspaceSettings(payload.settings);
     expect(mockFetch).toHaveBeenCalledWith(
@@ -182,6 +220,165 @@ describe("local server API", () => {
     expect(result.settings.googleApiKey).toBe("google-local-key");
     expect(result.settings.anthropicApiKey).toBe("sk-local-anthropic");
     expect(result.settings.agnesApiKey).toBe("sk-local-agnes");
+  });
+
+  it("fetchModels uses the header-injected server route without JSB payload", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ models: [] }),
+    });
+
+    await fetchModels();
+
+    expect(mockFetch).toHaveBeenCalledWith("http://localhost:3001/api/models", {
+      cache: "no-store",
+    });
+  });
+
+  it("fetchModels keeps the existing GET path when the managed bridge is unavailable", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ models: [] }),
+    });
+
+    await fetchModels();
+
+    expect(mockFetch).toHaveBeenCalledWith("http://localhost:3001/api/models", {
+      cache: "no-store",
+    });
+  });
+
+  it("fetchModels sends a refresh hint when requested", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ models: [] }),
+    });
+
+    await fetchModels({ refresh: true });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/models?refresh=1",
+      {
+        cache: "no-store",
+      },
+    );
+  });
+
+  it("uploadFile uses the local multipart endpoint outside Tutti", async () => {
+    const payload = {
+      asset: {
+        id: "asset-local-1",
+        bucket: "project-assets",
+        objectPath: "upload/asset-local-1.png",
+        mimeType: "image/png",
+        byteSize: 4,
+        projectId: "project-1",
+        createdAt: "2026-06-24T00:00:00.000Z",
+      },
+      url: "http://localhost:3001/local-assets/asset-local-1",
+    };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => payload,
+    });
+
+    const file = new File(["fake"], "ref.png", { type: "image/png" });
+    const result = await uploadFile(file, "project-1");
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0]?.[0]).toBe(
+      "http://localhost:3001/api/uploads",
+    );
+    const init = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBeInstanceOf(FormData);
+    expect((init?.body as FormData).get("file")).toBe(file);
+    expect((init?.body as FormData).get("projectId")).toBe("project-1");
+    expect(result).toEqual(payload);
+  });
+
+  it("uploadFile uses Tutti file upload bridge and creates an asset record", async () => {
+    const managedPath =
+      "/Users/test/Library/Application Support/Tutti/files/ref.png";
+    const bridgeUpload = vi.fn(async (_file: Blob, options: unknown) => {
+      expect(options).toMatchObject({
+        purpose: "app-asset",
+        name: "ref.png",
+        mimeType: "image/png",
+      });
+      return {
+        path: managedPath,
+        name: "ref.png",
+        mimeType: "image/png",
+        sizeBytes: 4,
+        sha256: "sha256-ref",
+      };
+    });
+    (
+      window as Window & {
+        tuttiExternal?: {
+          files?: { upload?: typeof bridgeUpload };
+        };
+      }
+    ).tuttiExternal = { files: { upload: bridgeUpload } };
+
+    const payload = {
+      asset: {
+        id: "asset-managed-1",
+        bucket: "project-assets",
+        objectPath: managedPath,
+        mimeType: "image/png",
+        byteSize: 4,
+        projectId: "project-1",
+        createdAt: "2026-06-24T00:00:00.000Z",
+        source: "managed-file",
+        displayName: "ref.png",
+        sha256: "sha256-ref",
+      },
+      url: "http://localhost:3001/local-assets/asset-managed-1",
+    };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => payload,
+    });
+
+    const file = new File(["fake"], "ref.png", { type: "image/png" });
+    const result = await uploadFile(file, "project-1");
+
+    expect(bridgeUpload).toHaveBeenCalledWith(
+      file,
+      expect.objectContaining({
+        purpose: "app-asset",
+        name: "ref.png",
+        mimeType: "image/png",
+      }),
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/uploads/managed-file",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          file: {
+            path: managedPath,
+            name: "ref.png",
+            mimeType: "image/png",
+            sizeBytes: 4,
+            sha256: "sha256-ref",
+          },
+          projectId: "project-1",
+        }),
+      },
+    );
+    expect(result.asset).toEqual(payload.asset);
+    expect(result.url).toBe(
+      "http://localhost:3001/local-assets/asset-managed-1",
+    );
   });
 
   it("generateImageDirect creates an image job and polls for the stored result", async () => {
@@ -428,6 +625,9 @@ describe("local server API", () => {
       width: 1280,
       height: 720,
       durationSeconds: 5,
+      model: "agnes-video/agnes-video-v2.0",
+      aspectRatio: "16:9",
+      resolution: "720p",
     });
   });
 
@@ -493,6 +693,7 @@ describe("local server API", () => {
       width: 1280,
       height: 720,
       durationSeconds: 5,
+      model: "agnes-video/agnes-video-v2.0",
     });
     expect(mockFetch).toHaveBeenCalledTimes(3);
   });
@@ -615,6 +816,7 @@ describe("local server API", () => {
       width: 1280,
       height: 720,
       durationSeconds: 5,
+      model: "agnes-video/agnes-video-v2.0",
     });
   });
 });

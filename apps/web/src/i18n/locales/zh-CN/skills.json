@@ -16,7 +16,7 @@
   "createDialog": {
     "addFile": "添加文件",
     "adding": "添加中...",
-    "description": "创建新的本地技能来扩展 AI Media Canvas 助手的能力。",
+    "description": "创建新的本地技能来扩展 AI Canvas 助手的能力。",
     "descriptionPlaceholder": "简述技能的功能和用途...",
     "fileContentPlaceholder": "文件内容...",
     "invalidPath": "文件路径需要以 scripts/、references/ 或 assets/ 开头。",

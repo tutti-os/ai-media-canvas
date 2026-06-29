@@ -15,6 +15,7 @@ vi.mock("agnes-ai-cli", () => ({
 }));
 
 import { AgnesImageProvider } from "./agnes-image.js";
+import { DEFAULT_AGNES_TEMPORARY_MEDIA_PROVIDER_ORDER } from "./agnes-media.js";
 
 describe("AgnesImageProvider", () => {
   beforeEach(() => {
@@ -43,6 +44,7 @@ describe("AgnesImageProvider", () => {
     expect(createAgnesClientMock).toHaveBeenCalledWith({
       apiKey: "agnes-test-key",
       baseUrl: "https://agnes.example/v1",
+      temporaryMediaProviderOrder: DEFAULT_AGNES_TEMPORARY_MEDIA_PROVIDER_ORDER,
     });
     expect(imageGenerateMock).toHaveBeenCalledWith({
       mode: "text2img",
@@ -55,6 +57,17 @@ describe("AgnesImageProvider", () => {
       mimeType: "image/png",
       width: 1024,
       height: 1024,
+    });
+  });
+
+  it("lets callers override the Agnes temporary media provider order", () => {
+    new AgnesImageProvider("agnes-test-key", undefined, {
+      temporaryMediaProviderOrder: ["tmpfiles", "uguu"],
+    });
+
+    expect(createAgnesClientMock).toHaveBeenCalledWith({
+      apiKey: "agnes-test-key",
+      temporaryMediaProviderOrder: ["tmpfiles", "uguu"],
     });
   });
 
@@ -109,22 +122,41 @@ describe("AgnesImageProvider", () => {
       prompt: "Compose a campaign visual",
       model: "agnes-image/agnes-image-2.1-flash",
       aspectRatio: "16:9",
-      inputImages: [
-        "data:image/png;base64,AAAA",
-        "data:image/png;base64,BBBB",
-      ],
+      inputImages: ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"],
     });
 
     expect(imageGenerateMock).toHaveBeenCalledWith({
       mode: "compose",
       model: "agnes-image-2.1-flash",
-      images: [
-        "data:image/png;base64,AAAA",
-        "data:image/png;base64,BBBB",
-      ],
+      images: ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"],
       prompt: "Compose a campaign visual",
       size: "1024x576",
       ttl: "1h",
     });
+  });
+
+  it("times out if Agnes image task creation never returns", async () => {
+    const provider = new AgnesImageProvider("agnes-test-key");
+    imageGenerateMock.mockReturnValueOnce(new Promise(() => {}));
+    vi.useFakeTimers();
+
+    try {
+      const resultPromise = provider.generate({
+        prompt: "A stuck Agnes image request",
+        model: "agnes-image/agnes-image-2.1-flash",
+        aspectRatio: "1:1",
+      });
+      const rejection = expect(resultPromise).rejects.toMatchObject({
+        code: "timeout",
+        message: "Agnes image task creation timed out after 120000ms.",
+        provider: "agnes-image",
+      });
+
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

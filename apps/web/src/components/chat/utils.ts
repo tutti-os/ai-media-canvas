@@ -60,13 +60,21 @@ export function formatToolName(name: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+const MODEL_ACRONYMS: Record<string, string> = {
+  gpt: "GPT",
+};
+
 /** Format raw model ID to human-readable: "google/nano-banana-pro" -> "Nano Banana Pro" */
 export function formatModelDisplayName(model: string): string {
   const slug = model.split("/").pop() ?? model;
   return slug
     .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .map((w) => MODEL_ACRONYMS[w.toLowerCase()] ?? capitalizeWord(w))
     .join(" ");
+}
+
+function capitalizeWord(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
 /** Convert camelCase/snake_case param name to readable lowercase */

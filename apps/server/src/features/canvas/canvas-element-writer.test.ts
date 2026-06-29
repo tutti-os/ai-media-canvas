@@ -197,6 +197,7 @@ describe("canvas element writer", () => {
       model: "agnes-image/agnes-image-2.1-flash",
       prompt: "A neon city logo",
       quality: "hd",
+      runId: "run-image-1",
       title: "Neon logo",
     });
 
@@ -218,6 +219,7 @@ describe("canvas element writer", () => {
         model: "agnes-image/agnes-image-2.1-flash",
         aspectRatio: "16:9",
         quality: "hd",
+        runId: "run-image-1",
       },
     });
   });
@@ -296,6 +298,7 @@ describe("canvas element writer", () => {
       model: "google-official/veo-3.1-generate-preview",
       prompt: "A rotating product video",
       resolution: "720p",
+      runId: "run-video-1",
       title: "Product video",
     });
 
@@ -318,11 +321,12 @@ describe("canvas element writer", () => {
         aspectRatio: "16:9",
         duration: 5,
         resolution: "720p",
+        runId: "run-video-1",
       },
     });
   });
 
-  it("inserts generated videos as embeddable canvas elements", async () => {
+  it("inserts generated videos without Excalidraw link chrome", async () => {
     const client = createCanvasClient({
       elements: [],
       appState: {},
@@ -335,7 +339,10 @@ describe("canvas element writer", () => {
       durationSeconds: 5,
       height: 720,
       mimeType: "video/mp4",
+      model: "kie/runway",
       prompt: "A spinning product shot",
+      aspectRatio: "16:9",
+      resolution: "720p",
       signedUrl: "http://127.0.0.1:3001/local-assets/video-1",
       title: "Product video",
       width: 1280,
@@ -348,17 +355,23 @@ describe("canvas element writer", () => {
     expect(content.elements).toHaveLength(1);
     expect(content.elements[0]).toMatchObject({
       id: result.elementId,
-      type: "embeddable",
-      link: "/local-assets/video-asset-1",
+      type: "rectangle",
+      link: null,
+      strokeColor: "#111827",
+      backgroundColor: "#000000",
       width: 640,
       height: 360,
       customData: {
         assetId: "video-asset-1",
+        aspectRatio: "16:9",
         durationSeconds: 5,
         isVideo: true,
         mimeType: "video/mp4",
+        model: "kie/runway",
         prompt: "A spinning product shot",
+        resolution: "720p",
         title: "Product video",
+        videoUrl: "/local-assets/video-asset-1",
       },
     });
   });

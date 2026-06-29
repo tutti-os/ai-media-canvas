@@ -6,16 +6,27 @@ import type {
   VideoModelInfo,
   VideoProvider,
 } from "../types.js";
-import { GenerationError } from "../utils.js";
+import { GenerationError, withTimeout } from "../utils.js";
+import {
+  type AgnesMediaOptions,
+  resolveAgnesMediaOptions,
+} from "./agnes-media.js";
 
 const ICON_AGNES = "https://agnes-cdn.kiwiar.com/logo/agnes-icon-400x400.jpg";
 const DEFAULT_FRAME_RATE = 24;
 const DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
 const DEFAULT_AGNES_MEDIA_TTL = "1h" as const;
+const AGNES_VIDEO_CREATE_TIMEOUT_MS = 60_000;
+const AGNES_VIDEO_CREATE_MAX_ATTEMPTS = 3;
+const AGNES_VIDEO_POLL_REQUEST_TIMEOUT_MS = 30_000;
 const AGNES_VIDEO_POLL_INTERVAL_SECONDS = 10;
 const AGNES_VIDEO_POLL_TIMEOUT_SECONDS = 7_200;
 const AGNES_VIDEO_MODEL_IDS = ["agnes-video-v2.0"] as const;
 const AGNES_VIDEO_ASPECT_RATIOS = ["16:9", "9:16"] as const;
+const AGNES_VIDEO_ALLOWED_DURATIONS = [4, 5, 6, 8, 10, 15, 16] as const;
+const MAX_AGNES_DURATION_SECONDS = 16;
+const MAX_AGNES_IMAGE_DURATION_SECONDS = 16;
+const MAX_AGNES_1080P_IMAGE_NUM_FRAMES = 169;
 const MAX_AGNES_NUM_FRAMES = 441;
 type AgnesVideoModelId = (typeof AGNES_VIDEO_MODEL_IDS)[number];
 type AgnesVideoAspectRatio = (typeof AGNES_VIDEO_ASPECT_RATIOS)[number];
@@ -24,12 +35,14 @@ type AgnesRemoteTaskMetadata = {
   onRemoteTaskCreated?: (task: {
     provider: string;
     taskId: string;
+    videoId?: string;
     status?: string;
     raw?: unknown;
   }) => void | Promise<void>;
   onRemoteTaskStatus?: (task: {
     provider: string;
     taskId: string;
+    videoId?: string;
     status?: string;
     raw?: unknown;
   }) => void | Promise<void>;
@@ -42,9 +55,14 @@ type AgnesVideoTaskResponse = {
   raw?: unknown;
   seconds?: number | string | null;
   status?: string;
+  task_id?: string;
+  taskId?: string;
   url?: string;
+  video_id?: string;
   video_url?: string;
+  videoId?: string;
   videoUrl?: string;
+  remixed_from_video_id?: string;
 };
 
 const AGNES_VIDEO_MODELS: readonly VideoModelInfo[] = [
@@ -61,7 +79,8 @@ const AGNES_VIDEO_MODELS: readonly VideoModelInfo[] = [
       audio: false,
     },
     limits: {
-      maxDuration: 18,
+      allowedDurations: [...AGNES_VIDEO_ALLOWED_DURATIONS],
+      maxDuration: MAX_AGNES_DURATION_SECONDS,
       maxResolution: "1080p",
       maxInputImages: 8,
     },
@@ -87,14 +106,19 @@ function getVideoDimensions(
 
 function resolveAgnesResolution(
   resolution: VideoGenerateParams["resolution"] | "4k" | undefined,
+  hasInputImages = false,
+  numFrames = 0,
 ): AgnesVideoResolution | undefined {
-  if (
-    resolution === undefined ||
-    resolution === "480p" ||
-    resolution === "720p" ||
-    resolution === "1080p"
-  ) {
+  if (resolution === undefined) {
     return resolution;
+  }
+  if (resolution === "480p" || resolution === "720p") {
+    return resolution;
+  }
+  if (resolution === "1080p") {
+    return hasInputImages && numFrames > MAX_AGNES_1080P_IMAGE_NUM_FRAMES
+      ? "720p"
+      : resolution;
   }
   throw new GenerationError(
     "agnes-video",
@@ -135,6 +159,27 @@ function resolveAgnesFrameRate(frameRate: number | undefined) {
     );
   }
   return resolvedFrameRate;
+}
+
+function resolveAgnesDuration(duration: number | undefined) {
+  const resolvedDuration = duration ?? 5;
+  if (
+    !Number.isInteger(resolvedDuration) ||
+    !AGNES_VIDEO_ALLOWED_DURATIONS.includes(
+      resolvedDuration as (typeof AGNES_VIDEO_ALLOWED_DURATIONS)[number],
+    )
+  ) {
+    throw new GenerationError(
+      "agnes-video",
+      "invalid_input",
+      `Invalid Agnes duration: ${resolvedDuration}. Use one of ${AGNES_VIDEO_ALLOWED_DURATIONS.join(", ")} seconds.`,
+    );
+  }
+  return resolvedDuration;
+}
+
+function resolveAgnesImageDuration(durationSeconds: number) {
+  return Math.min(durationSeconds, MAX_AGNES_IMAGE_DURATION_SECONDS);
 }
 
 function alignAgnesNumFrames(durationSeconds: number, frameRate: number) {
@@ -186,11 +231,9 @@ function resolveAgnesNumFrames(
 
 function resolveAgnesVideoModel(modelId: string): AgnesVideoModelId {
   const normalized = modelId.includes("/")
-    ? modelId.split("/").pop() ?? modelId
+    ? (modelId.split("/").pop() ?? modelId)
     : modelId;
-  if (
-    AGNES_VIDEO_MODEL_IDS.includes(normalized as AgnesVideoModelId)
-  ) {
+  if (AGNES_VIDEO_MODEL_IDS.includes(normalized as AgnesVideoModelId)) {
     return normalized as AgnesVideoModelId;
   }
   throw new GenerationError(
@@ -208,6 +251,16 @@ function resolveAgnesVideoMode(params: VideoGenerateParams) {
   return "multivideo" as const;
 }
 
+function getFirstAgnesInputImage(inputImages: string[]) {
+  const [image] = inputImages;
+  if (image) return image;
+  throw new GenerationError(
+    "agnes-video",
+    "invalid_input",
+    "Agnes img2video requires exactly one image.",
+  );
+}
+
 function getAgnesRemoteTaskMetadata(
   params: VideoGenerateParams,
 ): AgnesRemoteTaskMetadata {
@@ -223,19 +276,24 @@ function resolveAgnesVideoRequest(params: VideoGenerateParams) {
     );
   }
 
+  const inputImages = params.inputImages ?? [];
+  const hasInputImages = inputImages.length > 0;
   const aspectRatio = resolveAgnesAspectRatio(params.aspectRatio);
-  const resolution = resolveAgnesResolution(
-    params.resolution as VideoGenerateParams["resolution"] | "4k" | undefined,
-  );
-  const { width, height } = getVideoDimensions(resolution, aspectRatio);
   const frameRate = resolveAgnesFrameRate(params.frameRate);
-  const durationSeconds = params.duration ?? 5;
+  const durationSeconds = hasInputImages
+    ? resolveAgnesImageDuration(resolveAgnesDuration(params.duration))
+    : resolveAgnesDuration(params.duration);
   const numFrames = resolveAgnesNumFrames(
     durationSeconds,
     frameRate,
     params.numFrames,
   );
-  const inputImages = params.inputImages ?? [];
+  const resolution = resolveAgnesResolution(
+    params.resolution as VideoGenerateParams["resolution"] | "4k" | undefined,
+    hasInputImages,
+    numFrames,
+  );
+  const { width, height } = getVideoDimensions(resolution, aspectRatio);
   const mode = resolveAgnesVideoMode(params);
   resolveAgnesVideoModel(params.model);
 
@@ -257,12 +315,18 @@ export class AgnesVideoProvider implements VideoProvider {
   private apiKey: string;
   private baseUrl: string;
 
-  constructor(apiKey: string, baseUrl?: string) {
+  constructor(
+    apiKey: string,
+    baseUrl?: string,
+    options: AgnesMediaOptions = {},
+  ) {
     this.apiKey = apiKey;
     this.baseUrl = (baseUrl ?? DEFAULT_AGNES_BASE_URL).replace(/\/$/, "");
+    const mediaOptions = resolveAgnesMediaOptions(options);
     this.client = createAgnesClient({
       apiKey,
       ...(baseUrl ? { baseUrl } : {}),
+      ...mediaOptions,
     });
   }
 
@@ -271,9 +335,9 @@ export class AgnesVideoProvider implements VideoProvider {
     const metadata = getAgnesRemoteTaskMetadata(params);
 
     try {
-      const task =
+      const task = await this.createTaskWithRetry(() =>
         request.mode === "text2video"
-          ? await this.client.video.generate({
+          ? this.client.video.generate({
               mode: request.mode,
               prompt: params.prompt,
               width: request.width,
@@ -286,9 +350,9 @@ export class AgnesVideoProvider implements VideoProvider {
                 : {}),
             })
           : request.mode === "img2video"
-            ? await this.client.video.generate({
+            ? this.client.video.generate({
                 mode: request.mode,
-                image: request.inputImages[0]!,
+                image: getFirstAgnesInputImage(request.inputImages),
                 prompt: params.prompt,
                 width: request.width,
                 height: request.height,
@@ -300,7 +364,7 @@ export class AgnesVideoProvider implements VideoProvider {
                   ? { negativePrompt: params.negativePrompt }
                   : {}),
               })
-            : await this.client.video.generate({
+            : this.client.video.generate({
                 mode: request.mode,
                 images: request.inputImages,
                 prompt: params.prompt,
@@ -313,16 +377,26 @@ export class AgnesVideoProvider implements VideoProvider {
                 ...(params.negativePrompt
                   ? { negativePrompt: params.negativePrompt }
                   : {}),
-              });
+              }),
+      );
+
+      const taskWithVideoId = task as typeof task & { videoId?: string };
 
       await metadata.onRemoteTaskCreated?.({
         provider: this.name,
         taskId: task.taskId,
+        ...(taskWithVideoId.videoId
+          ? { videoId: taskWithVideoId.videoId }
+          : {}),
         ...(typeof task.status === "string" ? { status: task.status } : {}),
         raw: task.raw,
       });
 
-      return await this.pollTask(task.taskId, request, metadata);
+      return await this.pollTask(
+        taskWithVideoId.videoId ?? task.taskId,
+        request,
+        metadata,
+      );
     } catch (error) {
       if (error instanceof GenerationError) throw error;
       if (isAgnesPollTimeoutError(error)) {
@@ -365,25 +439,76 @@ export class AgnesVideoProvider implements VideoProvider {
     }
   }
 
+  private async createTaskWithRetry(
+    createTask: () => ReturnType<typeof this.client.video.generate>,
+  ) {
+    for (
+      let attempt = 1;
+      attempt <= AGNES_VIDEO_CREATE_MAX_ATTEMPTS;
+      attempt += 1
+    ) {
+      try {
+        return await withTimeout(
+          createTask(),
+          AGNES_VIDEO_CREATE_TIMEOUT_MS,
+          () =>
+            new GenerationError(
+              this.name,
+              "timeout",
+              `Agnes video task creation timed out after ${AGNES_VIDEO_CREATE_TIMEOUT_MS}ms.`,
+            ),
+        );
+      } catch (error) {
+        if (
+          !(
+            error instanceof GenerationError &&
+            error.code === "timeout" &&
+            attempt < AGNES_VIDEO_CREATE_MAX_ATTEMPTS
+          )
+        ) {
+          throw error;
+        }
+      }
+    }
+    throw new GenerationError(
+      this.name,
+      "timeout",
+      `Agnes video task creation timed out after ${AGNES_VIDEO_CREATE_TIMEOUT_MS}ms.`,
+    );
+  }
+
   private async pollTask(
-    taskId: string,
+    initialPollId: string,
     request: ReturnType<typeof resolveAgnesVideoRequest>,
     metadata: AgnesRemoteTaskMetadata,
   ): Promise<GeneratedVideo> {
     const startedAt = Date.now();
+    let pollId = initialPollId;
 
     for (;;) {
-      const task = await this.fetchVideoTask(taskId);
+      const task = await this.fetchVideoTask(pollId);
       const status = normalizeAgnesVideoStatus(task.status);
+      const videoId = extractAgnesVideoId(task, pollId);
+      const remoteTaskId =
+        videoId ?? extractAgnesTaskId(task, pollId) ?? pollId;
       await metadata.onRemoteTaskStatus?.({
         provider: this.name,
-        taskId,
+        taskId: remoteTaskId,
+        ...(videoId ? { videoId } : {}),
         ...(status ? { status } : {}),
         raw: task.raw ?? task,
       });
 
+      if (status === "failed" || status === "canceled") {
+        throw new GenerationError(
+          this.name,
+          status === "canceled" ? "canceled" : "api_error",
+          getAgnesTaskErrorMessage(task.error, status),
+        );
+      }
+
       if (status === "completed" || task.completed_at) {
-        const videoUrl = task.video_url ?? task.videoUrl ?? task.url;
+        const videoUrl = extractAgnesVideoUrl(task);
         if (!videoUrl) {
           throw new GenerationError(
             this.name,
@@ -403,22 +528,15 @@ export class AgnesVideoProvider implements VideoProvider {
         };
       }
 
-      if (status === "failed" || status === "canceled") {
-        throw new GenerationError(
-          this.name,
-          status === "canceled" ? "canceled" : "api_error",
-          getAgnesTaskErrorMessage(task.error, status),
-        );
+      if (videoId) {
+        pollId = videoId;
       }
 
-      if (
-        Date.now() - startedAt >=
-        AGNES_VIDEO_POLL_TIMEOUT_SECONDS * 1_000
-      ) {
+      if (Date.now() - startedAt >= AGNES_VIDEO_POLL_TIMEOUT_SECONDS * 1_000) {
         throw new GenerationError(
           this.name,
           "poll_timeout",
-          `Agnes video task ${taskId} did not finish within ${AGNES_VIDEO_POLL_TIMEOUT_SECONDS} seconds.`,
+          `Agnes video task ${pollId} did not finish within ${AGNES_VIDEO_POLL_TIMEOUT_SECONDS} seconds.`,
         );
       }
 
@@ -426,16 +544,16 @@ export class AgnesVideoProvider implements VideoProvider {
     }
   }
 
-  private async fetchVideoTask(taskId: string): Promise<AgnesVideoTaskResponse> {
-    const response = await fetch(
-      `${this.baseUrl}/videos/${encodeURIComponent(taskId)}`,
-      {
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
+  private async fetchVideoTask(
+    pollId: string,
+  ): Promise<AgnesVideoTaskResponse> {
+    const response = await fetch(buildAgnesVideoPollUrl(this.baseUrl, pollId), {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
       },
-    );
+      signal: AbortSignal.timeout(AGNES_VIDEO_POLL_REQUEST_TIMEOUT_MS),
+    });
     const text = await response.text();
     const body = parseAgnesJson(text);
     if (!response.ok) {
@@ -454,6 +572,54 @@ export class AgnesVideoProvider implements VideoProvider {
       ? (body as AgnesVideoTaskResponse)
       : { raw: body };
   }
+}
+
+function buildAgnesVideoPollUrl(baseUrl: string, pollId: string): string {
+  if (pollId.startsWith("task_")) {
+    return `${baseUrl}/videos/${encodeURIComponent(pollId)}`;
+  }
+  const url = new URL("/agnesapi", new URL(baseUrl));
+  url.searchParams.set("video_id", pollId);
+  return url.toString();
+}
+
+function extractAgnesVideoId(
+  task: AgnesVideoTaskResponse,
+  fallbackId: string,
+): string | undefined {
+  if (typeof task.video_id === "string") return task.video_id;
+  if (typeof task.videoId === "string") return task.videoId;
+  if (typeof task.id === "string" && task.id.startsWith("video_")) {
+    return task.id;
+  }
+  return fallbackId.startsWith("video_") ? fallbackId : undefined;
+}
+
+function extractAgnesTaskId(
+  task: AgnesVideoTaskResponse,
+  fallbackId: string,
+): string | undefined {
+  if (typeof task.task_id === "string") return task.task_id;
+  if (typeof task.taskId === "string") return task.taskId;
+  if (typeof task.id === "string" && task.id.startsWith("task_")) {
+    return task.id;
+  }
+  return fallbackId.startsWith("task_") ? fallbackId : undefined;
+}
+
+function extractAgnesVideoUrl(
+  task: AgnesVideoTaskResponse,
+): string | undefined {
+  const candidates = [
+    task.video_url,
+    task.videoUrl,
+    task.url,
+    task.remixed_from_video_id,
+  ];
+  return candidates.find(
+    (candidate) =>
+      typeof candidate === "string" && /^https?:\/\//.test(candidate),
+  );
 }
 
 function normalizeAgnesVideoStatus(status: string | undefined) {

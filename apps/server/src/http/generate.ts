@@ -16,6 +16,10 @@ import type { UploadService } from "../features/uploads/upload-service.js";
 import { getDefaultImageModelId } from "../generation/default-models.js";
 import { loadGeneratedAsset } from "../generation/generated-asset.js";
 import { generateImage } from "../generation/image-generation.js";
+import {
+  validateImageGenerationParams,
+  validateVideoGenerationParams,
+} from "../generation/model-schemas.js";
 import { resolveImageProviderName } from "../generation/providers/registry.js";
 import { GenerationError } from "../generation/utils.js";
 
@@ -24,7 +28,7 @@ const generateImageRequestSchema = z.object({
   model: z.string().optional(),
   aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
-  inputImages: z.array(z.string()).max(4).optional(),
+  inputImages: z.array(z.string()).max(14).optional(),
   size: z
     .string()
     .regex(/^\d+x\d+$/)
@@ -37,11 +41,11 @@ const generateVideoRequestSchema = z.object({
   prompt: z.string().min(1),
   model: z.string().optional(),
   duration: z.number().int().min(3).max(16).optional(),
-  resolution: z.enum(["720p", "1080p", "4k"]).optional(),
-  aspectRatio: z.enum(["16:9", "9:16"]).optional(),
-  inputImages: z.array(z.string()).max(3).optional(),
+  resolution: z.enum(["480p", "720p", "1080p", "4k", "2160p"]).optional(),
+  aspectRatio: z.enum(["16:9", "9:16", "1:1", "4:3", "3:4"]).optional(),
+  inputImages: z.array(z.string()).max(14).optional(),
   inputVideo: z.string().optional(),
-  videoMode: z.enum(["multivideo", "keyframes"]).optional(),
+  videoMode: z.enum(["multivideo", "keyframes", "reference"]).optional(),
   seed: z.number().int().optional(),
   negativePrompt: z.string().min(1).optional(),
   frameRate: z.number().int().positive().max(60).optional(),
@@ -91,7 +95,7 @@ export async function registerGenerateRoutes(
       refreshGenerationProviders(effectiveEnv);
       const model = payload.model ?? getDefaultImageModelId();
       const providerName = resolveImageProviderName(model);
-      const generated = await generateImage(providerName, {
+      const imageParams = validateImageGenerationParams({
         prompt: payload.prompt,
         model,
         ...(payload.aspectRatio ? { aspectRatio: payload.aspectRatio } : {}),
@@ -102,6 +106,7 @@ export async function registerGenerateRoutes(
           ? { inputImages: payload.inputImages }
           : {}),
       });
+      const generated = await generateImage(providerName, imageParams);
 
       const { buffer, mimeType } = await loadGeneratedAsset(
         generated.url,
@@ -148,6 +153,36 @@ export async function registerGenerateRoutes(
 
     const model = payload.model ?? "google-official/veo-3.1-generate-preview";
     try {
+      const effectiveEnv = options.settingsService
+        ? await options.settingsService.getEffectiveServerEnv(
+            LOCAL_WORKSPACE_ID,
+          )
+        : options.env;
+      applyEffectiveProviderEnv(effectiveEnv);
+      refreshGenerationProviders(effectiveEnv);
+      validateVideoGenerationParams({
+        prompt: payload.prompt,
+        model,
+        ...(payload.duration ? { duration: payload.duration } : {}),
+        ...(payload.resolution ? { resolution: payload.resolution } : {}),
+        ...(payload.aspectRatio ? { aspectRatio: payload.aspectRatio } : {}),
+        ...(payload.inputImages ? { inputImages: payload.inputImages } : {}),
+        ...(payload.inputVideo ? { inputVideo: payload.inputVideo } : {}),
+        ...(payload.videoMode ? { videoMode: payload.videoMode } : {}),
+        ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
+        ...(payload.negativePrompt
+          ? { negativePrompt: payload.negativePrompt }
+          : {}),
+        ...(payload.frameRate !== undefined
+          ? { frameRate: payload.frameRate }
+          : {}),
+        ...(payload.numFrames !== undefined
+          ? { numFrames: payload.numFrames }
+          : {}),
+        ...(payload.enableAudio !== undefined
+          ? { enableAudio: payload.enableAudio }
+          : {}),
+      });
       const job = await options.jobService.createJob(options.localUser, {
         workspaceId: LOCAL_WORKSPACE_ID,
         ...(payload.projectId ? { projectId: payload.projectId } : {}),
@@ -206,6 +241,9 @@ export async function registerGenerateRoutes(
         width: result.width,
         height: result.height,
         durationSeconds: result.duration_seconds,
+        model: result.model,
+        aspectRatio: result.aspect_ratio,
+        resolution: result.resolution,
       });
     } catch (error) {
       return sendGenerationError(reply, error);

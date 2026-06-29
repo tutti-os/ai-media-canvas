@@ -39,24 +39,23 @@ type AppTranslation = {
   t: (key: string, options?: TranslationOptions) => string;
 };
 type ResourceTree = Record<string, unknown>;
-type NextopAppContextValue = {
+type TuttiExternalContextValue = {
   locale?: unknown;
   language?: unknown;
 };
-type NextopAppContext = NextopAppContextValue & {
-  get?: () =>
-    | Promise<NextopAppContextValue | null>
-    | NextopAppContextValue
+type TuttiExternalApp = {
+  getContext?: () =>
+    | Promise<TuttiExternalContextValue | null>
+    | TuttiExternalContextValue
     | null;
   subscribe?: (
-    listener: (context: NextopAppContextValue | null) => void,
+    listener: (context: TuttiExternalContextValue | null) => void,
   ) => (() => void) | undefined;
 };
-type NextopWindow = Window & {
-  nextop?: {
-    appContext?: NextopAppContext;
+type TuttiWindow = Window & {
+  tuttiExternal?: {
+    app?: TuttiExternalApp;
   };
-  nextopAppContext?: NextopAppContext;
 };
 
 const useUntypedTranslation = useTranslation as unknown as (
@@ -142,30 +141,26 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     if (typeof window === "undefined") return undefined;
 
     let isCurrent = true;
-    const appContext = getHostAppContext();
+    const externalApp = getHostExternalApp();
 
-    function applyHostLocale(context: NextopAppContextValue | null) {
+    function applyHostLocale(context: TuttiExternalContextValue | null) {
       const locale = readHostLocale(context);
       if (locale && isCurrent && i18n.language !== locale) {
         void i18n.changeLanguage(locale);
       }
     }
 
-    if (!appContext) {
+    if (typeof externalApp?.getContext !== "function") {
       return undefined;
     }
 
-    if (typeof appContext.get === "function") {
-      void Promise.resolve(appContext.get())
-        .then(applyHostLocale)
-        .catch(() => undefined);
-    } else {
-      applyHostLocale(appContext);
-    }
+    void Promise.resolve(externalApp.getContext())
+      .then(applyHostLocale)
+      .catch(() => undefined);
 
     const unsubscribe =
-      typeof appContext.subscribe === "function"
-        ? appContext.subscribe(applyHostLocale)
+      typeof externalApp.subscribe === "function"
+        ? externalApp.subscribe(applyHostLocale)
         : undefined;
 
     return () => {
@@ -285,12 +280,12 @@ function getNestedValue(tree: ResourceTree, keyPath: string) {
   }, tree);
 }
 
-function getHostAppContext() {
-  const hostWindow = window as NextopWindow;
-  return hostWindow.nextop?.appContext || hostWindow.nextopAppContext || null;
+function getHostExternalApp() {
+  const hostWindow = window as TuttiWindow;
+  return hostWindow.tuttiExternal?.app ?? null;
 }
 
-function readHostLocale(context: NextopAppContextValue | null | undefined) {
+function readHostLocale(context: TuttiExternalContextValue | null | undefined) {
   if (typeof context?.locale === "string" && context.locale.trim()) {
     return normalizeLocale(context.locale);
   }

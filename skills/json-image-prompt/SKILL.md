@@ -27,46 +27,46 @@ Always structure the prompt as a JSON object with these fields:
 ```json
 {
   "subject": {
-    "type": "描述主体是什么（人物/物体/场景）",
-    "details": "关键特征、姿态、表情、材质",
-    "framing": "构图方式（全身/半身/特写/鸟瞰）"
+    "type": "what the subject is (person/object/scene)",
+    "details": "key traits, pose, expression, material",
+    "framing": "composition/framing (full body, bust, close-up, overhead)"
   },
   "environment": {
-    "setting": "场景描述",
-    "time": "时间/时段",
-    "weather": "天气/氛围条件"
+    "setting": "scene description",
+    "time": "time of day or period",
+    "weather": "weather or atmosphere"
   },
   "style": {
-    "genre": "视觉风格（photorealistic/illustration/anime/oil-painting/3d-render/watercolor/flat-design）",
-    "reference": "参考美学（如 Studio Ghibli / Swiss design / Brutalist / Art Deco）",
-    "color_palette": "色彩倾向（warm/cool/monochrome/muted/vibrant + 具体色号如有）"
+    "genre": "visual style (photorealistic/illustration/anime/oil-painting/3d-render/watercolor/flat-design)",
+    "reference": "aesthetic reference (e.g. Studio Ghibli / Swiss design / Brutalist / Art Deco)",
+    "color_palette": "color direction (warm/cool/monochrome/muted/vibrant + specific hex colors if available)"
   },
   "lighting": {
-    "type": "光源类型（natural/studio/neon/ambient/volumetric）",
-    "direction": "光线方向（front/back/side/top/rim）",
-    "quality": "光线质感（soft/harsh/diffused/dramatic/golden-hour）"
+    "type": "light source type (natural/studio/neon/ambient/volumetric)",
+    "direction": "light direction (front/back/side/top/rim)",
+    "quality": "light quality (soft/harsh/diffused/dramatic/golden-hour)"
   },
   "camera": {
-    "angle": "拍摄角度（eye-level/low-angle/high-angle/dutch-angle/overhead）",
-    "lens": "镜头（wide-angle/telephoto/macro/fisheye/tilt-shift）",
-    "depth_of_field": "景深（shallow/deep/selective）"
+    "angle": "camera angle (eye-level/low-angle/high-angle/dutch-angle/overhead)",
+    "lens": "lens (wide-angle/telephoto/macro/fisheye/tilt-shift)",
+    "depth_of_field": "depth of field (shallow/deep/selective)"
   },
-  "mood": "情绪基调（1-3个关键词）",
-  "negative": "需要避免的元素（可选）"
+  "mood": "mood direction (1-3 keywords)",
+  "negative": "elements to avoid (optional)"
 }
 ```
 
-## 使用流程
+## Workflow
 
-### Step 1: 分析用户意图
+### Step 1: Analyze User Intent
 
-用户说"帮我生成一张科技感的产品图"时，不要直接写一句话 prompt。先分解：
-- 主体：产品（什么产品？什么角度？）
-- 风格：科技感 → minimalist, clean, futuristic
-- 灯光：科技感通常是 studio, rim lighting
-- 情绪：professional, modern, premium
+When the user says "Generate a futuristic product image", do not jump straight to a one-sentence prompt. Decompose it first:
+- Subject: product (what product? what angle?)
+- Style: futuristic -> minimalist, clean, futuristic
+- Lighting: futuristic usually means studio and rim lighting
+- Mood: professional, modern, premium
 
-### Step 2: 构建 JSON Prompt
+### Step 2: Build The JSON Prompt
 
 ```json
 {
@@ -100,19 +100,19 @@ Always structure the prompt as a JSON object with these fields:
 }
 ```
 
-### Step 3: 转换为 Prompt 字符串
+### Step 3: Convert To A Prompt String
 
-将 JSON 扁平化为一段结构化的 prompt 文本传给 `generate_image`：
+Flatten the JSON into a structured prompt string and pass it to `generate_image`:
 
 ```
 Product photography of wireless earbuds, matte black finish, floating in air with slight rotation showing both sides. Centered product shot. Pure dark gradient background. Photorealistic product photography, Apple product page aesthetic. Dark palette with selective blue and white accents. Studio rim lighting from behind with subtle fill from front, dramatic high contrast. Eye-level macro shot at 100mm, shallow depth of field with product in sharp focus. Premium, futuristic, minimal mood. --no text, watermark, human hands, cluttered background
 ```
 
-**规则：JSON → prompt 转换时，按重要性排序：subject > style > lighting > camera > environment > mood > negative**
+**Rule: when converting JSON to prompt text, order by importance: subject > style > lighting > camera > environment > mood > negative.**
 
-## 场景模板
+## Scene Templates
 
-### 人像摄影
+### Portrait Photography
 
 ```json
 {
@@ -138,7 +138,7 @@ Product photography of wireless earbuds, matte black finish, floating in air wit
 }
 ```
 
-### 概念插画
+### Concept Illustration
 
 ```json
 {
@@ -160,7 +160,7 @@ Product photography of wireless earbuds, matte black finish, floating in air wit
 }
 ```
 
-### 品牌/营销视觉
+### Brand / Marketing Visual
 
 ```json
 {
@@ -182,12 +182,12 @@ Product photography of wireless earbuds, matte black finish, floating in air wit
 }
 ```
 
-## 重要原则
+## Important Principles
 
-1. **每次生成图片前，先在内心构建 JSON 结构**，即使不输出给用户看
-2. **Subject 永远最重要** — 如果描述不清楚主体，其他参数再好也没用
-3. **少即是多** — 每个字段用精准的 2-5 个词，不要写散文
-4. **negative 字段很关键** — 明确排除不想要的元素（文字、水印、变形等）
-5. **迭代优化** — 如果第一次结果不理想，只调整 1-2 个字段重试，不要全部重写
-6. **色彩要具体** — "warm tones" 不如 "golden amber (#D4A574) with deep burgundy (#722F37) accents"
-7. **有品牌套件时** — 用 `get_brand_kit` 获取品牌色和字体，注入到 style.color_palette 和 subject.details
+1. **Before every image generation, build the JSON structure internally**, even if you do not show it to the user.
+2. **Subject is always most important**. If the subject is unclear, other parameters cannot rescue the result.
+3. **Less is more**. Use precise 2-5 word values for each field; do not write prose.
+4. **The negative field matters**. Explicitly exclude unwanted elements such as text, watermarks, or distortions.
+5. **Iterate surgically**. If the first result is not good, adjust only 1-2 fields instead of rewriting everything.
+6. **Be specific with color**. "golden amber (#D4A574) with deep burgundy (#722F37) accents" is better than "warm tones".
+7. **When a Brand Kit exists**, use `get_brand_kit` to fetch brand colors and fonts, then inject them into style.color_palette and subject.details.

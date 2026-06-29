@@ -27,6 +27,7 @@ export default interface Resources {
         "canvasAndShapeProperties": "画布和形状属性",
         "copyImage": "复制图片",
         "copyLinkToObject": "复制对象链接",
+        "copyNode": "复制节点",
         "cropImage": "裁剪图片",
         "duplicate": "复制节点",
         "paste": "粘贴",
@@ -42,6 +43,7 @@ export default interface Resources {
     "files": {
       "download": "下载 {{name}}",
       "downloadFailed": "下载失败",
+      "downloadStarted": "已开始下载",
       "downloadSuccess": "下载成功",
       "empty": "暂无生成文件",
       "end": "到底了",
@@ -74,6 +76,7 @@ export default interface Resources {
       "arrow": "箭头 (A)",
       "ellipse": "椭圆 (O)",
       "freedraw": "画笔 (P)",
+      "generateCanceled": "生成已取消",
       "generateFailed": "生成失败",
       "generateImage": "AI 生成图片",
       "generateVideo": "AI 生成视频",
@@ -84,15 +87,77 @@ export default interface Resources {
         "close": "关闭图片生成面板",
         "deleteCard": "删除图片生成器卡片",
         "generate": "生成",
-        "placeholder": "描述你想创建的图片...",
-        "title": "AI 图片"
+        "generateImage": "生成图片",
+        "generationFailed": "图片生成失败，请重试或更换模型。",
+        "noAvailableModels": "未配置可用生图模型，请先在设置中配置 Replicate、Agnes 或 Volces provider。",
+        "noModel": "未配置模型",
+        "placeholder": "今天我们要创作什么",
+        "referenceImage": "参考图",
+        "referenceImagePreview": "参考图预览",
+        "referenceUploadFailed": "参考图上传失败，请重新选择。",
+        "removeReferenceImage": "移除参考图",
+        "serviceUnavailable": "生图服务不可用，请确认本地 3001 服务已启动。",
+        "title": "AI 图片",
+        "uploadReferenceImage": "上传参考图",
+        "uploadingReference": "上传中"
       },
       "line": "直线 (L)",
       "rectangle": "矩形 (R)",
+      "schema": {
+        "fields": {
+          "aspectRatio": "比例",
+          "duration": "时长",
+          "enableAudio": "音频",
+          "inputImages": "输入图片",
+          "quality": "质量",
+          "referenceImages": "参考图",
+          "resolution": "分辨率"
+        },
+        "inputModes": {
+          "image": "首帧",
+          "keyframes": "首尾帧",
+          "multivideo": "多图",
+          "reference": "参考图/视频",
+          "text": "文本",
+          "video": "视频"
+        }
+      },
       "selection": "选择 (V)",
       "text": "文字 (T)",
       "videoPanel": {
-        "deleteCard": "删除视频生成器卡片"
+        "aspectRatio": "比例",
+        "autoSize": "Auto",
+        "captions": "字幕",
+        "closeInfo": "关闭视频信息",
+        "closePlayer": "关闭视频播放器",
+        "deleteCard": "删除视频生成器卡片",
+        "duration": "时长",
+        "firstFrame": "首帧",
+        "firstFramePreview": "首帧预览",
+        "firstFrameUploading": "首帧上传中",
+        "generate": "生成视频",
+        "generationFailed": "视频生成失败，请重试或更换模型。",
+        "imageUploadFailed": "图片上传失败，请重新选择。",
+        "infoTitle": "视频生成器",
+        "lastFrame": "尾帧",
+        "lastFramePreview": "尾帧预览",
+        "lastFrameUploading": "尾帧上传中",
+        "model": "基础模型",
+        "openInfo": "查看视频信息",
+        "openPlayer": "打开视频播放器",
+        "placeholder": "描述你想要的视频镜头、动作、节奏与画面氛围",
+        "playerTitle": "播放视频",
+        "prompt": "提示词",
+        "referenceImage": "参考图",
+        "referenceImagePreview": "参考图预览",
+        "referenceImageUploading": "参考图上传中",
+        "removeFrame": "移除图片",
+        "resolution": "分辨率",
+        "size": "尺寸",
+        "uploadFirstFrame": "上传首帧",
+        "uploadLastFrame": "上传尾帧",
+        "uploadReferenceImage": "上传参考图",
+        "uploadingFrame": "上传中"
       }
     }
   },
@@ -105,39 +170,78 @@ export default interface Resources {
     "agentModelSelector": {
       "apiProvider": "API provider",
       "assistantMode": "助手模式",
-      "connectNextopManaged": "去设置连接",
+      "connectTuttiManaged": "去设置连接",
       "customModelId": "自定义模型 ID",
       "localAgent": "本地 Agent",
       "localAssistant": "本地助手",
-      "nextopManaged": "Nextop Managed",
       "noApiProviderModels": "未配置 API provider 模型。",
       "noLocalCliModels": "未检测到本地 CLI 模型。",
-      "noNextopManagedModels": "未连接 Nextop Managed 模型。",
+      "noTuttiManagedModels": "未连接 Tutti Managed 模型。",
       "openSettings": "打开 Agent 设置",
       "settings": "设置",
       "tooltip": "选择 Agent 模型",
+      "tuttiManaged": "Tutti Managed",
       "useCustomModel": "使用自定义模型",
       "usesConfiguredDefaultRoute": "使用你配置的默认路由",
       "usesDefaultModel": "使用默认模型：{{model}}"
     },
     "assistant": {
-      "title": "AI Media Canvas 助手"
+      "title": "AI Canvas 助手"
     },
+    "capabilityRequired": {
+      "configureMedia": "去连接",
+      "continueAfterSave": "媒体模型已保存，发送“继续”即可重试刚才的生成。",
+      "continueDraft": "继续",
+      "imageDescription": "连接后，我会继续按你的描述生成图片。",
+      "imageTitle": "先连接图片生成能力",
+      "videoDescription": "连接后，我会继续按你的描述生成视频。",
+      "videoTitle": "先连接视频生成能力"
+    },
+    "connectionReconnecting": "连接已断开，正在重连...",
     "conversation": "对话",
     "input": {
       "ariaLabel": "输入消息",
       "attachImages": "添加图片",
+      "cancel": "取消生成",
+      "mentionEmpty": "无匹配项",
+      "mentionLoading": "正在搜索...",
+      "mentionRemove": "移除引用",
       "modelPreference": "图片/视频模型",
-      "placeholder": "从一个想法开始，或输入 “@” 提及内容",
+      "placeholder": "从一个想法开始",
       "send": "发送消息"
+    },
+    "lightbox": {
+      "close": "关闭 (Esc)",
+      "copyImage": "复制图片",
+      "copyImageFailed": "图片复制失败",
+      "copyImageSuccess": "图片已复制",
+      "downloadFailed": "图片下载失败",
+      "downloadImage": "下载图片",
+      "flipHorizontal": "左右翻转",
+      "flipVertical": "上下翻转",
+      "imageFailedToLoad": "图片加载失败",
+      "rotateClockwise": "顺时针旋转 (R)",
+      "rotateCounterClockwise": "逆时针旋转",
+      "viewerLabel": "图片查看器",
+      "zoomIn": "放大 (+)",
+      "zoomOut": "缩小 (-)"
+    },
+    "media": {
+      "generationCanceled": "已取消",
+      "imageGenerating": "图片生成中...",
+      "imageGenerationCanceled": "图片生成已取消",
+      "imageGenerationFailed": "图片生成失败",
+      "videoGenerating": "视频生成中...",
+      "videoGenerationCanceled": "视频生成已取消",
+      "videoGenerationFailed": "视频生成失败"
     },
     "mediaModelPreference": {
       "configure": "配置媒体模型",
       "description": {
-        "autoImage": "AI Media Canvas 会使用内置本地渲染器处理图片任务。",
-        "autoVideo": "AI Media Canvas 会使用本地视频规划预设处理分镜和动态任务。",
-        "manualImage": "AI Media Canvas 仍使用本地渲染器，并优先使用你固定的预设。",
-        "manualVideo": "AI Media Canvas 会使用你选择的本地视频规划预设。"
+        "autoImage": "AI Canvas 会使用内置本地渲染器处理图片任务。",
+        "autoVideo": "AI Canvas 会使用本地视频规划预设处理分镜和动态任务。",
+        "manualImage": "AI Canvas 仍使用本地渲染器，并优先使用你固定的预设。",
+        "manualVideo": "AI Canvas 会使用你选择的本地视频规划预设。"
       },
       "empty": {
         "image": "未配置可用的图片模型",
@@ -157,9 +261,7 @@ export default interface Resources {
         "video": "视频规划器"
       }
     },
-    "mentions": {
-      "remove": "移除提及"
-    },
+    "previewModelUnstable": "当前 Preview 模型请求不稳定，建议切换模型后重试",
     "reconnecting": "连接已断开，正在重连...",
     "selection": {
       "image": "张图片",
@@ -208,7 +310,9 @@ export default interface Resources {
       },
       "title": "试试这些本地创作模板"
     },
-    "thinking": "思考中"
+    "thinking": "思考中",
+    "thinkingCollapsed": "已思考片刻",
+    "thinkingToggle": "展开或收起思考内容"
   },
   "common": {
     "actions": {
@@ -227,7 +331,7 @@ export default interface Resources {
       "search": "搜索",
       "upload": "上传"
     },
-    "productName": "AI Media Canvas"
+    "productName": "AI Canvas"
   },
   "errors": {
     "canvas": {
@@ -301,6 +405,7 @@ export default interface Resources {
         "storyboard-video": "影片与分镜",
         "ui-design": "UI设计"
       },
+      "sendToPrompt": "做同款",
       "title": "灵感发现"
     },
     "examples": {
@@ -342,7 +447,7 @@ export default interface Resources {
           "title": "绘制梦幻海边故事"
         },
         "storyboard-comic-sequence": {
-          "prompt": "请把一个动作创意拆成漫画式连续分镜，保持统一角色动作关系，并且适合后续转成短视频 animatic。",
+          "prompt": "请把原创角色在雨夜屋顶追逐并跃过霓虹招牌的动作场景拆成漫画式连续分镜，保持统一角色动作关系，并且适合后续转成短视频 animatic。",
           "title": "创建漫画式连续分镜"
         },
         "storyboard-music-teaser": {
@@ -374,7 +479,7 @@ export default interface Resources {
           "title": "把自拍变成杂志封面"
         },
         "visual-superhero-comic": {
-          "prompt": "请把这个创意拆成复古超级英雄漫画页面，包含 4 到 6 格分镜、对白气泡、旁白框和统一人物动作，整体要有 70 年代漫画纸感。",
+          "prompt": "请设计一页复古超级英雄漫画：原创城市英雄在夜晚街区救援，包含 4 到 6 格分镜、对白气泡、旁白框、动作线和统一人物动作，整体要有 70 年代漫画纸感。",
           "title": "制作经典超级英雄漫画"
         }
       },
@@ -392,15 +497,17 @@ export default interface Resources {
       "title": "让创意设计更简单"
     },
     "prompt": {
+      "ariaLabel": "提示词输入",
       "attachImages": "添加图片",
       "clear": "清除",
       "modelPreference": "图片/视频模型",
-      "placeholder": "让 AI Media Canvas 帮你设计...",
+      "placeholder": "让 AI Canvas 帮你设计...",
       "submit": "提交 prompt"
     },
     "recentProjects": {
       "archive": "归档 {{name}}",
       "newProject": "新建项目",
+      "previewCover": "预览 {{name}} 的封面",
       "title": "最近项目",
       "untitled": "未命名",
       "updatedAt": "更新于 {{date}}",
@@ -439,6 +546,7 @@ export default interface Resources {
       "title": "新建项目"
     },
     "loadFailed": "本地项目加载失败，请重试。",
+    "previewCover": "预览 {{name}} 的封面",
     "title": "项目",
     "untitled": "未命名",
     "updatedAt": "更新于 {{date}}"
@@ -458,6 +566,7 @@ export default interface Resources {
         "defaultLlmModel": "默认 LLM 模型",
         "defaultModelDescription": "从下方已配置的模型列表中选择工作区默认模型。",
         "defaultModelTitle": "默认模型",
+        "getApiKey": "获取 {{provider}} API Key",
         "importDetected": "导入已检测模型",
         "noApiProviderModelSelected": "未选择 API provider 模型",
         "noModelsYet": "暂无模型",
@@ -473,7 +582,6 @@ export default interface Resources {
         "workspaceModelsDescription": "从各 provider 下已配置的模型列表中选择。"
       },
       "feedback": {
-        "installFailed": "无法安装本地 Agent provider。",
         "updateFailed": "本地 Agent 设置更新失败，请重试。",
         "updated": "本地 Agent 设置已更新。"
       },
@@ -483,47 +591,51 @@ export default interface Resources {
         "customOption": "自定义（在下方输入）...",
         "description": "选择生成任务要使用的 CLI 路由。",
         "detectedCli": "已检测 CLI",
-        "empty": "暂未检测到本地 CLI 模型。安装或登录支持的本地 CLI 后重新扫描。",
+        "empty": "暂未检测到本地 CLI 模型。请在 Tutti 中管理支持的智能体，然后重新扫描。",
+        "feedback": {
+          "managerOpened": "已打开 Tutti 管理智能体。完成安装或登录后请重新扫描。",
+          "openManagerFailed": "请在 Tutti 中打开 AI Canvas 后管理本地 Agent。"
+        },
         "fetchedDescription": "当 CLI 暴露模型列表时会自动获取。自定义模式允许输入该 CLI 支持的任意模型 ID。",
-        "installHint": "安装 Codex 或 Claude Code 后重新扫描，即可启用本地 Agent 路由。",
-        "installRequired": "需要安装",
-        "installing": "安装中...",
+        "manageInTutti": "在 Tutti 中管理",
         "modelCountOne": "{{modelCount}} 个模型",
         "modelCountOther": "{{modelCount}} 个模型",
         "modelLabel": "模型",
         "noCliSelected": "未选择 CLI",
+        "openingManager": "打开中...",
         "rescan": "重新扫描",
         "selectCliFirst": "请先选择 CLI...",
-        "selectModel": "选择模型..."
-      },
-      "nextopManaged": {
-        "bridgeUnavailable": "请在 Nextop 中打开 AI Media Canvas 后授权托管模型。",
-        "chooseModel": "请在下方选择 Nextop Managed 模型。",
-        "connect": "连接",
-        "connectFirst": "连接 Nextop Managed 后导入可用模型。",
-        "connected": "已连接",
-        "defaultModel": "默认模型",
-        "description": "使用由 Nextop 托管的模型凭证，不在当前应用中保存 provider key。",
-        "disconnect": "断开",
-        "emptyModels": "暂无可用的 Nextop Managed 模型。请在 Nextop 设置中配置 provider。",
-        "feedback": {
-          "connectFailed": "无法连接 Nextop Managed 模型。",
-          "connected": "Nextop Managed 模型已连接。",
-          "disconnectFailed": "无法断开 Nextop Managed 模型。",
-          "disconnected": "Nextop Managed 模型已断开。",
-          "openSettingsFailed": "无法打开 Nextop 设置。"
-        },
-        "manageInNextop": "在 Nextop 中管理",
-        "noModelSelected": "未选择 Nextop Managed 模型",
-        "notConnected": "未连接",
-        "reauthorize": "重新授权",
-        "title": "Nextop Managed"
+        "selectModel": "选择模型...",
+        "setupHint": "请在 Tutti 中安装或登录 Codex / Claude Code，然后重新扫描以启用本地 Agent 路由。"
       },
       "source": {
         "apiProvider": "API provider",
         "detected": "已检测 {{cliCount}} 个",
         "localAgent": "本地 Agent",
-        "nextopManaged": "Nextop Managed"
+        "tuttiManaged": "Tutti Managed"
+      },
+      "tuttiManaged": {
+        "bridgeUnavailable": "请在 Tutti 中打开 AI Canvas 后授权托管模型。",
+        "chooseModel": "请在下方选择 Tutti Managed 模型。",
+        "connect": "连接",
+        "connectFirst": "连接 Tutti Managed 后导入可用模型。",
+        "connected": "已连接",
+        "defaultModel": "默认模型",
+        "description": "使用由 Tutti 托管的模型凭证，不在当前应用中保存 provider key。",
+        "disconnect": "断开",
+        "emptyModels": "暂无可用的 Tutti Managed 模型。请在 Tutti 设置中配置 provider。",
+        "feedback": {
+          "connectFailed": "无法连接 Tutti Managed 模型。",
+          "connected": "Tutti Managed 模型已连接。",
+          "disconnectFailed": "无法断开 Tutti Managed 模型。",
+          "disconnected": "Tutti Managed 模型已断开。",
+          "openSettingsFailed": "无法打开 Tutti 设置。"
+        },
+        "manageInTutti": "在 Tutti 中管理",
+        "noModelSelected": "未选择 Tutti Managed 模型",
+        "notConnected": "未连接",
+        "reauthorize": "重新授权",
+        "title": "Tutti Managed"
       }
     },
     "dialogTitle": "设置",
@@ -539,10 +651,17 @@ export default interface Resources {
     },
     "media": {
       "actions": {
+        "add": "添加",
+        "adding": "添加中",
+        "cancel": "取消",
+        "collapse": "收起",
+        "enable": "启用",
+        "expand": "展开",
+        "getApiKey": "获取 {{provider}} API Key",
         "save": "保存",
-        "saving": "保存中..."
+        "saving": "保存中...",
+        "settings": "设置"
       },
-      "affectedModels": "受影响模型",
       "agnesHint": {
         "description": "Agnes 提供免费的入门路由。",
         "free": "免费",
@@ -551,43 +670,82 @@ export default interface Resources {
       },
       "capabilities": {
         "image": "图片",
-        "imageVideo": "图片 + 视频"
+        "video": "视频"
       },
       "cards": {
         "agnes": {
+          "remark": "推荐 · 免费可用",
           "summary": "Agnes 多模态路由。通过 agnes-ai-cli 提供图片/视频生成能力，包括 compose 与支持关键帧的视频模式。"
         },
         "google": {
           "summary": "Google AI Studio / Developer API 路由，适合 Nano Banana 和 Google 官方图片/视频模型系列。"
         },
+        "kie": {
+          "remark": "可选模型最多",
+          "summary": "Kie Market 第三方聚合路由，用于 Seedream、Nano Banana、Runway、Veo、Kling、Seedance 等图片与视频模型。"
+        },
         "openai": {
           "summary": "OpenAI 兼容图片路由，复用 OpenAI 兼容 Agent 协议的 key/base URL 配置。"
         },
         "replicate": {
+          "remark": "开源模型丰富",
           "summary": "第三方托管模型路由，适合 Seedream、Seedance、Kling，或经 Replicate 路由的 Veo/Sora 系列。"
-        },
-        "vertex": {
-          "summary": "Google Cloud 托管路由。使用 Vertex project 与 location，服务账号凭证仍来自环境变量。"
-        },
-        "volces": {
-          "summary": "字节跳动 / 火山引擎官方通道，用于通过 Ark 提供的豆包 Seedream 模型。"
         }
       },
-      "description": "按平台配置图片与视频提供商。如果同一模型家族后续存在多个平台版本，AIMC 会按提供商范围的模型 ID 分开保存，方便你显式选择路由。",
+      "codexImagegen": {
+        "description": "设置当前 Agent 是否可以调用 Codex Image 2.0 生图能力。",
+        "options": {
+          "always": {
+            "description": "以后符合条件的生图请求自动使用 Codex。",
+            "label": "默认调用"
+          },
+          "ask": {
+            "description": "每次符合条件的生图请求都会先询问。",
+            "label": "每次询问"
+          },
+          "never": {
+            "description": "不将生图任务委托给 Codex。",
+            "label": "不调用"
+          }
+        },
+        "title": "Codex 生图权限"
+      },
+      "connected": {
+        "providerMeta": "API Key 已配置 · {{count}} 个模型",
+        "providerMeta_one": "API Key 已配置 · {{count}} 个模型",
+        "providerMeta_other": "API Key 已配置 · {{count}} 个模型"
+      },
+      "description": "连接 AI 服务，用来生成图片和视频。",
       "feedback": {
         "updateFailed": "本地媒体提供商设置更新失败，请重试。",
         "updated": "本地媒体提供商设置已更新。"
       },
+      "localDetection": {
+        "codexMeta": "当前 Agent 可调用 Codex Image 2.0 生图能力",
+        "codexTitle": "Codex 生图权限",
+        "detected": "检测到 1 个",
+        "enabled": "已启用"
+      },
       "localStorageNote": "这些值会保存在本地 sqlite 设置数据库中，并被对应媒体提供商复用。",
-      "providerNotes": {
-        "replicate": "{{provider}} 是第三方托管平台。",
-        "volces": "{{provider}} 是字节跳动 / 火山引擎官方通道。"
+      "manualAdd": {
+        "advanced": "高级选项",
+        "advancedHint": "通常不需要修改",
+        "description": "用自己的 API Key 接入更多图片和视频服务（共 {{count}} 个可选）。",
+        "description_one": "用自己的 API Key 接入更多图片和视频服务（共 {{count}} 个可选）。",
+        "description_other": "用自己的 API Key 接入更多图片和视频服务（共 {{count}} 个可选）。",
+        "supportedModels": "支持模型"
+      },
+      "sections": {
+        "connected": "已连接",
+        "localDetection": "本机检测",
+        "manualAdd": "手动添加"
       },
       "status": {
-        "configured": "已配置",
-        "notConfigured": "未配置"
+        "enabled": "✓ 已启用",
+        "notConfigured": "未配置",
+        "ready": "已就绪"
       },
-      "title": "媒体提供商"
+      "title": "媒体生成"
     },
     "modelConfiguration": {
       "configureAgent": "配置 Agent",
@@ -641,7 +799,7 @@ export default interface Resources {
     "createDialog": {
       "addFile": "添加文件",
       "adding": "添加中...",
-      "description": "创建新的本地技能来扩展 AI Media Canvas 助手的能力。",
+      "description": "创建新的本地技能来扩展 AI Canvas 助手的能力。",
       "descriptionPlaceholder": "简述技能的功能和用途...",
       "fileContentPlaceholder": "文件内容...",
       "invalidPath": "文件路径需要以 scripts/、references/ 或 assets/ 开头。",

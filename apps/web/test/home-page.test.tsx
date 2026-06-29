@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "../src/components/toast";
@@ -10,6 +11,8 @@ import { i18n } from "../src/i18n";
 const createProjectMock = vi.fn();
 const fetchProjectsMock = vi.fn();
 const pushMock = vi.fn();
+const scrollIntoViewMock = vi.fn();
+const richTextFocusMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -79,6 +82,8 @@ import HomePage from "../src/app/(workspace)/home/page";
 describe("Home page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
+    HTMLElement.prototype.focus = richTextFocusMock;
     void i18n.changeLanguage("zh-CN");
     fetchProjectsMock.mockResolvedValue({
       projects: [
@@ -106,9 +111,9 @@ describe("Home page", () => {
       </ToastProvider>,
     );
 
-    expect(await screen.findByText("AI Media Canvas")).toBeInTheDocument();
+    expect(await screen.findByText("AI Canvas")).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText("让 AI Media Canvas 帮你设计..."),
+      await screen.findByRole("textbox", { name: "提示词输入" }),
     ).toBeInTheDocument();
     expect(await screen.findByText("Recent Project")).toBeInTheDocument();
     expect(
@@ -125,5 +130,45 @@ describe("Home page", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/浏览$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/赞$/)).not.toBeInTheDocument();
+  });
+
+  it("fills the prompt from an inspiration case and scrolls back to the input", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ToastProvider>
+        <HomePage />
+      </ToastProvider>,
+    );
+
+    await screen.findByText("灵感发现");
+
+    expect(
+      screen.queryByRole("button", { name: "做同款" }),
+    ).not.toBeInTheDocument();
+
+    const inspirationCard = screen.getByRole("button", {
+      name: "做同款：The ART & Cultural Arts Center",
+    });
+
+    expect(inspirationCard).toHaveClass("cursor-pointer");
+
+    await user.click(inspirationCard);
+
+    expect(
+      await screen.findByRole("textbox", { name: "提示词输入" }),
+    ).toHaveValue(
+      "请基于文化艺术中心这个灵感方向，为我做一套品牌探索，输出品牌关键词、主视觉方向、海报延展和社交媒体视觉提案。",
+    );
+    await waitFor(() => {
+      expect(scrollIntoViewMock).toHaveBeenCalledWith({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+    await waitFor(() => {
+      expect(richTextFocusMock).toHaveBeenCalled();
+    });
+    expect(createProjectMock).not.toHaveBeenCalled();
   });
 });

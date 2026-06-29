@@ -52,6 +52,9 @@ export async function registerCanvasRoutes(
         const response = await canvasOperations.saveCanvas(
           request.params.canvasId,
           payload.content,
+          payload.baseRevision === undefined
+            ? {}
+            : { baseRevision: payload.baseRevision },
         );
         const bodySize = JSON.stringify(request.body).length;
         request.log.info(

@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { createAgentBackendMock } = vi.hoisted(() => ({
@@ -22,21 +23,81 @@ vi.mock("./backends/index.js", () => ({
   createAgentBackend: createAgentBackendMock,
 }));
 
+import {
+  clearProviders,
+  registerImageProvider,
+} from "../generation/providers/registry.js";
 import { createLocalStore } from "../local/store.js";
 import { createLocalUserClient } from "../local/user-client.js";
-import { AIMC_SYSTEM_PROMPT } from "./prompts/aimc-main.js";
-import { createAgentRunService } from "./runtime.js";
+import { buildAimcSystemPrompt } from "./prompts/aimc-main.js";
+import { buildUserMessage, createAgentRunService } from "./runtime.js";
 
 const tempDirs: string[] = [];
 
 afterEach(() => {
   vi.useRealTimers();
+  clearProviders();
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
 describe("createAgentRunService", () => {
+  it("drops unavailable image generation preference models from user context", () => {
+    registerImageProvider({
+      name: "codex-imagegen",
+      models: [
+        {
+          id: "codex/gpt-image-2",
+          displayName: "GPT Image 2",
+          description: "Codex image generation",
+        },
+      ],
+      async generate() {
+        throw new Error("not used");
+      },
+    });
+
+    const message = buildUserMessage("生成一张海报", [], {
+      mode: "manual",
+      models: ["black-forest-labs/flux-kontext-pro", "codex/gpt-image-2"],
+    });
+
+    expect(message.text).toContain("codex/gpt-image-2");
+    expect(message.text).not.toContain("black-forest-labs/flux-kontext-pro");
+    expect(message.text).toContain(
+      '<human_image_generation_preference mode="manual" count="1">',
+    );
+  });
+
+  it("adds image attachment dimensions to input image context when available", () => {
+    const message = buildUserMessage(
+      "根据图1生成另一张图",
+      [
+        {
+          assetId: "asset-1",
+          url: "http://127.0.0.1:3001/local-assets/asset-1",
+          mimeType: "image/jpeg",
+          name: "reference.jpg",
+        },
+      ],
+      undefined,
+      undefined,
+      null,
+      {
+        "asset-1": {
+          width: 1491,
+          height: 1055,
+          orientation: "landscape",
+        },
+      },
+    );
+
+    expect(message.text).toContain(
+      '<image index="1" asset_id="asset-1" mime_type="image/jpeg" name="reference.jpg" width="1491" height="1055" orientation="landscape" />',
+    );
+  });
+
   it("prepends saved session messages and avoids duplicating the current user prompt", async () => {
     let capturedInput: unknown;
     const agentFactory = vi.fn(() => ({
@@ -102,6 +163,82 @@ describe("createAgentRunService", () => {
         { content: "继续" },
       ],
     });
+  });
+
+  it("blocks server-deepagent Codex image jobs without delegation consent", async () => {
+    registerImageProvider({
+      name: "codex-imagegen",
+      models: [
+        {
+          id: "codex/gpt-image-2",
+          displayName: "GPT Image 2",
+          description: "Codex image generation",
+        },
+      ],
+      async generate() {
+        throw new Error("not used");
+      },
+    });
+
+    let capturedSubmitImageJob:
+      | ((input: {
+          aspectRatio: string;
+          model: string;
+          prompt: string;
+          title: string;
+        }) => Promise<unknown>)
+      | undefined;
+    const agentFactory = vi.fn((agentOptions) => {
+      capturedSubmitImageJob = agentOptions.submitImageJob;
+      return {
+        stream: vi.fn(),
+        streamEvents: vi.fn(() => (async function* () {})()),
+      };
+    });
+
+    const runs = createAgentRunService({
+      agentFactory,
+      createUserClient: vi.fn(),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "anthropic:claude-sonnet-4",
+        codexImagegenEnabled: true,
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {} as never,
+      loadSessionMessages: async () => [],
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "Generate image",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "anthropic:claude-sonnet-4",
+        runtimeKind: "server-deepagent",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so runtime reaches the agent factory.
+    }
+
+    expect(capturedSubmitImageJob).toBeTypeOf("function");
+    await expect(
+      capturedSubmitImageJob?.({
+        aspectRatio: "1:1",
+        model: "codex/gpt-image-2",
+        prompt: "poster",
+        title: "poster",
+      }),
+    ).rejects.toThrow("codex_imagegen_confirmation_required");
   });
 
   it("uses saved session messages when a local thread id is present without persistence", async () => {
@@ -399,7 +536,15 @@ describe("createAgentRunService", () => {
     expect(localAgentRuntimeRunMock).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "default",
+        mcpServers: [
+          expect.objectContaining({
+            name: "aimc",
+            startupTimeoutMs: 2 * 60_000,
+            toolTimeoutMs: 30 * 60_000,
+          }),
+        ],
         provider: "codex",
+        timeoutMs: 30 * 60_000,
       }),
     );
   });
@@ -502,6 +647,7 @@ describe("createAgentRunService", () => {
       env: {
         agentBackendMode: "state",
         agentModel: "agnes:agnes-2.0-flash",
+        agnesApiKey: "agnes-key",
         port: 3001,
         version: "0.0.0",
         webOrigin: "http://localhost:3000",
@@ -686,6 +832,7 @@ describe("createAgentRunService", () => {
       env: {
         agentBackendMode: "state",
         agentModel: "agnes:agnes-2.0-flash",
+        agnesApiKey: "agnes-key",
         port: 3001,
         version: "0.0.0",
         webOrigin: "http://localhost:3000",
@@ -746,6 +893,7 @@ describe("createAgentRunService", () => {
         status: "generating",
         jobId: "job-1",
         prompt: "young playful logo",
+        runId: run.runId,
       },
     });
     releaseJob?.();
@@ -754,6 +902,555 @@ describe("createAgentRunService", () => {
       imageUrl: "http://127.0.0.1:3001/local-assets/asset-1",
       jobId: "job-1",
     });
+  });
+
+  it("cancels pending image generation jobs when the run is canceled", async () => {
+    let capturedGatewaySession:
+      | {
+          submitImageJob?: (input: {
+            aspectRatio: string;
+            model: string;
+            prompt: string;
+            title: string;
+          }) => Promise<unknown>;
+        }
+      | undefined;
+    const createSession = vi.fn((input) => {
+      capturedGatewaySession = input;
+      return { token: "tool-token" };
+    });
+    const canvasState = {
+      content: {
+        elements: [] as Array<Record<string, unknown>>,
+        appState: {},
+        files: {},
+      },
+    };
+    const cancelJob = vi.fn(async () => ({ id: "job-1", status: "canceled" }));
+
+    const runs = createAgentRunService({
+      createUserClient: () => ({
+        from(table: string) {
+          if (table === "canvases") {
+            return {
+              select() {
+                return this;
+              },
+              eq() {
+                return this;
+              },
+              async single() {
+                return { data: { content: canvasState.content }, error: null };
+              },
+              async maybeSingle() {
+                return { data: null, error: null };
+              },
+              update(payload: {
+                content: {
+                  elements: Array<Record<string, unknown>>;
+                  appState: Record<string, unknown>;
+                  files: Record<string, unknown>;
+                };
+              }) {
+                canvasState.content = payload.content;
+                return {
+                  async eq() {
+                    return { error: null };
+                  },
+                };
+              },
+            };
+          }
+          expect(table).toBe("workspaces");
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            limit() {
+              return this;
+            },
+            async single() {
+              return { data: { id: "workspace-1" }, error: null };
+            },
+          };
+        },
+      }),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        agnesApiKey: "agnes-key",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {
+        cancelJob,
+        createJob: vi.fn(async () => ({ id: "job-1" })),
+        getJobAdmin: vi.fn(async () => ({
+          attempt_count: 0,
+          max_attempts: 3,
+          status: "processing",
+        })),
+      } as never,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession,
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "conversation-1",
+        prompt: "生成一张图",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the local tool gateway session is created.
+    }
+
+    const submitImageJob = capturedGatewaySession?.submitImageJob;
+    expect(submitImageJob).toBeTypeOf("function");
+    if (!submitImageJob) {
+      throw new Error("Expected local tool gateway to receive submitImageJob");
+    }
+    const promise = submitImageJob({
+      aspectRatio: "1:1",
+      model: "agnes-image/agnes-image-2.1-flash",
+      prompt: "young playful logo",
+      title: "logo",
+    });
+    await vi.waitFor(() => {
+      expect(canvasState.content.elements).toHaveLength(1);
+    });
+
+    runs.cancelRun(run.runId);
+
+    await expect(promise).rejects.toThrow("Image generation was canceled.");
+    expect(cancelJob).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "user-1" }),
+      "job-1",
+    );
+  });
+
+  it("rejects invalid image generation parameters before creating agent jobs", async () => {
+    let capturedGatewaySession:
+      | {
+          submitImageJob?: (input: {
+            aspectRatio: string;
+            model: string;
+            prompt: string;
+            title: string;
+          }) => Promise<unknown>;
+        }
+      | undefined;
+    const createSession = vi.fn((input) => {
+      capturedGatewaySession = input;
+      return { token: "tool-token" };
+    });
+    const createJob = vi.fn(async () => ({ id: "job-1" }));
+
+    const runs = createAgentRunService({
+      createUserClient: () => ({
+        from(table: string) {
+          if (table === "workspaces") {
+            return {
+              select() {
+                return this;
+              },
+              eq() {
+                return this;
+              },
+              limit() {
+                return this;
+              },
+              async single() {
+                return { data: { id: "workspace-1" }, error: null };
+              },
+            };
+          }
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            async single() {
+              return {
+                data: { content: { elements: [], appState: {}, files: {} } },
+                error: null,
+              };
+            },
+            async maybeSingle() {
+              return { data: null, error: null };
+            },
+            update() {
+              return {
+                async eq() {
+                  return { error: null };
+                },
+              };
+            },
+          };
+        },
+      }),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        agnesApiKey: "agnes-key",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {
+        createJob,
+        getJobAdmin: vi.fn(),
+      } as never,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession,
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "conversation-1",
+        prompt: "生成一张图",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the local tool gateway session is created.
+    }
+
+    const submitImageJob = capturedGatewaySession?.submitImageJob;
+    expect(submitImageJob).toBeTypeOf("function");
+    if (!submitImageJob) {
+      throw new Error("Expected local tool gateway to receive submitImageJob");
+    }
+    await expect(
+      submitImageJob({
+        aspectRatio: "4:5",
+        model: "agnes-image/agnes-image-2.1-flash",
+        prompt: "magazine cover",
+        title: "cover",
+      }),
+    ).rejects.toThrow(/aspectRatio/i);
+    expect(createJob).not.toHaveBeenCalled();
+  });
+
+  it("syncs one-time Codex imagegen consent from the local tool gateway into job submission", async () => {
+    let capturedGatewaySession:
+      | {
+          codexImagegenConsentBudget?: number;
+          onWorkspaceSettingsStateChange?: (state: {
+            codexImagegenConsentBudget?: number;
+          }) => void;
+          submitImageJob?: (input: {
+            aspectRatio: string;
+            model: string;
+            prompt: string;
+            title: string;
+          }) => Promise<unknown>;
+        }
+      | undefined;
+    const createSession = vi.fn((input) => {
+      capturedGatewaySession = input;
+      return { token: "tool-token" };
+    });
+    const createJob = vi.fn(async () => ({ id: "job-1" }));
+
+    const runs = createAgentRunService({
+      createUserClient: () => ({
+        from(table: string) {
+          let isUpdate = false;
+          return {
+            table,
+            select() {
+              return this;
+            },
+            eq() {
+              if (isUpdate) {
+                return Promise.resolve({ error: null });
+              }
+              return this;
+            },
+            limit() {
+              return this;
+            },
+            async maybeSingle() {
+              if (table === "canvases") {
+                return {
+                  data: {
+                    content: { elements: [], appState: {}, files: {} },
+                    project_id: "project-1",
+                  },
+                  error: null,
+                };
+              }
+              if (table === "projects") {
+                return {
+                  data: { brand_kit_id: null },
+                  error: null,
+                };
+              }
+              return { data: null, error: null };
+            },
+            update() {
+              isUpdate = true;
+              return this;
+            },
+            async single() {
+              if (table === "canvases") {
+                return {
+                  data: {
+                    content: { elements: [], appState: {}, files: {} },
+                    project_id: "project-1",
+                  },
+                  error: null,
+                };
+              }
+              if (table === "projects") {
+                return {
+                  data: { brand_kit_id: null },
+                  error: null,
+                };
+              }
+              return { data: { id: "workspace-1" }, error: null };
+            },
+          };
+        },
+      }),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "claude:default",
+        codexImagegenEnabled: true,
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {
+        createJob,
+        getJobAdmin: vi.fn(async () => ({
+          result: {
+            asset_id: "asset-1",
+            signed_url: "http://127.0.0.1:3001/local-assets/asset-1",
+            mime_type: "image/png",
+            width: 1024,
+            height: 1024,
+          },
+          status: "succeeded",
+        })),
+      } as never,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession,
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "conversation-1",
+        prompt: "Generate image",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        codexImagegenDelegation: "ask",
+        model: "claude:default",
+        runtimeKind: "local-agent",
+        runtimeProvider: "claude",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the local tool gateway session is created.
+    }
+
+    expect(capturedGatewaySession?.codexImagegenConsentBudget).toBe(0);
+    expect(capturedGatewaySession?.onWorkspaceSettingsStateChange).toBeTypeOf(
+      "function",
+    );
+    capturedGatewaySession?.onWorkspaceSettingsStateChange?.({
+      codexImagegenConsentBudget: 1,
+    });
+
+    await expect(
+      capturedGatewaySession?.submitImageJob?.({
+        aspectRatio: "1:1",
+        model: "codex/gpt-image-2",
+        prompt: "A red square",
+        title: "red square",
+      }),
+    ).resolves.toMatchObject({
+      jobId: "job-1",
+      imageUrl: "http://127.0.0.1:3001/local-assets/asset-1",
+    });
+    expect(createJob).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "user-1" }),
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          caller_provider: "claude",
+          codex_imagegen_consent: "allow-once",
+          codex_imagegen_delegation_allowed: true,
+          model: "codex/gpt-image-2",
+        }),
+      }),
+    );
+  });
+
+  it("uses the run effective env when validating agent image job providers", async () => {
+    let capturedGatewaySession:
+      | {
+          submitImageJob?: (input: {
+            aspectRatio: string;
+            model: string;
+            prompt: string;
+            title: string;
+          }) => Promise<unknown>;
+        }
+      | undefined;
+    const createSession = vi.fn((input) => {
+      capturedGatewaySession = input;
+      return { token: "tool-token" };
+    });
+    const createJob = vi.fn(async () => ({ id: "job-1" }));
+    const getJobAdmin = vi.fn(async () => ({
+      result: {
+        height: 1024,
+        mime_type: "image/png",
+        signed_url: "http://127.0.0.1:3001/local-assets/kie-image",
+        width: 1024,
+      },
+      status: "succeeded",
+    }));
+
+    const runs = createAgentRunService({
+      createUserClient: () => ({
+        from(table: string) {
+          expect(table).toBe("workspaces");
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            limit() {
+              return this;
+            },
+            async single() {
+              return { data: { id: "workspace-1" }, error: null };
+            },
+          };
+        },
+      }),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {
+        createJob,
+        getJobAdmin,
+      } as never,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession,
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        conversationId: "conversation-1",
+        prompt: "生成一张图",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        env: {
+          agentBackendMode: "state",
+          agentModel: "agnes:agnes-2.0-flash",
+          kieApiKey: "kie-key-from-settings",
+          port: 3001,
+          version: "0.0.0",
+          webOrigin: "http://localhost:3000",
+        },
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the local tool gateway session is created.
+    }
+
+    const submitImageJob = capturedGatewaySession?.submitImageJob;
+    expect(submitImageJob).toBeTypeOf("function");
+    if (!submitImageJob) {
+      throw new Error("Expected local tool gateway to receive submitImageJob");
+    }
+
+    await expect(
+      submitImageJob({
+        aspectRatio: "1:1",
+        model: "kie/nano-banana",
+        prompt: "minimal product logo",
+        title: "logo",
+      }),
+    ).resolves.toMatchObject({
+      imageUrl: "http://127.0.0.1:3001/local-assets/kie-image",
+      jobId: "job-1",
+    });
+    expect(createJob).toHaveBeenCalled();
   });
 
   it("returns video jobs with canvas generation nodes before polling", async () => {
@@ -843,6 +1540,7 @@ describe("createAgentRunService", () => {
       env: {
         agentBackendMode: "state",
         agentModel: "agnes:agnes-2.0-flash",
+        googleApiKey: "google-key",
         port: 3001,
         version: "0.0.0",
         webOrigin: "http://localhost:3000",
@@ -890,7 +1588,7 @@ describe("createAgentRunService", () => {
     await expect(
       submitVideoJob({
         aspectRatio: "16:9",
-        duration: 5,
+        duration: 4,
         model: "google-official/veo-3.1-generate-preview",
         prompt: "product reveal",
         resolution: "720p",
@@ -909,9 +1607,135 @@ describe("createAgentRunService", () => {
         status: "generating",
         jobId: "job-video-1",
         prompt: "product reveal",
+        runId: run.runId,
       },
     });
     expect(getJobAdmin).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid video generation parameters before creating agent jobs", async () => {
+    let capturedGatewaySession:
+      | {
+          submitVideoJob?: (input: {
+            aspectRatio: string;
+            duration: number;
+            model: string;
+            prompt: string;
+            resolution: string;
+            title: string;
+          }) => Promise<unknown>;
+        }
+      | undefined;
+    const createSession = vi.fn((input) => {
+      capturedGatewaySession = input;
+      return { token: "tool-token" };
+    });
+    const createJob = vi.fn(async () => ({ id: "job-video-1" }));
+
+    const runs = createAgentRunService({
+      createUserClient: () => ({
+        from(table: string) {
+          if (table === "workspaces") {
+            return {
+              select() {
+                return this;
+              },
+              eq() {
+                return this;
+              },
+              limit() {
+                return this;
+              },
+              async single() {
+                return { data: { id: "workspace-1" }, error: null };
+              },
+            };
+          }
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            async single() {
+              return {
+                data: { content: { elements: [], appState: {}, files: {} } },
+                error: null,
+              };
+            },
+            async maybeSingle() {
+              return { data: null, error: null };
+            },
+            update() {
+              return {
+                async eq() {
+                  return { error: null };
+                },
+              };
+            },
+          };
+        },
+      }),
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        agnesApiKey: "agnes-key",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      jobService: {
+        createJob,
+        getJobAdmin: vi.fn(),
+      } as never,
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession,
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "conversation-1",
+        prompt: "生成一段视频",
+        sessionId: "session-1",
+      },
+      {
+        accessToken: "local-token",
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+        userId: "user-1",
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the local tool gateway session is created.
+    }
+
+    const submitVideoJob = capturedGatewaySession?.submitVideoJob;
+    expect(submitVideoJob).toBeTypeOf("function");
+    if (!submitVideoJob) {
+      throw new Error("Expected local tool gateway to receive submitVideoJob");
+    }
+    await expect(
+      submitVideoJob({
+        aspectRatio: "4:5",
+        duration: 5,
+        model: "agnes-video/agnes-video-v2.0",
+        prompt: "product reveal",
+        resolution: "720p",
+        title: "product reveal",
+      }),
+    ).rejects.toThrow(/aspectRatio/i);
+    expect(createJob).not.toHaveBeenCalled();
   });
 
   it("passes non-Codex local-agent providers through the host adapter", async () => {
@@ -1008,7 +1832,7 @@ describe("createAgentRunService", () => {
     );
   });
 
-  it("strips the local provider prefix before invoking generic ACP providers", async () => {
+  it("strips the local provider prefix before invoking Nexight", async () => {
     const localRun = vi.fn(async function* () {
       yield {
         type: "done" as const,
@@ -1030,8 +1854,8 @@ describe("createAgentRunService", () => {
       },
       localAgentProviderPlugins: [
         {
-          id: "hermes",
-          displayName: "Hermes",
+          id: "nexight",
+          displayName: "Nexight",
           kind: "local-agent",
           async detect() {
             return null;
@@ -1070,9 +1894,9 @@ describe("createAgentRunService", () => {
         sessionId: "session-1",
       },
       {
-        model: "hermes:openai-codex:gpt-5.4",
+        model: "nexight:openai-codex:gpt-5.4",
         runtimeKind: "local-agent",
-        runtimeProvider: "hermes",
+        runtimeProvider: "nexight",
       },
     );
 
@@ -1082,8 +1906,8 @@ describe("createAgentRunService", () => {
 
     expect(localRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        provider: "hermes",
-        runtimeProvider: "hermes",
+        provider: "nexight",
+        runtimeProvider: "nexight",
         model: "openai-codex:gpt-5.4",
       }),
     );
@@ -1289,6 +2113,7 @@ describe("createAgentRunService", () => {
       {
         canvasId: "canvas-1",
         conversationId: "canvas-1",
+        locale: "en",
         prompt: "继续",
         sessionId: "session-1",
       },
@@ -1305,7 +2130,7 @@ describe("createAgentRunService", () => {
 
     expect(localRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        systemPrompt: AIMC_SYSTEM_PROMPT,
+        systemPrompt: buildAimcSystemPrompt({ locale: "en" }),
       }),
     );
   });
@@ -1362,14 +2187,6 @@ describe("createAgentRunService", () => {
       {
         canvasId: project.primaryCanvas.id,
         conversationId: project.primaryCanvas.id,
-        mentions: [
-          {
-            id: "skill-system-canvas-director",
-            label: "Canvas Director",
-            mentionType: "skill",
-            slug: "canvas-director",
-          },
-        ],
         prompt: "有看到 Canvas Director 这一个 skill 吗",
         sessionId: "session-1",
       },
@@ -1397,10 +2214,10 @@ describe("createAgentRunService", () => {
       }),
     );
     expect(capturedPrompt).toContain(
-      "workspace-skills/canvas-director/SKILL.md",
-    );
-    expect(capturedPrompt).toContain(
       "use relative paths such as `workspace-skills/<slug>/SKILL.md`",
+    );
+    expect(capturedPrompt).not.toContain(
+      "workspace-skills/canvas-director/SKILL.md",
     );
     expect(capturedPrompt).not.toContain(
       "/workspace-skills/canvas-director/SKILL.md",
@@ -1448,14 +2265,6 @@ describe("createAgentRunService", () => {
       {
         canvasId: project.primaryCanvas.id,
         conversationId: project.primaryCanvas.id,
-        mentions: [
-          {
-            id: "skill-system-canvas-director",
-            label: "Canvas Director",
-            mentionType: "skill",
-            slug: "canvas-director",
-          },
-        ],
         prompt: "使用 Canvas Director 这个 skill 看一下画布",
         sessionId: "session-1",
       },
@@ -1957,7 +2766,7 @@ describe("createAgentRunService", () => {
     expect(localAgentRuntimeRunMock).not.toHaveBeenCalled();
   });
 
-  it("uses the managed credential runtime model instead of the Nextop model id", async () => {
+  it("uses the managed credential runtime model instead of the Tutti model id", async () => {
     let capturedAgentOptions: unknown;
     const agentFactory = vi.fn((agentOptions) => {
       capturedAgentOptions = agentOptions;
@@ -1998,12 +2807,12 @@ describe("createAgentRunService", () => {
         env: {
           agentBackendMode: "state",
           agentModel: "agnes:agnes-2.0-flash",
-          agnesApiKey: "nextop-managed-agnes-key",
+          agnesApiKey: "tutti-managed-agnes-key",
           port: 3001,
           version: "0.0.0",
           webOrigin: "http://localhost:3000",
         },
-        model: "nextop:agnes:agnes-2.0-flash",
+        model: "tutti:agnes:agnes-2.0-flash",
         runtimeKind: "server-deepagent",
       },
     );
@@ -2015,9 +2824,83 @@ describe("createAgentRunService", () => {
     expect(capturedAgentOptions).toMatchObject({
       env: expect.objectContaining({
         agentModel: "agnes:agnes-2.0-flash",
-        agnesApiKey: "nextop-managed-agnes-key",
+        agnesApiKey: "tutti-managed-agnes-key",
       }),
       model: "agnes:agnes-2.0-flash",
     });
+  });
+
+  it("does not expose managed agent invocation credentials outside local-agent runs", async () => {
+    let capturedAgentOptions: unknown;
+    let capturedStreamConfig: unknown;
+    const agentFactory = vi.fn((agentOptions) => {
+      capturedAgentOptions = agentOptions;
+      return {
+        stream: vi.fn(),
+        streamEvents: vi.fn((_input: unknown, config: unknown) => {
+          capturedStreamConfig = config;
+          return (async function* () {
+            yield {
+              type: "run.completed" as const,
+              runId: "run-server",
+              timestamp: "2026-06-17T00:00:00.000Z",
+            };
+          })();
+        }),
+      };
+    });
+    const createRun = vi.fn();
+    const updateRun = vi.fn();
+    const runs = createAgentRunService({
+      agentFactory,
+      agentRunStore: {
+        createRun,
+        updateRun,
+      },
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      loadSessionMessages: async () => [],
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "hi",
+        sessionId: "session-1",
+      },
+      {
+        managedAgentHeaders: {
+          [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
+        },
+      },
+    );
+
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so the server runtime reaches the agent factory.
+    }
+
+    expect(createRun).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        managedAgentInvocationCredential: "credential-run-1",
+      }),
+    );
+    expect(JSON.stringify(createRun.mock.calls)).not.toContain(
+      "credential-run-1",
+    );
+    expect(JSON.stringify(updateRun.mock.calls)).not.toContain(
+      "credential-run-1",
+    );
+    expect(JSON.stringify(capturedAgentOptions)).not.toContain(
+      "credential-run-1",
+    );
+    expect(JSON.stringify(capturedStreamConfig)).not.toContain(
+      "credential-run-1",
+    );
   });
 });

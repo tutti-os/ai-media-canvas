@@ -12,10 +12,9 @@ async function collect<T>(stream: AsyncIterable<T>) {
 
 describe("createAimcLocalAgentProviderPlugins", () => {
   it("registers only the local agent providers supported by AIMC", () => {
-    expect(createAimcLocalAgentProviderPlugins().map((provider) => provider.id)).toEqual([
-      "codex",
-      "claude",
-    ]);
+    expect(
+      createAimcLocalAgentProviderPlugins().map((provider) => provider.id),
+    ).toEqual(["codex", "claude", "nexight"]);
   });
 
   it("maps current Claude Code assistant stream-json content into text deltas", async () => {

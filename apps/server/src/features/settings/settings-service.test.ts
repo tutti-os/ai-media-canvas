@@ -24,9 +24,12 @@ const LOCAL_USER: AuthenticatedUser = {
 
 describe("createSettingsService", () => {
   it("uses Agnes built-in defaults when only Agnes API key is configured", async () => {
-    const env = loadServerEnv({}, {
-      AGNES_API_KEY: "env-agnes-key",
-    });
+    const env = loadServerEnv(
+      {},
+      {
+        AGNES_API_KEY: "env-agnes-key",
+      },
+    );
 
     expect(env).toMatchObject({
       agnesApiKey: "env-agnes-key",
@@ -54,6 +57,8 @@ describe("createSettingsService", () => {
       googleVertexProject: "env-vertex-project",
       googleVertexLocation: "global",
       googleVertexVideoLocation: "us-central1",
+      kieApiKey: "env-kie-key",
+      kieBaseUrl: "https://env.kie.example",
     });
     const service = createSettingsService(store, env);
 
@@ -80,8 +85,11 @@ describe("createSettingsService", () => {
       googleVertexLocation: "",
       googleVertexVideoLocation: "",
       replicateApiToken: "",
+      kieApiKey: "",
+      kieBaseUrl: "",
       volcesApiKey: "",
       volcesBaseUrl: "",
+      codexImagegenDelegation: "ask",
     });
 
     await service.updateWorkspaceSettings(LOCAL_USER, "local-workspace", {
@@ -107,6 +115,9 @@ describe("createSettingsService", () => {
       replicateApiToken: "local-replicate-token",
       volcesApiKey: "",
       volcesBaseUrl: "",
+      kieApiKey: "local-kie-key",
+      kieBaseUrl: "https://local.kie.example",
+      codexImagegenDelegation: "ask",
     });
 
     await expect(
@@ -131,6 +142,8 @@ describe("createSettingsService", () => {
       googleVertexLocation: "asia-east1",
       googleVertexVideoLocation: "us-central1",
       replicateApiToken: "local-replicate-token",
+      kieApiKey: "local-kie-key",
+      kieBaseUrl: "https://local.kie.example",
     });
 
     await expect(
@@ -149,6 +162,8 @@ describe("createSettingsService", () => {
       googleVertexLocation: "asia-east1",
       googleVertexVideoLocation: "us-central1",
       replicateApiToken: "local-replicate-token",
+      kieApiKey: "local-kie-key",
+      kieBaseUrl: "https://local.kie.example",
     });
   });
 
@@ -184,8 +199,11 @@ describe("createSettingsService", () => {
       googleVertexLocation: "",
       googleVertexVideoLocation: "",
       replicateApiToken: "",
+      kieApiKey: "",
+      kieBaseUrl: "",
       volcesApiKey: "",
       volcesBaseUrl: "",
+      codexImagegenDelegation: "ask",
     });
 
     await expect(
@@ -265,8 +283,11 @@ describe("createSettingsService", () => {
       googleVertexLocation: "",
       googleVertexVideoLocation: "",
       replicateApiToken: "",
+      kieApiKey: "",
+      kieBaseUrl: "",
       volcesApiKey: "",
       volcesBaseUrl: "",
+      codexImagegenDelegation: "ask",
     });
 
     await expect(

@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { ImageArtifact, ToolBlock, VideoArtifact } from "@aimc/shared";
+import { useAppTranslation } from "../../i18n";
 import { toRuntimeAssetUrl } from "../../lib/local-assets";
 import { ChatImage } from "./image-lightbox";
 import {
@@ -139,9 +140,12 @@ function findSidebarRect(el: HTMLElement | null): DOMRect | null {
 
 export const ToolBlockView = React.memo(function ToolBlockView({
   block,
+  onOpenMediaSettings,
 }: {
   block: ToolBlock;
+  onOpenMediaSettings?: (() => void) | undefined;
 }) {
+  const { t } = useAppTranslation("chat");
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelRight, setPanelRight] = useState(416);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -150,6 +154,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const isRunning = block.status === "running";
   const isCompleted = block.status === "completed";
   const isFailed = block.status === "failed";
+  const isCanceled = block.status === "canceled";
   const hasOutput = block.output && Object.keys(block.output).length > 0;
   const hasInput = block.input && Object.keys(block.input).length > 0;
   const hasDetails = hasOutput || hasInput;
@@ -171,6 +176,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const isVideoTool = canonicalToolName === "generate_video";
   const isMediaTool = isImageTool || isVideoTool;
   const outputData = block.output as Record<string, unknown> | undefined;
+  const capabilityRequired = getMediaCapabilityRequired(outputData);
   const isDeferredMediaJob =
     isMediaTool &&
     isCompleted &&
@@ -182,6 +188,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
     config.showCard &&
     isCompleted &&
     !isDeferredMediaJob &&
+    !capabilityRequired &&
     (block.outputSummary || hasOutput);
   const shouldShowImageArtifactCard =
     isCompleted &&
@@ -192,13 +199,29 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const mediaError =
     isMediaTool &&
     !isDeferredMediaJob &&
-    (isFailed || isCompleted) &&
+    (isFailed || isCanceled || isCompleted) &&
     !imageArtifact &&
-    !videoArtifact
-      ? ((outputData?.error as string | undefined) ?? block.outputSummary)
+    !videoArtifact &&
+    !capabilityRequired
+      ? isCanceled
+        ? t("media.generationCanceled")
+        : ((outputData?.error as string | undefined) ?? block.outputSummary)
       : undefined;
+  const mediaErrorTitle = mediaError
+    ? isCanceled
+      ? isVideoTool
+        ? t("media.videoGenerationCanceled")
+        : t("media.imageGenerationCanceled")
+      : isVideoTool
+        ? t("media.videoGenerationFailed")
+        : t("media.imageGenerationFailed")
+    : undefined;
   const inputData = block.input as Record<string, unknown> | undefined;
   const modelName = inputData?.model as string | undefined;
+  const headerLabel =
+    isMediaTool && modelName && !capabilityRequired
+      ? formatModelDisplayName(modelName)
+      : config.label;
   const aspectRatio =
     (inputData?.aspectRatio as string) ?? (isVideoTool ? "16:9" : "1:1");
 
@@ -218,9 +241,13 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         {isVisuallyRunning ? (
           <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-muted-foreground/30 border-t-muted-foreground" />
-        ) : isFailed ? (
+        ) : isFailed || isCanceled ? (
           <svg
-            className="h-3.5 w-3.5 text-destructive"
+            className={
+              isFailed
+                ? "h-3.5 w-3.5 text-destructive"
+                : "h-3.5 w-3.5 text-muted-foreground"
+            }
             viewBox="0 0 16 16"
             fill="currentColor"
           >
@@ -236,9 +263,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
           </svg>
         )}
         <span className="font-medium text-muted-foreground truncate">
-          {isMediaTool && modelName
-            ? formatModelDisplayName(modelName)
-            : config.label}
+          {headerLabel}
         </span>
       </div>
 
@@ -248,12 +273,39 @@ export const ToolBlockView = React.memo(function ToolBlockView({
           isVideoTool={isVideoTool}
           aspectRatio={aspectRatio}
           modelName={modelName}
+          loadingLabel={
+            isVideoTool
+              ? t("media.videoGenerating")
+              : t("media.imageGenerating")
+          }
         />
       )}
 
       {/* Layer 2b-err: Media generation failed */}
-      {isMediaTool && mediaError && (
-        <MediaErrorCard isVideoTool={isVideoTool} error={mediaError} />
+      {isMediaTool && mediaError && mediaErrorTitle && (
+        <MediaErrorCard
+          title={mediaErrorTitle}
+          error={mediaError}
+          variant={isCanceled ? "canceled" : "error"}
+        />
+      )}
+
+      {isMediaTool && capabilityRequired && (
+        <MediaCapabilityRequiredCard
+          capability={capabilityRequired.capability}
+          title={
+            capabilityRequired.capability === "video_generation"
+              ? t("capabilityRequired.videoTitle")
+              : t("capabilityRequired.imageTitle")
+          }
+          description={
+            capabilityRequired.capability === "video_generation"
+              ? t("capabilityRequired.videoDescription")
+              : t("capabilityRequired.imageDescription")
+          }
+          actionLabel={t("capabilityRequired.configureMedia")}
+          onAction={onOpenMediaSettings}
+        />
       )}
 
       {/* Layer 2b: Image generation card with inline preview */}
@@ -323,6 +375,73 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   );
 });
 
+type MediaCapabilityRequired = {
+  capability: "image_generation" | "video_generation";
+};
+
+function getMediaCapabilityRequired(
+  output: Record<string, unknown> | undefined,
+): MediaCapabilityRequired | null {
+  const raw = output?.capabilityRequired;
+  if (!raw || typeof raw !== "object") return null;
+
+  const capability = (raw as { capability?: unknown }).capability;
+  if (
+    capability !== "image_generation" &&
+    capability !== "video_generation"
+  ) {
+    return null;
+  }
+
+  return { capability };
+}
+
+const MediaCapabilityRequiredCard = React.memo(
+  function MediaCapabilityRequiredCard({
+    capability,
+    title,
+    description,
+    actionLabel,
+    onAction,
+  }: {
+    capability: "image_generation" | "video_generation";
+    title: string;
+    description: string;
+    actionLabel: string;
+    onAction?: (() => void) | undefined;
+  }) {
+    return (
+      <div className="w-full max-w-sm rounded-xl border-[0.5px] border-border bg-muted/30 p-3">
+        <div className="flex items-start gap-2.5">
+          <div className="mt-0.5 shrink-0 rounded-lg bg-background p-1.5 text-muted-foreground">
+            <ToolIcon
+              type={capability === "video_generation" ? "video" : "image"}
+              className="h-4 w-4"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-foreground">
+              {title}
+            </div>
+            <div className="mt-0.5 text-[12px] text-muted-foreground">
+              {description}
+            </div>
+            {onAction && (
+              <button
+                type="button"
+                onClick={onAction}
+                className="mt-2 inline-flex h-7 items-center rounded-md border-[0.5px] border-border bg-background px-2.5 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                {actionLabel}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  },
+);
+
 /* ------------------------------------------------------------------ */
 /*  MediaShimmer — shimmer placeholder during media generation         */
 /* ------------------------------------------------------------------ */
@@ -331,10 +450,12 @@ const MediaShimmer = React.memo(function MediaShimmer({
   isVideoTool,
   aspectRatio,
   modelName,
+  loadingLabel,
 }: {
   isVideoTool: boolean;
   aspectRatio: string;
   modelName: string | undefined;
+  loadingLabel: string;
 }) {
   return (
     <div className="rounded-xl border-[0.5px] border-border overflow-hidden">
@@ -376,9 +497,7 @@ const MediaShimmer = React.memo(function MediaShimmer({
       </div>
       <div className="px-3 py-2">
         <div className="text-[12px] font-medium text-muted-foreground/70">
-          {isVideoTool
-            ? "\u89c6\u9891\u751f\u6210\u4e2d..."
-            : "\u56fe\u7247\u751f\u6210\u4e2d..."}
+          {loadingLabel}
         </div>
         {modelName && (
           <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
@@ -395,16 +514,31 @@ const MediaShimmer = React.memo(function MediaShimmer({
 /* ------------------------------------------------------------------ */
 
 const MediaErrorCard = React.memo(function MediaErrorCard({
-  isVideoTool,
+  title,
   error,
+  variant,
 }: {
-  isVideoTool: boolean;
+  title: string;
   error: string;
+  variant: "error" | "canceled";
 }) {
+  const isError = variant === "error";
   return (
-    <div className="rounded-xl border-[0.5px] border-destructive/30 bg-destructive/5 p-3">
+    <div
+      className={
+        isError
+          ? "rounded-xl border-[0.5px] border-destructive/30 bg-destructive/5 p-3"
+          : "rounded-xl border-[0.5px] border-border bg-muted/30 p-3"
+      }
+    >
       <div className="flex items-start gap-2.5">
-        <div className="mt-0.5 shrink-0 rounded-lg bg-destructive/10 p-1.5 text-destructive">
+        <div
+          className={
+            isError
+              ? "mt-0.5 shrink-0 rounded-lg bg-destructive/10 p-1.5 text-destructive"
+              : "mt-0.5 shrink-0 rounded-lg bg-background p-1.5 text-muted-foreground"
+          }
+        >
           <svg
             className="h-4 w-4"
             viewBox="0 0 24 24"
@@ -417,9 +551,7 @@ const MediaErrorCard = React.memo(function MediaErrorCard({
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-foreground">
-            {isVideoTool
-              ? "\u89c6\u9891\u751f\u6210\u5931\u8d25"
-              : "\u56fe\u7247\u751f\u6210\u5931\u8d25"}
+            {title}
           </div>
           <div className="mt-0.5 text-[12px] text-muted-foreground line-clamp-2">
             {error}
@@ -532,7 +664,9 @@ const VideoArtifactCard = React.memo(function VideoArtifactCard({
       <div className="bg-black">
         <video
           src={url}
-          controls
+          muted
+          playsInline
+          preload="metadata"
           className="max-h-[280px] w-full object-contain"
         />
       </div>
@@ -696,7 +830,9 @@ function ToolDetailPanel({
                     <video
                       key={artifact.url}
                       src={toRuntimeAssetUrl(artifact.url, artifact.assetId)}
-                      controls
+                      muted
+                      playsInline
+                      preload="metadata"
                       className="max-w-[240px] rounded-lg border border-border bg-black"
                     />
                   ) : null,

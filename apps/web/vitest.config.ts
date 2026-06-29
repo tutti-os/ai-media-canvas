@@ -12,6 +12,7 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    setupFiles: ["./test/setup.tsx"],
     testTimeout: 10000,
     environmentOptions: {
       jsdom: {

@@ -212,7 +212,10 @@ export async function insertVideoElement(
     durationSeconds?: number;
     height: number;
     mimeType: string;
+    model?: string;
     prompt: string;
+    aspectRatio?: string;
+    resolution?: string;
     signedUrl: string;
     title?: string;
     width: number;
@@ -229,23 +232,31 @@ export async function insertVideoElement(
       content.appState,
     );
   const elementId = generateId();
-  const link = input.assetId
+  const videoUrl = input.assetId
     ? `/local-assets/${input.assetId}`
     : input.signedUrl;
 
   elements.push({
     ...createElementBase(elementId),
-    type: "embeddable",
+    type: "rectangle",
     x: display.x,
     y: display.y,
     width: display.width,
     height: display.height,
-    link,
+    strokeColor: "#111827",
+    backgroundColor: "#000000",
+    fillStyle: "solid",
+    roughness: 0,
+    link: null,
     customData: {
       isVideo: true,
       ...(input.assetId ? { assetId: input.assetId } : {}),
       mimeType: input.mimeType,
       prompt: input.prompt,
+      videoUrl,
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
+      ...(input.resolution ? { resolution: input.resolution } : {}),
       ...(input.title ? { title: input.title } : {}),
       ...(input.durationSeconds != null
         ? { durationSeconds: input.durationSeconds }
@@ -271,6 +282,7 @@ export async function insertImageGenerationNode(
     model: string;
     prompt: string;
     quality?: string;
+    runId?: string;
     title?: string;
   },
   placement?: Placement,
@@ -286,6 +298,7 @@ export async function insertImageGenerationNode(
       aspectRatio: input.aspectRatio,
       quality: input.quality ?? "hd",
       jobId: input.jobId,
+      ...(input.runId ? { runId: input.runId } : {}),
       ...(input.inputImages ? { inputImages: input.inputImages } : {}),
       ...(input.title ? { title: input.title } : {}),
     },
@@ -305,6 +318,7 @@ export async function insertVideoGenerationNode(
     model: string;
     prompt: string;
     resolution?: string;
+    runId?: string;
     title?: string;
   },
   placement?: Placement,
@@ -321,6 +335,7 @@ export async function insertVideoGenerationNode(
       duration: input.duration ?? 5,
       resolution: input.resolution ?? "720p",
       jobId: input.jobId,
+      ...(input.runId ? { runId: input.runId } : {}),
       ...(input.inputImages ? { inputImages: input.inputImages } : {}),
       ...(input.title ? { title: input.title } : {}),
     },

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,8 +6,17 @@ import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 import type {
   AgentEvent,
   LocalAgentProviderPlugin,
-} from "@nextop-os/agent-acp-kit";
+  SkillMaterializationRecord,
+} from "@tutti-os/agent-acp-kit";
+import {
+  type TuttiRecommendedSystemPrompt,
+  loadTuttiAgentSkillContext,
+} from "@tutti-os/agent-acp-kit/tutti";
 
+import {
+  type ImageAttachmentMetadata,
+  buildImageAttachmentMetadata,
+} from "../image-attachment-metadata.js";
 import { createAimcToolsMcpServerConfig } from "../local-agent-host/mcp-config.js";
 import {
   mapWorkspaceSkillsToLocalAgentManifest,
@@ -30,6 +39,76 @@ type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   "local-agent",
   AgentRuntimeProvider
 >;
+type TuttiLocalAgentSkillContext = {
+  recommendedSystemPrompt?: TuttiRecommendedSystemPrompt;
+  skillManifest: SkillMaterializationRecord[];
+};
+
+const LOCAL_AGENT_RUNS_DIR_NAME = ".aimc-agent-runs";
+
+function safeRunDirSegment(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+type LocalAgentRunDirectoryResult = {
+  runDir: string;
+  useManagedAgentInvocation: boolean;
+};
+
+export async function createLocalAgentRunDirectory(input: {
+  appDataDir?: string;
+  runId: string;
+  runtimeProvider: AgentRuntimeProvider;
+}): Promise<LocalAgentRunDirectoryResult> {
+  const appDataRunsDir = input.appDataDir
+    ? join(input.appDataDir, LOCAL_AGENT_RUNS_DIR_NAME)
+    : undefined;
+
+  if (appDataRunsDir) {
+    return createAppDataLocalAgentRunDirectory(input, appDataRunsDir);
+  }
+
+  return {
+    runDir: await mkdtemp(
+      join(tmpdir(), `aimc-local-agent-${input.runtimeProvider}-run-`),
+    ),
+    useManagedAgentInvocation: false,
+  };
+}
+
+async function createAppDataLocalAgentRunDirectory(
+  input: {
+    runId: string;
+    runtimeProvider: AgentRuntimeProvider;
+  },
+  appDataRunsDir: string,
+): Promise<LocalAgentRunDirectoryResult> {
+  const runDir = join(
+    appDataRunsDir,
+    `${safeRunDirSegment(input.runtimeProvider)}-${safeRunDirSegment(
+      input.runId,
+    )}`,
+  );
+  await mkdir(runDir, { recursive: true });
+  return {
+    runDir,
+    useManagedAgentInvocation: false,
+  };
+}
+
+function normalizeRunDirectoryResult(
+  result: string | LocalAgentRunDirectoryResult,
+  managed: boolean,
+): LocalAgentRunDirectoryResult {
+  if (typeof result !== "string") {
+    return result;
+  }
+
+  return {
+    runDir: result,
+    useManagedAgentInvocation: managed,
+  };
+}
 
 function mapResumeContext(
   resumeContext: RuntimeExecutionContext["run"]["resumeContext"],
@@ -56,6 +135,79 @@ function stripLocalAgentProviderPrefix(model: string, provider: string) {
 
 function normalizeWorkspaceSkillPathsForLocalAgent(prompt: string) {
   return prompt.replaceAll("/workspace-skills/", "workspace-skills/");
+}
+
+function joinPromptParts(...parts: Array<string | undefined>) {
+  return parts
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function formatTuttiSkillGuidance(systemPrompt: string | undefined) {
+  const trimmed = systemPrompt?.trim();
+  return trimmed
+    ? `Additional Tutti CLI skill guidance:\n${trimmed}`
+    : undefined;
+}
+
+function shouldUseTuttiSkillContext(prompt: string) {
+  return prompt.includes("mention://");
+}
+
+function tuttiWorkspaceCwd(fallback: string) {
+  return process.env.TUTTI_WORKSPACE_ROOT?.trim() || fallback;
+}
+
+function tuttiCliEnv(tuttiCliPath: string) {
+  return { TUTTI_CLI: tuttiCliPath };
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function loadTuttiLocalAgentSkillContext(input: {
+  cwd: string;
+  provider: AgentRuntimeProvider;
+  runId: string;
+  tuttiCliPath?: string;
+}): Promise<TuttiLocalAgentSkillContext> {
+  if (!input.tuttiCliPath) {
+    return { skillManifest: [] };
+  }
+
+  try {
+    const context = await loadTuttiAgentSkillContext({
+      command: input.tuttiCliPath,
+      cwd: tuttiWorkspaceCwd(input.cwd),
+      provider: input.provider,
+      agentSessionId: input.runId,
+    });
+    return {
+      skillManifest: context.skillManifest,
+      ...(context.recommendedSystemPrompt
+        ? { recommendedSystemPrompt: context.recommendedSystemPrompt }
+        : {}),
+    };
+  } catch (error) {
+    console.warn(
+      `[aimc] Unable to load Tutti agent skill bundle: ${errorMessage(error)}`,
+    );
+    return { skillManifest: [] };
+  }
+}
+
+const DEFAULT_LOCAL_AGENT_TIMEOUT_MS = 30 * 60_000;
+const DEFAULT_LOCAL_AGENT_MCP_STARTUP_TIMEOUT_MS = 2 * 60_000;
+
+function resolveLocalAgentTimeoutMs(runtimeEnv: {
+  codexImagegenTimeoutMs?: number;
+}) {
+  return Math.max(
+    runtimeEnv.codexImagegenTimeoutMs ?? 0,
+    DEFAULT_LOCAL_AGENT_TIMEOUT_MS,
+  );
 }
 
 export function createLocalAgentRuntimeProvider(
@@ -93,6 +245,7 @@ export function createLocalAgentRuntimeProvider(
         await deps.loadCanvasSummaryForRuntime(readyContext);
 
       let attachmentDataMap: Record<string, string> = {};
+      const attachmentMetadata: Record<string, ImageAttachmentMetadata> = {};
       if (run.attachments?.length) {
         const downloaded: Array<{
           assetId: string;
@@ -107,6 +260,9 @@ export function createLocalAgentRuntimeProvider(
                 /^data:([^;]+);base64,(.+)$/,
               );
               if (dataUriMatch) {
+                const buffer = Buffer.from(dataUriMatch[2] ?? "", "base64");
+                const metadata = buildImageAttachmentMetadata(buffer);
+                if (metadata) attachmentMetadata[attachment.assetId] = metadata;
                 downloaded.push({
                   assetId: attachment.assetId,
                   mimeType: dataUriMatch[1] ?? attachment.mimeType,
@@ -117,6 +273,8 @@ export function createLocalAgentRuntimeProvider(
 
               const response = await fetch(attachment.url);
               const buffer = Buffer.from(await response.arrayBuffer());
+              const metadata = buildImageAttachmentMetadata(buffer);
+              if (metadata) attachmentMetadata[attachment.assetId] = metadata;
               downloaded.push({
                 assetId: attachment.assetId,
                 mimeType:
@@ -138,9 +296,9 @@ export function createLocalAgentRuntimeProvider(
         run.prompt,
         run.attachments ?? [],
         run.imageGenerationPreference,
-        run.mentions,
         run.videoGenerationPreference,
         canvasSummary,
+        attachmentMetadata,
       );
       const normalizedPrompt =
         normalizeWorkspaceSkillPathsForLocalAgent(enrichedPrompt);
@@ -159,21 +317,47 @@ export function createLocalAgentRuntimeProvider(
             ].join("\n")
           : undefined;
       const prompt = [
-        "You are the local agent runtime for AI Media Canvas.",
+        "You are the local agent runtime for AI Canvas.",
         "If the user wants a finished visual asset, call generate_image or generate_video.",
         "Use inspect_canvas before precise canvas edits, and use manipulate_canvas for deterministic canvas updates.",
         "Do not claim an image or canvas update happened unless the tool actually succeeded.",
+        "Ask clarifying questions or confirmation requests in normal assistant text. Do not use provider-native interactive question tools such as AskUserQuestion.",
+        "Before a non-Codex agent calls generate_image with model codex/gpt-image-2, it must call get_workspace_settings. If codexImagegen.confirmationRequired is true, explain in normal assistant text that no image generation model is directly available for this agent and ask whether to delegate this image generation task to Codex. After the user answers, call update_workspace_settings with patch.codexImagegenDelegation=allow-once for a one-time allow, always for a durable allow, or deny before stopping.",
         "Workspace skill files are materialized under the current working directory; when reading them with shell or file tools, use relative paths such as `workspace-skills/<slug>/SKILL.md` and never `/workspace-skills/<slug>/SKILL.md`.",
         handoffSection,
         normalizedPrompt,
       ].join("\n\n");
-      const systemPrompt = buildAimcSystemPrompt({
-        brandKitId: readyContext.brandKitId,
-      });
-
-      const runDir = await mkdtemp(
-        join(tmpdir(), `aimc-local-agent-${runtimeProvider}-run-`),
-      );
+      const loadManagedAgentRunContext = run.loadManagedAgentRunContext;
+      if (loadManagedAgentRunContext) {
+        run.loadManagedAgentRunContext = undefined;
+      }
+      const managedRunContext = loadManagedAgentRunContext
+        ? await loadManagedAgentRunContext()
+        : undefined;
+      const managed = Boolean(managedRunContext);
+      const runDirectory = managedRunContext
+        ? undefined
+        : normalizeRunDirectoryResult(
+            deps.createRunDirectory
+              ? await deps.createRunDirectory({
+                  managed,
+                  runId: run.runId,
+                  runtimeProvider,
+                })
+              : await createLocalAgentRunDirectory({
+                  ...(runtimeEnv.appDataDir
+                    ? { appDataDir: runtimeEnv.appDataDir }
+                    : {}),
+                  runId: run.runId,
+                  runtimeProvider,
+                }),
+            managed,
+          );
+      const runDir = managedRunContext?.cwd ?? runDirectory?.runDir;
+      if (!runDir) {
+        throw new Error("Local agent run directory is required.");
+      }
+      const managedAgentInvocation = managedRunContext?.managedAgentInvocation;
       await materializeWorkspaceSkillsForLocalAgent({
         runDir,
         workspaceSkills,
@@ -190,29 +374,34 @@ export function createLocalAgentRuntimeProvider(
         ...(run.canvasId ? { canvasId: run.canvasId } : {}),
         ...(run.connectionId ? { connectionId: run.connectionId } : {}),
         runId: run.runId,
+        runtimeProvider,
+        sessionId: run.sessionId,
         runtimeEnv,
+        ...(run.delegationConsent
+          ? { delegationConsent: run.delegationConsent }
+          : {}),
+        codexImagegenConsentBudget: run.codexImagegenConsentBudget ?? 0,
+        onWorkspaceSettingsStateChange: (state) => {
+          if (state.codexImagegenConsentBudget !== undefined) {
+            run.codexImagegenConsentBudget = state.codexImagegenConsentBudget;
+          }
+          if (state.codexImagegenDelegation !== undefined) {
+            run.codexImagegenDelegation = state.codexImagegenDelegation;
+          }
+        },
+        ...(run.codexImagegenDelegation
+          ? {
+              workspaceSettings: {
+                codexImagegenDelegation: run.codexImagegenDelegation,
+              },
+            }
+          : {}),
         sandboxDir: runDir,
         ...(submitImageJob ? { submitImageJob } : {}),
         ...(submitVideoJob ? { submitVideoJob } : {}),
         ...(run.userId ? { userId: run.userId } : {}),
       });
 
-      const history = await loadNormalizedSessionHistory({
-        currentPrompt: enrichedPrompt,
-        ...(deps.loadSessionMessages
-          ? { loadSessionMessages: deps.loadSessionMessages }
-          : {}),
-        sessionId: run.sessionId,
-      });
-      const skillManifest =
-        mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills);
-      const resume = mapResumeContext(run.resumeContext);
-      const mcpServers = [
-        createAimcToolsMcpServerConfig({
-          gatewayBaseUrl: deps.toolGatewayBaseUrl,
-          gatewayToken: gatewaySession.token,
-        }),
-      ];
       const messageId = run.assistantMessageId ?? `message_${run.runId}`;
       let terminalEmitted = false;
       let lastError: Extract<AgentEvent, { type: "error" }> | undefined;
@@ -220,6 +409,47 @@ export function createLocalAgentRuntimeProvider(
       rlog.lap("local_agent_runtime_start", { provider: runtimeProvider });
 
       try {
+        const history = await loadNormalizedSessionHistory({
+          currentPrompt: enrichedPrompt,
+          ...(deps.loadSessionMessages
+            ? { loadSessionMessages: deps.loadSessionMessages }
+            : {}),
+          sessionId: run.sessionId,
+        });
+        const tuttiSkillContext = shouldUseTuttiSkillContext(enrichedPrompt)
+          ? await loadTuttiLocalAgentSkillContext({
+              cwd: runDir,
+              provider: runtimeProvider,
+              runId: run.runId,
+              ...(runtimeEnv.tuttiCliPath
+                ? { tuttiCliPath: runtimeEnv.tuttiCliPath }
+                : {}),
+            })
+          : { skillManifest: [] };
+        const skillManifest = [
+          ...mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills),
+          ...tuttiSkillContext.skillManifest,
+        ];
+        const systemPrompt = joinPromptParts(
+          buildAimcSystemPrompt({
+            brandKitId: readyContext.brandKitId,
+            locale: run.locale,
+          }),
+          formatTuttiSkillGuidance(
+            tuttiSkillContext.recommendedSystemPrompt?.content,
+          ),
+        );
+        const resume = mapResumeContext(run.resumeContext);
+        const mcpServers = [
+          createAimcToolsMcpServerConfig({
+            gatewayBaseUrl: deps.toolGatewayBaseUrl,
+            gatewayToken: gatewaySession.token,
+            requireSandboxEntrypoint: Boolean(managedAgentInvocation),
+            startupTimeoutMs: DEFAULT_LOCAL_AGENT_MCP_STARTUP_TIMEOUT_MS,
+            toolTimeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
+          }),
+        ];
+
         yield {
           type: "run.started",
           runId: run.runId,
@@ -235,16 +465,18 @@ export function createLocalAgentRuntimeProvider(
           prompt,
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
-          model: stripLocalAgentProviderPrefix(
-            resolvedModel,
-            runtimeProvider,
-          ),
+          ...(managedAgentInvocation ? { managedAgentInvocation } : {}),
+          model: stripLocalAgentProviderPrefix(resolvedModel, runtimeProvider),
           runtimeKind: "local-agent",
           runtimeProvider,
           mcpServers,
           ...(resume ? { resume } : {}),
           signal: run.controller.signal,
           skillManifest,
+          ...(runtimeEnv.tuttiCliPath
+            ? { env: tuttiCliEnv(runtimeEnv.tuttiCliPath) }
+            : {}),
+          timeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
         })) {
           if (event.type === "error") {
             lastError = event;

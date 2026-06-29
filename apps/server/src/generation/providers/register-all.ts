@@ -8,11 +8,21 @@
 import type { ServerEnv } from "../../config/env.js";
 import { AgnesImageProvider } from "./agnes-image.js";
 import { AgnesVideoProvider } from "./agnes-video.js";
+import { CodexImagegenProvider } from "./codex-imagegen.js";
+import {
+  detectCodexImagegenCapability,
+  type CodexImagegenCapability,
+} from "./codex-imagegen-capability.js";
 import { GoogleImageProvider } from "./google-image.js";
 import { GoogleVertexImageProvider } from "./google-vertex-image.js";
 import { GoogleVertexVideoProvider } from "./google-vertex-video.js";
 import { GoogleVideoProvider } from "./google-video.js";
-import { OpenAIImageProvider } from "./openai-image.js";
+import { KieImageProvider } from "./kie-image.js";
+import { KieVideoProvider } from "./kie-video.js";
+import {
+  OpenAIImageProvider,
+  isOfficialOpenAIImageBaseURL,
+} from "./openai-image.js";
 import { registerImageProvider, registerVideoProvider } from "./registry.js";
 import { ReplicateImageProvider } from "./replicate-image.js";
 import { ReplicateVideoProvider } from "./replicate-video.js";
@@ -25,7 +35,43 @@ import { VolcesImageProvider } from "./volces-image.js";
  * keeping the behaviour identical to the previous inline registration while
  * ensuring every process gets the full set.
  */
-export function registerAllProviders(env: ServerEnv): void {
+export function registerAllProviders(
+  env: ServerEnv,
+  options: {
+    detectCodexImagegenCapability?: (
+      env: ServerEnv,
+    ) => CodexImagegenCapability;
+  } = {},
+): void {
+  if (env.codexImagegenEnabled) {
+    const capability = options.detectCodexImagegenCapability
+      ? options.detectCodexImagegenCapability(env)
+      : detectCodexImagegenCapability({
+          enabled: true,
+          ...(env.codexImagegenCodexHome
+            ? { codexHome: env.codexImagegenCodexHome }
+            : {}),
+          ...(env.codexImagegenAgentModel
+            ? { agentModel: env.codexImagegenAgentModel }
+            : {}),
+          ...(env.codexImagegenTimeoutMs
+            ? { timeoutMs: env.codexImagegenTimeoutMs }
+            : {}),
+        });
+    if (capability.ready) {
+      registerImageProvider(
+        new CodexImagegenProvider({
+          ...(env.codexImagegenCodexHome
+            ? { codexHome: env.codexImagegenCodexHome }
+            : {}),
+          ...(env.codexImagegenTimeoutMs
+            ? { timeoutMs: env.codexImagegenTimeoutMs }
+            : {}),
+        }),
+      );
+    }
+  }
+
   if (env.agnesApiKey) {
     registerImageProvider(
       new AgnesImageProvider(env.agnesApiKey, env.agnesBaseUrl),
@@ -33,6 +79,11 @@ export function registerAllProviders(env: ServerEnv): void {
     registerVideoProvider(
       new AgnesVideoProvider(env.agnesApiKey, env.agnesBaseUrl),
     );
+  }
+
+  if (env.kieApiKey) {
+    registerImageProvider(new KieImageProvider(env.kieApiKey, env.kieBaseUrl));
+    registerVideoProvider(new KieVideoProvider(env.kieApiKey, env.kieBaseUrl));
   }
 
   // Replicate — image + video
@@ -57,15 +108,18 @@ export function registerAllProviders(env: ServerEnv): void {
     };
     registerImageProvider(new GoogleVertexImageProvider(vertexConfig));
 
-    const videoLocation = env.googleVertexVideoLocation ?? env.googleVertexLocation;
-    registerVideoProvider(new GoogleVertexVideoProvider({
-      project: env.googleVertexProject,
-      location: videoLocation,
-    }));
+    const videoLocation =
+      env.googleVertexVideoLocation ?? env.googleVertexLocation;
+    registerVideoProvider(
+      new GoogleVertexVideoProvider({
+        project: env.googleVertexProject,
+        location: videoLocation,
+      }),
+    );
   }
 
   // OpenAI — image only
-  if (env.openAIApiKey) {
+  if (env.openAIApiKey && isOfficialOpenAIImageBaseURL(env.openAIApiBase)) {
     registerImageProvider(
       new OpenAIImageProvider(env.openAIApiKey, env.openAIApiBase),
     );

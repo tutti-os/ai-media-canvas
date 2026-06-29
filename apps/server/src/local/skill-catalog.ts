@@ -27,6 +27,7 @@ export type BundledSkillDefinition = {
 const DEFAULT_LOCAL_SKILLS_ROOT = fileURLToPath(
   new URL("../../../../skills/", import.meta.url),
 );
+const DEFAULT_INSTALLED_LOCAL_SKILLS = new Set(["imagegen", "video-prompting"]);
 
 let bundledSkillCache: BundledSkillDefinition[] | null = null;
 
@@ -68,8 +69,9 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
     id: "skill-system-canvas-director",
     name: "Canvas Director",
     slug: "canvas-director",
-    description: "帮助 Agent 先梳理画布结构、镜头顺序和版式层级，再给出下一步操作建议。",
-    author: "AI Media Canvas",
+    description:
+      "Helps the agent reason about canvas structure, shot order, and layout hierarchy before suggesting next actions.",
+    author: "AI Canvas",
     version: "1.0.0",
     category: "design",
     iconName: null,
@@ -93,11 +95,11 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
         "When relevant, connect the suggestion back to Brand Kit assets already available locally.",
       ],
       [
-        "User: 帮我把这个画布改成三栏信息架构",
-        "Agent: 先给出结构方案，再说明每一栏适合放什么内容。",
+        "User: Turn this canvas into a three-column information architecture.",
+        "Agent: First outline the structure, then explain what content belongs in each column.",
       ],
     ),
-    createdBy: "AI Media Canvas",
+    createdBy: "AI Canvas",
     sourceUrl: null,
     packageName: "@aimc/canvas-director",
     metadata: { scope: "bundled", tags: ["layout", "hierarchy"] },
@@ -106,8 +108,9 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
     id: "skill-system-brand-keeper",
     name: "Brand Keeper",
     slug: "brand-keeper",
-    description: "让 Agent 在输出建议时主动参考本地 Brand Kit 里的字体、颜色和 Logo 资产。",
-    author: "AI Media Canvas",
+    description:
+      "Guides the agent to reference local Brand Kit fonts, colors, and logo assets when making recommendations.",
+    author: "AI Canvas",
     version: "1.0.0",
     category: "writing",
     iconName: null,
@@ -123,11 +126,11 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
         "Call out missing brand inputs instead of inventing them.",
       ],
       [
-        "User: 这个项目的标题语气要统一",
-        "Agent: 先说明当前品牌调性，再给出标题风格建议。",
+        "User: Make the title voice consistent across this project.",
+        "Agent: First describe the current brand tone, then suggest a title style.",
       ],
     ),
-    createdBy: "AI Media Canvas",
+    createdBy: "AI Canvas",
     sourceUrl: null,
     packageName: "@aimc/brand-keeper",
     metadata: { scope: "bundled", tags: ["brand", "tone"] },
@@ -136,8 +139,9 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
     id: "skill-system-prompt-polisher",
     name: "Prompt Polisher",
     slug: "prompt-polisher",
-    description: "把模糊需求整理成更适合本地图片生成面板使用的结构化提示。",
-    author: "AI Media Canvas",
+    description:
+      "Turns vague requests into structured prompts suited for the local image generation panel.",
+    author: "AI Canvas",
     version: "1.0.0",
     category: "generation",
     iconName: null,
@@ -153,11 +157,11 @@ const CURATED_BUNDLED_SKILLS: BundledSkillDefinition[] = [
         "Point out where reference images or brand constraints would improve the result.",
       ],
       [
-        "User: 我想做一张更高级一点的海报图",
-        "Agent: 先补齐风格、场景、标题气质，再给出可直接投喂的 prompt。",
+        "User: I want a more premium-looking poster image.",
+        "Agent: First fill in style, scene, and title mood, then provide a prompt ready for generation.",
       ],
     ),
-    createdBy: "AI Media Canvas",
+    createdBy: "AI Canvas",
     sourceUrl: null,
     packageName: "@aimc/prompt-polisher",
     metadata: { scope: "bundled", tags: ["prompt", "image"] },
@@ -209,8 +213,10 @@ function loadDirectoryBundledSkills(): BundledSkillDefinition[] {
         frontmatter.description ??
         extractSection(body, "Description") ??
         "Local bundled skill";
-      const author = frontmatter.metadata.author ?? frontmatter.author ?? "AI Media Canvas";
-      const version = frontmatter.metadata.version ?? frontmatter.version ?? "1.0.0";
+      const author =
+        frontmatter.metadata.author ?? frontmatter.author ?? "AI Canvas";
+      const version =
+        frontmatter.metadata.version ?? frontmatter.version ?? "1.0.0";
 
       return [
         {
@@ -234,7 +240,7 @@ function loadDirectoryBundledSkills(): BundledSkillDefinition[] {
             path: `skills/${slug}/SKILL.md`,
             files: fileManifest,
           },
-          installedByDefault: false,
+          installedByDefault: DEFAULT_INSTALLED_LOCAL_SKILLS.has(slug),
         },
       ];
     });
@@ -255,7 +261,7 @@ function parseFrontmatter(markdown: string) {
   const frontmatter = emptyFrontmatter();
   let inMetadata = false;
 
-  for (const rawLine of match[1]!.split("\n")) {
+  for (const rawLine of (match[1] ?? "").split("\n")) {
     const line = rawLine.replace(/\r$/, "");
     if (!line.trim()) {
       continue;
@@ -329,14 +335,25 @@ function resolveDisplayName(
 }
 
 function extractSection(markdown: string, heading: string) {
-  const regex = new RegExp(`##\\s+${heading}\\s+([\\s\\S]*?)(?:\\n##\\s+|$)`, "i");
+  const regex = new RegExp(
+    `##\\s+${heading}\\s+([\\s\\S]*?)(?:\\n##\\s+|$)`,
+    "i",
+  );
   const match = markdown.match(regex);
   return match?.[1]?.trim() ?? null;
 }
 
-function inferCategory(slug: string, description: string, body: string): SkillCategory {
+function inferCategory(
+  slug: string,
+  description: string,
+  body: string,
+): SkillCategory {
   const haystack = `${slug} ${description} ${body}`.toLowerCase();
-  if (haystack.includes("design") || haystack.includes("canvas") || haystack.includes("poster")) {
+  if (
+    haystack.includes("design") ||
+    haystack.includes("canvas") ||
+    haystack.includes("poster")
+  ) {
     return "design";
   }
   if (

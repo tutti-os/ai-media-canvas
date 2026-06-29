@@ -1,16 +1,13 @@
 import type {
-  AgentProviderInstallResponse,
   AssetSignedUrlResponse,
   CanvasDetail,
   ChatMessageCreateRequest,
-  InstallableAgentProviderId,
+  GenerationModelSchema,
   JobResponse,
+  ManagedFileAssetMetadata,
   MessageCreateResponse,
   MessageListResponse,
   ModelListResponse,
-  NextopManagedConnectionResponse,
-  NextopManagedGrantCreateRequest,
-  NextopManagedGrantResponse,
   ProfileUpdateResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
@@ -25,6 +22,9 @@ import type {
   SkillListResponse,
   SkillToggleRequest,
   StreamEvent,
+  TuttiManagedConnectionResponse,
+  TuttiManagedGrantCreateRequest,
+  TuttiManagedGrantResponse,
   UploadResponse,
   ViewerResponse,
   WorkspaceSettingsResponse,
@@ -35,6 +35,11 @@ import { ApiApplicationError } from "./api-errors";
 import { dedupeRequest } from "./dedupe-request";
 import { getServerBaseUrl } from "./env";
 import { generationJobService } from "./generation-job-service";
+import {
+  type UploadAppAssetOptions,
+  hasTuttiFileUploadBridge,
+  uploadTuttiAppAsset,
+} from "./tutti-file-upload";
 
 export { ApiApplicationError } from "./api-errors";
 
@@ -125,16 +130,23 @@ export async function saveCanvas(
     appState: Record<string, unknown>;
     files: Record<string, Record<string, unknown>>;
   },
-): Promise<void> {
+  options: { baseRevision?: number } = {},
+): Promise<{ revision: number }> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/canvases/${canvasId}`,
     {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({
+        content,
+        ...(options.baseRevision === undefined
+          ? {}
+          : { baseRevision: options.baseRevision }),
+      }),
     },
   );
   if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { revision: number };
 }
 
 export async function uploadThumbnail(
@@ -185,8 +197,17 @@ export async function updateWorkspaceSettings(
   return (await response.json()) as WorkspaceSettingsResponse;
 }
 
-export async function fetchModels(): Promise<ModelListResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/models`, {
+export type FetchModelsOptions = {
+  refresh?: boolean;
+};
+
+export async function fetchModels(
+  options: FetchModelsOptions = {},
+): Promise<ModelListResponse> {
+  const url = `${getServerBaseUrl()}/api/models${
+    options.refresh ? "?refresh=1" : ""
+  }`;
+  const response = await fetch(url, {
     cache: "no-store",
   });
   if (!response.ok) {
@@ -195,20 +216,20 @@ export async function fetchModels(): Promise<ModelListResponse> {
   return (await response.json()) as ModelListResponse;
 }
 
-export async function fetchNextopManagedConnection(): Promise<NextopManagedConnectionResponse> {
+export async function fetchTuttiManagedConnection(): Promise<TuttiManagedConnectionResponse> {
   const response = await fetch(
-    `${getServerBaseUrl()}/api/nextop/managed-model-connection`,
+    `${getServerBaseUrl()}/api/tutti/managed-model-connection`,
     { cache: "no-store" },
   );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as NextopManagedConnectionResponse;
+  return (await response.json()) as TuttiManagedConnectionResponse;
 }
 
-export async function connectNextopManagedModels(
-  data: NextopManagedGrantCreateRequest,
-): Promise<NextopManagedGrantResponse> {
+export async function connectTuttiManagedModels(
+  data: TuttiManagedGrantCreateRequest,
+): Promise<TuttiManagedGrantResponse> {
   const response = await fetch(
-    `${getServerBaseUrl()}/api/nextop/managed-model-connection/grant`,
+    `${getServerBaseUrl()}/api/tutti/managed-model-connection/grant`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -216,27 +237,16 @@ export async function connectNextopManagedModels(
     },
   );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as NextopManagedGrantResponse;
+  return (await response.json()) as TuttiManagedGrantResponse;
 }
 
-export async function disconnectNextopManagedModels(): Promise<NextopManagedConnectionResponse> {
+export async function disconnectTuttiManagedModels(): Promise<TuttiManagedConnectionResponse> {
   const response = await fetch(
-    `${getServerBaseUrl()}/api/nextop/managed-model-connection`,
+    `${getServerBaseUrl()}/api/tutti/managed-model-connection`,
     { method: "DELETE" },
   );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as NextopManagedConnectionResponse;
-}
-
-export async function installAgentProvider(
-  provider: InstallableAgentProviderId,
-): Promise<AgentProviderInstallResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/local-agent/providers/${provider}/install`,
-    { method: "POST" },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as AgentProviderInstallResponse;
+  return (await response.json()) as TuttiManagedConnectionResponse;
 }
 
 // --- Chat Session API ---
@@ -345,10 +355,31 @@ export async function fetchRunEvents(
 
 // --- Upload API ---
 
+export type UploadFileOptions = Pick<
+  UploadAppAssetOptions,
+  "onProgress" | "signal"
+>;
+
 export async function uploadFile(
   file: File,
   projectId?: string,
+  options: UploadFileOptions = {},
 ): Promise<UploadResponse> {
+  if (hasTuttiFileUploadBridge()) {
+    const uploaded = await uploadTuttiAppAsset(file, {
+      name: file.name,
+      mimeType: file.type || "application/octet-stream",
+      ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+    const response = await createManagedFileAsset(
+      uploaded,
+      projectId,
+      options.signal,
+    );
+    return response;
+  }
+
   const formData = new FormData();
   formData.append("file", file);
   if (projectId) {
@@ -358,7 +389,29 @@ export async function uploadFile(
   const response = await fetch(`${getServerBaseUrl()}/api/uploads`, {
     method: "POST",
     body: formData,
+    ...(options.signal ? { signal: options.signal } : {}),
   });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as UploadResponse;
+}
+
+async function createManagedFileAsset(
+  file: ManagedFileAssetMetadata,
+  projectId: string | undefined,
+  signal: AbortSignal | undefined,
+): Promise<UploadResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/uploads/managed-file`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        file,
+        ...(projectId ? { projectId } : {}),
+      }),
+      ...(signal ? { signal } : {}),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as UploadResponse;
 }
@@ -477,6 +530,7 @@ export type ImageModelInfo = {
   creditCost?: number;
   accessible?: boolean;
   minTier?: string;
+  schema?: GenerationModelSchema;
 };
 
 export async function fetchImageModels(): Promise<{
@@ -496,6 +550,19 @@ export type VideoModelInfo = {
   provider: string;
   iconUrl?: string;
   accessible?: boolean;
+  capabilities?: {
+    textToVideo: boolean;
+    imageToVideo: boolean;
+    videoToVideo: boolean;
+    audio: boolean;
+  };
+  limits?: {
+    maxDuration: number;
+    allowedDurations?: number[];
+    maxResolution: "480p" | "720p" | "1080p" | "2160p";
+    maxInputImages: number;
+  };
+  schema?: GenerationModelSchema;
 };
 
 export async function fetchVideoModels(): Promise<{
@@ -523,19 +590,23 @@ export async function generateImageDirect(
     signal?: AbortSignal;
   },
 ): Promise<GenerateImageResponse> {
-  const { job } = await createGenerationJob("/api/jobs/image-generation", {
-    prompt,
-    ...(options?.model ? { model: options.model } : {}),
-    ...(options?.aspectRatio ? { aspect_ratio: options.aspectRatio } : {}),
-    ...(options?.quality ? { quality: options.quality } : {}),
-    ...(options?.inputImages?.length
-      ? { input_images: options.inputImages }
-      : {}),
-    ...(options?.size ? { size: options.size } : {}),
-    ...(options?.seed !== undefined ? { seed: options.seed } : {}),
-    ...(options?.projectId ? { project_id: options.projectId } : {}),
-    ...(options?.canvasId ? { canvas_id: options.canvasId } : {}),
-  }, options?.signal);
+  const { job } = await createGenerationJob(
+    "/api/jobs/image-generation",
+    {
+      prompt,
+      ...(options?.model ? { model: options.model } : {}),
+      ...(options?.aspectRatio ? { aspect_ratio: options.aspectRatio } : {}),
+      ...(options?.quality ? { quality: options.quality } : {}),
+      ...(options?.inputImages?.length
+        ? { input_images: options.inputImages }
+        : {}),
+      ...(options?.size ? { size: options.size } : {}),
+      ...(options?.seed !== undefined ? { seed: options.seed } : {}),
+      ...(options?.projectId ? { project_id: options.projectId } : {}),
+      ...(options?.canvasId ? { canvas_id: options.canvasId } : {}),
+    },
+    options?.signal,
+  );
   options?.onJobCreated?.(job.id);
   const result = await generationJobService.watch(job.id, {
     jobType: "image_generation",
@@ -559,6 +630,9 @@ export type GenerateVideoResponse = {
   width: number;
   height: number;
   durationSeconds: number;
+  model?: string;
+  aspectRatio?: string;
+  resolution?: string;
 };
 
 export async function generateVideoDirect(
@@ -569,7 +643,8 @@ export async function generateVideoDirect(
     resolution?: string;
     aspectRatio?: string;
     inputImages?: string[];
-    videoMode?: "multivideo" | "keyframes";
+    videoMode?: "multivideo" | "keyframes" | "reference";
+    enableAudio?: boolean;
     seed?: number;
     negativePrompt?: string;
     frameRate?: number;
@@ -580,30 +655,53 @@ export async function generateVideoDirect(
     signal?: AbortSignal;
   },
 ): Promise<GenerateVideoResponse> {
-  const { job } = await createGenerationJob("/api/jobs/video-generation", {
-    prompt,
-    ...(options?.model ? { model: options.model } : {}),
-    ...(options?.duration != null ? { duration: options.duration } : {}),
-    ...(options?.resolution ? { resolution: options.resolution } : {}),
-    ...(options?.aspectRatio ? { aspect_ratio: options.aspectRatio } : {}),
-    ...(options?.inputImages?.length
-      ? { input_images: options.inputImages }
-      : {}),
-    ...(options?.videoMode ? { video_mode: options.videoMode } : {}),
-    ...(options?.seed !== undefined ? { seed: options.seed } : {}),
-    ...(options?.negativePrompt
-      ? { negative_prompt: options.negativePrompt }
-      : {}),
-    ...(options?.frameRate !== undefined ? { frame_rate: options.frameRate } : {}),
-    ...(options?.numFrames !== undefined ? { num_frames: options.numFrames } : {}),
-    ...(options?.projectId ? { project_id: options.projectId } : {}),
-    ...(options?.canvasId ? { canvas_id: options.canvasId } : {}),
-  }, options?.signal);
+  const { job } = await createGenerationJob(
+    "/api/jobs/video-generation",
+    {
+      prompt,
+      ...(options?.model ? { model: options.model } : {}),
+      ...(options?.duration != null ? { duration: options.duration } : {}),
+      ...(options?.resolution ? { resolution: options.resolution } : {}),
+      ...(options?.aspectRatio ? { aspect_ratio: options.aspectRatio } : {}),
+      ...(options?.inputImages?.length
+        ? { input_images: options.inputImages }
+        : {}),
+      ...(options?.videoMode ? { video_mode: options.videoMode } : {}),
+      ...(options?.enableAudio !== undefined
+        ? { enable_audio: options.enableAudio }
+        : {}),
+      ...(options?.seed !== undefined ? { seed: options.seed } : {}),
+      ...(options?.negativePrompt
+        ? { negative_prompt: options.negativePrompt }
+        : {}),
+      ...(options?.frameRate !== undefined
+        ? { frame_rate: options.frameRate }
+        : {}),
+      ...(options?.numFrames !== undefined
+        ? { num_frames: options.numFrames }
+        : {}),
+      ...(options?.projectId ? { project_id: options.projectId } : {}),
+      ...(options?.canvasId ? { canvas_id: options.canvasId } : {}),
+    },
+    options?.signal,
+  );
   options?.onJobCreated?.(job.id);
   const result = await generationJobService.watch(job.id, {
     jobType: "video_generation",
     ...(options?.signal ? { signal: options.signal } : {}),
   }).promise;
+  const model =
+    typeof result.model === "string" ? result.model : options?.model;
+  const aspectRatio =
+    typeof result.aspectRatio === "string"
+      ? result.aspectRatio
+      : typeof result.aspect_ratio === "string"
+        ? result.aspect_ratio
+        : options?.aspectRatio;
+  const resolution =
+    typeof result.resolution === "string"
+      ? result.resolution
+      : options?.resolution;
   return {
     url: readStringResult(result, "signed_url"),
     assetId: readStringResult(result, "asset_id"),
@@ -612,7 +710,16 @@ export async function generateVideoDirect(
     width: readNumberResult(result, "width"),
     height: readNumberResult(result, "height"),
     durationSeconds: readNumberResult(result, "duration_seconds"),
+    ...(model ? { model } : {}),
+    ...(aspectRatio ? { aspectRatio } : {}),
+    ...(resolution ? { resolution } : {}),
   };
+}
+
+export async function fetchGenerationJob(jobId: string): Promise<JobResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/jobs/${jobId}`);
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as JobResponse;
 }
 
 async function createGenerationJob(

@@ -27,7 +27,7 @@ const inspectCanvasSchema = z.object({
 });
 
 type CanvasElement = Record<string, unknown>;
-type CanvasClient = {
+export type CanvasClient = {
   from(table: "canvases"): {
     select(columns: string): {
       eq(
@@ -79,12 +79,14 @@ function summarizeElement(el: CanvasElement) {
     base.fontSize = el.fontSize;
   }
 
-  if (el.type === "image") {
+  if (el.type === "image" || el.type === "rectangle") {
     const customData = el.customData as Record<string, unknown> | undefined;
-    // Video elements are stored as Excalidraw image elements with customData.isVideo = true
+    // Video elements are stored as ordinary canvas elements with customData.isVideo = true.
     if (customData?.isVideo === true) {
       base.type = "video";
       if (customData.videoUrl) base.videoUrl = customData.videoUrl;
+      if (customData.title) base.title = customData.title;
+      if (customData.prompt) base.prompt = customData.prompt;
       if (customData.mimeType) base.mimeType = customData.mimeType;
       if (customData.durationSeconds !== undefined)
         base.durationSeconds = customData.durationSeconds;
@@ -95,7 +97,8 @@ function summarizeElement(el: CanvasElement) {
     }
   }
 
-  // Embeddable elements: video elements are stored as Excalidraw embeddable with customData.isVideo
+  // Legacy embeddable video elements are normalized on the client, but keep
+  // support here so older persisted canvases still inspect correctly.
   if (el.type === "embeddable") {
     const customData = el.customData as Record<string, unknown> | undefined;
     if (customData?.isVideo === true) {
@@ -258,13 +261,15 @@ export function createInspectCanvasTool(deps: {
 
       if (input.filter_type && input.filter_type.length > 0) {
         filtered = filtered.filter((el) => {
-          // Resolve logical type: image/embeddable elements with customData.isVideo are treated as "video"
+          // Resolve logical type: elements with customData.isVideo are treated as "video".
           const customData = el.customData as
             | Record<string, unknown>
             | undefined;
           const isVideoElement =
-            (el.type === "image" || el.type === "embeddable") &&
-            customData?.isVideo === true;
+            customData?.isVideo === true &&
+            (el.type === "image" ||
+              el.type === "rectangle" ||
+              el.type === "embeddable");
           const logicalType = isVideoElement ? "video" : (el.type as string);
           return input.filter_type?.includes(logicalType);
         });

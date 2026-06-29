@@ -14,6 +14,7 @@ type MessageListProps = {
   sessionsLoading: boolean;
   messagesLoading: boolean;
   onSend: (message: string) => void;
+  onOpenMediaSettings?: (() => void) | undefined;
 };
 
 /**
@@ -38,6 +39,7 @@ export const MessageList = React.memo(function MessageList({
   sessionsLoading,
   messagesLoading,
   onSend,
+  onOpenMediaSettings,
 }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -77,6 +79,7 @@ export const MessageList = React.memo(function MessageList({
                   role={msg.role}
                   contentBlocks={msg.contentBlocks}
                   isStreaming={isStreamingMessage}
+                  onOpenMediaSettings={onOpenMediaSettings}
                 />
               </MessageErrorBoundary>
             );

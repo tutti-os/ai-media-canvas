@@ -1,19 +1,80 @@
-import type { AgentEvent } from "@nextop-os/agent-acp-kit";
 import {
-  imageArtifactSchema,
+  type AimcErrorCode,
   type StreamEvent,
   type ToolArtifact,
+  errorCodeValues,
+  imageArtifactSchema,
   videoArtifactSchema,
 } from "@aimc/shared";
+import type { AgentEvent } from "@tutti-os/agent-acp-kit";
+import { createPipelineLogger } from "../../ws/logger.js";
 
 const INTERNAL_SKILL_READ_RE =
   /\/skills\/.+\/SKILL\.md|(?:^|[\s'"])(?:\.\/)?workspace-skills\/[^\s'"]+/;
+const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
+
+function toAimcErrorCode(value: unknown): AimcErrorCode {
+  return typeof value === "string" &&
+    (errorCodeValues as readonly string[]).includes(value)
+    ? (value as AimcErrorCode)
+    : "tool_failed";
+}
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
   return value as Record<string, unknown>;
+}
+
+function formatAskUserQuestionInput(
+  input: Record<string, unknown> | undefined,
+) {
+  const questions = Array.isArray(input?.questions) ? input.questions : [];
+  const lines: string[] = [];
+
+  questions.forEach((rawQuestion, index) => {
+    const questionRecord = toRecord(rawQuestion);
+    if (!questionRecord) return;
+
+    const header =
+      typeof questionRecord.header === "string" &&
+      questionRecord.header.trim().length > 0
+        ? questionRecord.header.trim()
+        : undefined;
+    const question =
+      typeof questionRecord.question === "string" &&
+      questionRecord.question.trim().length > 0
+        ? questionRecord.question.trim()
+        : undefined;
+    if (!header && !question) return;
+
+    lines.push(
+      header && question
+        ? `${index + 1}. ${header}: ${question}`
+        : `${index + 1}. ${question ?? header}`,
+    );
+
+    const options = Array.isArray(questionRecord.options)
+      ? questionRecord.options
+      : [];
+    for (const rawOption of options) {
+      const optionRecord = toRecord(rawOption);
+      if (!optionRecord) continue;
+      const label =
+        typeof optionRecord.label === "string" ? optionRecord.label.trim() : "";
+      if (!label) continue;
+      const description =
+        typeof optionRecord.description === "string"
+          ? optionRecord.description.trim()
+          : "";
+      lines.push(
+        description.length > 0 ? `- ${label}: ${description}` : `- ${label}`,
+      );
+    }
+  });
+
+  return lines.length > 0 ? lines.join("\n") : undefined;
 }
 
 function extractLocalAssetId(value: string | undefined) {
@@ -207,6 +268,7 @@ export function adaptLocalAgentEvent(input: {
   runId: string;
 }): StreamEvent[] {
   const { event, messageId, now, runId } = input;
+  const log = createPipelineLogger("local_agent.events", { runId });
 
   if (event.type === "thinking" || event.type === "thinking_delta") {
     return [
@@ -234,14 +296,44 @@ export function adaptLocalAgentEvent(input: {
 
   if (event.type === "tool_call") {
     const inputRecord = toRecord(event.input);
+    if (event.name === ASK_USER_QUESTION_TOOL) {
+      const delta = formatAskUserQuestionInput(inputRecord);
+      log.info("tool_call_suppressed", {
+        providerToolName: event.name,
+        reason: "ask_user_question_as_text",
+        toolCallId: event.id,
+      });
+      return delta
+        ? [
+            {
+              type: "message.delta",
+              runId,
+              messageId,
+              delta,
+              timestamp: now(),
+            },
+          ]
+        : [];
+    }
+
     if (
       event.name === "Bash" &&
       typeof inputRecord?.command === "string" &&
       INTERNAL_SKILL_READ_RE.test(inputRecord.command)
     ) {
+      log.info("tool_call_suppressed", {
+        providerToolName: event.name,
+        reason: "internal_skill_read",
+        toolCallId: event.id,
+      });
       return [];
     }
 
+    log.info("tool_call_mapped", {
+      providerToolName: event.name,
+      toolCallId: event.id,
+      inputKeys: inputRecord ? Object.keys(inputRecord).sort() : [],
+    });
     return [
       {
         type: "tool.started",
@@ -256,6 +348,15 @@ export function adaptLocalAgentEvent(input: {
 
   if (event.type === "tool_result") {
     const toolName = event.name ?? "unknown_tool";
+    if (toolName === ASK_USER_QUESTION_TOOL) {
+      log.info("tool_result_suppressed", {
+        providerToolName: toolName,
+        reason: "ask_user_question_as_text",
+        toolCallId: event.id,
+      });
+      return [];
+    }
+
     const isToolFailure = event.isError ?? event.status === "failed";
     const output = coerceToolOutput(event.output);
     const summary = coerceToolSummary(event.output, event.summary);
@@ -264,10 +365,22 @@ export function adaptLocalAgentEvent(input: {
       typeof output?.output === "string" &&
       INTERNAL_SKILL_READ_RE.test(output.output)
     ) {
+      log.info("tool_result_suppressed", {
+        providerToolName: toolName,
+        reason: "internal_skill_read",
+        toolCallId: event.id,
+      });
       return [];
     }
 
     const artifacts = output ? buildArtifacts(toolName, output) : undefined;
+    log.info("tool_result_mapped", {
+      providerToolName: toolName,
+      toolCallId: event.id,
+      isError: isToolFailure,
+      outputKeys: output ? Object.keys(output).sort() : [],
+      artifactCount: artifacts?.length ?? 0,
+    });
     const common = {
       runId,
       toolCallId: event.id,
@@ -277,6 +390,7 @@ export function adaptLocalAgentEvent(input: {
       ...(artifacts ? { artifacts } : {}),
       timestamp: now(),
     };
+    const toolErrorCode = toAimcErrorCode(output?.error);
 
     const events: StreamEvent[] = [
       isToolFailure
@@ -284,7 +398,7 @@ export function adaptLocalAgentEvent(input: {
             ...common,
             type: "tool.failed",
             error: {
-              code: "tool_failed",
+              code: toolErrorCode,
               message: summary ?? "Tool execution failed.",
             },
           }

@@ -3,47 +3,44 @@
 import {
   forwardRef,
   useCallback,
-  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
   useState,
 } from "react";
 
-import type { MessageMention } from "@aimc/shared";
 import { useAppTranslation } from "@/i18n";
 import { useAgentModelRequirement } from "../hooks/use-agent-model-requirement";
 import type { ImageAttachmentState } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
-import { useMediaModelConfigurationStatus } from "../hooks/use-media-model-configuration-status";
 import { AgentModelSelector } from "./agent-model-selector";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
-import {
-  type MissingModelConfiguration,
-  ModelConfigurationBanner,
-} from "./model-configuration-banner";
 import { SettingsDialog } from "./settings-dialog";
+import {
+  TuttiRichTextInput,
+  type TuttiRichTextInputHandle,
+} from "./tutti-rich-text-input";
 
 type ChatInputProps = {
-  onSend: (message: string) => void;
+  onSend: (message: string) => boolean | undefined;
+  onCancel?: () => void;
   disabled?: boolean;
+  isRunning?: boolean;
+  canceling?: boolean;
   attachments?: ImageAttachmentState[];
   canSendAttachments?: boolean;
   onAddFiles?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
   onRetryAttachment?: (id: string) => void;
   isUploading?: boolean;
-  onAtQuery?: (query: string | null) => void;
-  mentions?: MessageMention[];
-  onRemoveMention?: (mention: MessageMention) => void;
   selectedCanvasElements?: CanvasSelectedElement[];
 };
 
 export type ChatInputHandle = {
-  /** Remove the @query text from input after picker selection */
-  clearAtQuery: () => void;
+  focus: () => void;
+  setDraft: (value: string) => void;
 };
 
 function PromptToolbarTooltip({ label }: { label: string }) {
@@ -61,60 +58,40 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
   function ChatInput(
     {
       onSend,
+      onCancel,
       disabled,
+      isRunning,
+      canceling,
       attachments,
       canSendAttachments,
       onAddFiles,
       onRemoveAttachment,
       onRetryAttachment,
       isUploading,
-      onAtQuery,
-      mentions,
-      onRemoveMention,
       selectedCanvasElements,
     },
     ref,
   ) {
     const [value, setValue] = useState("");
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const inputRef = useRef<TuttiRichTextInputHandle>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { preference } = useImageModelPreference();
     const agentRequirement = useAgentModelRequirement();
-    const { missingImageModel, missingVideoModel } =
-      useMediaModelConfigurationStatus();
     const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsInitialTab, setSettingsInitialTab] = useState<
       "agent" | "media"
     >("agent");
     const { t } = useAppTranslation("chat");
-    const modelBtnRef = useRef<HTMLButtonElement>(null);
-    const isAgentModelConfigurationLoaded =
-      agentRequirement.isAgentModelConfigurationLoaded ?? true;
-    const missingModelConfiguration = useMemo(() => {
-      const missing: MissingModelConfiguration[] = [];
-      if (
-        isAgentModelConfigurationLoaded &&
-        !agentRequirement.isAgentModelConfigured
-      ) {
-        missing.push("agent");
-      }
-      if (missingImageModel) missing.push("image");
-      if (missingVideoModel) missing.push("video");
-      return missing;
-    }, [
-      agentRequirement.isAgentModelConfigured,
-      isAgentModelConfigurationLoaded,
-      missingImageModel,
-      missingVideoModel,
-    ]);
 
     useImperativeHandle(ref, () => ({
-      clearAtQuery() {
-        setValue((prev) => {
-          const lastAtIdx = prev.lastIndexOf("@");
-          if (lastAtIdx === -1) return prev;
-          return prev.slice(0, lastAtIdx);
+      focus() {
+        inputRef.current?.focus();
+      },
+      setDraft(nextValue) {
+        setValue(nextValue);
+        window.requestAnimationFrame(() => {
+          inputRef.current?.focus();
         });
       },
     }));
@@ -122,7 +99,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const handleSubmit = useCallback(async () => {
       const trimmed = value.trim();
       const hasReadyAttachments = canSendAttachments ?? !!attachments?.length;
-      if ((!trimmed && !hasReadyAttachments) || disabled || isUploading) return;
+      if (
+        (!trimmed && !hasReadyAttachments) ||
+        disabled ||
+        isUploading ||
+        isRunning
+      ) {
+        return;
+      }
 
       if (!(await agentRequirement.ensureAgentModelConfigured())) {
         setSettingsInitialTab("agent");
@@ -130,17 +114,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         return;
       }
 
-      onSend(trimmed);
+      const sent = onSend(trimmed);
+      if (sent === false) return;
       setValue("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
     }, [
       agentRequirement,
       attachments,
       canSendAttachments,
       disabled,
       isUploading,
+      isRunning,
       onSend,
       value,
     ]);
@@ -150,69 +133,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       setSettingsInitialTab("media");
       setSettingsOpen(true);
     }, []);
-
-    const handleOpenAgentSettings = useCallback(() => {
-      setModelPopoverOpen(false);
-      setSettingsInitialTab("agent");
-      setSettingsOpen(true);
-    }, []);
-
-    const handleKeyDown = useCallback(
-      (e: React.KeyboardEvent) => {
-        // Ignore Enter during IME composition (e.g. Chinese input confirming a candidate)
-        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-          e.preventDefault();
-          handleSubmit();
-        }
-      },
-      [handleSubmit],
-    );
-
-    // Auto-resize textarea when value changes
-    // biome-ignore lint/correctness/useExhaustiveDependencies: textarea height must recalculate whenever the input value changes.
-    useEffect(() => {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-      textarea.style.height = "auto";
-      const maxH = 240; // max-h-60
-      textarea.style.height = `${Math.min(textarea.scrollHeight, maxH)}px`;
-      textarea.style.overflowY =
-        textarea.scrollHeight > maxH ? "auto" : "hidden";
-    }, [value]);
-
-    const handleChange = useCallback(
-      (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        const newValue = e.target.value;
-        setValue(newValue);
-
-        if (!onAtQuery) return;
-
-        // Find last @ in text to detect mention mode
-        const lastAtIdx = newValue.lastIndexOf("@");
-        if (lastAtIdx === -1) {
-          onAtQuery(null); // close picker
-          return;
-        }
-
-        // Only trigger if @ is at start or preceded by whitespace
-        const charBefore = lastAtIdx > 0 ? newValue[lastAtIdx - 1] : " ";
-        if (charBefore !== " " && charBefore !== "\n" && lastAtIdx !== 0) {
-          onAtQuery(null);
-          return;
-        }
-
-        // Extract query after @
-        const query = newValue.slice(lastAtIdx + 1);
-        // Close if user typed a space after query (finished mentioning)
-        if (query.includes(" ") || query.includes("\n")) {
-          onAtQuery(null);
-          return;
-        }
-
-        onAtQuery(query);
-      },
-      [onAtQuery],
-    );
 
     const handleFileChange = useCallback(
       (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -278,13 +198,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     return (
       <div className="px-2 pb-2">
-        <div className="mb-2">
-          <ModelConfigurationBanner
-            missing={missingModelConfiguration}
-            onConfigureAgent={handleOpenAgentSettings}
-            onConfigureMedia={handleOpenMediaSettings}
-          />
-        </div>
         <div
           className="flex min-h-[120px] flex-col justify-between gap-2 rounded-xl border-[0.5px] border-border bg-card p-2 transition-[border] focus-within:border-border"
           onDrop={handleDrop}
@@ -347,46 +260,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               {...(onRetryAttachment ? { onRetry: onRetryAttachment } : {})}
             />
           )}
-          {mentions && mentions.length > 0 && onRemoveMention && (
-            <div className="flex flex-wrap items-center gap-1 px-2 py-1">
-              {mentions.map((mention) => (
-                <button
-                  key={`${mention.mentionType}:${mention.id}`}
-                  type="button"
-                  onClick={() => onRemoveMention(mention)}
-                  className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted/80"
-                  title={t("mentions.remove")}
-                >
-                  <span className="text-muted-foreground">@</span>
-                  <span className="max-w-[180px] truncate">
-                    {mention.label}
-                  </span>
-                  <svg
-                    aria-hidden="true"
-                    className="h-3 w-3 text-muted-foreground"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path d="M18 6 6 18M6 6l12 12" />
-                  </svg>
-                </button>
-              ))}
-            </div>
-          )}
-          <textarea
-            ref={textareaRef}
-            data-chat-input
-            value={value}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
+          <TuttiRichTextInput
+            ref={inputRef}
+            ariaLabel={t("input.ariaLabel")}
+            className="aimc-rich-text-field"
+            disabled={disabled}
+            editorClassName="aimc-rich-text-editor aimc-chat-rich-text-editor min-h-[48px] max-h-60 overflow-y-auto bg-transparent px-1 text-sm leading-[1.8] text-foreground focus:outline-none"
+            menuAnchor="editor"
+            menuPlacement="top-start"
+            placeholderClassName="aimc-rich-text-placeholder aimc-chat-rich-text-placeholder min-h-[48px] px-1 text-sm leading-[1.8] text-muted-foreground"
             placeholder={t("input.placeholder")}
-            aria-label={t("input.ariaLabel")}
-            rows={1}
-            style={{ scrollbarWidth: "none" }}
-            className="min-h-[48px] max-h-60 resize-none bg-transparent px-1 text-sm leading-[1.8] text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-scrollbar]:hidden"
+            rootClassName="aimc-rich-text-root"
+            value={value}
+            onChange={setValue}
+            onPaste={handlePaste}
+            onSubmit={handleSubmit}
           />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1">
@@ -419,58 +307,80 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 </>
               )}
               {/* Agent model selector */}
-              <AgentModelSelector compact />
+              <AgentModelSelector compact collisionSide="flip" />
               {/* Model preference button */}
               <div className="relative">
-                <button
-                  ref={modelBtnRef}
-                  type="button"
-                  onClick={() => setModelPopoverOpen((prev) => !prev)}
-                  aria-label={t("input.modelPreference")}
-                  className={`group relative flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] transition-colors ${
-                    preference.mode === "manual"
-                      ? "border-accent bg-accent/20 text-accent-foreground"
-                      : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                >
-                  <svg
-                    aria-hidden="true"
-                    className="h-[14px] w-[14px]"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path d="M10.8 1.307a2.33 2.33 0 0 1 2.4 0l7.67 4.602A2.33 2.33 0 0 1 22 7.907v8.361a2.33 2.33 0 0 1-1.13 1.998l-7.67 4.602-.141.078a2.33 2.33 0 0 1-2.258-.078l-7.67-4.602A2.33 2.33 0 0 1 2 16.268V7.907a2.33 2.33 0 0 1 1.003-1.915l.128-.083z" />
-                  </svg>
-                  <PromptToolbarTooltip label={t("input.modelPreference")} />
-                </button>
                 <ImageModelPreferencePopover
+                  collisionSide="flip"
                   open={modelPopoverOpen}
-                  onClose={() => setModelPopoverOpen(false)}
-                  anchorRef={modelBtnRef}
+                  onOpenChange={setModelPopoverOpen}
                   onOpenSettings={handleOpenMediaSettings}
+                  trigger={
+                    <button
+                      type="button"
+                      aria-label={t("input.modelPreference")}
+                      className={`group relative flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] transition-colors ${
+                        preference.mode === "manual"
+                          ? "border-accent bg-accent/20 text-accent-foreground"
+                          : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      <svg
+                        aria-hidden="true"
+                        className="h-[14px] w-[14px]"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M10.8 1.307a2.33 2.33 0 0 1 2.4 0l7.67 4.602A2.33 2.33 0 0 1 22 7.907v8.361a2.33 2.33 0 0 1-1.13 1.998l-7.67 4.602-.141.078a2.33 2.33 0 0 1-2.258-.078l-7.67-4.602A2.33 2.33 0 0 1 2 16.268V7.907a2.33 2.33 0 0 1 1.003-1.915l.128-.083z" />
+                      </svg>
+                      <PromptToolbarTooltip
+                        label={t("input.modelPreference")}
+                      />
+                    </button>
+                  }
                 />
               </div>
             </div>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              aria-label={t("input.send")}
-              disabled={disabled || !hasContent || isUploading}
-              className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/80 active:bg-primary/90 disabled:opacity-20 disabled:cursor-not-allowed"
-            >
-              <svg
-                aria-hidden="true"
-                className="h-[14px] w-[14px]"
-                viewBox="0 0 14 14"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.6}
-                strokeLinecap="round"
+            {isRunning && onCancel ? (
+              <button
+                type="button"
+                onClick={onCancel}
+                aria-label={t("input.cancel")}
+                title={t("input.cancel")}
+                disabled={canceling}
+                className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-muted text-foreground transition-colors hover:bg-muted/80 active:bg-muted/70 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <path d="M7 11.5V2.5" />
-                <path d="M3 6.5L7 2.5L11 6.5" />
-              </svg>
-            </button>
+                <svg
+                  aria-hidden="true"
+                  className="h-[13px] w-[13px]"
+                  viewBox="0 0 14 14"
+                  fill="currentColor"
+                >
+                  <rect x="3.5" y="3.5" width="7" height="7" rx="1.4" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSubmit}
+                aria-label={t("input.send")}
+                disabled={disabled || !hasContent || isUploading || isRunning}
+                className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/80 active:bg-primary/90 disabled:opacity-20 disabled:cursor-not-allowed"
+              >
+                <svg
+                  aria-hidden="true"
+                  className="h-[14px] w-[14px]"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.6}
+                  strokeLinecap="round"
+                >
+                  <path d="M7 11.5V2.5" />
+                  <path d="M3 6.5L7 2.5L11 6.5" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
         <SettingsDialog

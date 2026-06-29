@@ -1,0 +1,22 @@
+name: External PR Review Gate Review Signal
+
+on:
+  pull_request_review:
+    types:
+      - submitted
+      - edited
+      - dismissed
+
+permissions:
+  contents: read
+
+jobs:
+  review-signal:
+    uses: tutti-os/tutti/.github/workflows/reusable-external-pr-review-signal.yml@main
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      pr_author: ${{ github.event.pull_request.user.login }}
+      pr_head_sha: ${{ github.event.pull_request.head.sha }}
+      pr_is_draft: ${{ github.event.pull_request.draft }}
+      review_commit_id: ${{ github.event.review.commit_id }}
+      review_state: ${{ github.event.review.state }}

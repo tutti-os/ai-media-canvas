@@ -27,31 +27,40 @@ export type BackgroundJobType = z.infer<typeof backgroundJobTypeSchema>;
 
 export const imageGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
+  title: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   aspect_ratio: z.string().min(1).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
   input_images: z.array(z.string().min(1)).optional(),
   size: z.string().min(1).optional(),
   seed: z.number().int().optional(),
+  caller_provider: z.string().min(1).optional(),
+  codex_imagegen_consent: z.enum(["allow-once"]).optional(),
+  codex_imagegen_delegation_allowed: z.boolean().optional(),
 });
-export type ImageGenerationPayload = z.infer<typeof imageGenerationPayloadSchema>;
+export type ImageGenerationPayload = z.infer<
+  typeof imageGenerationPayloadSchema
+>;
 
 export const videoGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
+  title: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   duration: z.number().int().min(1).optional(),
   resolution: z.string().min(1).optional(),
   aspect_ratio: z.string().min(1).optional(),
   input_images: z.array(z.string().min(1)).optional(),
   input_video: z.string().min(1).optional(),
-  video_mode: z.enum(["multivideo", "keyframes"]).optional(),
+  video_mode: z.enum(["multivideo", "keyframes", "reference"]).optional(),
   seed: z.number().int().optional(),
   negative_prompt: z.string().min(1).optional(),
   frame_rate: z.number().int().positive().optional(),
   num_frames: z.number().int().positive().optional(),
   enable_audio: z.boolean().optional(),
 });
-export type VideoGenerationPayload = z.infer<typeof videoGenerationPayloadSchema>;
+export type VideoGenerationPayload = z.infer<
+  typeof videoGenerationPayloadSchema
+>;
 
 export const createImageJobRequestSchema = z.object({
   project_id: projectIdSchema.optional(),
@@ -59,12 +68,16 @@ export const createImageJobRequestSchema = z.object({
   session_id: sessionIdSchema.optional(),
   thread_id: identifierSchema.optional(),
   prompt: z.string().min(1),
+  title: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   aspect_ratio: z.string().min(1).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
   input_images: z.array(z.string().min(1)).optional(),
   size: z.string().min(1).optional(),
   seed: z.number().int().optional(),
+  caller_provider: z.string().min(1).optional(),
+  codex_imagegen_consent: z.enum(["allow-once"]).optional(),
+  codex_imagegen_delegation_allowed: z.boolean().optional(),
 });
 export type CreateImageJobRequest = z.infer<typeof createImageJobRequestSchema>;
 
@@ -74,13 +87,14 @@ export const createVideoJobRequestSchema = z.object({
   session_id: sessionIdSchema.optional(),
   thread_id: identifierSchema.optional(),
   prompt: z.string().min(1),
+  title: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   duration: z.number().int().min(1).optional(),
   resolution: z.string().min(1).optional(),
   aspect_ratio: z.string().min(1).optional(),
   input_images: z.array(z.string().min(1)).optional(),
   input_video: z.string().min(1).optional(),
-  video_mode: z.enum(["multivideo", "keyframes"]).optional(),
+  video_mode: z.enum(["multivideo", "keyframes", "reference"]).optional(),
   seed: z.number().int().optional(),
   negative_prompt: z.string().min(1).optional(),
   frame_rate: z.number().int().positive().optional(),

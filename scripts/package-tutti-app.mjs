@@ -38,17 +38,29 @@ const CLI_COMMANDS = [
     path: ["status"],
     summary: "Show app status",
     description:
-      "Return AI Media Canvas server health, app version, and local runtime metadata.",
+      "Return AI Canvas server health, app version, and local runtime metadata.",
+  },
+  {
+    path: ["open"],
+    summary: "Open AI Canvas",
+    description:
+      "Open AI Canvas in Tutti Desktop. When project-id is provided, open that project's primary canvas; otherwise open the app home page.",
+    properties: {
+      "project-id": {
+        type: "string",
+        description: "Optional project id to open.",
+      },
+    },
   },
   {
     path: ["projects", "list"],
     summary: "List projects",
-    description: "List local AI Media Canvas projects.",
+    description: "List local AI Canvas projects.",
   },
   {
     path: ["projects", "get"],
     summary: "Get a project",
-    description: "Return one local AI Media Canvas project by project-id.",
+    description: "Return one local AI Canvas project by project-id.",
     properties: {
       "project-id": { type: "string", description: "Project id to load." },
     },
@@ -58,7 +70,7 @@ const CLI_COMMANDS = [
     path: ["projects", "create"],
     summary: "Create a project",
     description:
-      "Create a local AI Media Canvas project. Use the returned primaryCanvas.id before saving canvas content.",
+      "Create a local AI Canvas project. Use the returned primaryCanvas.id before saving canvas content.",
     properties: {
       name: { type: "string", description: "Project name." },
       description: {
@@ -196,6 +208,31 @@ const CLI_COMMANDS = [
     required: ["canvas-id", "file-path"],
   },
   {
+    path: ["assets", "list"],
+    summary: "List project assets",
+    description:
+      "List reusable media assets referenced by a project. Use this instead of reading full canvas JSON when an agent only needs project images or videos.",
+    properties: {
+      "project-id": {
+        type: "string",
+        description: "Project id whose media assets should be listed.",
+      },
+      "filter-text": {
+        type: "string",
+        description: "Optional filename or asset id filter.",
+      },
+      limit: {
+        type: "integer",
+        description: "Optional page size from 1 to 50.",
+      },
+      cursor: {
+        type: "string",
+        description: "Optional cursor from a previous response.",
+      },
+    },
+    required: ["project-id"],
+  },
+  {
     path: ["sessions", "list"],
     summary: "List chat sessions",
     description: "List chat sessions for a canvas-id.",
@@ -246,7 +283,7 @@ const CLI_COMMANDS = [
     path: ["agent", "run"],
     summary: "Start an agent run",
     description:
-      "Start an AI Media Canvas agent run for a session and conversation. Poll events with aimc agent events --run-id <runId>. For local agents, pass --runtime-kind local-agent --runtime-provider codex or --runtime-provider claude; when model is omitted the provider default is used. If model is provided with a local provider, use a matching provider-prefixed model such as codex:default or claude:default from aimc models list.",
+      "Start an AI Canvas agent run for a session and conversation. Poll events with aimc agent events --run-id <runId>. For local agents, pass --runtime-kind local-agent --runtime-provider codex or --runtime-provider claude; when model is omitted the provider default is used. If model is provided with a local provider, use a matching provider-prefixed model such as codex:default or claude:default from aimc models list. If a non-Codex local agent needs Codex image generation and the user selected only this time, pass --codex-imagegen-consent allow-once on the follow-up run.",
     properties: {
       "session-id": { type: "string", description: "Chat session id." },
       "conversation-id": {
@@ -272,6 +309,11 @@ const CLI_COMMANDS = [
         type: "string",
         description:
           "Optional local agent provider id such as codex or claude. Requires runtime-kind=local-agent.",
+      },
+      "codex-imagegen-consent": {
+        type: "string",
+        description:
+          "Optional one-time consent for a follow-up run after the user allowed a non-Codex agent to use Codex image generation. Only allow-once is accepted.",
       },
     },
     required: ["session-id", "conversation-id", "prompt"],
@@ -301,10 +343,24 @@ const CLI_COMMANDS = [
     required: ["run-id"],
   },
   {
+    path: ["agent", "consent"],
+    summary: "Record durable Codex image consent",
+    description:
+      "Record a structured Codex image generation consent decision for an agent run after the user explicitly responds. The always decision updates the durable workspace setting. For allow-once, pass --codex-imagegen-consent allow-once on the follow-up agent run or generation image command.",
+    properties: {
+      "run-id": { type: "string", description: "Agent run id." },
+      decision: {
+        type: "string",
+        description: "Consent decision: allow-once, always, or deny.",
+      },
+    },
+    required: ["run-id", "decision"],
+  },
+  {
     path: ["generation", "image"],
     summary: "Queue image generation",
     description:
-      "Queue an image generation job. Use aimc models image to inspect available model ids first, pass one with --model, and use jobs get or jobs list to monitor status.",
+      "Queue an image generation job under a project. Create or choose a project first, pass its id with --project-id; when --canvas-id is omitted, the app uses the project's primary canvas and auto-places the generation node in available space. Use aimc models image to inspect available model ids, pass one with --model, then poll aimc jobs get --job-id with the returned job.id until status is succeeded, failed, canceled, or dead_letter; queued and running are intermediate states, not final results or failures. On succeeded, report the generated asset from job.result and mention that the canvas node was updated. Direct user calls may use --direct-user true. Otherwise this command is treated as an external CLI/agent call; when a non-Codex agent calls Codex image generation on the user's behalf, ask for confirmation first unless settings get shows codexImagegenDelegation=always; pass --caller-provider and --codex-imagegen-consent allow-once after a one-time user approval.",
     properties: {
       prompt: { type: "string", description: "Image prompt." },
       model: {
@@ -312,8 +368,16 @@ const CLI_COMMANDS = [
         description:
           "Required image model id from aimc models image, for example agnes-image/agnes-image-2.1-flash.",
       },
-      "project-id": { type: "string", description: "Optional project id." },
-      "canvas-id": { type: "string", description: "Optional canvas id." },
+      "project-id": {
+        type: "string",
+        description:
+          "Project id that owns the generated asset and whose primary canvas receives the generation node when --canvas-id is omitted. Create one first with aimc projects create when needed.",
+      },
+      "canvas-id": {
+        type: "string",
+        description:
+          "Optional canvas id. Omit to use the project's primary canvas.",
+      },
       "session-id": { type: "string", description: "Optional session id." },
       "aspect-ratio": { type: "string", description: "Optional aspect ratio." },
       quality: {
@@ -326,23 +390,46 @@ const CLI_COMMANDS = [
         type: "string",
         description: "Optional comma-separated input image URLs.",
       },
+      "caller-provider": {
+        type: "string",
+        description:
+          "Optional agent provider id when an agent is proxying this direct image generation call, for example claude. Omit for direct user generation.",
+      },
+      "codex-imagegen-consent": {
+        type: "string",
+        description:
+          "Optional one-time consent after the user allowed a non-Codex caller to use Codex image generation. Only allow-once is accepted.",
+      },
+      "direct-user": {
+        type: "boolean",
+        description:
+          "Set true only when this is a direct user image generation command, not an agent proxy call.",
+      },
     },
-    required: ["prompt", "model"],
+    required: ["prompt", "model", "project-id"],
     timeoutMs: 60000,
   },
   {
     path: ["generation", "video"],
     summary: "Queue video generation",
     description:
-      "Queue a video generation job. Use aimc models video to inspect available model ids first, pass one with --model, and use jobs get or jobs list to monitor status.",
+      "Queue a video generation job under a project. Create or choose a project first, pass its id with --project-id; when --canvas-id is omitted, the app uses the project's primary canvas and auto-places the generation node in available space. Use aimc models video to inspect available model ids first, pass one with --model, then poll aimc jobs get --job-id with the returned job.id until status is succeeded, failed, canceled, or dead_letter; queued and running are intermediate states, not final results or failures. On succeeded, report the generated asset from job.result and mention that the canvas node was updated.",
     properties: {
       prompt: { type: "string", description: "Video prompt." },
       model: {
         type: "string",
         description: "Required video model id from aimc models video.",
       },
-      "project-id": { type: "string", description: "Optional project id." },
-      "canvas-id": { type: "string", description: "Optional canvas id." },
+      "project-id": {
+        type: "string",
+        description:
+          "Project id that owns the generated asset and whose primary canvas receives the generation node when --canvas-id is omitted. Create one first with aimc projects create when needed.",
+      },
+      "canvas-id": {
+        type: "string",
+        description:
+          "Optional canvas id. Omit to use the project's primary canvas.",
+      },
       "session-id": { type: "string", description: "Optional session id." },
       duration: {
         type: "integer",
@@ -368,7 +455,7 @@ const CLI_COMMANDS = [
         description: "Optional audio generation flag.",
       },
     },
-    required: ["prompt", "model"],
+    required: ["prompt", "model", "project-id"],
     timeoutMs: 60000,
   },
   {
@@ -387,7 +474,8 @@ const CLI_COMMANDS = [
   {
     path: ["jobs", "get"],
     summary: "Get a job",
-    description: "Return one background job by job-id.",
+    description:
+      "Return one background job by job-id. queued and running mean the job is still in progress; keep polling before giving the user a final answer. Treat only succeeded, failed, canceled, and dead_letter as terminal statuses.",
     properties: {
       "job-id": { type: "string", description: "Job id to load." },
     },
@@ -419,9 +507,27 @@ const CLI_COMMANDS = [
     description: "List video generation models available to generation video.",
   },
   {
+    path: ["settings", "get"],
+    summary: "Get workspace settings",
+    description:
+      "Return workspace settings, including settings.codexImagegenDelegation. Values: ask means a non-Codex agent must ask before using Codex image generation; always means it may use Codex by default; never means it must not use Codex image generation.",
+  },
+  {
+    path: ["settings", "update"],
+    summary: "Update workspace settings",
+    description:
+      "Patch workspace settings. Use --codex-imagegen-delegation always after the user chooses 'always call', --codex-imagegen-delegation never only for a durable opt-out, and ask to restore prompting.",
+    properties: {
+      "codex-imagegen-delegation": {
+        type: "string",
+        description: "Codex image delegation setting: ask, always, or never.",
+      },
+    },
+  },
+  {
     path: ["skills", "list"],
     summary: "List skills",
-    description: "List installed AI Media Canvas skills.",
+    description: "List installed AI Canvas skills.",
   },
   {
     path: ["skills", "get"],
@@ -463,8 +569,8 @@ const MANIFEST_LOCALIZATIONS = {
   "zh-CN": {
     file: "locales/zh-CN/manifest.json",
     metadata: {
-      name: "AI 媒体画布",
-      description: "本地优先的 AI 图像与视频生成画布。",
+      name: "AI Canvas",
+      description: "在画布上生成和整理 AI 图片、视频。",
       tags: ["生成式 AI", "本地优先", "媒体画布"],
     },
   },
@@ -475,8 +581,8 @@ export function createManifest({ version }) {
     schemaVersion: "tutti.app.manifest.v1",
     appId: "ai-media-canvas",
     version,
-    name: "AI Media Canvas",
-    description: "Local-first AI canvas for image and video generation.",
+    name: "AI Canvas",
+    description: "Generate and organize AI images and videos on a canvas.",
     icon: {
       type: "asset",
       src: "icon.png",
@@ -487,6 +593,10 @@ export function createManifest({ version }) {
     },
     cli: {
       manifest: "tutti.cli.json",
+    },
+    references: {
+      listEndpoint: "/tutti/references/list",
+      searchEndpoint: "/tutti/references/search",
     },
     localizationInfo: {
       defaultLocale: "en",
@@ -512,7 +622,7 @@ export function createCliManifest() {
     schemaVersion: "tutti.app.cli.v1",
     scope: CLI_SCOPE,
     description:
-      "Control AI Media Canvas projects, canvases, generation jobs, agent runs, and skills.",
+      "Control AI Canvas projects, canvases, generation jobs, agent runs, and skills.",
     documentation: {
       file: "COMMANDS.md",
     },
@@ -558,7 +668,7 @@ export function renderCommandsGuide() {
     })
     .join("\n");
 
-  return `# AI Media Canvas CLI Commands\n\nScope: \`${manifest.scope}\`\n\nThese commands expose AI Media Canvas to the Tutti app CLI. Command outputs are JSON \`CliCommandOutput\` envelopes.\n\n${rows}`;
+  return `# AI Canvas CLI Commands\n\nScope: \`${manifest.scope}\`\n\nThese commands expose AI Canvas to the Tutti app CLI. Command outputs are JSON \`CliCommandOutput\` envelopes.\n\n${rows}`;
 }
 
 export function renderBootstrap({ version = "0.0.0" } = {}) {
@@ -566,23 +676,23 @@ export function renderBootstrap({ version = "0.0.0" } = {}) {
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-package_dir="\${TUTTI_APP_PACKAGE_DIR:-\${NEXTOP_APP_PACKAGE_DIR:-$script_dir}}"
+package_dir="\${TUTTI_APP_PACKAGE_DIR:-$script_dir}"
 
-export HOST="\${TUTTI_APP_HOST:-\${NEXTOP_APP_HOST:-127.0.0.1}}"
-export AIMC_SERVER_PORT="\${TUTTI_APP_PORT:-\${NEXTOP_APP_PORT:-3001}}"
+export HOST="\${TUTTI_APP_HOST:-127.0.0.1}"
+export AIMC_SERVER_PORT="\${TUTTI_APP_PORT:-3001}"
 export AIMC_APP_VERSION="${version}"
 export AIMC_WEB_DIST="$package_dir/dist"
-export AIMC_DATA_ROOT="\${TUTTI_APP_DATA_DIR:-\${NEXTOP_APP_DATA_DIR:-$package_dir/.data}}"
+export AIMC_DATA_ROOT="\${TUTTI_APP_DATA_DIR:-$package_dir/.data}"
 export AIMC_SKILLS_ROOT="$package_dir/skills"
 export AIMC_TOOLS_MCP_PATH="$package_dir/server/tools-mcp.js"
-export AIMC_AGENT_FILES_ROOT="\${TUTTI_WORKSPACE_ROOT:-\${NEXTOP_WORKSPACE_ROOT:-$AIMC_DATA_ROOT}}"
+export AIMC_AGENT_FILES_ROOT="\${TUTTI_WORKSPACE_ROOT:-$AIMC_DATA_ROOT}"
 
-base_url="\${TUTTI_APP_BASE_URL:-\${NEXTOP_APP_BASE_URL:-http://$HOST:$AIMC_SERVER_PORT}}"
+base_url="\${TUTTI_APP_BASE_URL:-http://$HOST:$AIMC_SERVER_PORT}"
 export AIMC_WEB_ORIGIN="$base_url"
 export AIMC_SERVER_BASE_URL="$base_url"
 
-node_bin="\${TUTTI_APP_NODE:-\${NEXTOP_APP_NODE:-node}}"
-runtime_dir="\${TUTTI_APP_RUNTIME_DIR:-\${NEXTOP_APP_RUNTIME_DIR:-$AIMC_DATA_ROOT/.runtime}}"
+node_bin="\${TUTTI_APP_NODE:-node}"
+runtime_dir="\${TUTTI_APP_RUNTIME_DIR:-$AIMC_DATA_ROOT/.runtime}"
 mkdir -p "$AIMC_DATA_ROOT" "$runtime_dir"
 worker_status_file="$runtime_dir/worker.exit"
 server_status_file="$runtime_dir/server.exit"
@@ -643,9 +753,9 @@ monitor_children
 }
 
 export function renderAgentsGuide() {
-  return `# AI Media Canvas Tutti Package
+  return `# AI Canvas Tutti Package
 
-This package runs AI Media Canvas as a Tutti workspace app.
+This package runs AI Canvas as a Tutti workspace app.
 
 ## Package Layout
 
@@ -668,6 +778,23 @@ When those variables are absent during local direct startup, it falls back to
 Treat \`TUTTI_APP_PACKAGE_DIR\` as read-only. Use \`TUTTI_APP_DATA_DIR\` for
 durable data, \`TUTTI_APP_RUNTIME_DIR\` for scratch files, and
 \`TUTTI_APP_LOG_DIR\` for additional logs if future changes add them.
+
+## Codex Image Generation Consent
+
+When the current agent provider is not Codex, do not silently call
+\`aimc generation image --model codex/gpt-image-2\` on the user's behalf unless
+\`aimc settings get\` reports \`settings.codexImagegenDelegation\` as
+\`always\`. If the setting is \`ask\`, ask the user for consent in the user's
+language and convert the answer into a structured decision.
+
+After one-time approval, call the image command with \`--caller-provider
+<provider>\` and \`--codex-imagegen-consent allow-once\`. After durable
+approval, first call
+\`aimc settings update --codex-imagegen-delegation always\`, then continue.
+If the user denies delegation, do not call Codex for that task.
+
+Only pass \`--direct-user true\` when the user is directly invoking image
+generation rather than asking an agent to proxy the request.
 `;
 }
 
@@ -994,7 +1121,7 @@ async function writePackageFiles(manifest) {
       "web",
       "public",
       "brand",
-      "aimc-nextop-app-icon.png",
+      "aimc-tutti-app-icon.png",
     ),
     path.join(packageRoot, "icon.png"),
   );

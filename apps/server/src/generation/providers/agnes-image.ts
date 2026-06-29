@@ -6,10 +6,19 @@ import type {
   ImageProvider,
   ModelInfo,
 } from "../types.js";
-import { aspectRatioToDimensions, GenerationError } from "../utils.js";
+import {
+  GenerationError,
+  aspectRatioToDimensions,
+  withTimeout,
+} from "../utils.js";
+import {
+  type AgnesMediaOptions,
+  resolveAgnesMediaOptions,
+} from "./agnes-media.js";
 
 const ICON_AGNES = "https://agnes-cdn.kiwiar.com/logo/agnes-icon-400x400.jpg";
 const DEFAULT_AGNES_MEDIA_TTL = "1h" as const;
+const AGNES_IMAGE_CREATE_TIMEOUT_MS = 120_000;
 const AGNES_IMAGE_MODEL_IDS = [
   "agnes-image-2.1-flash",
   "agnes-image-2.0-flash",
@@ -33,11 +42,9 @@ const AGNES_IMAGE_MODELS: readonly ModelInfo[] = [
 
 function resolveAgnesImageModel(modelId: string): AgnesImageModelId {
   const normalized = modelId.includes("/")
-    ? modelId.split("/").pop() ?? modelId
+    ? (modelId.split("/").pop() ?? modelId)
     : modelId;
-  if (
-    AGNES_IMAGE_MODEL_IDS.includes(normalized as AgnesImageModelId)
-  ) {
+  if (AGNES_IMAGE_MODEL_IDS.includes(normalized as AgnesImageModelId)) {
     return normalized as AgnesImageModelId;
   }
   throw new GenerationError(
@@ -49,13 +56,24 @@ function resolveAgnesImageModel(modelId: string): AgnesImageModelId {
 
 function resolveImageDimensions(size: string, fallbackAspectRatio: string) {
   const match = size.match(/^(\d+)x(\d+)$/);
-  if (match) {
+  const [, widthValue, heightValue] = match ?? [];
+  if (widthValue && heightValue) {
     return {
-      width: Number.parseInt(match[1]!, 10),
-      height: Number.parseInt(match[2]!, 10),
+      width: Number.parseInt(widthValue, 10),
+      height: Number.parseInt(heightValue, 10),
     };
   }
   return aspectRatioToDimensions(fallbackAspectRatio);
+}
+
+function getSingleAgnesInputImage(inputImages: string[]) {
+  const [image] = inputImages;
+  if (image) return image;
+  throw new GenerationError(
+    "agnes-image",
+    "invalid_input",
+    "Agnes img2img requires exactly one image.",
+  );
 }
 
 export class AgnesImageProvider implements ImageProvider {
@@ -63,10 +81,16 @@ export class AgnesImageProvider implements ImageProvider {
   readonly models = AGNES_IMAGE_MODELS;
   private client: ReturnType<typeof createAgnesClient>;
 
-  constructor(apiKey: string, baseUrl?: string) {
+  constructor(
+    apiKey: string,
+    baseUrl?: string,
+    options: AgnesMediaOptions = {},
+  ) {
+    const mediaOptions = resolveAgnesMediaOptions(options);
     this.client = createAgnesClient({
       apiKey,
       ...(baseUrl ? { baseUrl } : {}),
+      ...mediaOptions,
     });
   }
 
@@ -79,9 +103,9 @@ export class AgnesImageProvider implements ImageProvider {
 
     try {
       const inputImages = params.inputImages ?? [];
-      const result =
+      const result = await withTimeout(
         inputImages.length === 0
-          ? await this.client.image.generate({
+          ? this.client.image.generate({
               mode: "text2img",
               model,
               prompt: params.prompt,
@@ -89,16 +113,16 @@ export class AgnesImageProvider implements ImageProvider {
               ...(params.seed !== undefined ? { seed: params.seed } : {}),
             })
           : inputImages.length === 1
-            ? await this.client.image.generate({
+            ? this.client.image.generate({
                 mode: "img2img",
                 model,
-                image: inputImages[0]!,
+                image: getSingleAgnesInputImage(inputImages),
                 prompt: params.prompt,
                 size,
                 ttl: DEFAULT_AGNES_MEDIA_TTL,
                 ...(params.seed !== undefined ? { seed: params.seed } : {}),
               })
-            : await this.client.image.generate({
+            : this.client.image.generate({
                 mode: "compose",
                 model,
                 images: inputImages,
@@ -106,7 +130,15 @@ export class AgnesImageProvider implements ImageProvider {
                 size,
                 ttl: DEFAULT_AGNES_MEDIA_TTL,
                 ...(params.seed !== undefined ? { seed: params.seed } : {}),
-              });
+              }),
+        AGNES_IMAGE_CREATE_TIMEOUT_MS,
+        () =>
+          new GenerationError(
+            this.name,
+            "timeout",
+            `Agnes image task creation timed out after ${AGNES_IMAGE_CREATE_TIMEOUT_MS}ms.`,
+          ),
+      );
 
       return {
         url: result.url,

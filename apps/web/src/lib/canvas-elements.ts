@@ -22,6 +22,77 @@ export function isVideoUrl(url: string | null | undefined): boolean {
   }
 }
 
+export function normalizeVideoCanvasElements<T extends Record<string, unknown>>(
+  elements: readonly T[],
+): T[] | null {
+  let changed = false;
+  const normalized = elements.map((element) => {
+    if (element.isDeleted) return element;
+
+    const customData: Record<string, unknown> =
+      element.customData && typeof element.customData === "object"
+        ? (element.customData as Record<string, unknown>)
+        : {};
+    const link = typeof element.link === "string" ? element.link : null;
+    const videoUrl =
+      typeof customData.videoUrl === "string" ? customData.videoUrl : link;
+
+    if (
+      typeof videoUrl !== "string" ||
+      (customData.isVideo !== true && !isVideoUrl(videoUrl))
+    ) {
+      return element;
+    }
+
+    const nextCustomData = {
+      ...customData,
+      isVideo: true,
+      videoUrl,
+      mimeType:
+        typeof customData.mimeType === "string"
+          ? customData.mimeType
+          : "video/mp4",
+    };
+    const nextElement = {
+      ...element,
+      type: element.type === "embeddable" ? "rectangle" : element.type,
+      link: null,
+      strokeColor:
+        element.type === "embeddable"
+          ? "#111827"
+          : (element.strokeColor ?? "#111827"),
+      backgroundColor:
+        element.type === "embeddable"
+          ? "#000000"
+          : (element.backgroundColor ?? "#000000"),
+      fillStyle:
+        element.type === "embeddable"
+          ? "solid"
+          : (element.fillStyle ?? "solid"),
+      roughness: element.type === "embeddable" ? 0 : (element.roughness ?? 0),
+      customData: nextCustomData,
+      version: ((element.version as number | undefined) ?? 1) + 1,
+      versionNonce: Math.floor(Math.random() * 2_000_000_000),
+      updated: Date.now(),
+    } as unknown as T;
+
+    if (
+      nextElement.type === element.type &&
+      element.link == null &&
+      customData.isVideo === true &&
+      customData.videoUrl === videoUrl &&
+      typeof customData.mimeType === "string"
+    ) {
+      return element;
+    }
+
+    changed = true;
+    return nextElement;
+  });
+
+  return changed ? normalized : null;
+}
+
 /**
  * Scale dimensions to fit within maxSize while preserving aspect ratio.
  */
@@ -402,20 +473,29 @@ export async function insertVideoOnCanvas(
   );
   const newElements = convertToExcalidrawElements([
     {
-      type: "embeddable",
-      link,
+      type: "rectangle",
+      link: null,
       x,
       y,
       width,
       height,
+      strokeColor: "#111827",
+      backgroundColor: "#000000",
+      fillStyle: "solid",
+      roughness: 0,
       customData: {
         isVideo: true,
         ...(assetId ? { assetId } : {}),
         mimeType: artifact.mimeType,
+        videoUrl: link,
         ...(artifact.durationSeconds != null
           ? { durationSeconds: artifact.durationSeconds }
           : {}),
         ...(artifact.title ? { title: artifact.title } : {}),
+        ...(artifact.prompt ? { prompt: artifact.prompt } : {}),
+        ...(artifact.model ? { model: artifact.model } : {}),
+        ...(artifact.aspectRatio ? { aspectRatio: artifact.aspectRatio } : {}),
+        ...(artifact.resolution ? { resolution: artifact.resolution } : {}),
       },
     } as any,
   ]);

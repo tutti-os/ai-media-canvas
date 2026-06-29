@@ -1,7 +1,11 @@
-import { HumanMessage } from "@langchain/core/messages";
 import type { StreamEvent } from "@aimc/shared";
+import { HumanMessage } from "@langchain/core/messages";
 
 import type { UserDataClient } from "../../auth/request.js";
+import {
+  type ImageAttachmentMetadata,
+  buildImageAttachmentMetadata,
+} from "../image-attachment-metadata.js";
 import type {
   RuntimeExecutionContext,
   ServerDeepAgentRuntimeProviderDeps,
@@ -30,11 +34,13 @@ export function createServerDeepAgentRuntimeProvider(
       const {
         backendResult,
         brandKitId,
+        getWorkspaceSettings,
         resolvedModel,
         run,
         runtimeEnv,
         submitImageJob,
         submitVideoJob,
+        updateWorkspaceSettings,
         workspaceSkills,
         rlog,
       } = context;
@@ -102,10 +108,13 @@ export function createServerDeepAgentRuntimeProvider(
           ? { connectionManager: deps.connectionManager }
           : {}),
         env: runtimeEnv,
+        ...(getWorkspaceSettings ? { getWorkspaceSettings } : {}),
+        ...(run.locale ? { locale: run.locale } : {}),
         ...(resolvedModel ? { model: resolvedModel } : {}),
         ...(persistImage ? { persistImage } : {}),
         ...(submitImageJob ? { submitImageJob } : {}),
         ...(submitVideoJob ? { submitVideoJob } : {}),
+        ...(updateWorkspaceSettings ? { updateWorkspaceSettings } : {}),
         ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
       });
       rlog.lap("agent_factory_done");
@@ -113,15 +122,17 @@ export function createServerDeepAgentRuntimeProvider(
       const hasAttachments = run.attachments && run.attachments.length > 0;
       let userMessage: HumanMessage;
       let attachmentDataMap: Record<string, string> = {};
+      const attachmentMetadata: Record<string, ImageAttachmentMetadata> = {};
 
       if (hasAttachments) {
+        const attachments = run.attachments ?? [];
         const downloaded: Array<{
           assetId: string;
           mimeType: string;
           base64: string;
         }> = [];
         const imageBlocks = await Promise.all(
-          run.attachments!.map(async (attachment) => {
+          attachments.map(async (attachment) => {
             try {
               let base64: string;
               let mimeType: string;
@@ -129,8 +140,8 @@ export function createServerDeepAgentRuntimeProvider(
                 /^data:([^;]+);base64,(.+)$/,
               );
               if (dataUriMatch) {
-                mimeType = dataUriMatch[1]!;
-                base64 = dataUriMatch[2]!;
+                mimeType = dataUriMatch[1] ?? attachment.mimeType;
+                base64 = dataUriMatch[2] ?? "";
               } else {
                 const response = await fetch(attachment.url);
                 const buffer = Buffer.from(await response.arrayBuffer());
@@ -140,6 +151,11 @@ export function createServerDeepAgentRuntimeProvider(
                   "image/png";
                 base64 = buffer.toString("base64");
               }
+
+              const metadata = buildImageAttachmentMetadata(
+                Buffer.from(base64, "base64"),
+              );
+              if (metadata) attachmentMetadata[attachment.assetId] = metadata;
 
               downloaded.push({
                 assetId: attachment.assetId,
@@ -162,11 +178,11 @@ export function createServerDeepAgentRuntimeProvider(
 
         const { text: enrichedPrompt } = deps.buildUserMessage(
           run.prompt,
-          run.attachments!,
+          attachments,
           run.imageGenerationPreference,
-          run.mentions,
           run.videoGenerationPreference,
           canvasSummary,
+          attachmentMetadata,
         );
 
         attachmentDataMap = deps.buildAttachmentDataMap(downloaded);
@@ -181,7 +197,6 @@ export function createServerDeepAgentRuntimeProvider(
           run.prompt,
           [],
           run.imageGenerationPreference,
-          run.mentions,
           run.videoGenerationPreference,
           canvasSummary,
         );

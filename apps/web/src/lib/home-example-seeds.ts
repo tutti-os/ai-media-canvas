@@ -1,6 +1,6 @@
 import { createInputImage } from "./home-seed-media";
 
-export type InputMention = {
+export type SeedInputItem = {
   type: "image" | "tool";
   name: string;
   imgSrc: string;
@@ -11,7 +11,7 @@ export type HomeExampleCard = {
   title: string;
   prompt: string;
   previewImages: string[];
-  inputMentions: InputMention[];
+  inputItems: SeedInputItem[];
 };
 
 export type HomeExampleCategory = {
@@ -29,7 +29,7 @@ export type HomeExampleSelection = {
   title: string;
   prompt: string;
   previewImages: string[];
-  inputMentions: InputMention[];
+  inputItems: SeedInputItem[];
 };
 
 function example(
@@ -37,12 +37,12 @@ function example(
   title: string,
   prompt: string,
   previewImages: string[],
-  inputMentions: InputMention[],
+  inputItems: SeedInputItem[],
 ): HomeExampleCard {
-  return { id, title, prompt, previewImages, inputMentions };
+  return { id, title, prompt, previewImages, inputItems };
 }
 
-function generatedImage(name: string, file: string): InputMention {
+function generatedImage(name: string, file: string): SeedInputItem {
   return {
     type: "image",
     name,
@@ -50,7 +50,7 @@ function generatedImage(name: string, file: string): InputMention {
   };
 }
 
-function tool(name: string, accent = "#1d4ed8"): InputMention {
+function tool(name: string, accent = "#1d4ed8"): SeedInputItem {
   return { type: "tool", name, imgSrc: createInputImage(name, accent) };
 }
 
@@ -82,7 +82,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
       example(
         "visual-superhero-comic",
         "Make a classic superhero comic strip",
-        "请把这个创意拆成复古超级英雄漫画页面，包含 4 到 6 格分镜、对白气泡、旁白框和统一人物动作，整体要有 70 年代漫画纸感。",
+        "请设计一页复古超级英雄漫画：原创城市英雄在夜晚街区救援，包含 4 到 6 格分镜、对白气泡、旁白框、动作线和统一人物动作，整体要有 70 年代漫画纸感。",
         previews(
           "nano-superhero-comic.webp",
           "nano-superhero-comic-2.webp",
@@ -305,7 +305,7 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
       example(
         "storyboard-comic-sequence",
         "Create a comic-style sequence",
-        "请把一个动作创意拆成漫画式连续分镜，保持统一角色动作关系，并且适合后续转成短视频 animatic。",
+        "请把原创角色在雨夜屋顶追逐并跃过霓虹招牌的动作场景拆成漫画式连续分镜，保持统一角色动作关系，并且适合后续转成短视频 animatic。",
         previews(
           "storyboard-comic-sequence.webp",
           "storyboard-comic-sequence-2.webp",

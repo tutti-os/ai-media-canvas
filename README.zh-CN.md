@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="./apps/web/public/brand/aimc-logo-cloud-spark.png" alt="AI Media Canvas logo" width="88" />
+  <img src="./apps/web/public/brand/aimc-logo-cloud-spark.png" alt="AI Canvas logo" width="88" />
 </p>
 
-<h1 align="center">AI Media Canvas</h1>
+<h1 align="center">AI Canvas</h1>
 
 <p align="center">
   <strong>本地优先的 AI 创意画布，用于图片与视频创作。</strong>
@@ -31,9 +31,9 @@
   <img alt="Next.js" src="https://img.shields.io/badge/web-Next.js-000000" />
 </p>
 
-![AI Media Canvas 首页截图](./docs/assets/readme-home.jpg)
+![AI Canvas 首页截图](./docs/assets/readme-home.jpg)
 
-AI Media Canvas 是一个本地优先的 AI 创意工作台，用可视化画布组织、生成和迭代图片与视频创意。
+AI Canvas 是一个本地优先的 AI 创意工作台，用可视化画布组织、生成和迭代图片与视频创意。
 
 它把 Excalidraw 画布、AI 设计助手、本地项目存储、技能工作区和多 Provider 媒体生成能力放在一个单用户 Web 应用里。项目数据存储在 SQLite，生成资源写入本地磁盘。
 
@@ -85,7 +85,7 @@ AIMC_WEB_DIST=apps/web/out pnpm --filter @aimc/server dev:server
 
 你可以在应用内设置页配置 Provider，也可以通过 `.env.local` 提供默认值。运行时，本地设置页保存的配置优先级高于环境变量。
 
-AI Media Canvas 支持两种 Agent 执行路线：
+AI Canvas 支持两种 Agent 执行路线：
 
 - 本地 CLI 路线：使用已经安装并登录的 Codex 或 Claude Code CLI，包括你本机已有订阅覆盖的账号。
 - BYOK API 路线：使用自己的 API key 和 Base URL，接入 OpenAI-compatible 网关、Anthropic-compatible Claude 路线、Google Gemini、Vertex AI、Agnes 以及其他已配置 Provider。
@@ -148,7 +148,7 @@ docs/        设计说明、计划和项目文档
 
 ## 致谢
 
-AI Media Canvas 的产品方向部分参考了 [Loomic](https://github.com/fancyboi999/Loomic) 这个开源 AI 画布创意工作台。Loomic 帮助验证了“画布优先、对话驱动”的媒体创作体验；AI Media Canvas 保持独立的本地优先架构和实现。
+AI Canvas 的产品方向部分参考了 [Loomic](https://github.com/fancyboi999/Loomic) 这个开源 AI 画布创意工作台。Loomic 帮助验证了“画布优先、对话驱动”的媒体创作体验；AI Canvas 保持独立的本地优先架构和实现。
 
 ## 开发
 
@@ -177,4 +177,4 @@ pnpm check:i18n
 
 ## 许可证
 
-AI Media Canvas 使用 [Apache License 2.0](./LICENSE) 开源。
+AI Canvas 使用 [Apache License 2.0](./LICENSE) 开源。

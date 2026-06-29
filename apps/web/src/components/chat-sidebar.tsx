@@ -7,7 +7,6 @@ import type {
   AgentModelSource,
   ContentBlock,
   ImageGenerationPreference,
-  MessageMention,
   StreamEvent,
   ToolArtifact,
   VideoGenerationPreference,
@@ -32,31 +31,25 @@ import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { useAppTranslation } from "../i18n";
-import { fetchBrandKit } from "../lib/brand-kit-api";
 import {
   type GenerationJobSubscription,
   type GenerationJobType,
   generationJobService,
 } from "../lib/generation-job-service";
+import { toRuntimeAssetUrl } from "../lib/local-assets";
 import {
   fetchImageModels,
   fetchRunEvents,
   saveMessage,
 } from "../lib/server-api";
 import type { CanvasSelectedElement } from "./canvas-editor";
-import {
-  type BrandKitMentionItem,
-  type CanvasImageItem,
-  type ImageModelMentionItem,
-  MessageMentionPicker,
-  type MessageMentionPickerItem,
-} from "./canvas-image-picker";
 import { ChatInput } from "./chat-input";
 import { ChatMessage } from "./chat-message";
 import { ChatTemplates } from "./chat-templates";
 import { ErrorBoundary } from "./error-boundary";
 import { SessionSelector } from "./session-selector";
 import { SettingsDialog } from "./settings-dialog";
+import type { SettingsTab } from "./settings-panel";
 import { useToast } from "./toast";
 
 type ChatSidebarProps = {
@@ -72,7 +65,6 @@ type ChatSidebarProps = {
   initialSessionId?: string | undefined;
   onSessionChange?: (sessionId: string) => void;
   onRequestCanvasImages?: () => CanvasImageItem[];
-  currentBrandKitId?: string | null;
   ws: WebSocketHandle;
   selectedCanvasElements?: CanvasSelectedElement[];
 };
@@ -82,6 +74,113 @@ type DeferredMediaJob = {
   jobType: GenerationJobType;
   output: Record<string, unknown>;
 };
+
+type SendFailureStage = "save_message" | "agent_run_ack" | "stream";
+
+export type CanvasImageItem = {
+  assetId: string;
+  url: string;
+};
+
+function summarizeReadyAttachments(attachments: ReadyAttachment[]) {
+  return attachments.map((attachment, index) => {
+    const url = attachment.url;
+    const dataUriMatch = /^data:([^;]+);base64,(.*)$/s.exec(url);
+    const base = {
+      assetId: attachment.assetId,
+      index: index + 1,
+      mimeType: attachment.mimeType,
+      name: attachment.name,
+      source: attachment.source,
+      urlBytes: byteLength(url),
+      urlKind: classifyAttachmentUrl(url),
+    };
+
+    if (dataUriMatch) {
+      return {
+        ...base,
+        dataMimeType: dataUriMatch[1] ?? "unknown",
+        estimatedDataBytes: estimateBase64Bytes(dataUriMatch[2] ?? ""),
+      };
+    }
+
+    try {
+      const parsed = new URL(url);
+      return {
+        ...base,
+        urlHost: parsed.host,
+        urlPath: parsed.pathname,
+      };
+    } catch {
+      return base;
+    }
+  });
+}
+
+function classifyAttachmentUrl(url: string) {
+  if (url.startsWith("data:")) return "data";
+  if (url.startsWith("blob:")) return "blob";
+  try {
+    return new URL(url).protocol.replace(/:$/, "") || "unknown";
+  } catch {
+    return "invalid";
+  }
+}
+
+function estimateBase64Bytes(base64: string) {
+  const normalized = base64.replace(/\s/g, "");
+  if (!normalized) return 0;
+  const padding = normalized.endsWith("==")
+    ? 2
+    : normalized.endsWith("=")
+      ? 1
+      : 0;
+  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+}
+
+function byteLength(value: string) {
+  return new TextEncoder().encode(value).length;
+}
+
+function isSchemaUrl(value: string) {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveSelectedCanvasImageUrl(element: CanvasSelectedElement) {
+  const storageUrl =
+    typeof element.storageUrl === "string" && element.storageUrl
+      ? toRuntimeAssetUrl(element.storageUrl)
+      : undefined;
+  if (storageUrl && isSchemaUrl(storageUrl)) return storageUrl;
+  return element.dataUrl;
+}
+
+function runtimeCanvasImageUrl(item: CanvasImageItem) {
+  return toRuntimeAssetUrl(item.url, item.assetId);
+}
+
+function runtimeArtifactUrl(artifact: ToolArtifact) {
+  return toRuntimeAssetUrl(artifact.url, artifact.assetId);
+}
+
+function summarizeClientError(error: unknown) {
+  if (error instanceof Error) {
+    const errorWithCode = error as Error & { code?: unknown };
+    return {
+      message: error.message,
+      name: error.name,
+      ...(typeof errorWithCode.code === "string"
+        ? { code: errorWithCode.code }
+        : {}),
+    };
+  }
+  return { message: String(error), name: typeof error };
+}
 
 function extractDeferredMediaJobFromOutput(
   output: Record<string, unknown> | undefined,
@@ -131,10 +230,21 @@ function buildGeneratedMediaArtifact(
 
   if (job.jobType === "video_generation") {
     const durationSeconds = result.duration_seconds;
+    const prompt = job.output.prompt;
+    const model = job.output.model;
+    const aspectRatio =
+      typeof job.output.aspectRatio === "string"
+        ? job.output.aspectRatio
+        : job.output.aspect_ratio;
+    const resolution = job.output.resolution;
     return {
       type: "video",
       ...(typeof assetId === "string" ? { assetId } : {}),
       ...(typeof title === "string" ? { title } : {}),
+      ...(typeof prompt === "string" ? { prompt } : {}),
+      ...(typeof model === "string" ? { model } : {}),
+      ...(typeof aspectRatio === "string" ? { aspectRatio } : {}),
+      ...(typeof resolution === "string" ? { resolution } : {}),
       url,
       mimeType,
       width,
@@ -156,6 +266,20 @@ function buildGeneratedMediaArtifact(
   };
 }
 
+function filterImageGenerationPreference(
+  preference: ImageGenerationPreference | undefined,
+  availableModelIds: Set<string>,
+): ImageGenerationPreference | undefined {
+  if (preference?.mode !== "manual" || preference.models.length === 0) {
+    return undefined;
+  }
+
+  const models = preference.models.filter((model) =>
+    availableModelIds.has(model),
+  );
+  return models.length > 0 ? { mode: "manual", models } : undefined;
+}
+
 function getGenerationJobErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -172,11 +296,10 @@ export function ChatSidebar({
   initialSessionId,
   onSessionChange,
   onRequestCanvasImages,
-  currentBrandKitId,
   ws,
   selectedCanvasElements,
 }: ChatSidebarProps) {
-  const { t } = useAppTranslation("chat");
+  const { i18n, t } = useAppTranslation("chat");
   const breakpoint = useBreakpoint();
   const isOverlay = breakpoint !== "desktop";
 
@@ -208,23 +331,19 @@ export function ChatSidebar({
   const { applyStreamEvent, completeToolBlockWithArtifacts, failToolBlock } =
     useChatStream(updateSessionMessages);
 
-  // ── Mention & attachment state ──
-  const [atQuery, setAtQuery] = useState<string | null>(null);
-  const [messageMentions, setMessageMentions] = useState<MessageMention[]>([]);
-  const [brandKitMentionItems, setBrandKitMentionItems] = useState<
-    BrandKitMentionItem[]
-  >([]);
-  const [imageModelMentionItems, setImageModelMentionItems] = useState<
-    ImageModelMentionItem[]
-  >([]);
+  // ── Attachment state ──
   const chatInputRef = useRef<import("./chat-input").ChatInputHandle>(null);
+  const [availableImageModelIds, setAvailableImageModelIds] = useState<
+    Set<string>
+  >(new Set());
 
   const initialPromptSent = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef(false);
   const inFlightSessionIdsRef = useRef<Set<string>>(new Set());
-  const messageMentionsRef = useRef(messageMentions);
-  messageMentionsRef.current = messageMentions;
+  const activeRunIdsRef = useRef<Map<string, string>>(new Map());
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [cancelingRunId, setCancelingRunId] = useState<string | null>(null);
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
   selectedCanvasElementsRef.current = selectedCanvasElements;
   const prevConnectedRef = useRef(false);
@@ -250,6 +369,12 @@ export function ChatSidebar({
         activeSessionId && inFlightSessionIdsRef.current.has(activeSessionId),
       ),
     );
+    setActiveRunId(
+      activeSessionId
+        ? (activeRunIdsRef.current.get(activeSessionId) ?? null)
+        : null,
+    );
+    setCancelingRunId(null);
   }, [activeSessionId, setStreaming]);
 
   const buildAutoTitleSource = useCallback(
@@ -277,15 +402,19 @@ export function ChatSidebar({
     );
   }, []);
 
+  const canvasArtifactUrls = useCallback(() => {
+    return new Set(
+      (onRequestCanvasImages ? onRequestCanvasImages() : [])
+        .flatMap((item) => [item.url, runtimeCanvasImageUrl(item)])
+        .filter(
+          (url): url is string => typeof url === "string" && url.length > 0,
+        ),
+    );
+  }, [onRequestCanvasImages]);
+
   const recoverMediaArtifactsFromBlocks = useCallback(
     (contentBlocks: ContentBlock[]) => {
-      const canvasUrls = new Set(
-        (onRequestCanvasImages ? onRequestCanvasImages() : [])
-          .map((item) => item.url)
-          .filter(
-            (url): url is string => typeof url === "string" && url.length > 0,
-          ),
-      );
+      const canvasUrls = canvasArtifactUrls();
 
       for (const block of contentBlocks) {
         if (
@@ -298,13 +427,15 @@ export function ChatSidebar({
         }
 
         for (const artifact of block.artifacts) {
-          const replayKey = artifactReplayKey(block.toolCallId, artifact.url);
+          const artifactUrl = runtimeArtifactUrl(artifact);
+          const replayKey = artifactReplayKey(block.toolCallId, artifactUrl);
           if (replayedArtifactKeysRef.current.has(replayKey)) continue;
           if (hasBackendInsertedElement(block)) {
             replayedArtifactKeysRef.current.add(replayKey);
+            onCanvasSync?.();
             continue;
           }
-          if (canvasUrls.has(artifact.url)) {
+          if (canvasUrls.has(artifactUrl)) {
             replayedArtifactKeysRef.current.add(replayKey);
             continue;
           }
@@ -315,9 +446,10 @@ export function ChatSidebar({
     },
     [
       artifactReplayKey,
+      canvasArtifactUrls,
       hasBackendInsertedElement,
       onImageGenerated,
-      onRequestCanvasImages,
+      onCanvasSync,
     ],
   );
 
@@ -413,7 +545,6 @@ export function ChatSidebar({
   const {
     attachments: imageAttachments,
     addFiles,
-    addCanvasRef,
     retryUpload,
     removeAttachment,
     clearAll: clearAttachments,
@@ -442,8 +573,34 @@ export function ChatSidebar({
   const agentModelSourceRef = useRef(agentModelSource);
   agentModelSourceRef.current = agentModelSource;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] =
+    useState<SettingsTab>("agent");
+  const mediaSettingsOpenedFromCapabilityRef = useRef(false);
+  const panelRootRef = useRef<HTMLDivElement | null>(null);
 
   const { toast: showToast } = useToast();
+
+  const openSettings = useCallback((tab: SettingsTab = "agent") => {
+    if (tab !== "media") {
+      mediaSettingsOpenedFromCapabilityRef.current = false;
+    }
+    setSettingsInitialTab(tab);
+    setSettingsOpen(true);
+  }, []);
+
+  const openMediaSettings = useCallback(() => {
+    mediaSettingsOpenedFromCapabilityRef.current = true;
+    openSettings("media");
+  }, [openSettings]);
+
+  const handleSettingsSaved = useCallback(() => {
+    if (!mediaSettingsOpenedFromCapabilityRef.current) return;
+    mediaSettingsOpenedFromCapabilityRef.current = false;
+    setSettingsOpen(false);
+    chatInputRef.current?.setDraft(t("capabilityRequired.continueDraft"));
+    chatInputRef.current?.focus();
+    showToast(t("capabilityRequired.continueAfterSave"), "success");
+  }, [showToast, t]);
 
   // ── Sidebar resize ──
   const SIDEBAR_MIN = 300;
@@ -530,6 +687,54 @@ export function ChatSidebar({
     [clampWidth],
   );
 
+  useEffect(() => {
+    if (!open) return;
+
+    const isNodeInsidePanel = (node: Node | null) =>
+      node !== null &&
+      panelRootRef.current !== null &&
+      panelRootRef.current.contains(node);
+
+    const hasSelectionInsidePanel = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) return false;
+      return (
+        isNodeInsidePanel(selection.anchorNode) ||
+        isNodeInsidePanel(selection.focusNode)
+      );
+    };
+
+    const isInsidePanel = (target: EventTarget | null) =>
+      (target instanceof Node && isNodeInsidePanel(target)) ||
+      hasSelectionInsidePanel();
+
+    const isolateEvent = (event: Event) => {
+      if (!isInsidePanel(event.target)) return;
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
+    const isolateKeyEvent = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        ["a", "c", "v", "x"].includes(key)
+      ) {
+        isolateEvent(event);
+      }
+    };
+
+    window.addEventListener("keydown", isolateKeyEvent, true);
+    window.addEventListener("copy", isolateEvent, true);
+    window.addEventListener("cut", isolateEvent, true);
+    return () => {
+      window.removeEventListener("keydown", isolateKeyEvent, true);
+      window.removeEventListener("copy", isolateEvent, true);
+      window.removeEventListener("cut", isolateEvent, true);
+    };
+  }, [open]);
+
   // ── Auto-scroll to bottom ──
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -540,25 +745,18 @@ export function ChatSidebar({
     scrollToBottom();
   }, [messages.length, scrollToBottom]);
 
-  // ── Fetch image models for @mention picker ──
   useEffect(() => {
     let cancelled = false;
 
     fetchImageModels()
       .then((data) => {
         if (cancelled) return;
-        setImageModelMentionItems(
-          data.models.map((model) => ({
-            kind: "image-model",
-            id: model.id,
-            label: model.displayName,
-            description: model.description,
-            ...(model.iconUrl ? { iconUrl: model.iconUrl } : {}),
-          })),
+        setAvailableImageModelIds(
+          new Set(data.models.map((model) => model.id)),
         );
       })
       .catch(() => {
-        if (!cancelled) setImageModelMentionItems([]);
+        if (!cancelled) setAvailableImageModelIds(new Set());
       });
 
     return () => {
@@ -566,218 +764,231 @@ export function ChatSidebar({
     };
   }, []);
 
-  // ── Fetch brand kit items for @mention picker ──
-  useEffect(() => {
-    if (!currentBrandKitId) {
-      setBrandKitMentionItems([]);
-      return;
-    }
-
-    let cancelled = false;
-    fetchBrandKit(currentBrandKitId)
-      .then((kit) => {
-        if (cancelled) return;
-        setBrandKitMentionItems(
-          kit.assets.map((asset) => ({
-            kind: "brand-kit-asset" as const,
-            id: asset.id,
-            label: asset.display_name,
-            assetType: asset.asset_type,
-            ...(asset.text_content !== null
-              ? { textContent: asset.text_content }
-              : {}),
-            ...(asset.file_url !== null ? { fileUrl: asset.file_url } : {}),
-            ...((asset.asset_type === "logo" || asset.asset_type === "image") &&
-            asset.file_url !== null
-              ? { thumbnailUrl: asset.file_url }
-              : {}),
-          })),
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setBrandKitMentionItems([]);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentBrandKitId]);
-
   // ── Send message ──
   const handleSend = useCallback(
-    async (
+    (
       text: string,
       attachmentsOverride?: ReadyAttachment[],
       imageGenerationPreferenceOverride?: ImageGenerationPreference,
       videoGenerationPreferenceOverride?: VideoGenerationPreference,
-      mentionsOverride?: MessageMention[],
     ) => {
       const currentSessionId = activeSessionIdRef.current;
       if (
         !currentSessionId ||
         inFlightSessionIdsRef.current.has(currentSessionId)
       ) {
-        return;
+        return false;
       }
-      inFlightSessionIdsRef.current.add(currentSessionId);
-      if (activeSessionIdRef.current === currentSessionId) {
-        setStreaming(true);
+      if (!ws.connected) {
+        return false;
       }
 
-      if (!(await ensureAgentModelConfigured())) {
-        inFlightSessionIdsRef.current.delete(currentSessionId);
+      void (async () => {
+        inFlightSessionIdsRef.current.add(currentSessionId);
         if (activeSessionIdRef.current === currentSessionId) {
-          setStreaming(false);
-        }
-        setSettingsOpen(true);
-        return;
-      }
-
-      // Merge explicitly-attached images with auto-sensed canvas selection images
-      let currentAttachments = attachmentsOverride ?? readyAttachments;
-      const selectedEls = selectedCanvasElementsRef.current ?? [];
-      const selectedImageEls = selectedEls.filter(
-        (el) =>
-          el.type === "image" && el.fileId && (el.storageUrl || el.dataUrl),
-      );
-      if (selectedImageEls.length > 0 && !attachmentsOverride) {
-        const existingIds = new Set(currentAttachments.map((a) => a.assetId));
-        const selectionAttachments: ReadyAttachment[] = selectedImageEls
-          .filter((el) => !existingIds.has(el.id))
-          .flatMap((el) => {
-            const url = el.storageUrl ?? el.dataUrl;
-            if (!url) return [];
-            return [
-              {
-                assetId: el.id,
-                url,
-                mimeType: "image/png",
-                source: "canvas-ref" as const,
-                name: `Canvas selection ${el.id.slice(0, 6)}`,
-              },
-            ];
-          });
-        if (selectionAttachments.length > 0) {
-          currentAttachments = [...currentAttachments, ...selectionAttachments];
-        }
-      }
-      const currentImageGenerationPreference =
-        imageGenerationPreferenceOverride ??
-        activeImageGenerationPreferenceRef.current;
-      const currentVideoGenerationPreference =
-        videoGenerationPreferenceOverride ??
-        activeVideoGenerationPreferenceRef.current;
-      const currentMentions = mentionsOverride ?? messageMentionsRef.current;
-
-      // Add user message locally
-      const imageBlocks: ContentBlock[] = currentAttachments.map((a) => ({
-        type: "image" as const,
-        assetId: a.assetId,
-        url: a.url,
-        mimeType: a.mimeType,
-        source: a.source,
-        ...(a.name ? { name: a.name } : {}),
-      }));
-      const mentionBlocks: ContentBlock[] = currentMentions.map((mention) => {
-        if (mention.mentionType === "image-model") {
-          return {
-            type: "mention" as const,
-            mentionType: "image-model" as const,
-            id: mention.id,
-            label: mention.label,
-          };
+          setStreaming(true);
         }
 
-        if (mention.mentionType === "skill") {
-          return {
-            type: "mention" as const,
-            mentionType: "skill" as const,
-            id: mention.id,
-            label: mention.label,
-            slug: mention.slug,
-          };
-        }
-
-        return {
-          type: "mention" as const,
-          mentionType: "brand-kit-asset" as const,
-          id: mention.id,
-          label: mention.label,
-          assetType: mention.assetType,
-          ...(mention.textContent !== undefined
-            ? { textContent: mention.textContent }
-            : {}),
-          ...(mention.fileUrl !== undefined
-            ? { fileUrl: mention.fileUrl }
-            : {}),
-        };
-      });
-      const userMsg = {
-        id: `user-${Date.now()}`,
-        role: "user" as const,
-        contentBlocks: [
-          { type: "text" as const, text },
-          ...mentionBlocks,
-          ...imageBlocks,
-        ],
-      };
-      updateSessionMessages(currentSessionId, (prev) => [...prev, userMsg]);
-
-      const userMessageSave = saveMessage(currentSessionId, {
-        role: "user",
-        content: text,
-        contentBlocks: [
-          { type: "text" as const, text },
-          ...mentionBlocks,
-          ...imageBlocks,
-        ],
-      });
-
-      // Auto-title from first user message, falling back to attachment names
-      // for image-only initial runs from the home prompt.
-      autoTitleSession(buildAutoTitleSource(text, currentAttachments));
-
-      // Create assistant placeholder
-      const assistantIdRef = { current: `assistant-${Date.now()}` };
-      updateSessionMessages(currentSessionId, (prev) => [
-        ...prev,
-        {
-          id: assistantIdRef.current,
-          role: "assistant" as const,
-          contentBlocks: [],
-        },
-      ]);
-      if (activeSessionIdRef.current === currentSessionId) {
-        setStreaming(true);
-      }
-      abortRef.current = false;
-
-      try {
-        await userMessageSave;
-
-        const perf = {
-          t0Send: performance.now(),
-          tAck: 0,
-          tFirstToken: 0,
-          gotFirstToken: false,
-        };
-
-        let resolveStream: () => void;
-        const streamDone = new Promise<void>((r) => {
-          resolveStream = r;
-        });
-        const runIdRef = { current: "" };
-        const runCanvasId = canvasId;
-
-        const cleanup = ws.onEvent((entry) => {
-          const event = entry.event;
-          if (!runIdRef.current || event.runId !== runIdRef.current) return;
-          if (abortRef.current) {
-            resolveStream();
-            return;
+        if (!(await ensureAgentModelConfigured())) {
+          inFlightSessionIdsRef.current.delete(currentSessionId);
+          if (activeSessionIdRef.current === currentSessionId) {
+            setStreaming(false);
           }
-          const isCurrentCanvas = currentCanvasIdRef.current === runCanvasId;
-          if (!isCurrentCanvas) {
+          openSettings("agent");
+          return;
+        }
+
+        // Merge explicitly-attached images with auto-sensed canvas selection images
+        let currentAttachments = attachmentsOverride ?? readyAttachments;
+        const selectedEls = selectedCanvasElementsRef.current ?? [];
+        const selectedImageEls = selectedEls.filter(
+          (el) =>
+            el.type === "image" && el.fileId && (el.storageUrl || el.dataUrl),
+        );
+        if (selectedImageEls.length > 0 && !attachmentsOverride) {
+          const existingIds = new Set(currentAttachments.map((a) => a.assetId));
+          const selectionAttachments: ReadyAttachment[] = selectedImageEls
+            .filter((el) => !existingIds.has(el.id))
+            .flatMap((el) => {
+              const url = resolveSelectedCanvasImageUrl(el);
+              if (!url) return [];
+              return [
+                {
+                  assetId: el.id,
+                  url,
+                  mimeType: "image/png",
+                  source: "canvas-ref" as const,
+                  name: `Canvas selection ${el.id.slice(0, 6)}`,
+                },
+              ];
+            });
+          if (selectionAttachments.length > 0) {
+            currentAttachments = [
+              ...currentAttachments,
+              ...selectionAttachments,
+            ];
+          }
+        }
+        const currentImageGenerationPreference =
+          filterImageGenerationPreference(
+            imageGenerationPreferenceOverride ??
+              activeImageGenerationPreferenceRef.current,
+            availableImageModelIds,
+          );
+        const currentVideoGenerationPreference =
+          videoGenerationPreferenceOverride ??
+          activeVideoGenerationPreferenceRef.current;
+        const agentPromptText = text;
+
+        // Add user message locally
+        const imageBlocks: ContentBlock[] = currentAttachments.map((a) => ({
+          type: "image" as const,
+          assetId: a.assetId,
+          url: a.url,
+          mimeType: a.mimeType,
+          source: a.source,
+          ...(a.name ? { name: a.name } : {}),
+        }));
+        const userMsg = {
+          id: `user-${Date.now()}`,
+          role: "user" as const,
+          contentBlocks: [{ type: "text" as const, text }, ...imageBlocks],
+        };
+        updateSessionMessages(currentSessionId, (prev) => [...prev, userMsg]);
+
+        const userMessagePayload = {
+          role: "user" as const,
+          content: text,
+          contentBlocks: [{ type: "text" as const, text }, ...imageBlocks],
+        };
+        const userMessageSave = saveMessage(
+          currentSessionId,
+          userMessagePayload,
+        );
+        const sendDiagnostics = {
+          attachmentCount: currentAttachments.length,
+          attachments: summarizeReadyAttachments(currentAttachments),
+          canvasId,
+          messageBodyBytes: byteLength(JSON.stringify(userMessagePayload)),
+          promptChars: text.length,
+          selectedCanvasImageCount: selectedImageEls.length,
+          sessionId: currentSessionId,
+        };
+
+        // Auto-title from first user message, falling back to attachment names
+        // for image-only initial runs from the home prompt.
+        autoTitleSession(buildAutoTitleSource(text, currentAttachments));
+
+        // Create assistant placeholder
+        const assistantIdRef = { current: `assistant-${Date.now()}` };
+        updateSessionMessages(currentSessionId, (prev) => [
+          ...prev,
+          {
+            id: assistantIdRef.current,
+            role: "assistant" as const,
+            contentBlocks: [],
+          },
+        ]);
+        if (activeSessionIdRef.current === currentSessionId) {
+          setStreaming(true);
+        }
+        abortRef.current = false;
+
+        let failureStage: SendFailureStage = "save_message";
+        let cleanupStreamListener: (() => void) | undefined;
+        const cleanupRegisteredStreamListener = () => {
+          cleanupStreamListener?.();
+          cleanupStreamListener = undefined;
+        };
+        try {
+          await userMessageSave;
+          failureStage = "agent_run_ack";
+
+          const perf = {
+            t0Send: performance.now(),
+            tAck: 0,
+            tFirstToken: 0,
+            gotFirstToken: false,
+          };
+
+          let resolveStream: () => void;
+          const streamDone = new Promise<void>((r) => {
+            resolveStream = r;
+          });
+          const runIdRef = { current: "" };
+          const runCanvasId = canvasId;
+
+          cleanupStreamListener = ws.onEvent((entry) => {
+            const event = entry.event;
+            if (!runIdRef.current || event.runId !== runIdRef.current) return;
+            if (abortRef.current) {
+              resolveStream();
+              return;
+            }
+            const isCurrentCanvas = currentCanvasIdRef.current === runCanvasId;
+            if (!isCurrentCanvas) {
+              if (
+                event.type === "run.completed" ||
+                event.type === "run.failed" ||
+                event.type === "run.canceled"
+              ) {
+                resolveStream();
+              }
+              return;
+            }
+
+            // Track first token timing
+            if (!perf.gotFirstToken && event.type === "message.delta") {
+              perf.tFirstToken = performance.now();
+              perf.gotFirstToken = true;
+              console.log(
+                `[perf] send → first token: ${(perf.tFirstToken - perf.t0Send).toFixed(0)}ms` +
+                  ` (ack→token: ${(perf.tFirstToken - perf.tAck).toFixed(0)}ms)`,
+              );
+            }
+
+            // Apply event to messages (single source of truth — shared with reconnect)
+            applyStreamEvent(event, assistantIdRef.current, currentSessionId);
+            watchDeferredMediaJob(event, currentSessionId);
+
+            // Forward event to parent for fallback job polling.
+            onStreamEvent?.(event);
+
+            // Fire canvas insertion callbacks for image/video artifacts.
+            // Backend-inserted artifacts should already arrive through canvas.sync.
+            // Verify after sync has had a chance to land; if the canvas still does
+            // not contain the artifact, fall back to client-side insertion.
+            const backendInserted =
+              event.type === "tool.completed" &&
+              event.output &&
+              typeof (event.output as Record<string, unknown>).elementId ===
+                "string";
+            if (
+              event.type === "tool.completed" &&
+              event.artifacts &&
+              event.toolName !== "screenshot_canvas"
+            ) {
+              for (const artifact of event.artifacts) {
+                if (backendInserted) {
+                  onCanvasSync?.();
+                } else if (onImageGenerated) {
+                  onImageGenerated?.(artifact);
+                }
+              }
+            }
+
+            if (event.type === "canvas.sync" && onCanvasSync) {
+              onCanvasSync();
+            }
+
+            // Preview model hint: suggest switching when run fails
+            if (event.type === "run.failed") {
+              const currentModel = agentModelRef.current ?? "";
+              if (currentModel.includes("preview")) {
+                showToast(t("previewModelUnstable"), "error");
+              }
+            }
+
             if (
               event.type === "run.completed" ||
               event.type === "run.failed" ||
@@ -785,107 +996,46 @@ export function ChatSidebar({
             ) {
               resolveStream();
             }
-            return;
-          }
+          });
 
-          // Track first token timing
-          if (!perf.gotFirstToken && event.type === "message.delta") {
-            perf.tFirstToken = performance.now();
-            perf.gotFirstToken = true;
-            console.log(
-              `[perf] send → first token: ${(perf.tFirstToken - perf.t0Send).toFixed(0)}ms` +
-                ` (ack→token: ${(perf.tFirstToken - perf.tAck).toFixed(0)}ms)`,
-            );
-          }
+          // Start run via WebSocket
+          const runPayload = {
+            sessionId: currentSessionId,
+            conversationId: canvasId,
+            prompt: agentPromptText,
+            locale:
+              i18n.resolvedLanguage === "en"
+                ? ("en" as const)
+                : ("zh-CN" as const),
+            canvasId,
+            ...(currentAttachments.length > 0
+              ? { attachments: currentAttachments }
+              : {}),
+            ...(currentImageGenerationPreference
+              ? {
+                  imageGenerationPreference: currentImageGenerationPreference,
+                }
+              : {}),
+            ...(currentVideoGenerationPreference
+              ? {
+                  videoGenerationPreference: currentVideoGenerationPreference,
+                }
+              : {}),
+            ...(agentModelRef.current ? { model: agentModelRef.current } : {}),
+            ...(agentModelRef.current && agentModelSourceRef.current
+              ? { modelSource: agentModelSourceRef.current }
+              : {}),
+          };
 
-          // Apply event to messages (single source of truth — shared with reconnect)
-          applyStreamEvent(event, assistantIdRef.current, currentSessionId);
-          watchDeferredMediaJob(event, currentSessionId);
-
-          // Forward event to parent for fallback job polling.
-          onStreamEvent?.(event);
-
-          // Fire canvas insertion callbacks for image/video artifacts.
-          // Skip if the backend already inserted the element (elementId in output).
-          const backendInserted =
-            event.type === "tool.completed" &&
-            event.output &&
-            typeof (event.output as Record<string, unknown>).elementId ===
-              "string";
-          if (
-            event.type === "tool.completed" &&
-            event.artifacts &&
-            event.toolName !== "screenshot_canvas" &&
-            !backendInserted
-          ) {
-            for (const artifact of event.artifacts) {
-              if (onImageGenerated) {
-                onImageGenerated(artifact);
-              }
-            }
-          }
-
-          if (event.type === "canvas.sync" && onCanvasSync) {
-            onCanvasSync();
-          }
-
-          // Preview model hint: suggest switching when run fails
-          if (event.type === "run.failed") {
-            const currentModel = agentModelRef.current ?? "";
-            if (currentModel.includes("preview")) {
-              showToast(
-                "当前 Preview 模型请求不稳定，建议切换模型后重试",
-                "error",
+          const runId = await new Promise<string>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              cleanupRegisteredStreamListener();
+              reject(
+                new Error("WebSocket ack timeout — connection may be down"),
               );
-            }
-          }
+            }, 10_000);
 
-          if (
-            event.type === "run.completed" ||
-            event.type === "run.failed" ||
-            event.type === "run.canceled"
-          ) {
-            resolveStream();
-          }
-        });
-
-        // Start run via WebSocket
-        const runId = await new Promise<string>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            cleanup();
-            reject(new Error("WebSocket ack timeout — connection may be down"));
-          }, 10_000);
-
-          ws.startRun(
-            {
-              sessionId: currentSessionId,
-              conversationId: canvasId,
-              prompt: text,
-              canvasId,
-              ...(currentAttachments.length > 0
-                ? { attachments: currentAttachments }
-                : {}),
-              ...(currentMentions.length > 0
-                ? { mentions: currentMentions }
-                : {}),
-              ...(currentImageGenerationPreference
-                ? {
-                    imageGenerationPreference: currentImageGenerationPreference,
-                  }
-                : {}),
-              ...(currentVideoGenerationPreference
-                ? {
-                    videoGenerationPreference: currentVideoGenerationPreference,
-                  }
-                : {}),
-              ...(agentModelRef.current
-                ? { model: agentModelRef.current }
-                : {}),
-              ...(agentModelRef.current && agentModelSourceRef.current
-                ? { modelSource: agentModelSourceRef.current }
-                : {}),
-            },
-            (ack) => {
+            ws.startRun(runPayload, (ack) => {
               clearTimeout(timeout);
               perf.tAck = performance.now();
               console.log(
@@ -912,36 +1062,55 @@ export function ChatSidebar({
                 );
               }
               runIdRef.current = id;
+              activeRunIdsRef.current.set(currentSessionId, id);
+              if (activeSessionIdRef.current === currentSessionId) {
+                setActiveRunId(id);
+              }
               resolve(id);
-            },
-          );
-        });
-        clearAttachments();
-        setMessageMentions([]);
+            });
+          });
+          clearAttachments();
 
-        await streamDone;
-        cleanup();
-      } catch {
-        updateSessionMessages(currentSessionId, (prev) =>
-          prev.map((m) => {
-            if (m.id !== assistantIdRef.current) return m;
-            const hasText = m.contentBlocks.some((b) => b.type === "text");
-            if (hasText) return m;
-            return {
-              ...m,
-              contentBlocks: [
-                ...m.contentBlocks,
-                { type: "text" as const, text: "Failed to get response." },
-              ],
-            };
-          }),
-        );
-      } finally {
-        inFlightSessionIdsRef.current.delete(currentSessionId);
-        if (activeSessionIdRef.current === currentSessionId) {
-          setStreaming(false);
+          failureStage = "stream";
+          await streamDone;
+          cleanupRegisteredStreamListener();
+        } catch (error) {
+          console.warn("[chat] Failed to send agent message", {
+            ...sendDiagnostics,
+            error: summarizeClientError(error),
+            stage: failureStage,
+          });
+          updateSessionMessages(currentSessionId, (prev) =>
+            prev.map((m) => {
+              if (m.id !== assistantIdRef.current) return m;
+              const hasText = m.contentBlocks.some((b) => b.type === "text");
+              if (hasText) return m;
+              return {
+                ...m,
+                contentBlocks: [
+                  ...m.contentBlocks,
+                  { type: "text" as const, text: "Failed to get response." },
+                ],
+              };
+            }),
+          );
+        } finally {
+          cleanupRegisteredStreamListener();
+          inFlightSessionIdsRef.current.delete(currentSessionId);
+          const runningId = activeRunIdsRef.current.get(currentSessionId);
+          activeRunIdsRef.current.delete(currentSessionId);
+          if (activeSessionIdRef.current === currentSessionId) {
+            setStreaming(false);
+            setActiveRunId(null);
+          }
+          if (runningId) {
+            setCancelingRunId((current) =>
+              current === runningId ? null : current,
+            );
+          }
         }
-      }
+      })();
+      return true;
     },
     [
       canvasId,
@@ -958,74 +1127,18 @@ export function ChatSidebar({
       buildAutoTitleSource,
       activeSessionIdRef,
       ensureAgentModelConfigured,
+      openSettings,
+      availableImageModelIds,
       setStreaming,
       showToast,
     ],
   );
 
-  // ── Mention picker ──
-  const mentionPickerItems: MessageMentionPickerItem[] = [
-    ...(onRequestCanvasImages ? onRequestCanvasImages() : []),
-    ...brandKitMentionItems,
-    ...imageModelMentionItems,
-  ];
-
-  const handleMentionSelect = useCallback(
-    (item: MessageMentionPickerItem) => {
-      if (item.kind === "canvas-image") {
-        addCanvasRef({
-          assetId: item.assetId,
-          url: item.url,
-          mimeType: item.mimeType,
-          name: item.name,
-        });
-        return;
-      }
-
-      setMessageMentions((prev) => {
-        let nextMention: MessageMention;
-        if (item.kind === "image-model") {
-          nextMention = {
-            mentionType: "image-model",
-            id: item.id,
-            label: item.label,
-          };
-        } else {
-          nextMention = {
-            mentionType: "brand-kit-asset",
-            id: item.id,
-            label: item.label,
-            assetType: item.assetType,
-            ...(item.textContent !== undefined
-              ? { textContent: item.textContent }
-              : {}),
-            ...(item.fileUrl !== undefined ? { fileUrl: item.fileUrl } : {}),
-          };
-        }
-
-        if (
-          prev.some(
-            (m) =>
-              m.mentionType === nextMention.mentionType &&
-              m.id === nextMention.id,
-          )
-        ) {
-          return prev;
-        }
-        return [...prev, nextMention];
-      });
-    },
-    [addCanvasRef],
-  );
-
-  const handleRemoveMention = useCallback((mention: MessageMention) => {
-    setMessageMentions((prev) =>
-      prev.filter(
-        (item) =>
-          !(item.mentionType === mention.mentionType && item.id === mention.id),
-      ),
-    );
-  }, []);
+  const handleCancelRun = useCallback(() => {
+    if (!activeRunId || cancelingRunId === activeRunId) return;
+    setCancelingRunId(activeRunId);
+    ws.cancelRun(activeRunId);
+  }, [activeRunId, cancelingRunId, ws]);
 
   // ── Auto-send initial prompt ──
   useEffect(() => {
@@ -1073,7 +1186,7 @@ export function ChatSidebar({
       );
       if (
         modelSourceRaw === "local-agent" ||
-        modelSourceRaw === "nextop-managed" ||
+        modelSourceRaw === "tutti-managed" ||
         modelSourceRaw === "api-provider"
       ) {
         storedAgentModelSource = modelSourceRaw;
@@ -1175,14 +1288,20 @@ export function ChatSidebar({
         if (
           evt.type === "tool.completed" &&
           evt.artifacts &&
-          evt.toolName !== "screenshot_canvas" &&
-          !backendInserted
+          evt.toolName !== "screenshot_canvas"
         ) {
           for (const artifact of evt.artifacts) {
-            const replayKey = artifactReplayKey(evt.toolCallId, artifact.url);
+            const replayKey = artifactReplayKey(
+              evt.toolCallId,
+              runtimeArtifactUrl(artifact),
+            );
             if (replayedArtifactKeysRef.current.has(replayKey)) continue;
             replayedArtifactKeysRef.current.add(replayKey);
-            onImageGenerated?.(artifact);
+            if (backendInserted) {
+              onCanvasSync?.();
+            } else {
+              onImageGenerated?.(artifact);
+            }
           }
         }
 
@@ -1192,9 +1311,14 @@ export function ChatSidebar({
           evt.type === "run.canceled"
         ) {
           inFlightSessionIdsRef.current.delete(sessionId);
+          activeRunIdsRef.current.delete(sessionId);
           if (activeSessionIdRef.current === sessionId) {
             setStreaming(false);
+            setActiveRunId(null);
           }
+          setCancelingRunId((current) =>
+            current === evt.runId ? null : current,
+          );
         }
       };
 
@@ -1233,8 +1357,10 @@ export function ChatSidebar({
           .assistantMessageId;
         if (activeRunId && typeof activeRunId === "string") {
           inFlightSessionIdsRef.current.add(sessionId);
+          activeRunIdsRef.current.set(sessionId, activeRunId);
           if (activeSessionIdRef.current === sessionId) {
             setStreaming(true);
+            setActiveRunId(activeRunId);
           }
 
           resumedRunId = activeRunId;
@@ -1373,7 +1499,7 @@ export function ChatSidebar({
               d="M18.25 3c2.071 0 3.946 2.16 3.946 4.23L22 15.75a3.75 3.75 0 0 1-3.75 3.75h-2.874a.25.25 0 0 0-.16.058l-2.098 1.738a1.75 1.75 0 0 1-2.24-.007l-2.065-1.73a.25.25 0 0 0-.162-.059H5.75A3.75 3.75 0 0 1 2 15.75v-9A3.75 3.75 0 0 1 5.75 3zM7.5 10q-.053 0-.104.005a1.25 1.25 0 0 0-1.14 1.117l-.006.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 7.5 10m4.5 0q-.053 0-.104.005a1.25 1.25 0 0 0-1.14 1.117l-.006.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 12 10m4.5 0q-.053 0-.105.005a1.25 1.25 0 0 0-1.138 1.117l-.007.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 16.5 10"
             />
           </svg>
-          对话
+          {t("conversation")}
         </button>
       </div>
     );
@@ -1412,7 +1538,7 @@ export function ChatSidebar({
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => openSettings("agent")}
             className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             aria-label={t("actions.openSettings")}
             title={t("actions.openSettings")}
@@ -1446,7 +1572,7 @@ export function ChatSidebar({
         <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b border-border">
           <div className="h-2 w-2 rounded-full bg-red-500 animate-[pulse_1.2s_ease-in-out_infinite]" />
           <span className="text-[11px] text-muted-foreground">
-            连接已断开，正在重连...
+            {t("connectionReconnecting")}
           </span>
         </div>
       )}
@@ -1468,9 +1594,7 @@ export function ChatSidebar({
             </div>
           ) : messages.length === 0 ? (
             <ChatTemplates
-              onSend={(prompt) =>
-                handleSend(prompt, [], undefined, undefined, [])
-              }
+              onSend={(prompt) => handleSend(prompt, [], undefined, undefined)}
             />
           ) : (
             messages.map((msg) => (
@@ -1478,6 +1602,7 @@ export function ChatSidebar({
                 key={msg.id}
                 role={msg.role}
                 contentBlocks={msg.contentBlocks}
+                onOpenMediaSettings={openMediaSettings}
                 isStreaming={
                   streaming &&
                   msg.role === "assistant" &&
@@ -1491,37 +1616,30 @@ export function ChatSidebar({
       </ErrorBoundary>
 
       {/* Input */}
-      <div className="relative">
-        {atQuery !== null && mentionPickerItems.length > 0 && (
-          <MessageMentionPicker
-            items={mentionPickerItems}
-            query={atQuery}
-            onSelect={(item) => {
-              handleMentionSelect(item);
-              chatInputRef.current?.clearAtQuery();
-              setAtQuery(null);
-            }}
-            onClose={() => setAtQuery(null)}
-          />
-        )}
+      <div>
         <ChatInput
           ref={chatInputRef}
           onSend={handleSend}
-          disabled={streaming || sessionsLoading}
+          {...(activeRunId ? { onCancel: handleCancelRun } : {})}
+          disabled={sessionsLoading || !ws.connected}
+          isRunning={streaming}
+          canceling={activeRunId ? cancelingRunId === activeRunId : false}
           attachments={imageAttachments}
           canSendAttachments={readyAttachments.length > 0}
           onAddFiles={addFiles}
           onRemoveAttachment={removeAttachment}
           onRetryAttachment={retryUpload}
           isUploading={isUploading}
-          onAtQuery={setAtQuery}
-          mentions={messageMentions}
-          onRemoveMention={handleRemoveMention}
           {...(selectedCanvasElements ? { selectedCanvasElements } : {})}
         />
       </div>
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        initialTab={settingsInitialTab}
+        onSaved={handleSettingsSaved}
+      />
     </>
   );
 
@@ -1544,6 +1662,7 @@ export function ChatSidebar({
         />
         {/* Chat panel — full screen on mobile, fixed-width drawer on tablet */}
         <div
+          ref={panelRootRef}
           className={
             breakpoint === "mobile"
               ? "fixed inset-0 z-50 flex flex-col bg-card animate-in slide-in-from-right duration-250"
@@ -1560,6 +1679,7 @@ export function ChatSidebar({
   // ── Desktop: inline side-by-side with resize handle ──
   return (
     <div
+      ref={panelRootRef}
       className="relative z-[120] flex h-full shrink-0"
       style={{ width: sidebarWidth }}
       {...eventIsolationProps}

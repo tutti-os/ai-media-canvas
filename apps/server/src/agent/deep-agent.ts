@@ -23,8 +23,13 @@ import type {
   SubmitImageJobFn,
 } from "./tools/image-generate.js";
 import { createMainAgentTools } from "./tools/index.js";
+import type { CanvasClient } from "./tools/inspect-canvas.js";
 import { createVideoGenerateTool } from "./tools/video-generate.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
+import type {
+  ApplyWorkspaceSettingsPatch,
+  ReadWorkspaceSettings,
+} from "./tools/workspace-settings.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
 export type AimcAgent = Pick<
@@ -39,12 +44,15 @@ export type AimcAgentFactory = (options: {
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => unknown;
   env: ServerEnv;
+  getWorkspaceSettings?: ReadWorkspaceSettings;
+  locale?: "zh-CN" | "en";
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
   store?: BaseStore;
 
   submitImageJob?: SubmitImageJobFn;
   submitVideoJob?: SubmitVideoJobFn;
+  updateWorkspaceSettings?: ApplyWorkspaceSettingsPatch;
   workspaceSkills?: WorkspaceSkillEntry[];
 }) => AimcAgent;
 
@@ -67,12 +75,15 @@ export function createAimcDeepAgent(options: {
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => unknown;
   env: ServerEnv;
+  getWorkspaceSettings?: ReadWorkspaceSettings;
+  locale?: "zh-CN" | "en";
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
   store?: BaseStore;
 
   submitImageJob?: SubmitImageJobFn;
   submitVideoJob?: SubmitVideoJobFn;
+  updateWorkspaceSettings?: ApplyWorkspaceSettingsPatch;
   workspaceSkills?: WorkspaceSkillEntry[];
 }): AimcAgent {
   const backendResult =
@@ -97,7 +108,10 @@ export function createAimcDeepAgent(options: {
       );
     });
 
-  let systemPrompt = buildAimcSystemPrompt({ brandKitId: options.brandKitId });
+  let systemPrompt = buildAimcSystemPrompt({
+    brandKitId: options.brandKitId,
+    locale: options.locale,
+  });
 
   // Inject enabled skills (both system and user-created) into the system prompt.
   // All skills are loaded from the database via loadWorkspaceSkills() in runtime.ts.
@@ -131,12 +145,20 @@ export function createAimcDeepAgent(options: {
     systemPrompt,
     ...(options.store ? { store: options.store } : {}),
     tools: createMainAgentTools(backendResult.factory, {
-      createUserClient,
+      createUserClient: createUserClient as (
+        accessToken: string,
+      ) => CanvasClient,
       ...(options.brandKitId != null ? { brandKitId: options.brandKitId } : {}),
       ...(options.connectionManager
         ? { connectionManager: options.connectionManager }
         : {}),
+      ...(options.getWorkspaceSettings
+        ? { getWorkspaceSettings: options.getWorkspaceSettings }
+        : {}),
       ...(options.persistImage ? { persistImage: options.persistImage } : {}),
+      ...(options.updateWorkspaceSettings
+        ? { updateWorkspaceSettings: options.updateWorkspaceSettings }
+        : {}),
       ...(backendResult.sandboxDir
         ? { sandboxDir: backendResult.sandboxDir }
         : {}),

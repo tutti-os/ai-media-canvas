@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import {
+  type ReactElement,
+  type ReactNode,
+  cloneElement,
+  isValidElement,
+} from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HomePrompt } from "../src/components/home-prompt";
@@ -48,16 +54,28 @@ vi.mock("../src/components/settings-dialog", () => ({
 vi.mock("../src/components/image-model-preference", () => ({
   ImageModelPreferencePopover: ({
     open,
+    onOpenChange,
     onOpenSettings,
+    trigger,
   }: {
     open: boolean;
+    onOpenChange?: (open: boolean) => void;
     onOpenSettings?: () => void;
-  }) =>
-    open ? (
-      <button type="button" onClick={onOpenSettings}>
-        Open media settings
-      </button>
-    ) : null,
+    trigger?: ReactNode;
+  }) => (
+    <>
+      {isValidElement(trigger)
+        ? cloneElement(trigger as ReactElement<{ onClick?: () => void }>, {
+            onClick: () => onOpenChange?.(true),
+          })
+        : trigger}
+      {open ? (
+        <button type="button" onClick={onOpenSettings}>
+          Open media settings
+        </button>
+      ) : null}
+    </>
+  ),
 }));
 
 vi.mock("../src/lib/server-api", () => ({
@@ -82,6 +100,10 @@ vi.mock("../src/hooks/use-video-model-preference", () => ({
     preference: { mode: "auto", models: [] },
   }),
 }));
+
+function findPromptInput() {
+  return screen.findByRole("textbox", { name: "提示词输入" });
+}
 
 describe("HomePrompt", () => {
   afterEach(() => {
@@ -122,7 +144,7 @@ describe("HomePrompt", () => {
     });
   });
 
-  it("sends selected example image mentions as initial attachments", async () => {
+  it("sends selected example reference images as initial attachments", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     const selectedSeed: HomeExampleSelection = {
@@ -132,7 +154,7 @@ describe("HomePrompt", () => {
       title: "Turn a selfie into a magazine cover",
       prompt: "Make this editorial",
       previewImages: [],
-      inputMentions: [
+      inputItems: [
         {
           type: "image",
           name: "Selfie",
@@ -151,7 +173,7 @@ describe("HomePrompt", () => {
     );
 
     await user.type(
-      screen.getByPlaceholderText("让 AI Media Canvas 帮你设计..."),
+      await findPromptInput(),
       "请把这张自拍扩展成时尚杂志封面方案",
     );
     await user.click(screen.getByRole("button", { name: "提交 prompt" }));
@@ -176,7 +198,7 @@ describe("HomePrompt", () => {
     );
   });
 
-  it("does not render an empty preview strip when the selected seed has no image mentions", () => {
+  it("does not render an empty preview strip when the selected seed has no reference images", () => {
     const onSubmit = vi.fn();
     const designSeed = homeExampleSeedCategories.find(
       (category) => category.key === "design",
@@ -194,7 +216,7 @@ describe("HomePrompt", () => {
           title: designSeed?.title ?? "",
           prompt: designSeed?.prompt ?? "",
           previewImages: designSeed?.previewImages ?? [],
-          inputMentions: designSeed?.inputMentions ?? [],
+          inputItems: designSeed?.inputItems ?? [],
         }}
       />,
     );
@@ -213,10 +235,7 @@ describe("HomePrompt", () => {
 
     render(<HomePrompt onSubmit={onSubmit} />);
 
-    await user.type(
-      screen.getByPlaceholderText("让 AI Media Canvas 帮你设计..."),
-      "生成一张海报",
-    );
+    await user.type(await findPromptInput(), "生成一张海报");
     await user.click(screen.getByRole("button", { name: "提交 prompt" }));
 
     expect(onSubmit).not.toHaveBeenCalled();
@@ -226,7 +245,7 @@ describe("HomePrompt", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders a configuration banner above the prompt when agent and media models are missing", async () => {
+  it("does not render a persistent configuration banner when agent and media models are missing", async () => {
     agentModelRequirementMock.mockReturnValue({
       model: null,
       isAgentModelConfigured: false,
@@ -248,21 +267,19 @@ describe("HomePrompt", () => {
 
     render(<HomePrompt onSubmit={vi.fn()} />);
 
+    await waitFor(() => expect(fetchWorkspaceSettingsMock).toHaveBeenCalled());
     expect(
-      await screen.findByText("未配置 Agent 模型、图片模型、视频模型"),
-    ).toBeInTheDocument();
+      screen.queryByText("未配置 Agent 模型、图片模型、视频模型"),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByText(/Agnes 提供免费的文本、生图、生视频模型能力/),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "配置 Agent" }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "配置 Agent" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "配置媒体模型" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "去连接" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("uses provider settings instead of model catalog entries when deciding media configuration", async () => {
+  it("does not render a persistent media banner when media providers are missing", async () => {
     fetchImageModelsMock.mockResolvedValueOnce({
       models: [{ id: "agnes-image", displayName: "Agnes Image" }],
     });
@@ -283,9 +300,10 @@ describe("HomePrompt", () => {
 
     render(<HomePrompt onSubmit={vi.fn()} />);
 
+    await waitFor(() => expect(fetchWorkspaceSettingsMock).toHaveBeenCalled());
     expect(
-      await screen.findByText("未配置 图片模型、视频模型"),
-    ).toBeInTheDocument();
+      screen.queryByText("未配置 图片模型、视频模型"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders tooltip labels for prompt toolbar icon buttons", () => {

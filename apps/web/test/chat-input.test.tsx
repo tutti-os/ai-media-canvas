@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChatInput } from "../src/components/chat-input";
@@ -50,7 +51,9 @@ vi.mock("../src/components/image-attachment-bar", () => ({
 }));
 
 vi.mock("../src/components/image-model-preference", () => ({
-  ImageModelPreferencePopover: () => null,
+  ImageModelPreferencePopover: ({ trigger }: { trigger?: ReactNode }) => (
+    <>{trigger}</>
+  ),
 }));
 
 vi.mock("../src/components/settings-dialog", () => ({
@@ -115,11 +118,11 @@ describe("ChatInput", () => {
     expect(buttons.at(-1)).toBeDisabled();
   });
 
-  it("renders tooltip labels for prompt toolbar icon buttons", () => {
+  it("renders tooltip labels for prompt toolbar icon buttons", async () => {
     render(<ChatInput onSend={vi.fn()} onAddFiles={vi.fn()} />);
 
     expect(
-      screen.getByPlaceholderText("从一个想法开始，或输入 “@” 提及内容"),
+      await screen.findByRole("textbox", { name: "输入消息" }),
     ).toBeInTheDocument();
     expect(screen.getByText("添加图片")).toBeInTheDocument();
     expect(screen.getByText("图片/视频模型")).toBeInTheDocument();
@@ -128,7 +131,19 @@ describe("ChatInput", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders a configuration banner above the input when agent and media models are missing", async () => {
+  it("shows a cancel button while a response is running", () => {
+    const onCancel = vi.fn();
+
+    render(<ChatInput onSend={vi.fn()} onCancel={onCancel} isRunning />);
+
+    const cancelButton = screen.getByRole("button", { name: "取消生成" });
+    expect(cancelButton).toBeInTheDocument();
+
+    fireEvent.click(cancelButton);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render a persistent configuration banner when agent and media models are missing", () => {
     agentModelRequirementMock.mockReturnValue({
       model: null,
       isAgentModelConfigured: false,
@@ -151,20 +166,17 @@ describe("ChatInput", () => {
     render(<ChatInput onSend={vi.fn()} />);
 
     expect(
-      await screen.findByText("未配置 Agent 模型、图片模型、视频模型"),
-    ).toBeInTheDocument();
+      screen.queryByText("未配置 Agent 模型、图片模型、视频模型"),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByText(/Agnes 提供免费的文本、生图、生视频模型能力/),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "配置 Agent" }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "配置 Agent" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "配置媒体模型" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "去连接" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("uses provider settings instead of model catalog entries when deciding media configuration", async () => {
+  it("does not render a persistent media banner when media providers are missing", () => {
     fetchImageModelsMock.mockResolvedValueOnce({
       models: [{ id: "agnes-image", displayName: "Agnes Image" }],
     });
@@ -186,7 +198,7 @@ describe("ChatInput", () => {
     render(<ChatInput onSend={vi.fn()} />);
 
     expect(
-      await screen.findByText("未配置 图片模型、视频模型"),
-    ).toBeInTheDocument();
+      screen.queryByText("未配置 图片模型、视频模型"),
+    ).not.toBeInTheDocument();
   });
 });

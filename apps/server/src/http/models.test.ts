@@ -1,8 +1,10 @@
+import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
 import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { LocalAgentModelDetectContext } from "../agent/local-agent-models.js";
 import { loadServerEnv } from "../config/env.js";
-import { registerModelRoutes } from "./models.js";
+import { listAgentModels, registerModelRoutes } from "./models.js";
 
 describe("registerModelRoutes", () => {
   const apps: Array<ReturnType<typeof Fastify>> = [];
@@ -20,6 +22,7 @@ describe("registerModelRoutes", () => {
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("loads trusted local agent mode from the environment", () => {
@@ -85,6 +88,12 @@ describe("registerModelRoutes", () => {
       provider: "agnes",
       source: "api-provider",
     });
+    expect(withAgnes.json().models).toContainEqual({
+      id: "agnes:agnes-1.5-flash",
+      name: "Agnes 1.5 Flash",
+      provider: "agnes",
+      source: "api-provider",
+    });
   });
 
   it("includes Anthropic models only when Anthropic credentials are configured", async () => {
@@ -95,6 +104,7 @@ describe("registerModelRoutes", () => {
       loadServerEnv(
         {
           agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
         },
         {},
       ),
@@ -110,7 +120,7 @@ describe("registerModelRoutes", () => {
     expect(withoutAnthropic.statusCode).toBe(200);
     expect(withoutAnthropic.json().models).not.toContainEqual(
       expect.objectContaining({
-        id: "anthropic:claude-sonnet-4-5",
+        id: "anthropic:claude-sonnet-4-6",
       }),
     );
 
@@ -120,7 +130,7 @@ describe("registerModelRoutes", () => {
       appWithAnthropic,
       loadServerEnv(
         {
-          agentModel: "anthropic:claude-sonnet-4-5",
+          agentModel: "anthropic:claude-sonnet-4-6",
           anthropicApiKey: "local-anthropic-key",
         },
         {},
@@ -136,8 +146,8 @@ describe("registerModelRoutes", () => {
 
     expect(withAnthropic.statusCode).toBe(200);
     expect(withAnthropic.json().models).toContainEqual({
-      id: "anthropic:claude-sonnet-4-5",
-      name: "Claude Sonnet 4.5",
+      id: "anthropic:claude-sonnet-4-6",
+      name: "Claude Sonnet 4.6",
       provider: "anthropic",
       source: "api-provider",
     });
@@ -256,7 +266,7 @@ describe("registerModelRoutes", () => {
 
   it("includes local-agent models from package discovery", async () => {
     const localAgentModelDiscovery = {
-      detect: vi.fn(async () => [
+      detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
         {
           provider: "codex" as const,
           displayName: "Codex CLI",
@@ -309,6 +319,7 @@ describe("registerModelRoutes", () => {
       loadServerEnv(
         {
           agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
         },
         {},
       ),
@@ -356,6 +367,163 @@ describe("registerModelRoutes", () => {
       expect.objectContaining({ provider: "hermes" }),
     );
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(1);
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith(undefined);
+  });
+
+  it("bypasses cached local-agent detection when model refresh is requested", async () => {
+    const localAgentModelDiscovery = {
+      detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
+        {
+          provider: "claude" as const,
+          displayName: "Claude Code",
+          result: {
+            authState: "unknown" as const,
+            executablePath: "claude",
+            models: [{ id: "sonnet", label: "Sonnet" }],
+            supported: true,
+            version: "1.0.0",
+          },
+        },
+      ]),
+    };
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
+        },
+        {},
+      ),
+      undefined,
+      { localAgentModelDiscovery },
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/models?refresh=1",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().models).toContainEqual({
+      id: "claude:sonnet",
+      name: "Sonnet",
+      provider: "claude",
+      source: "local-agent",
+    });
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({
+      refresh: true,
+    });
+  });
+
+  it("passes a managed agent invocation to local-agent model discovery for POST model requests", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    vi.stubEnv("CODEX_HOME", "/tmp/user-codex-home");
+    vi.stubEnv("CLAUDE_CONFIG_DIR", "/tmp/user-claude-config");
+    const localAgentModelDiscovery = {
+      detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
+        {
+          provider: "nexight" as const,
+          displayName: "Nexight",
+          result: {
+            authState: "unknown" as const,
+            executablePath: "nexight",
+            models: [{ id: "default", label: "Default (Nexight)" }],
+            supported: true,
+            version: "1.0.0",
+          },
+        },
+      ]),
+    };
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
+        },
+        {},
+      ),
+      undefined,
+      { localAgentModelDiscovery },
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/models",
+      headers: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-model-1",
+      },
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().models).toContainEqual({
+      id: "nexight:default",
+      name: "Default (Nexight)",
+      provider: "nexight",
+      source: "local-agent",
+    });
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({
+      managedAgentInvocation: {
+        credential: "credential-model-1",
+        cwd: "/tmp/aimc-app-data",
+      },
+      cwd: "/tmp/aimc-app-data",
+      env: expect.objectContaining({
+        TUTTI_APP_DATA_DIR: "/tmp/aimc-app-data",
+      }),
+      redactionSecrets: ["credential-model-1"],
+    });
+    const detectContext = localAgentModelDiscovery.detect.mock.calls[0]?.[0];
+    expect(detectContext?.env ?? {}).toMatchObject({
+      TUTTI_APP_DATA_DIR: "/tmp/aimc-app-data",
+    });
+    expect(detectContext?.env ?? {}).not.toEqual(
+      expect.objectContaining({
+        CLAUDE_CONFIG_DIR: expect.any(String),
+        CODEX_HOME: expect.any(String),
+        PATH: expect.any(String),
+      }),
+    );
+  });
+
+  it("keeps managed model discovery credentials out of logs", async () => {
+    const logger = { warn: vi.fn() };
+    await listAgentModels({
+      env: loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
+        },
+        {},
+      ),
+      localAgentModelDiscovery: {
+        detect: vi.fn(async () => {
+          throw new Error("credential-model-1");
+        }),
+      },
+      logger,
+      managedAgentDetectContext: {
+        cwd: "/tmp/aimc-app-data",
+        managedAgentInvocation: {
+          credential: "credential-model-1",
+          cwd: "/tmp/aimc-app-data",
+        },
+      },
+    });
+
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(
+      "credential-model-1",
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      {},
+      "Failed to load local-agent models; omitting local providers.",
+    );
   });
 
   it("omits local-agent models when trusted local mode is disabled", async () => {
@@ -401,88 +569,4 @@ describe("registerModelRoutes", () => {
     expect(localAgentModelDiscovery.detect).not.toHaveBeenCalled();
   });
 
-  it("installs a pinned local-agent provider through the installer", async () => {
-    const localAgentProviderInstaller = vi.fn(async () => ({
-      provider: "codex" as const,
-      status: "succeeded" as const,
-      command: "npm install -g @openai/codex @zed-industries/codex-acp",
-      before: {
-        availability: "not_installed" as const,
-        reason: "cli_not_found" as const,
-        cli: { binary: "codex", installed: false },
-        adapter: { binary: "codex-acp", installed: false },
-        auth: { ok: false, required: true },
-      },
-      after: {
-        availability: "ready" as const,
-        reason: "ready" as const,
-        cli: { binary: "codex", installed: true, path: "/usr/bin/codex" },
-        adapter: {
-          binary: "codex-acp",
-          installed: true,
-          path: "/usr/bin/codex-acp",
-        },
-        auth: { ok: true, required: false },
-      },
-    }));
-    const app = Fastify();
-    apps.push(app);
-    await registerModelRoutes(
-      app,
-      loadServerEnv(
-        {
-          agentModel: "openai:gpt-4.1",
-        },
-        {},
-      ),
-      undefined,
-      {
-        localAgentModelDiscovery: emptyLocalAgentModelDiscovery,
-        localAgentProviderInstaller,
-      },
-    );
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/local-agent/providers/codex/install",
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(localAgentProviderInstaller).toHaveBeenCalledWith("codex");
-    expect(response.json()).toEqual({
-      provider: "codex",
-      status: "succeeded",
-      availability: "ready",
-      reason: "ready",
-      message: "Codex is installed and ready.",
-    });
-  });
-
-  it("rejects unsupported local-agent provider installation requests", async () => {
-    const localAgentProviderInstaller = vi.fn();
-    const app = Fastify();
-    apps.push(app);
-    await registerModelRoutes(
-      app,
-      loadServerEnv(
-        {
-          agentModel: "openai:gpt-4.1",
-        },
-        {},
-      ),
-      undefined,
-      {
-        localAgentModelDiscovery: emptyLocalAgentModelDiscovery,
-        localAgentProviderInstaller,
-      },
-    );
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/local-agent/providers/gemini/install",
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(localAgentProviderInstaller).not.toHaveBeenCalled();
-  });
 });

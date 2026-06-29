@@ -8,13 +8,13 @@ import type {
   ChatMessage,
   ImageAttachment,
   ImageGenerationPreference,
-  MessageMention,
   RunCancelResponse,
   RunCreateRequest,
   RunCreateResponse,
   RuntimeKind,
   StreamEvent,
   VideoGenerationPreference,
+  WorkspaceSettings,
 } from "@aimc/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
@@ -22,8 +22,11 @@ import { InMemoryStore } from "@langchain/langgraph";
 import {
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
+  type ManagedAgentInvocationCredentialHeaders,
+  type ManagedAgentRunContext,
   createLocalAgentRuntime,
-} from "@nextop-os/agent-acp-kit";
+  createManagedAgentRunContextFromHeaders,
+} from "@tutti-os/agent-acp-kit";
 
 import type { AuthenticatedUser, UserDataClient } from "../auth/request.js";
 import type { ServerEnv } from "../config/env.js";
@@ -41,6 +44,17 @@ import {
   TierGuardError,
 } from "../features/credits/tier-guard.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import { refreshGenerationProviders } from "../features/settings/settings-service.js";
+import { isManagedModelId } from "../features/tutti-managed/credential-service.js";
+import { evaluateCodexImagegenDelegation } from "../generation/codex-imagegen-delegation.js";
+import {
+  validateImageGenerationParams,
+  validateVideoGenerationParams,
+} from "../generation/model-schemas.js";
+import {
+  getAvailableImageModels,
+  resolveImageProviderName,
+} from "../generation/providers/registry.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
@@ -50,6 +64,7 @@ import {
   createAimcDeepAgent,
   createDefaultModelSpecifier,
 } from "./deep-agent.js";
+import type { ImageAttachmentMetadata } from "./image-attachment-metadata.js";
 import {
   buildAgentImageJobPayload,
   buildAgentVideoJobPayload,
@@ -73,12 +88,27 @@ import type { RuntimeExecutionContext } from "./runtimes/types.js";
 import type { SubmitImageJobFn } from "./tools/image-generate.js";
 import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
+import type {
+  ApplyWorkspaceSettingsPatch,
+  ReadWorkspaceSettings,
+} from "./tools/workspace-settings.js";
+import { buildWorkspaceSettingsSnapshot } from "./tools/workspace-settings.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
 type BillingErrorCode = string;
 type ImageQualityLevel = "standard" | "hd" | "ultra";
 const IMAGE_JOB_POLL_INTERVAL_MS = 3_000;
-const IMAGE_JOB_MAX_WAIT_MS = 180_000;
+const IMAGE_JOB_MAX_WAIT_MS = 10 * 60_000;
+
+function inferRunCallerProvider(run: RuntimeRunRecord): string {
+  if (run.runtimeProvider) return run.runtimeProvider;
+  if (typeof run.modelOverride === "string") {
+    const provider = run.modelOverride.split(":", 1)[0]?.trim();
+    if (provider) return provider;
+  }
+  return run.runtimeKind ?? "server-deepagent";
+}
+
 type CanvasSummaryClient = {
   from(table: "canvases"): {
     select(columns: string): {
@@ -126,9 +156,9 @@ export function buildUserMessage(
   prompt: string,
   attachments: ImageAttachment[],
   imageGenerationPreference?: ImageGenerationPreference,
-  mentions: MessageMention[] = [],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
+  attachmentMetadata?: Record<string, ImageAttachmentMetadata>,
 ): { text: string } {
   const xmlBlocks: string[] = [];
 
@@ -137,7 +167,7 @@ export function buildUserMessage(
     xmlBlocks.push(`<canvas_state>\n${canvasSummary}\n</canvas_state>`);
   }
 
-  const inputImagesXml = buildInputImagesXml(attachments);
+  const inputImagesXml = buildInputImagesXml(attachments, attachmentMetadata);
   if (inputImagesXml) xmlBlocks.push(inputImagesXml);
 
   const imageGenerationPreferenceXml = buildImageGenerationPreferenceXml(
@@ -152,14 +182,14 @@ export function buildUserMessage(
   if (videoGenerationPreferenceXml)
     xmlBlocks.push(videoGenerationPreferenceXml);
 
-  const mentionXmlBlocks = buildMentionXmlBlocks(mentions);
-  xmlBlocks.push(...mentionXmlBlocks);
-
   if (!xmlBlocks.length) return { text: prompt };
   return { text: `${prompt}\n\n${xmlBlocks.join("\n\n")}` };
 }
 
-function buildInputImagesXml(attachments: ImageAttachment[]): string | null {
+function buildInputImagesXml(
+  attachments: ImageAttachment[],
+  attachmentMetadata?: Record<string, ImageAttachmentMetadata>,
+): string | null {
   if (attachments.length === 0) return null;
 
   const imageXml = attachments
@@ -167,7 +197,11 @@ function buildInputImagesXml(attachments: ImageAttachment[]): string | null {
       const nameAttr = attachment.name
         ? ` name="${escapeXmlAttribute(attachment.name)}"`
         : "";
-      return `<image index="${i + 1}" asset_id="${escapeXmlAttribute(attachment.assetId)}" mime_type="${escapeXmlAttribute(attachment.mimeType)}"${nameAttr} />`;
+      const metadata = attachmentMetadata?.[attachment.assetId];
+      const metadataAttrs = metadata
+        ? ` width="${metadata.width}" height="${metadata.height}" orientation="${metadata.orientation}"`
+        : "";
+      return `<image index="${i + 1}" asset_id="${escapeXmlAttribute(attachment.assetId)}" mime_type="${escapeXmlAttribute(attachment.mimeType)}"${nameAttr}${metadataAttrs} />`;
     })
     .join("\n  ");
 
@@ -184,14 +218,20 @@ function buildImageGenerationPreferenceXml(
     return null;
   }
 
-  const modelXml = imageGenerationPreference.models
+  const availableModelIds = new Set(getAvailableImageModels().map((m) => m.id));
+  const models = imageGenerationPreference.models.filter((model) =>
+    availableModelIds.has(model),
+  );
+  if (models.length === 0) return null;
+
+  const modelXml = models
     .map(
       (model, i) =>
         `<preferred_model index="${i + 1}" id="${escapeXmlAttribute(model)}" />`,
     )
     .join("\n  ");
 
-  return `<human_image_generation_preference mode="manual" count="${imageGenerationPreference.models.length}">\n  ${modelXml}\n</human_image_generation_preference>`;
+  return `<human_image_generation_preference mode="manual" count="${models.length}">\n  ${modelXml}\n</human_image_generation_preference>`;
 }
 
 function buildVideoGenerationPreferenceXml(
@@ -212,74 +252,6 @@ function buildVideoGenerationPreferenceXml(
     .join("\n  ");
 
   return `<human_video_generation_preference mode="manual" count="${videoGenerationPreference.models.length}">\n  ${modelXml}\n</human_video_generation_preference>`;
-}
-
-function buildMentionXmlBlocks(mentions: MessageMention[]): string[] {
-  const xmlBlocks: string[] = [];
-
-  const mentionedModels = mentions.filter(
-    (
-      mention,
-    ): mention is Extract<MessageMention, { mentionType: "image-model" }> =>
-      mention.mentionType === "image-model",
-  );
-  if (mentionedModels.length > 0) {
-    const modelXml = mentionedModels
-      .map(
-        (mention, i) =>
-          `<model index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" display_name="${escapeXmlAttribute(mention.label)}" />`,
-      )
-      .join("\n  ");
-
-    xmlBlocks.push(
-      `<human_image_model_mentions count="${mentionedModels.length}">\n  ${modelXml}\n</human_image_model_mentions>`,
-    );
-  }
-
-  const mentionedBrandKitAssets = mentions.filter(
-    (
-      mention,
-    ): mention is Extract<MessageMention, { mentionType: "brand-kit-asset" }> =>
-      mention.mentionType === "brand-kit-asset",
-  );
-  if (mentionedBrandKitAssets.length > 0) {
-    const assetXml = mentionedBrandKitAssets
-      .map((mention, i) => {
-        const textContentAttr =
-          mention.textContent != null
-            ? ` text_content="${escapeXmlAttribute(mention.textContent)}"`
-            : "";
-        const fileUrlAttr =
-          mention.fileUrl != null
-            ? ` file_url="${escapeXmlAttribute(mention.fileUrl)}"`
-            : "";
-        return `<brand_kit_asset index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" type="${escapeXmlAttribute(mention.assetType)}" display_name="${escapeXmlAttribute(mention.label)}"${textContentAttr}${fileUrlAttr} />`;
-      })
-      .join("\n  ");
-
-    xmlBlocks.push(
-      `<human_brand_kit_mentions count="${mentionedBrandKitAssets.length}">\n  ${assetXml}\n</human_brand_kit_mentions>`,
-    );
-  }
-
-  // Skill mentions — tell the agent to read and follow the mentioned skill
-  const mentionedSkills = mentions.filter(
-    (mention): mention is Extract<MessageMention, { mentionType: "skill" }> =>
-      mention.mentionType === "skill",
-  );
-  if (mentionedSkills.length > 0) {
-    const skillXml = mentionedSkills
-      .map(
-        (mention, i) =>
-          `<skill index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" name="${escapeXmlAttribute(mention.label)}" slug="${escapeXmlAttribute(mention.slug)}">\nThe user explicitly requested this skill. Read \`/workspace-skills/${mention.slug}/SKILL.md\` for full instructions and follow them.\n</skill>`,
-      )
-      .join("\n  ");
-    xmlBlocks.push(
-      `<human_skill_mentions count="${mentionedSkills.length}">\n  ${skillXml}\n</human_skill_mentions>`,
-    );
-  }
-
-  return xmlBlocks;
 }
 
 function escapeXmlAttribute(value: string): string {
@@ -335,13 +307,20 @@ type RuntimeRunStatus =
   | "failed"
   | "running";
 
-type RuntimeRunRecord = RunCreateRequest & {
+type RuntimeRunCreateInput = RunCreateRequest;
+
+type RuntimeRunRecord = RuntimeRunCreateInput & {
   accessToken?: string;
   assistantMessageId?: string;
   connectionId?: string;
   consumed: boolean;
   controller: AbortController;
+  codexImagegenDelegation?: "ask" | "always" | "never";
+  codexImagegenConsentBudget?: number;
   envOverride?: ServerEnv;
+  loadManagedAgentRunContext?: () => Promise<
+    ManagedAgentRunContext | undefined
+  >;
   modelOverride?: string;
   resumeContext?: {
     mode: "provider-local" | "handoff" | "fresh";
@@ -356,6 +335,11 @@ type RuntimeRunRecord = RunCreateRequest & {
   threadId?: string;
   userId?: string;
 };
+
+type PatchWorkspaceSettings = (input: {
+  patch: Pick<WorkspaceSettings, "codexImagegenDelegation">;
+  userId?: string;
+}) => Promise<WorkspaceSettings>;
 
 type CreateAgentRuntimeOptions = {
   agentFactory?: AimcAgentFactory;
@@ -419,6 +403,7 @@ type CreateAgentRuntimeOptions = {
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
   model?: BaseLanguageModel | string;
   now?: () => string;
+  patchWorkspaceSettings?: PatchWorkspaceSettings;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
   toolGateway?: ReturnType<typeof createLocalToolGatewayService>;
@@ -620,15 +605,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     },
 
     createRun(
-      input: RunCreateRequest,
+      input: RuntimeRunCreateInput,
       runOptions?: {
         accessToken?: string;
         assistantMessageId?: string;
         connectionId?: string;
         env?: ServerEnv;
+        managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders;
         model?: string;
         runtimeKind?: RuntimeKind;
         runtimeProvider?: AgentRuntimeProvider;
+        codexImagegenDelegation?: "ask" | "always" | "never";
         threadId?: string;
         userId?: string;
       },
@@ -661,6 +648,19 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         initialRuntimeTarget?.kind ?? requestedRuntimeKind;
       const persistedRuntimeProvider =
         initialRuntimeTarget?.provider ?? requestedRuntimeProvider;
+      const loadManagedAgentRunContext =
+        persistedRuntimeKind === "local-agent" &&
+        persistedRuntimeProvider &&
+        runOptions?.managedAgentHeaders
+          ? () =>
+              createManagedAgentRunContextFromHeaders(
+                runOptions.managedAgentHeaders,
+                {
+                  providerId: persistedRuntimeProvider,
+                  runId,
+                },
+              )
+          : undefined;
       const previousRun = runInput.resumeFromRunId
         ? options.agentRunStore?.getRun?.(runInput.resumeFromRunId)
         : undefined;
@@ -723,6 +723,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
+        ...(loadManagedAgentRunContext ? { loadManagedAgentRunContext } : {}),
+        ...(runOptions?.codexImagegenDelegation
+          ? { codexImagegenDelegation: runOptions.codexImagegenDelegation }
+          : {}),
+        codexImagegenConsentBudget:
+          runInput.delegationConsent?.codexImagegen === "allow-once" ? 1 : 0,
         ...(resolvedModel ? { modelOverride: resolvedModel } : {}),
         ...(resumeContext ? { resumeContext } : {}),
         ...(persistedRuntimeKind ? { runtimeKind: persistedRuntimeKind } : {}),
@@ -794,6 +800,54 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       const rlog = createPipelineLogger("runtime", { runId });
 
       rlog.lap("local_history_mode");
+
+      const getWorkspaceSettings: ReadWorkspaceSettings = async () => {
+        const setting = run.codexImagegenDelegation ?? "ask";
+        const consentBudget = run.codexImagegenConsentBudget ?? 0;
+        const callerProvider = inferRunCallerProvider(run);
+        return buildWorkspaceSettingsSnapshot({
+          callerProvider,
+          codexImagegenDelegation: setting,
+          consentBudget,
+        });
+      };
+
+      const updateWorkspaceSettings: ApplyWorkspaceSettingsPatch = async ({
+        patch,
+      }) => {
+        let summary: string | undefined;
+
+        if (patch.codexImagegenDelegation === "allow-once") {
+          run.codexImagegenConsentBudget = Math.max(
+            1,
+            run.codexImagegenConsentBudget ?? 0,
+          );
+        } else if (patch.codexImagegenDelegation === "deny") {
+          run.codexImagegenConsentBudget = 0;
+          summary =
+            "Codex image generation delegation was denied for the current task. Do not call Codex image generation for this task.";
+        } else if (patch.codexImagegenDelegation !== undefined) {
+          if (!options.patchWorkspaceSettings) {
+            throw new Error(
+              "Workspace settings are not available in this runtime.",
+            );
+          }
+          const updated = await options.patchWorkspaceSettings({
+            patch: {
+              codexImagegenDelegation: patch.codexImagegenDelegation,
+            },
+            ...(run.userId ? { userId: run.userId } : {}),
+          });
+          run.codexImagegenDelegation = updated.codexImagegenDelegation;
+        }
+
+        return buildWorkspaceSettingsSnapshot({
+          callerProvider: inferRunCallerProvider(run),
+          codexImagegenDelegation: run.codexImagegenDelegation ?? "ask",
+          consentBudget: run.codexImagegenConsentBudget ?? 0,
+          ...(summary ? { summary } : {}),
+        });
+      };
 
       // Build submitImageJob / submitVideoJob closures for async jobs via PGMQ
       let submitImageJob: SubmitImageJobFn | undefined;
@@ -872,6 +926,33 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               extra ? JSON.stringify(extra) : "",
             );
           };
+          refreshGenerationProviders(run.envOverride ?? options.env);
+          validateImageGenerationParams({
+            prompt: input.prompt,
+            model: input.model,
+            ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
+            ...(input.inputImages ? { inputImages: input.inputImages } : {}),
+            ...(input.quality
+              ? { quality: input.quality as ImageQualityLevel }
+              : {}),
+            ...(input.size ? { size: input.size } : {}),
+            ...(input.seed !== undefined ? { seed: input.seed } : {}),
+          });
+          const imageProvider = resolveImageProviderName(input.model);
+          const callerProvider = inferRunCallerProvider(run);
+          const delegationDecision = evaluateCodexImagegenDelegation({
+            callerProvider,
+            imageProvider,
+            setting: run.codexImagegenDelegation ?? "ask",
+            consentBudget: run.codexImagegenConsentBudget ?? 0,
+          });
+          if (delegationDecision.status === "blocked") {
+            throw new Error(
+              delegationDecision.reason === "needs_confirmation"
+                ? "codex_imagegen_confirmation_required: Codex image generation requires user confirmation before a non-Codex agent can use it."
+                : "codex_imagegen_disabled_by_user: Codex image generation is disabled for non-Codex agents in workspace settings.",
+            );
+          }
           const reservedPlacement = await reserveImagePlacement(input);
 
           // Look up personal workspace directly — the viewer is already
@@ -957,8 +1038,24 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "image_generation",
-            payload: buildAgentImageJobPayload(input),
+            payload: {
+              ...buildAgentImageJobPayload(input),
+              caller_provider: callerProvider,
+              ...(imageProvider === "codex-imagegen" &&
+              callerProvider !== "codex"
+                ? { codex_imagegen_delegation_allowed: true }
+                : {}),
+              ...(delegationDecision.consumesConsent
+                ? { codex_imagegen_consent: "allow-once" as const }
+                : {}),
+            },
           });
+          if (delegationDecision.consumesConsent) {
+            run.codexImagegenConsentBudget = Math.max(
+              0,
+              (run.codexImagegenConsentBudget ?? 0) - 1,
+            );
+          }
 
           // Deduct credits after job creation
           if (options.creditService && creditsCost > 0) {
@@ -995,6 +1092,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   title: input.title,
                   model: input.model,
                   aspectRatio: input.aspectRatio,
+                  runId,
                   ...(input.quality ? { quality: input.quality } : {}),
                   ...(input.inputImages
                     ? { inputImages: input.inputImages }
@@ -1016,8 +1114,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           }
           const finalResult = await waitForImageJobResult(
             jobSvc,
+            user,
             job.id,
             jobLap,
+            run.controller.signal,
           );
           if (canvasId) {
             try {
@@ -1064,6 +1164,39 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               extra ? JSON.stringify(extra) : "",
             );
           };
+          refreshGenerationProviders(run.envOverride ?? options.env);
+          validateVideoGenerationParams({
+            prompt: input.prompt,
+            model: input.model,
+            ...(input.duration != null ? { duration: input.duration } : {}),
+            ...(input.resolution
+              ? {
+                  resolution: input.resolution as
+                    | "480p"
+                    | "720p"
+                    | "1080p"
+                    | "4k"
+                    | "2160p",
+                }
+              : {}),
+            ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
+            ...(input.inputImages ? { inputImages: input.inputImages } : {}),
+            ...(input.inputVideo ? { inputVideo: input.inputVideo } : {}),
+            ...(input.videoMode ? { videoMode: input.videoMode } : {}),
+            ...(input.seed !== undefined ? { seed: input.seed } : {}),
+            ...(input.negativePrompt
+              ? { negativePrompt: input.negativePrompt }
+              : {}),
+            ...(input.frameRate !== undefined
+              ? { frameRate: input.frameRate }
+              : {}),
+            ...(input.numFrames !== undefined
+              ? { numFrames: input.numFrames }
+              : {}),
+            ...(input.enableAudio != null
+              ? { enableAudio: input.enableAudio }
+              : {}),
+          });
 
           const client = createClient(accessToken) as UserDataClient;
           const { data: ws } = await client
@@ -1197,6 +1330,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   title: input.title,
                   model: input.model,
                   aspectRatio: input.aspectRatio ?? "16:9",
+                  runId,
                   ...(input.duration != null
                     ? { duration: input.duration }
                     : {}),
@@ -1260,7 +1394,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       try {
         const modelOverride =
-          run.modelOverride?.startsWith("nextop:") && runtimeEnv.agentModel
+          isManagedModelId(run.modelOverride) && runtimeEnv.agentModel
             ? runtimeEnv.agentModel
             : run.modelOverride;
         const resolvedModel = modelOverride
@@ -1278,6 +1412,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         activeRuntimeTarget = resolvedRuntimeTarget;
         run.runtimeKind = resolvedRuntimeTarget.kind;
         run.runtimeProvider = resolvedRuntimeTarget.provider;
+        if (resolvedRuntimeTarget.kind !== "local-agent") {
+          delete run.loadManagedAgentRunContext;
+        }
         runtimeLease = runtimeControlPlane.acquireRuntimeLease(
           resolvedRuntimeTarget,
           run.runId,
@@ -1353,8 +1490,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             rlog,
             run,
             runtimeEnv,
+            getWorkspaceSettings,
             ...(submitImageJob ? { submitImageJob } : {}),
             ...(submitVideoJob ? { submitVideoJob } : {}),
+            updateWorkspaceSettings,
             workspaceSkills,
           },
         )) {
@@ -1390,6 +1529,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         yield failedEvent;
         return;
       } finally {
+        delete run.loadManagedAgentRunContext;
         runtimeLease?.release();
         if (backendResult.sandboxDir) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(
@@ -1453,13 +1593,30 @@ function parseAspectRatio(aspectRatio: string | undefined) {
 
 async function waitForImageJobResult(
   jobSvc: JobService,
+  user: AuthenticatedUser,
   jobId: string,
   jobLap: (label: string, extra?: Record<string, unknown>) => void,
+  signal: AbortSignal,
 ) {
   const startedAt = Date.now();
   let pollCount = 0;
+  let cancelRequested = false;
+
+  const cancelJobForAbort = async () => {
+    if (cancelRequested) return;
+    cancelRequested = true;
+    jobLap("job_cancel_requested", { jobId });
+    await jobSvc.cancelJob(user, jobId).catch((err) => {
+      console.warn("[submitImageJob] cancel job after run abort failed:", err);
+    });
+  };
 
   for (;;) {
+    if (signal.aborted) {
+      await cancelJobForAbort();
+      throw new Error("Image generation was canceled.");
+    }
+
     const job = await jobSvc.getJobAdmin(jobId);
     pollCount += 1;
     if (job.status === "succeeded") {
@@ -1504,7 +1661,15 @@ async function waitForImageJobResult(
       throw new Error(`Image generation job ${jobId} timed out.`);
     }
 
-    await delay(IMAGE_JOB_POLL_INTERVAL_MS);
+    try {
+      await delay(IMAGE_JOB_POLL_INTERVAL_MS, undefined, { signal });
+    } catch (err) {
+      if (signal.aborted) {
+        await cancelJobForAbort();
+        throw new Error("Image generation was canceled.");
+      }
+      throw err;
+    }
   }
 }
 

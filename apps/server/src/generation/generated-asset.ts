@@ -24,6 +24,25 @@ export async function loadGeneratedAsset(
   const arrayBuffer = await response.arrayBuffer();
   return {
     buffer: Buffer.from(arrayBuffer),
-    mimeType: response.headers.get("content-type") ?? fallbackMimeType,
+    mimeType: resolveGeneratedAssetMimeType(
+      response.headers.get("content-type"),
+      fallbackMimeType,
+    ),
   };
+}
+
+function resolveGeneratedAssetMimeType(
+  contentType: string | null,
+  fallbackMimeType: string,
+) {
+  const mimeType = normalizeMimeType(contentType);
+  const fallback = normalizeMimeType(fallbackMimeType) || fallbackMimeType;
+  if (!mimeType || mimeType === "application/octet-stream") {
+    return fallback;
+  }
+  return mimeType;
+}
+
+function normalizeMimeType(mimeType: string | null) {
+  return mimeType?.split(";")[0]?.trim().toLowerCase();
 }

@@ -1,12 +1,17 @@
 "use client";
 
-import { Cloud, Loader2, RefreshCw, Terminal } from "lucide-react";
+import {
+  Cloud,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  Terminal,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
-  InstallableAgentProviderId,
   ModelInfo,
-  NextopManagedConnection,
+  TuttiManagedConnection,
   WorkspaceSettings,
 } from "@aimc/shared";
 
@@ -21,19 +26,21 @@ import {
   isLocalCliProvider,
 } from "@/lib/agent-model-groups";
 import {
-  hasNextopManagedCredentialBridge,
-  openNextopManagedModelSettings,
-  requestNextopManagedGrant,
-} from "@/lib/nextop-managed-credentials";
-import {
-  connectNextopManagedModels,
-  disconnectNextopManagedModels,
+  connectTuttiManagedModels,
+  disconnectTuttiManagedModels,
   fetchModels,
-  fetchNextopManagedConnection,
-  installAgentProvider,
+  fetchTuttiManagedConnection,
 } from "@/lib/server-api";
+import {
+  hasTuttiManagedCredentialBridge,
+  openTuttiAgentManager,
+  openTuttiManagedModelSettings,
+  requestTuttiManagedGrant,
+  type TuttiLocalAgentManagerProvider,
+} from "@/lib/tutti-managed-credentials";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { LocalCliProviderIcon } from "./local-cli-provider-icon";
+import { SettingsSegmentTabs } from "./settings-segment-tabs";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -47,6 +54,14 @@ import {
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
 
 interface AgentSettingsSectionProps {
   initialSourceTab?: AgentModelSourceTab | undefined;
@@ -71,11 +86,25 @@ type ApiProviderPreset = {
   provider: AgentProtocolId;
   label: string;
   baseUrl: string;
+  apiKeyUrl: string;
   model: string;
   models: string[];
 };
 
 const LOCAL_CLI_PROVIDER_ORDER = [...SUPPORTED_LOCAL_CLI_PROVIDERS];
+const INSTALLABLE_LOCAL_CLI_PROVIDER_PLACEHOLDERS = ["codex", "claude"];
+const AGNES_API_KEYS_URL = "https://platform.agnes-ai.com/settings/apiKeys";
+const ANTHROPIC_API_KEYS_URL = "https://console.anthropic.com/settings/keys";
+const DEEPSEEK_API_KEYS_URL = "https://platform.deepseek.com/api_keys";
+const MINIMAX_API_KEYS_URL = "https://platform.minimax.io/console/access";
+const MIMO_API_KEYS_URL = "https://platform.xiaomimimo.com/console/api-keys";
+const OPENAI_API_KEYS_URL = "https://platform.openai.com/api-keys";
+const DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
+const DEFAULT_AGNES_PROVIDER_MODELS = [
+  "agnes:agnes-2.0-flash",
+  "agnes:agnes-1.5-flash",
+];
+const CUSTOM_API_PROVIDER_PRESET_VALUE = "__custom_api_provider__";
 
 const AGENT_PROTOCOLS: Array<{
   id: AgentProtocolId;
@@ -110,32 +139,40 @@ const AGENT_PROTOCOLS: Array<{
   },
 ];
 
+const AGENT_CREDENTIAL_PROTOCOLS = AGENT_PROTOCOLS.filter(
+  (protocol) => protocol.id !== "google" && protocol.id !== "vertex",
+);
+
 const API_PROVIDER_PRESETS: ApiProviderPreset[] = [
   {
     provider: "anthropic",
     label: "Anthropic (Claude)",
     baseUrl: "https://api.anthropic.com",
-    model: "claude-sonnet-4-5",
-    models: ["claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"],
+    apiKeyUrl: ANTHROPIC_API_KEYS_URL,
+    model: "claude-sonnet-4-6",
+    models: ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5"],
   },
   {
     provider: "anthropic",
     label: "DeepSeek - Anthropic",
     baseUrl: "https://api.deepseek.com/anthropic",
-    model: "deepseek-chat",
+    apiKeyUrl: DEEPSEEK_API_KEYS_URL,
+    model: "deepseek-v4-flash",
     models: [
-      "deepseek-chat",
-      "deepseek-reasoner",
       "deepseek-v4-flash",
       "deepseek-v4-pro",
+      "deepseek-chat",
+      "deepseek-reasoner",
     ],
   },
   {
     provider: "anthropic",
     label: "MiniMax - Anthropic",
     baseUrl: "https://api.minimaxi.com/anthropic",
-    model: "MiniMax-M2.7-highspeed",
+    apiKeyUrl: MINIMAX_API_KEYS_URL,
+    model: "MiniMax-M3",
     models: [
+      "MiniMax-M3",
       "MiniMax-M2.7-highspeed",
       "MiniMax-M2.7",
       "MiniMax-M2.5-highspeed",
@@ -149,27 +186,31 @@ const API_PROVIDER_PRESETS: ApiProviderPreset[] = [
     provider: "openai",
     label: "OpenAI",
     baseUrl: "https://api.openai.com/v1",
-    model: "gpt-4o",
-    models: ["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
+    apiKeyUrl: OPENAI_API_KEYS_URL,
+    model: "gpt-5.5",
+    models: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"],
   },
   {
     provider: "openai",
     label: "DeepSeek - OpenAI",
     baseUrl: "https://api.deepseek.com",
-    model: "deepseek-chat",
+    apiKeyUrl: DEEPSEEK_API_KEYS_URL,
+    model: "deepseek-v4-flash",
     models: [
-      "deepseek-chat",
-      "deepseek-reasoner",
       "deepseek-v4-flash",
       "deepseek-v4-pro",
+      "deepseek-chat",
+      "deepseek-reasoner",
     ],
   },
   {
     provider: "openai",
     label: "MiniMax - OpenAI",
     baseUrl: "https://api.minimaxi.com/v1",
-    model: "MiniMax-M2.7-highspeed",
+    apiKeyUrl: MINIMAX_API_KEYS_URL,
+    model: "MiniMax-M3",
     models: [
+      "MiniMax-M3",
       "MiniMax-M2.7-highspeed",
       "MiniMax-M2.7",
       "MiniMax-M2.5-highspeed",
@@ -183,6 +224,7 @@ const API_PROVIDER_PRESETS: ApiProviderPreset[] = [
     provider: "openai",
     label: "MiMo (Xiaomi) - OpenAI",
     baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
+    apiKeyUrl: MIMO_API_KEYS_URL,
     model: "mimo-v2.5-pro",
     models: ["mimo-v2.5-pro"],
   },
@@ -190,6 +232,7 @@ const API_PROVIDER_PRESETS: ApiProviderPreset[] = [
     provider: "anthropic",
     label: "MiMo (Xiaomi) - Anthropic",
     baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic",
+    apiKeyUrl: MIMO_API_KEYS_URL,
     model: "mimo-v2.5-pro",
     models: ["mimo-v2.5-pro"],
   },
@@ -197,14 +240,11 @@ const API_PROVIDER_PRESETS: ApiProviderPreset[] = [
 
 function getInitialProtocol(settings: WorkspaceSettings): AgentProtocolId {
   const provider = settings.defaultModel.split(":")[0];
-  if (
-    provider === "agnes" ||
-    provider === "openai" ||
-    provider === "google" ||
-    provider === "vertex" ||
-    provider === "anthropic"
-  ) {
-    return provider;
+  const credentialProtocol = AGENT_CREDENTIAL_PROTOCOLS.find(
+    (protocol) => protocol.id === provider,
+  );
+  if (credentialProtocol) {
+    return credentialProtocol.id;
   }
   return "agnes";
 }
@@ -247,10 +287,36 @@ function getModelProvider(modelId: string) {
   return modelId.includes(":") ? (modelId.split(":", 1)[0] ?? "") : "";
 }
 
-function isInstallableLocalProvider(
+function isTuttiManageableLocalProvider(
   provider: string,
-): provider is InstallableAgentProviderId {
+): provider is TuttiLocalAgentManagerProvider {
   return provider === "codex" || provider === "claude";
+}
+
+function normalizeAgentSettings(
+  initialSettings: WorkspaceSettings,
+): WorkspaceSettings {
+  const agnesModels = Array.from(
+    new Set([
+      ...DEFAULT_AGNES_PROVIDER_MODELS,
+      ...(initialSettings.providerModels?.agnes ?? []),
+    ]),
+  );
+
+  return {
+    ...initialSettings,
+    agnesBaseUrl: initialSettings.agnesBaseUrl || DEFAULT_AGNES_BASE_URL,
+    agnesDefaultModel:
+      initialSettings.agnesDefaultModel || agnesModels[0] || "",
+    defaultModelSource: inferDefaultModelSource(initialSettings),
+    providerModels: {
+      openai: initialSettings.providerModels?.openai ?? [],
+      anthropic: initialSettings.providerModels?.anthropic ?? [],
+      agnes: agnesModels,
+      google: initialSettings.providerModels?.google ?? [],
+      vertex: initialSettings.providerModels?.vertex ?? [],
+    },
+  };
 }
 
 function groupLocalCliModels(models: ModelInfo[]): LocalCliProviderGroup[] {
@@ -367,6 +433,17 @@ function getApiProviderBaseUrl(
   return "";
 }
 
+function getSelectedApiProviderPreset(
+  settings: WorkspaceSettings,
+  provider: AgentProtocolId,
+) {
+  const currentBaseUrl = getApiProviderBaseUrl(settings, provider);
+  return API_PROVIDER_PRESETS.find(
+    (preset) =>
+      preset.provider === provider && preset.baseUrl === currentBaseUrl,
+  );
+}
+
 function withApiProviderBaseUrl(
   settings: WorkspaceSettings,
   provider: AgentProtocolId,
@@ -431,40 +508,85 @@ function QuickFillProviderField({
   );
   if (presets.length === 0) return null;
 
-  const currentBaseUrl = getApiProviderBaseUrl(settings, provider);
-  const selectedPreset = presets.find(
-    (preset) => preset.baseUrl === currentBaseUrl,
-  );
+  const selectedPreset = getSelectedApiProviderPreset(settings, provider);
+  const selectedValue =
+    selectedPreset?.baseUrl ?? CUSTOM_API_PROVIDER_PRESET_VALUE;
+  const items = [
+    {
+      label: t("agentSettings.api.customProvider"),
+      value: CUSTOM_API_PROVIDER_PRESET_VALUE,
+    },
+    ...presets.map((preset) => ({
+      label: preset.label,
+      value: preset.baseUrl,
+    })),
+  ];
 
   return (
     <div className="space-y-2">
       <Label htmlFor={`${provider}QuickFillProvider`}>
         {t("agentSettings.api.quickFillProvider")}
       </Label>
-      <select
-        id={`${provider}QuickFillProvider`}
-        aria-label={t("agentSettings.api.quickFillProvider")}
-        value={selectedPreset?.baseUrl ?? ""}
-        onChange={(event) => {
+      <Select
+        items={items}
+        value={selectedValue}
+        onValueChange={(value) => {
+          if (value === CUSTOM_API_PROVIDER_PRESET_VALUE) {
+            onChange(null);
+            return;
+          }
           const preset =
-            presets.find(
-              (candidate) => candidate.baseUrl === event.target.value,
-            ) ?? null;
+            presets.find((candidate) => candidate.baseUrl === value) ?? null;
           onChange(preset);
         }}
-        className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus:border-accent focus:ring-3 focus:ring-accent/20"
       >
-        <option value="">{t("agentSettings.api.customProvider")}</option>
-        {presets.map((preset) => (
-          <option
-            key={`${preset.provider}-${preset.baseUrl}`}
-            value={preset.baseUrl}
-          >
-            {preset.label}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger
+          id={`${provider}QuickFillProvider`}
+          aria-label={t("agentSettings.api.quickFillProvider")}
+          className="h-11 w-full bg-background shadow-sm"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false}>
+          <SelectGroup>
+            <SelectItem value={CUSTOM_API_PROVIDER_PRESET_VALUE}>
+              {t("agentSettings.api.customProvider")}
+            </SelectItem>
+            {presets.map((preset) => (
+              <SelectItem
+                key={`${preset.provider}-${preset.baseUrl}`}
+                value={preset.baseUrl}
+              >
+                {preset.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
     </div>
+  );
+}
+
+function ApiKeyLinkButton({
+  href,
+  providerLabel,
+}: {
+  href: string;
+  providerLabel: string;
+}) {
+  const { t } = useAppTranslation("settings");
+
+  return (
+    <Button
+      type="button"
+      variant="link"
+      size="sm"
+      className="h-auto px-0 text-sm"
+      onClick={() => window.open(href, "_blank", "noopener,noreferrer")}
+    >
+      {t("agentSettings.api.getApiKey", { provider: providerLabel })}
+      <ExternalLink data-icon="inline-end" />
+    </Button>
   );
 }
 
@@ -598,16 +720,16 @@ function LocalCliProviderModelPicker({
   onProviderChange,
   onSelect,
   onRescan,
-  onInstallProvider,
-  installingProvider,
+  onManageProvider,
+  openingManagerProvider,
 }: {
   providerGroups: LocalCliProviderGroup[];
   activeProvider: string;
   onProviderChange: (provider: string) => void;
   onSelect: (modelId: string) => void;
   onRescan: () => void;
-  onInstallProvider: (provider: InstallableAgentProviderId) => void;
-  installingProvider: InstallableAgentProviderId | null;
+  onManageProvider: (provider: TuttiLocalAgentManagerProvider) => void;
+  openingManagerProvider: TuttiLocalAgentManagerProvider | null;
 }) {
   const { t } = useAppTranslation("settings");
   const activeGroup =
@@ -615,7 +737,7 @@ function LocalCliProviderModelPicker({
   const displayGroups = useMemo<LocalCliProviderDisplayGroup[]>(() => {
     const groups = new Map<string, LocalCliProviderDisplayGroup>();
 
-    for (const provider of SUPPORTED_LOCAL_CLI_PROVIDERS) {
+    for (const provider of INSTALLABLE_LOCAL_CLI_PROVIDER_PLACEHOLDERS) {
       groups.set(provider, {
         provider,
         label: formatLocalCliProviderLabel(provider),
@@ -667,22 +789,25 @@ function LocalCliProviderModelPicker({
             <div className="grid gap-3 md:grid-cols-2">
               {displayGroups.map((group) => {
                 const selected = activeGroup?.provider === group.provider;
-                const installing = installingProvider === group.provider;
-                const canInstall =
+                const openingManager =
+                  openingManagerProvider === group.provider;
+                const canManage =
                   !group.installed &&
-                  isInstallableLocalProvider(group.provider);
+                  isTuttiManageableLocalProvider(group.provider);
 
                 return (
                   <button
                     key={group.provider}
                     type="button"
                     aria-pressed={selected}
-                    aria-busy={installing}
-                    disabled={installing || (!group.installed && !canInstall)}
+                    aria-busy={openingManager}
+                    disabled={
+                      openingManager || (!group.installed && !canManage)
+                    }
                     onClick={() => {
                       if (!group.installed) {
-                        if (isInstallableLocalProvider(group.provider)) {
-                          onInstallProvider(group.provider);
+                        if (isTuttiManageableLocalProvider(group.provider)) {
+                          onManageProvider(group.provider);
                         }
                         return;
                       }
@@ -712,8 +837,8 @@ function LocalCliProviderModelPicker({
                         {group.label}
                       </span>
                       <span className="mt-1 block truncate text-xs text-muted-foreground">
-                        {installing
-                          ? t("agentSettings.local.installing")
+                        {openingManager
+                          ? t("agentSettings.local.openingManager")
                           : group.installed
                             ? group.models.length === 1
                               ? t("agentSettings.local.modelCountOne", {
@@ -722,10 +847,10 @@ function LocalCliProviderModelPicker({
                               : t("agentSettings.local.modelCountOther", {
                                   modelCount: group.models.length,
                                 })
-                            : t("agentSettings.local.installRequired")}
+                            : t("agentSettings.local.manageInTutti")}
                       </span>
                     </span>
-                    {installing ? (
+                    {openingManager ? (
                       <Loader2 className="size-4 animate-spin text-muted-foreground" />
                     ) : (
                       <span
@@ -740,7 +865,7 @@ function LocalCliProviderModelPicker({
             </div>
             {providerGroups.length === 0 ? (
               <p className="mt-3 text-xs text-muted-foreground">
-                {t("agentSettings.local.installHint")}
+                {t("agentSettings.local.setupHint")}
               </p>
             ) : null}
           </div>
@@ -762,26 +887,18 @@ export function AgentSettingsSection({
   surface = "page",
 }: AgentSettingsSectionProps) {
   const { t } = useAppTranslation("settings");
-  const [settings, setSettings] = useState<WorkspaceSettings>({
-    ...initialSettings,
-    defaultModelSource: inferDefaultModelSource(initialSettings),
-    providerModels: {
-      openai: initialSettings.providerModels?.openai ?? [],
-      anthropic: initialSettings.providerModels?.anthropic ?? [],
-      agnes: initialSettings.providerModels?.agnes ?? [],
-      google: initialSettings.providerModels?.google ?? [],
-      vertex: initialSettings.providerModels?.vertex ?? [],
-    },
-  });
+  const [settings, setSettings] = useState<WorkspaceSettings>(() =>
+    normalizeAgentSettings(initialSettings),
+  );
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [nextopManagedConnection, setNextopManagedConnection] =
-    useState<NextopManagedConnection>({
+  const [tuttiManagedConnection, setTuttiManagedConnection] =
+    useState<TuttiManagedConnection>({
       connected: false,
       providers: [],
       models: [],
     });
-  const [connectingNextopManaged, setConnectingNextopManaged] = useState(false);
-  const [nextopBridgeAvailable, setNextopBridgeAvailable] = useState(false);
+  const [connectingTuttiManaged, setConnectingTuttiManaged] = useState(false);
+  const [tuttiBridgeAvailable, setTuttiBridgeAvailable] = useState(false);
   const [activeProtocol, setActiveProtocol] = useState<AgentProtocolId>(() =>
     getInitialProtocol(initialSettings),
   );
@@ -795,25 +912,17 @@ export function AgentSettingsSection({
       getAgentModelSourceTab(initialSettings.defaultModel),
   );
   const [saving, setSaving] = useState(false);
-  const [installingLocalProvider, setInstallingLocalProvider] =
-    useState<InstallableAgentProviderId | null>(null);
+  const [
+    openingLocalAgentManagerProvider,
+    setOpeningLocalAgentManagerProvider,
+  ] = useState<TuttiLocalAgentManagerProvider | null>(null);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
 
   useEffect(() => {
-    setSettings({
-      ...initialSettings,
-      defaultModelSource: inferDefaultModelSource(initialSettings),
-      providerModels: {
-        openai: initialSettings.providerModels?.openai ?? [],
-        anthropic: initialSettings.providerModels?.anthropic ?? [],
-        agnes: initialSettings.providerModels?.agnes ?? [],
-        google: initialSettings.providerModels?.google ?? [],
-        vertex: initialSettings.providerModels?.vertex ?? [],
-      },
-    });
+    setSettings(normalizeAgentSettings(initialSettings));
   }, [initialSettings]);
 
   useEffect(() => {
@@ -821,14 +930,19 @@ export function AgentSettingsSection({
     setActiveSourceTab(initialSourceTab);
   }, [initialSourceTab]);
 
-  const refreshAvailableModels = useCallback(async () => {
+  const refreshAvailableModels = useCallback(async (options?: {
+    refreshLocalAgents?: boolean;
+  }) => {
     try {
+      const modelRequest = options?.refreshLocalAgents
+        ? fetchModels({ refresh: true })
+        : fetchModels();
       const [response, connectionResponse] = await Promise.all([
-        fetchModels(),
-        fetchNextopManagedConnection(),
+        modelRequest,
+        fetchTuttiManagedConnection(),
       ]);
       setAvailableModels(response.models);
-      setNextopManagedConnection(connectionResponse.connection);
+      setTuttiManagedConnection(connectionResponse.connection);
     } catch {
       setAvailableModels([]);
     }
@@ -839,7 +953,7 @@ export function AgentSettingsSection({
   }, [refreshAvailableModels]);
 
   useEffect(() => {
-    setNextopBridgeAvailable(hasNextopManagedCredentialBridge());
+    setTuttiBridgeAvailable(hasTuttiManagedCredentialBridge());
   }, []);
 
   useEffect(() => {
@@ -862,10 +976,10 @@ export function AgentSettingsSection({
       ),
     [availableModels],
   );
-  const nextopManagedModels = useMemo(
+  const tuttiManagedModels = useMemo(
     () =>
       availableModels.filter(
-        (model) => getModelSourceTab(model) === "nextop-managed",
+        (model) => getModelSourceTab(model) === "tutti-managed",
       ),
     [availableModels],
   );
@@ -921,14 +1035,19 @@ export function AgentSettingsSection({
         : "",
     [availableModels, settings],
   );
-  const selectedNextopManagedModelName = useMemo(
+  const selectedTuttiManagedModelName = useMemo(
     () =>
-      inferDefaultModelSource(settings) === "nextop-managed"
-        ? (nextopManagedModels.find(
+      inferDefaultModelSource(settings) === "tutti-managed"
+        ? (tuttiManagedModels.find(
             (model) => model.id === settings.defaultModel,
           )?.name ?? "")
         : "",
-    [nextopManagedModels, settings],
+    [tuttiManagedModels, settings],
+  );
+  const selectedOpenAIPreset = getSelectedApiProviderPreset(settings, "openai");
+  const selectedAnthropicPreset = getSelectedApiProviderPreset(
+    settings,
+    "anthropic",
   );
 
   function updateField<Key extends keyof WorkspaceSettings>(
@@ -949,43 +1068,39 @@ export function AgentSettingsSection({
     }));
   }
 
-  async function handleInstallLocalProvider(
-    provider: InstallableAgentProviderId,
+  async function handleOpenLocalAgentManager(
+    provider: TuttiLocalAgentManagerProvider,
   ) {
     setFeedback(null);
-    setInstallingLocalProvider(provider);
+    setOpeningLocalAgentManagerProvider(provider);
     try {
-      const result = await installAgentProvider(provider);
-      setFeedback({
-        type: result.status === "failed" ? "error" : "success",
-        message: result.message,
-      });
-      await refreshAvailableModels();
-    } catch (error) {
-      setFeedback({
-        type: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : t("agentSettings.feedback.installFailed"),
-      });
-    } finally {
-      setInstallingLocalProvider(null);
-    }
-  }
-
-  async function handleConnectNextopManaged() {
-    setFeedback(null);
-    setConnectingNextopManaged(true);
-    try {
-      const grant = await requestNextopManagedGrant();
-      const response = await connectNextopManagedModels(grant);
-      setNextopManagedConnection(response.connection);
-      await refreshAvailableModels();
-      setActiveSourceTab("nextop-managed");
+      await openTuttiAgentManager(provider);
       setFeedback({
         type: "success",
-        message: t("agentSettings.nextopManaged.feedback.connected"),
+        message: t("agentSettings.local.feedback.managerOpened"),
+      });
+    } catch {
+      setFeedback({
+        type: "error",
+        message: t("agentSettings.local.feedback.openManagerFailed"),
+      });
+    } finally {
+      setOpeningLocalAgentManagerProvider(null);
+    }
+  }
+
+  async function handleConnectTuttiManaged() {
+    setFeedback(null);
+    setConnectingTuttiManaged(true);
+    try {
+      const grant = await requestTuttiManagedGrant();
+      const response = await connectTuttiManagedModels(grant);
+      setTuttiManagedConnection(response.connection);
+      await refreshAvailableModels();
+      setActiveSourceTab("tutti-managed");
+      setFeedback({
+        type: "success",
+        message: t("agentSettings.tuttiManaged.feedback.connected"),
       });
     } catch (error) {
       setFeedback({
@@ -993,29 +1108,29 @@ export function AgentSettingsSection({
         message:
           error instanceof Error
             ? error.message
-            : t("agentSettings.nextopManaged.feedback.connectFailed"),
+            : t("agentSettings.tuttiManaged.feedback.connectFailed"),
       });
     } finally {
-      setConnectingNextopManaged(false);
+      setConnectingTuttiManaged(false);
     }
   }
 
-  async function handleDisconnectNextopManaged() {
+  async function handleDisconnectTuttiManaged() {
     setFeedback(null);
-    setConnectingNextopManaged(true);
+    setConnectingTuttiManaged(true);
     try {
-      const response = await disconnectNextopManagedModels();
-      setNextopManagedConnection(response.connection);
+      const response = await disconnectTuttiManagedModels();
+      setTuttiManagedConnection(response.connection);
       await refreshAvailableModels();
       if (
-        nextopManagedModels.some((model) => model.id === settings.defaultModel)
+        tuttiManagedModels.some((model) => model.id === settings.defaultModel)
       ) {
         updateField("defaultModel", "");
         updateField("defaultModelSource", undefined);
       }
       setFeedback({
         type: "success",
-        message: t("agentSettings.nextopManaged.feedback.disconnected"),
+        message: t("agentSettings.tuttiManaged.feedback.disconnected"),
       });
     } catch (error) {
       setFeedback({
@@ -1023,23 +1138,23 @@ export function AgentSettingsSection({
         message:
           error instanceof Error
             ? error.message
-            : t("agentSettings.nextopManaged.feedback.disconnectFailed"),
+            : t("agentSettings.tuttiManaged.feedback.disconnectFailed"),
       });
     } finally {
-      setConnectingNextopManaged(false);
+      setConnectingTuttiManaged(false);
     }
   }
 
-  async function handleOpenNextopManagedSettings() {
+  async function handleOpenTuttiManagedSettings() {
     try {
-      await openNextopManagedModelSettings();
+      await openTuttiManagedModelSettings();
     } catch (error) {
       setFeedback({
         type: "error",
         message:
           error instanceof Error
             ? error.message
-            : t("agentSettings.nextopManaged.feedback.openSettingsFailed"),
+            : t("agentSettings.tuttiManaged.feedback.openSettingsFailed"),
       });
     }
   }
@@ -1090,10 +1205,11 @@ export function AgentSettingsSection({
               : "space-y-5 pb-24"
           }
         >
-          <div className="grid grid-cols-3 rounded-xl border bg-muted/30 p-1">
-            {[
+          <SettingsSegmentTabs
+            columns={3}
+            items={[
               {
-                id: "local-agent" as const,
+                value: "local-agent" as const,
                 label: t("agentSettings.source.localAgent"),
                 description: t("agentSettings.source.detected", {
                   cliCount: localCliProviderCount,
@@ -1101,132 +1217,115 @@ export function AgentSettingsSection({
                 icon: Terminal,
               },
               {
-                id: "nextop-managed" as const,
-                label: t("agentSettings.source.nextopManaged"),
-                description: nextopManagedConnection.connected
-                  ? t("agentSettings.nextopManaged.connected")
-                  : t("agentSettings.nextopManaged.notConnected"),
+                value: "tutti-managed" as const,
+                label: t("agentSettings.source.tuttiManaged"),
+                description: tuttiManagedConnection.connected
+                  ? t("agentSettings.tuttiManaged.connected")
+                  : t("agentSettings.tuttiManaged.notConnected"),
                 icon: Cloud,
               },
               {
-                id: "api-provider" as const,
+                value: "api-provider" as const,
                 label: t("agentSettings.source.apiProvider"),
                 description: "BYOK",
                 icon: Cloud,
               },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const selected = activeSourceTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  aria-label={tab.label}
-                  aria-pressed={selected}
-                  onClick={() => setActiveSourceTab(tab.id)}
-                  className={`flex min-h-14 items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${
-                    selected
-                      ? "border-border bg-background shadow-sm"
-                      : "border-transparent text-muted-foreground hover:bg-background/70 hover:text-foreground"
-                  }`}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold">
-                      {tab.label}
-                    </span>
-                    <span className="block text-xs">{tab.description}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+            ]}
+            onValueChange={setActiveSourceTab}
+            value={activeSourceTab}
+          />
 
           {activeSourceTab === "local-agent" ? (
-            <LocalCliProviderModelPicker
-              providerGroups={localCliProviderGroups}
-              activeProvider={activeLocalProvider}
-              onProviderChange={setActiveLocalProvider}
-              onSelect={(modelId) => selectDefaultModel(modelId, "local-agent")}
-              onRescan={refreshAvailableModels}
-              onInstallProvider={handleInstallLocalProvider}
-              installingProvider={installingLocalProvider}
-            />
+            <div className="space-y-5">
+              <LocalCliProviderModelPicker
+                providerGroups={localCliProviderGroups}
+                activeProvider={activeLocalProvider}
+                onProviderChange={setActiveLocalProvider}
+                onSelect={(modelId) =>
+                  selectDefaultModel(modelId, "local-agent")
+                }
+                onRescan={() =>
+                  refreshAvailableModels({ refreshLocalAgents: true })
+                }
+                onManageProvider={handleOpenLocalAgentManager}
+                openingManagerProvider={openingLocalAgentManagerProvider}
+              />
+            </div>
           ) : null}
 
-          {activeSourceTab === "nextop-managed" ? (
+          {activeSourceTab === "tutti-managed" ? (
             <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="text-base font-semibold">
-                    {t("agentSettings.nextopManaged.title")}
+                    {t("agentSettings.tuttiManaged.title")}
                   </h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {t("agentSettings.nextopManaged.description")}
+                    {t("agentSettings.tuttiManaged.description")}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={handleOpenNextopManagedSettings}
+                    onClick={handleOpenTuttiManagedSettings}
                   >
-                    {t("agentSettings.nextopManaged.manageInNextop")}
+                    {t("agentSettings.tuttiManaged.manageInTutti")}
                   </Button>
-                  {nextopManagedConnection.connected ? (
+                  {tuttiManagedConnection.connected ? (
                     <Button
                       type="button"
                       variant="outline"
-                      disabled={connectingNextopManaged}
-                      onClick={handleDisconnectNextopManaged}
+                      disabled={connectingTuttiManaged}
+                      onClick={handleDisconnectTuttiManaged}
                     >
-                      {t("agentSettings.nextopManaged.disconnect")}
+                      {t("agentSettings.tuttiManaged.disconnect")}
                     </Button>
                   ) : null}
                   <Button
                     type="button"
-                    disabled={connectingNextopManaged || !nextopBridgeAvailable}
-                    onClick={handleConnectNextopManaged}
+                    disabled={connectingTuttiManaged || !tuttiBridgeAvailable}
+                    onClick={handleConnectTuttiManaged}
                   >
-                    {connectingNextopManaged ? (
+                    {connectingTuttiManaged ? (
                       <Loader2 className="size-4 animate-spin" />
                     ) : null}
-                    {nextopManagedConnection.connected
-                      ? t("agentSettings.nextopManaged.reauthorize")
-                      : t("agentSettings.nextopManaged.connect")}
+                    {tuttiManagedConnection.connected
+                      ? t("agentSettings.tuttiManaged.reauthorize")
+                      : t("agentSettings.tuttiManaged.connect")}
                   </Button>
                 </div>
               </div>
 
-              {!nextopBridgeAvailable ? (
+              {!tuttiBridgeAvailable ? (
                 <div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
-                  {t("agentSettings.nextopManaged.bridgeUnavailable")}
+                  {t("agentSettings.tuttiManaged.bridgeUnavailable")}
                 </div>
               ) : null}
 
               <div className="rounded-xl border bg-muted/20 p-4">
                 <p className="text-sm font-medium text-foreground">
-                  {t("agentSettings.nextopManaged.defaultModel")}
+                  {t("agentSettings.tuttiManaged.defaultModel")}
                 </p>
                 <p className="mt-2 truncate text-sm text-foreground">
-                  {selectedNextopManagedModelName ||
-                    t("agentSettings.nextopManaged.noModelSelected")}
+                  {selectedTuttiManagedModelName ||
+                    t("agentSettings.tuttiManaged.noModelSelected")}
                 </p>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {selectedNextopManagedModelName
+                  {selectedTuttiManagedModelName
                     ? settings.defaultModel
-                    : t("agentSettings.nextopManaged.chooseModel")}
+                    : t("agentSettings.tuttiManaged.chooseModel")}
                 </p>
               </div>
 
-              {nextopManagedModels.length > 0 ? (
+              {tuttiManagedModels.length > 0 ? (
                 <div className="space-y-2">
-                  {nextopManagedModels.map((model) => (
+                  {tuttiManagedModels.map((model) => (
                     <button
                       key={model.id}
                       type="button"
                       onClick={() =>
-                        selectDefaultModel(model.id, "nextop-managed")
+                        selectDefaultModel(model.id, "tutti-managed")
                       }
                       className={`flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
                         settings.defaultModel === model.id
@@ -1250,9 +1349,9 @@ export function AgentSettingsSection({
                 </div>
               ) : (
                 <div className="rounded-xl border bg-muted/20 p-5 text-sm text-muted-foreground">
-                  {nextopManagedConnection.connected
-                    ? t("agentSettings.nextopManaged.emptyModels")
-                    : t("agentSettings.nextopManaged.connectFirst")}
+                  {tuttiManagedConnection.connected
+                    ? t("agentSettings.tuttiManaged.emptyModels")
+                    : t("agentSettings.tuttiManaged.connectFirst")}
                 </div>
               )}
             </section>
@@ -1374,7 +1473,7 @@ export function AgentSettingsSection({
                 </div>
 
                 <div className="mb-5 flex flex-wrap gap-2">
-                  {AGENT_PROTOCOLS.map((protocol) => (
+                  {AGENT_CREDENTIAL_PROTOCOLS.map((protocol) => (
                     <button
                       key={protocol.id}
                       type="button"
@@ -1403,6 +1502,10 @@ export function AgentSettingsSection({
                             updateField("agnesApiKey", event.target.value)
                           }
                           placeholder="sk-..."
+                        />
+                        <ApiKeyLinkButton
+                          href={AGNES_API_KEYS_URL}
+                          providerLabel="Agnes"
                         />
                       </div>
                       <div className="space-y-2">
@@ -1456,6 +1559,12 @@ export function AgentSettingsSection({
                           }
                           placeholder="sk-..."
                         />
+                        {selectedOpenAIPreset ? (
+                          <ApiKeyLinkButton
+                            href={selectedOpenAIPreset.apiKeyUrl}
+                            providerLabel={selectedOpenAIPreset.label}
+                          />
+                        ) : null}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="openAIApiBase">OpenAI Base URL</Label>
@@ -1609,6 +1718,12 @@ export function AgentSettingsSection({
                           }
                           placeholder="sk-ant-..."
                         />
+                        {selectedAnthropicPreset ? (
+                          <ApiKeyLinkButton
+                            href={selectedAnthropicPreset.apiKeyUrl}
+                            providerLabel={selectedAnthropicPreset.label}
+                          />
+                        ) : null}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="anthropicBaseUrl">

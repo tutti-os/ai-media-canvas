@@ -182,6 +182,37 @@ describe("AgentModelSelector", () => {
     expect(screen.getByTestId("settings-dialog")).toHaveTextContent("agent");
   });
 
+  it("shows the display name for a Tutti Managed workspace default model", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "tutti:agnes:agnes-2.0-flash",
+        defaultModelSource: "tutti-managed",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "tutti:agnes:agnes-2.0-flash",
+          name: "agnes-2.0-flash",
+          provider: "agnes",
+          source: "tutti-managed",
+        },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
+
+    expect(
+      await screen.findByText("Uses default model: agnes-2.0-flash"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Uses your configured default route"),
+    ).not.toBeInTheDocument();
+  });
+
   it("switches the picker between local CLI and API provider models", async () => {
     fetchModelsMock.mockResolvedValue({
       models: [
@@ -225,7 +256,7 @@ describe("AgentModelSelector", () => {
     expect(screen.queryByText("Codex")).not.toBeInTheDocument();
   });
 
-  it("opens agent settings on the Nextop Managed panel from the empty state", async () => {
+  it("opens agent settings on the Tutti Managed panel from the empty state", async () => {
     fetchModelsMock.mockResolvedValue({
       models: [{ id: "codex:gpt-5.5", name: "Codex", provider: "codex" }],
     });
@@ -235,18 +266,18 @@ describe("AgentModelSelector", () => {
     await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
     await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
     await userEvent.click(
-      await screen.findByRole("button", { name: "Nextop Managed" }),
+      await screen.findByRole("button", { name: "Tutti Managed" }),
     );
 
     expect(
-      await screen.findByText("No Nextop Managed models connected."),
+      await screen.findByText("No Tutti Managed models connected."),
     ).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: "Connect in settings" }),
     );
 
     expect(screen.getByTestId("settings-dialog")).toHaveTextContent(
-      "agent:nextop-managed",
+      "agent:tutti-managed",
     );
   });
 
@@ -424,31 +455,5 @@ describe("AgentModelSelector", () => {
     const popover = container.ownerDocument.querySelector(".overflow-y-auto");
     expect(popover).toHaveClass("max-h-[min(28rem,calc(100vh-2rem))]");
     expect(popover).toHaveClass("overflow-y-auto");
-  });
-
-  it("lets people enter and apply a custom model id from the picker", async () => {
-    fetchModelsMock.mockResolvedValue({
-      models: [{ id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" }],
-    });
-
-    render(<AgentModelSelector compact />);
-
-    await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
-    await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
-    await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
-    );
-
-    const input = await screen.findByLabelText("Custom model ID");
-    await userEvent.clear(input);
-    await userEvent.type(input, "anthropic:minimax-m2.5");
-    await userEvent.click(
-      screen.getByRole("button", { name: "Use custom model" }),
-    );
-
-    expect(setModelMock).toHaveBeenCalledWith(
-      "anthropic:minimax-m2.5",
-      "api-provider",
-    );
   });
 });

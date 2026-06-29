@@ -136,8 +136,8 @@ test("createManifest returns the Tutti package manifest contract", () => {
     schemaVersion: "tutti.app.manifest.v1",
     appId: "ai-media-canvas",
     version: "1.2.3",
-    name: "AI Media Canvas",
-    description: "Local-first AI canvas for image and video generation.",
+    name: "AI Canvas",
+    description: "Generate and organize AI images and videos on a canvas.",
     icon: {
       type: "asset",
       src: "icon.png",
@@ -148,6 +148,10 @@ test("createManifest returns the Tutti package manifest contract", () => {
     },
     cli: {
       manifest: "tutti.cli.json",
+    },
+    references: {
+      listEndpoint: "/tutti/references/list",
+      searchEndpoint: "/tutti/references/search",
     },
     localizationInfo: {
       defaultLocale: "en",
@@ -182,6 +186,34 @@ test("createCliManifest returns the Tutti CLI manifest contract", () => {
   assert.equal(manifest.documentation.file, "COMMANDS.md");
   assert.ok(manifest.commands.length >= 20);
   assert.deepEqual(
+    manifest.commands.find((command) => command.path.join(" ") === "open"),
+    {
+      path: ["open"],
+      summary: "Open AI Canvas",
+      description:
+        "Open AI Canvas in Tutti Desktop. When project-id is provided, open that project's primary canvas; otherwise open the app home page.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          "project-id": {
+            type: "string",
+            description: "Optional project id to open.",
+          },
+        },
+      },
+      output: {
+        defaultMode: "json",
+        json: true,
+      },
+      handler: {
+        kind: "http",
+        method: "POST",
+        path: "/tutti/cli/open",
+        timeoutMs: 30000,
+      },
+    },
+  );
+  assert.deepEqual(
     manifest.commands.find(
       (command) => command.path.join(" ") === "canvases insert-image",
     )?.inputSchema.required,
@@ -201,7 +233,7 @@ test("createCliManifest returns the Tutti CLI manifest contract", () => {
       path: ["projects", "create"],
       summary: "Create a project",
       description:
-        "Create a local AI Media Canvas project. Use the returned primaryCanvas.id before saving canvas content.",
+        "Create a local AI Canvas project. Use the returned primaryCanvas.id before saving canvas content.",
       inputSchema: {
         type: "object",
         properties: {
@@ -221,6 +253,49 @@ test("createCliManifest returns the Tutti CLI manifest contract", () => {
         kind: "http",
         method: "POST",
         path: "/tutti/cli/projects/create",
+        timeoutMs: 30000,
+      },
+    },
+  );
+  assert.deepEqual(
+    manifest.commands.find(
+      (command) => command.path.join(" ") === "assets list",
+    ),
+    {
+      path: ["assets", "list"],
+      summary: "List project assets",
+      description:
+        "List reusable media assets referenced by a project. Use this instead of reading full canvas JSON when an agent only needs project images or videos.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          "project-id": {
+            type: "string",
+            description: "Project id whose media assets should be listed.",
+          },
+          "filter-text": {
+            type: "string",
+            description: "Optional filename or asset id filter.",
+          },
+          limit: {
+            type: "integer",
+            description: "Optional page size from 1 to 50.",
+          },
+          cursor: {
+            type: "string",
+            description: "Optional cursor from a previous response.",
+          },
+        },
+        required: ["project-id"],
+      },
+      output: {
+        defaultMode: "json",
+        json: true,
+      },
+      handler: {
+        kind: "http",
+        method: "POST",
+        path: "/tutti/cli/assets/list",
         timeoutMs: 30000,
       },
     },
@@ -249,32 +324,31 @@ test("createCliManifest keeps command metadata discoverable for agents", () => {
 test("renderCommandsGuide documents CLI commands", () => {
   const guide = renderCommandsGuide();
 
-  assert.match(guide, /AI Media Canvas CLI Commands/);
+  assert.match(guide, /AI Canvas CLI Commands/);
+  assert.match(guide, /`aimc open --project-id`/);
   assert.match(guide, /`aimc projects create --name <required> --description`/);
+  assert.match(guide, /`aimc assets list --project-id <required>/);
   assert.match(guide, /\/tutti\/cli\/agent\/run/);
 });
 
-test("renderBootstrap maps Tutti runtime env into AI Media Canvas env", () => {
+test("renderBootstrap maps Tutti runtime env into AI Canvas env", () => {
   const bootstrap = renderBootstrap({ version: "1.2.3" });
 
   assert.match(bootstrap, /^#!\/bin\/sh\n/);
   assert.match(
     bootstrap,
-    /package_dir="\$\{TUTTI_APP_PACKAGE_DIR:-\$\{NEXTOP_APP_PACKAGE_DIR:-\$script_dir\}\}"/,
+    /package_dir="\$\{TUTTI_APP_PACKAGE_DIR:-\$script_dir\}"/,
   );
+  assert.match(bootstrap, /export HOST="\$\{TUTTI_APP_HOST:-127\.0\.0\.1\}"/);
   assert.match(
     bootstrap,
-    /export HOST="\$\{TUTTI_APP_HOST:-\$\{NEXTOP_APP_HOST:-127\.0\.0\.1\}\}"/,
-  );
-  assert.match(
-    bootstrap,
-    /export AIMC_SERVER_PORT="\$\{TUTTI_APP_PORT:-\$\{NEXTOP_APP_PORT:-3001\}\}"/,
+    /export AIMC_SERVER_PORT="\$\{TUTTI_APP_PORT:-3001\}"/,
   );
   assert.match(bootstrap, /export AIMC_APP_VERSION="1\.2\.3"/);
   assert.match(bootstrap, /export AIMC_WEB_DIST="\$package_dir\/dist"/);
   assert.match(
     bootstrap,
-    /export AIMC_DATA_ROOT="\$\{TUTTI_APP_DATA_DIR:-\$\{NEXTOP_APP_DATA_DIR:-\$package_dir\/\.data\}\}"/,
+    /export AIMC_DATA_ROOT="\$\{TUTTI_APP_DATA_DIR:-\$package_dir\/\.data\}"/,
   );
   assert.match(bootstrap, /export AIMC_SKILLS_ROOT="\$package_dir\/skills"/);
   assert.match(
@@ -283,20 +357,18 @@ test("renderBootstrap maps Tutti runtime env into AI Media Canvas env", () => {
   );
   assert.match(
     bootstrap,
-    /export AIMC_AGENT_FILES_ROOT="\$\{TUTTI_WORKSPACE_ROOT:-\$\{NEXTOP_WORKSPACE_ROOT:-\$AIMC_DATA_ROOT\}\}"/,
+    /export AIMC_AGENT_FILES_ROOT="\$\{TUTTI_WORKSPACE_ROOT:-\$AIMC_DATA_ROOT\}"/,
   );
   assert.match(
     bootstrap,
-    /base_url="\$\{TUTTI_APP_BASE_URL:-\$\{NEXTOP_APP_BASE_URL:-http:\/\/\$HOST:\$AIMC_SERVER_PORT\}\}"/,
+    /base_url="\$\{TUTTI_APP_BASE_URL:-http:\/\/\$HOST:\$AIMC_SERVER_PORT\}"/,
   );
+  assert.match(bootstrap, /node_bin="\$\{TUTTI_APP_NODE:-node\}"/);
   assert.match(
     bootstrap,
-    /node_bin="\$\{TUTTI_APP_NODE:-\$\{NEXTOP_APP_NODE:-node\}\}"/,
+    /runtime_dir="\$\{TUTTI_APP_RUNTIME_DIR:-\$AIMC_DATA_ROOT\/\.runtime\}"/,
   );
-  assert.match(
-    bootstrap,
-    /runtime_dir="\$\{TUTTI_APP_RUNTIME_DIR:-\$\{NEXTOP_APP_RUNTIME_DIR:-\$AIMC_DATA_ROOT\/\.runtime\}\}"/,
-  );
+  assert.doesNotMatch(bootstrap, new RegExp("NEXT" + "OP"));
   assert.match(
     bootstrap,
     /run_child "\$package_dir\/server\/worker.js" "\$worker_status_file" &/,
@@ -315,7 +387,7 @@ test("renderBootstrap maps Tutti runtime env into AI Media Canvas env", () => {
 test("renderAgentsGuide is non-empty and documents package layout", () => {
   const guide = renderAgentsGuide();
 
-  assert.match(guide, /AI Media Canvas/);
+  assert.match(guide, /AI Canvas/);
   assert.match(guide, /tutti\.app\.json/);
   assert.match(guide, /bootstrap\.sh/);
   assert.match(guide, /icon\.png/);
@@ -324,17 +396,18 @@ test("renderAgentsGuide is non-empty and documents package layout", () => {
 
 test("Tutti icon asset is a generated PNG with a contrast-safe tile", async () => {
   const iconPath = path.resolve(
-    "apps/web/public/brand/aimc-nextop-app-icon.png",
+    "apps/web/public/brand/aimc-tutti-app-icon.png",
   );
   const icon = await readFile(iconPath);
   const iconStat = await stat(iconPath);
   const bounds = readPngAlphaBounds(icon);
 
   assert.ok(iconStat.size > 0);
-  assert.equal(bounds.width, 1024);
-  assert.equal(bounds.height, 1024);
+  assert.equal(bounds.width, 363);
+  assert.equal(bounds.height, 363);
   assert.ok(
-    bounds.contentWidth >= 900 && bounds.contentHeight >= 900,
+    bounds.contentWidth >= Math.floor(bounds.width * 0.88) &&
+      bounds.contentHeight >= Math.floor(bounds.height * 0.88),
     `icon content should fill most of the canvas, got ${bounds.contentWidth}x${bounds.contentHeight}`,
   );
 });

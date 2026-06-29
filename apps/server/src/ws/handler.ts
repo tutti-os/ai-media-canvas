@@ -27,11 +27,15 @@ import type { ServerEnv } from "../config/env.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
-import type { NextopManagedCredentialService } from "../features/nextop-managed/credential-service.js";
 import {
   LOCAL_WORKSPACE_ID,
   type SettingsService,
 } from "../features/settings/settings-service.js";
+import {
+  type TuttiManagedCredentialService,
+  isManagedModelId,
+} from "../features/tutti-managed/credential-service.js";
+import { summarizeImageAttachments } from "../logging/attachments.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";
 import { createPipelineLogger } from "./logger.js";
@@ -70,7 +74,7 @@ type RegisterWsOptions = {
   chatService?: ChatService;
   connectionManager: ConnectionManager;
   eventBuffer?: CanvasEventBuffer;
-  nextopManagedCredentials?: NextopManagedCredentialService;
+  tuttiManagedCredentials?: TuttiManagedCredentialService;
   settingsService?: SettingsService;
   threadService?: ThreadService;
   viewerService?: ViewerService;
@@ -109,7 +113,7 @@ export async function registerWsRoute(
 async function authenticateAndBind(
   socket: WebSocket,
   token: string,
-  _request: FastifyRequest,
+  request: FastifyRequest,
   options: RegisterWsOptions,
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
@@ -145,7 +149,7 @@ async function authenticateAndBind(
   if (socket.readyState !== 1) return;
 
   // Use client-provided connectionId for reconnect identity; fallback to server UUID
-  const urlForParams = new URL(_request.url, `http://${_request.headers.host}`);
+  const urlForParams = new URL(request.url, `http://${request.headers.host}`);
   const connectionId =
     urlForParams.searchParams.get("connectionId") || randomUUID();
   connectionManager.register(connectionId, authenticatedUser.id, socket);
@@ -232,8 +236,10 @@ async function authenticateAndBind(
             ...(p.videoGenerationPreference !== undefined
               ? { videoGenerationPreference: p.videoGenerationPreference }
               : {}),
-            ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
             ...(p.model !== undefined ? { model: p.model } : {}),
+            ...(p.modelSource !== undefined
+              ? { modelSource: p.modelSource }
+              : {}),
             ...(p.runtimeKind !== undefined
               ? { runtimeKind: p.runtimeKind }
               : {}),
@@ -244,6 +250,7 @@ async function authenticateAndBind(
           agentRuns,
           connectionManager,
           options,
+          request.headers,
         );
       } else if (msg.action === "agent.cancel") {
         log.info("run_cancel", {
@@ -345,12 +352,17 @@ async function handleRunCommand(
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
   services: RegisterWsOptions,
+  managedAgentHeaders: FastifyRequest["headers"],
 ) {
   const log = createPipelineLogger("agent.run", {
     userId: authenticatedUser.id,
     sessionId: payload.sessionId,
   });
-  log.info("started", { prompt: payload.prompt.slice(0, 80) });
+  log.info("started", {
+    attachments: summarizeImageAttachments(payload.attachments),
+    attachmentCount: payload.attachments?.length ?? 0,
+    prompt: payload.prompt.slice(0, 80),
+  });
 
   // Resolve thread + model in parallel
   const [threadId, runtimeSettings] = await Promise.all([
@@ -420,8 +432,8 @@ async function handleRunCommand(
     throw error;
   }
   const runtimeEnv =
-    effectiveEnv && resolvedModel && services.nextopManagedCredentials
-      ? await services.nextopManagedCredentials.resolveEnvForModel(
+    effectiveEnv && resolvedModel && services.tuttiManagedCredentials
+      ? await services.tuttiManagedCredentials.resolveEnvForModel(
           effectiveEnv,
           resolvedModel,
           payload.model
@@ -430,7 +442,7 @@ async function handleRunCommand(
         )
       : effectiveEnv;
   const runtimeModel =
-    resolvedModel?.startsWith("nextop:") && runtimeEnv?.agentModel
+    isManagedModelId(resolvedModel) && runtimeEnv?.agentModel
       ? runtimeEnv.agentModel
       : resolvedModel;
   log.lap("resolve", { threadId: !!threadId, model: runtimeModel });
@@ -477,11 +489,18 @@ async function handleRunCommand(
     ...(assistantMessageId ? { assistantMessageId } : {}),
     connectionId,
     ...(runtimeEnv ? { env: runtimeEnv } : {}),
+    managedAgentHeaders,
     userId: authenticatedUser.id,
     ...(runtimeModel ? { model: runtimeModel } : {}),
     ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
     ...(payload.runtimeProvider
       ? { runtimeProvider: payload.runtimeProvider }
+      : {}),
+    ...(runtimeSettings?.settings.codexImagegenDelegation
+      ? {
+          codexImagegenDelegation:
+            runtimeSettings.settings.codexImagegenDelegation,
+        }
       : {}),
     ...(threadId ? { threadId } : {}),
   });
@@ -534,7 +553,9 @@ async function handleRunCommand(
     createAgentRunOrchestrator({
       eventPersistence: services.agentRunPersistence,
     });
-  const assistantProjection = orchestrator.createAssistantProjection();
+  const assistantProjection = orchestrator.createAssistantProjection({
+    locale: payload.locale,
+  });
   const publishEvent = (input: {
     envelope: { eventId?: string; seq?: number };
     event: StreamEvent;

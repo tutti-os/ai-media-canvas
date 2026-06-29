@@ -1,11 +1,11 @@
 import type {
   AgentRuntimeProvider,
   ContentBlock,
+  RunCreateRequest,
   RuntimeKind,
   StreamEvent,
   ToolBlock,
 } from "@aimc/shared";
-import { DEFAULT_LOCAL_AGENT_PROVIDER_IDS } from "@nextop-os/agent-acp-kit";
 import type {
   AgentRuntimeCapabilities,
   AgentRuntimeMode,
@@ -16,11 +16,11 @@ import type {
   RuntimeLease as PackageRuntimeLease,
   RuntimeProvider as PackageRuntimeProvider,
   RuntimeTarget as PackageRuntimeTarget,
-} from "@nextop-os/agent-acp-kit";
+} from "@tutti-os/agent-acp-kit";
 import {
   createRuntimeControlPlane as createPackageRuntimeControlPlane,
   inferRuntimeKind as inferPackageRuntimeKind,
-} from "@nextop-os/agent-acp-kit/runtime-control-plane";
+} from "@tutti-os/agent-acp-kit/runtime-control-plane";
 
 export type { AgentRuntimeCapabilities, AgentRuntimeMode, AgentRuntimeStatus };
 
@@ -51,6 +51,12 @@ export type RuntimeTarget = PackageRuntimeTarget<
   AgentRuntimeProvider
 >;
 
+export const AIMC_SUPPORTED_LOCAL_AGENT_PROVIDER_IDS = [
+  "codex",
+  "claude",
+  "nexight",
+] as const;
+
 export function createRuntimeControlPlane<TContext>(
   providers: RuntimeProvider<TContext>[],
   options?: {
@@ -72,7 +78,7 @@ export function inferRuntimeKind(
   return inferPackageRuntimeKind<RuntimeKind, AgentRuntimeProvider>(input);
 }
 
-const LOCAL_AGENT_MODEL_PREFIXES = DEFAULT_LOCAL_AGENT_PROVIDER_IDS.map(
+const LOCAL_AGENT_MODEL_PREFIXES = AIMC_SUPPORTED_LOCAL_AGENT_PROVIDER_IDS.map(
   (provider) => `${provider}:`,
 );
 
@@ -196,14 +202,27 @@ export function inferAimcRuntimeTarget(
 
 export type AssistantMessageProjection = {
   blocks: ContentBlock[];
+  locale?: RunCreateRequest["locale"];
   textParts: string[];
 };
 
-export function createAssistantMessageProjection(): AssistantMessageProjection {
+export function createAssistantMessageProjection(options?: {
+  locale?: RunCreateRequest["locale"];
+}): AssistantMessageProjection {
   return {
     blocks: [],
+    ...(options?.locale ? { locale: options.locale } : {}),
     textParts: [],
   };
+}
+
+function formatRunFailureMessage(input: {
+  errorMessage: string;
+  locale?: RunCreateRequest["locale"];
+}) {
+  return input.locale === "en"
+    ? `Sorry, something went wrong while processing: ${input.errorMessage}`
+    : `抱歉，处理过程中遇到问题：${input.errorMessage}`;
 }
 
 export function projectStreamEventToAssistantMessage(
@@ -273,7 +292,10 @@ export function projectStreamEventToAssistantMessage(
   }
 
   if (event.type === "run.failed" && state.textParts.length === 0) {
-    const message = `抱歉，处理过程中遇到问题：${event.error.message}`;
+    const message = formatRunFailureMessage({
+      errorMessage: event.error.message,
+      locale: state.locale,
+    });
     state.blocks.push({ type: "text", text: message });
     state.textParts.push(message);
   }
@@ -422,7 +444,9 @@ export type AgentRunRecordStore = {
 };
 
 export type AgentRunOrchestrator = {
-  createAssistantProjection(): AssistantMessageProjection;
+  createAssistantProjection(options?: {
+    locale?: RunCreateRequest["locale"];
+  }): AssistantMessageProjection;
   emitTerminalCancel(input: {
     canvasId?: string;
     now?: () => string;
@@ -487,8 +511,8 @@ export function createAgentRunOrchestrator(input: {
   runStore?: AgentRunRecordStore | undefined;
 }): AgentRunOrchestrator {
   return {
-    createAssistantProjection() {
-      return createAssistantMessageProjection();
+    createAssistantProjection(options) {
+      return createAssistantMessageProjection(options);
     },
 
     async emitTerminalCancel(cancelInput) {

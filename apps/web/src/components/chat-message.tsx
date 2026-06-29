@@ -4,11 +4,13 @@ import { motion } from "framer-motion";
 import React, { useMemo } from "react";
 
 import type { ContentBlock, ToolArtifact, ToolBlock } from "@aimc/shared";
+import { toRuntimeAssetUrl } from "../lib/local-assets";
 import { ImagePill } from "./chat/image-lightbox";
 import { MarkdownRenderer } from "./chat/markdown-renderer";
-import { MentionPill } from "./chat/mention-pill";
 import { ThinkingBlockView } from "./chat/thinking-block-view";
 import { ToolBlockView } from "./chat/tool-block-view";
+import { TuttiRichTextMessage } from "./tutti-rich-text-message";
+import { useAppTranslation } from "../i18n";
 
 // Re-export types for backward compatibility with existing consumers
 export type { ContentBlock, ToolArtifact };
@@ -24,7 +26,66 @@ type ChatMessageProps = {
   role: "user" | "assistant";
   contentBlocks: ContentBlock[];
   isStreaming?: boolean;
+  onOpenMediaSettings?: (() => void) | undefined;
 };
+
+function stableStringHash(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function imageBlockKey(block: ContentBlock) {
+  const imageBlock = block as { assetId?: string; url?: string };
+  return `image:${imageBlock.assetId ?? ""}:${imageBlock.url ?? ""}`;
+}
+
+function assistantBlockKey(block: ContentBlock) {
+  if (block.type === "thinking") {
+    return `thinking:${stableStringHash(block.thinking)}`;
+  }
+  if (block.type === "text") {
+    return `text:${stableStringHash(block.text)}`;
+  }
+  if (block.type === "tool") {
+    return `tool:${block.toolCallId}`;
+  }
+  if (block.type === "image") {
+    return imageBlockKey(block);
+  }
+  return `block:${(block as { type?: string }).type ?? "unknown"}`;
+}
+
+function getMediaCapabilityKey(block: ContentBlock) {
+  if (block.type !== "tool") return null;
+
+  const output = block.output as Record<string, unknown> | undefined;
+  const raw = output?.capabilityRequired;
+  if (!raw || typeof raw !== "object") return null;
+
+  const capability = (raw as { capability?: unknown }).capability;
+  if (capability !== "image_generation" && capability !== "video_generation") {
+    return null;
+  }
+
+  return capability;
+}
+
+function getFirstMediaCapabilityToolIds(contentBlocks: ContentBlock[]) {
+  const seen = new Set<string>();
+  const firstToolIds = new Set<string>();
+
+  for (const block of contentBlocks) {
+    const capability = getMediaCapabilityKey(block);
+    if (!capability || seen.has(capability)) continue;
+    seen.add(capability);
+    firstToolIds.add((block as ToolBlock).toolCallId);
+  }
+
+  return firstToolIds;
+}
 
 /**
  * Top-level chat message component.
@@ -42,6 +103,7 @@ export const ChatMessage = React.memo(
     role,
     contentBlocks,
     isStreaming,
+    onOpenMediaSettings,
   }: ChatMessageProps) {
     const isUser = role === "user";
 
@@ -53,6 +115,7 @@ export const ChatMessage = React.memo(
       <AssistantMessage
         contentBlocks={contentBlocks}
         isStreaming={isStreaming ?? false}
+        onOpenMediaSettings={onOpenMediaSettings}
       />
     );
   },
@@ -62,7 +125,8 @@ export const ChatMessage = React.memo(
     return (
       prev.role === next.role &&
       prev.contentBlocks === next.contentBlocks &&
-      prev.isStreaming === next.isStreaming
+      prev.isStreaming === next.isStreaming &&
+      prev.onOpenMediaSettings === next.onOpenMediaSettings
     );
   },
 );
@@ -77,25 +141,21 @@ const UserMessage = React.memo(function UserMessage({
   contentBlocks: ContentBlock[];
 }) {
   // Categorize blocks once per render
-  const { text, imageBlocks, mentionBlocks } = useMemo(() => {
+  const { text, imageBlocks } = useMemo(() => {
     const textParts: string[] = [];
     const images: ContentBlock[] = [];
-    const mentions: ContentBlock[] = [];
 
     for (const block of contentBlocks) {
       if (block.type === "text") {
         textParts.push(block.text);
       } else if (block.type === "image") {
         images.push(block);
-      } else if (block.type === "mention") {
-        mentions.push(block);
       }
     }
 
     return {
       text: textParts.join(""),
       imageBlocks: images,
-      mentionBlocks: mentions,
     };
   }, [contentBlocks]);
 
@@ -111,67 +171,33 @@ const UserMessage = React.memo(function UserMessage({
           data-chat-bubble
           className="inline-block rounded-xl bg-muted px-3 py-2.5 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground"
         >
-          <span className="cursor-text select-text [word-break:break-word]">
-            {text}
-          </span>
-          {mentionBlocks.length > 0 && (
-            <span className="inline">
-              {mentionBlocks.map((block, idx) => (
-                <MentionPill
-                  key={idx}
-                  label={(block as { label: string }).label}
-                  kind={
-                    (
-                      block as {
-                        mentionType: "image-model" | "brand-kit-asset" | "skill";
-                      }
-                    ).mentionType
-                  }
-                />
-              ))}
-            </span>
-          )}
+          <TuttiRichTextMessage
+            className="cursor-text select-text [word-break:break-word]"
+            value={text}
+          />
           {imageBlocks.length > 0 && (
             <span className="inline">
               {imageBlocks.map((block, idx) => (
                 <ImagePill
-                  key={idx}
-                  src={(block as { url: string }).url}
-                  name={
-                    (block as { name?: string }).name ??
-                    `image-${idx + 1}`
-                  }
+                  key={imageBlockKey(block)}
+                  src={toRuntimeAssetUrl((block as { url: string }).url)}
+                  name={(block as { name?: string }).name ?? `image-${idx + 1}`}
                 />
               ))}
             </span>
           )}
         </div>
       )}
-      {!text && (imageBlocks.length > 0 || mentionBlocks.length > 0) && (
+      {!text && imageBlocks.length > 0 && (
         <div
           data-chat-bubble
           className="inline-block rounded-xl bg-muted px-3 py-2.5"
         >
-          {mentionBlocks.map((block, idx) => (
-            <MentionPill
-              key={`mention-${idx}`}
-              label={(block as { label: string }).label}
-              kind={
-                (
-                  block as {
-                    mentionType: "image-model" | "brand-kit-asset" | "skill";
-                  }
-                ).mentionType
-              }
-            />
-          ))}
           {imageBlocks.map((block, idx) => (
             <ImagePill
-              key={idx}
-              src={(block as { url: string }).url}
-              name={
-                (block as { name?: string }).name ?? `image-${idx + 1}`
-              }
+              key={imageBlockKey(block)}
+              src={toRuntimeAssetUrl((block as { url: string }).url)}
+              name={(block as { name?: string }).name ?? `image-${idx + 1}`}
             />
           ))}
         </div>
@@ -187,11 +213,17 @@ const UserMessage = React.memo(function UserMessage({
 const AssistantMessage = React.memo(function AssistantMessage({
   contentBlocks,
   isStreaming,
+  onOpenMediaSettings,
 }: {
   contentBlocks: ContentBlock[];
   isStreaming: boolean;
+  onOpenMediaSettings?: (() => void) | undefined;
 }) {
   const lastBlock = contentBlocks[contentBlocks.length - 1];
+  const firstMediaCapabilityToolIds = useMemo(
+    () => getFirstMediaCapabilityToolIds(contentBlocks),
+    [contentBlocks],
+  );
 
   const pendingAfterBlock = useMemo(() => {
     if (!isStreaming) return false;
@@ -213,22 +245,37 @@ const AssistantMessage = React.memo(function AssistantMessage({
         if (block.type === "thinking") {
           return (
             <ThinkingBlockView
-              key={`thinking-${idx}`}
+              key={assistantBlockKey(block)}
               thinking={block.thinking}
-              isStreaming={
-                isStreaming && idx === contentBlocks.length - 1
-              }
+              isStreaming={isStreaming && idx === contentBlocks.length - 1}
             />
           );
         }
 
         if (block.type === "text") {
-          return <MarkdownRenderer key={idx} text={block.text} />;
+          return (
+            <MarkdownRenderer
+              key={assistantBlockKey(block)}
+              text={block.text}
+            />
+          );
         }
 
         if (block.type === "tool") {
+          const capability = getMediaCapabilityKey(block);
+          if (
+            capability &&
+            !firstMediaCapabilityToolIds.has(block.toolCallId)
+          ) {
+            return null;
+          }
+
           return (
-            <ToolBlockView key={block.toolCallId} block={block} />
+            <ToolBlockView
+              key={block.toolCallId}
+              block={block}
+              onOpenMediaSettings={onOpenMediaSettings}
+            />
           );
         }
 
@@ -244,9 +291,11 @@ const AssistantMessage = React.memo(function AssistantMessage({
 
 const PendingThinkingIndicator = React.memo(
   function PendingThinkingIndicator() {
+    const { t } = useAppTranslation("chat");
+
     return (
       <div className="flex items-center gap-1 text-sm text-muted-foreground">
-        <span>{"\u601d\u8003\u4e2d"}</span>
+        <span>{t("thinking")}</span>
         <span
           className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-bounce-dot"
           style={{ animationDelay: "0ms" }}

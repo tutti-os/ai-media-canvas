@@ -104,6 +104,7 @@ describe("createCanvasOperations", () => {
       },
       uploadService: {
         uploadFile,
+        createManagedFileAsset: vi.fn(),
         getAssetUrl: vi.fn(),
         deleteAsset: vi.fn(),
       },
@@ -190,6 +191,7 @@ describe("createCanvasOperations", () => {
       },
       uploadService: {
         uploadFile,
+        createManagedFileAsset: vi.fn(),
         getAssetUrl: vi.fn(),
         deleteAsset: vi.fn(),
       },
@@ -218,14 +220,15 @@ describe("createCanvasOperations", () => {
     };
     expect(content.elements[0]).toMatchObject({
       id: result.elementId,
-      type: "embeddable",
-      link: "/local-assets/video-asset-1",
+      type: "rectangle",
+      link: null,
       customData: {
         assetId: "video-asset-1",
         durationSeconds: 8,
         isVideo: true,
         mimeType: "video/mp4",
         title: "Generated clip",
+        videoUrl: "/local-assets/video-asset-1",
       },
     });
   });

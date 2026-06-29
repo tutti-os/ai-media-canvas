@@ -1,24 +1,25 @@
 "use client";
 
+import type { ReadyAttachment } from "@/hooks/use-image-attachments";
 import type {
   AgentModelSource,
   ImageGenerationPreference,
   ProjectSummary,
   VideoGenerationPreference,
 } from "@aimc/shared";
-import type { ReadyAttachment } from "@/hooks/use-image-attachments";
 import { motion } from "framer-motion";
+import { Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
 
 import { DeleteProjectDialog } from "@/components/delete-project-dialog";
 import { HomeDiscoveryGallery } from "@/components/home-discovery-gallery";
 import { HomeExampleBrowser } from "@/components/home-example-browser";
-import { AimcLogo } from "@/components/icons/aimc-logo";
 import { HomePrompt, type HomePromptHandle } from "@/components/home-prompt";
+import { AimcLogo } from "@/components/icons/aimc-logo";
 import { LoadingScreen } from "@/components/loading-screen";
+import { ProjectThumbnailPreview } from "@/components/project-thumbnail-preview";
 import { HomeProjectsSkeleton } from "@/components/skeletons/home-skeleton";
 import { useCreateProject } from "@/hooks/use-create-project";
 import { useDeleteProject } from "@/hooks/use-delete-project";
@@ -26,13 +27,13 @@ import { useImageAttachments } from "@/hooks/use-image-attachments";
 import { useAppTranslation } from "@/i18n";
 import { loadHomeDiscoveryCategories } from "@/lib/home-discovery-library";
 import {
-  homeDiscoverySeedCategories,
   type HomeDiscoverySelection,
+  homeDiscoverySeedCategories,
 } from "@/lib/home-discovery-seeds";
 import { loadHomeExampleCategories } from "@/lib/home-example-library";
 import {
-  homeExampleSeedCategories,
   type HomeExampleSelection,
+  homeExampleSeedCategories,
 } from "@/lib/home-example-seeds";
 import { formatProjectName } from "@/lib/project-display";
 import { fetchProjects } from "@/lib/server-api";
@@ -177,9 +178,10 @@ export default function HomePage() {
 
   const handleDiscoverySelect = useCallback(
     (selection: HomeDiscoverySelection) => {
-      createNewProject({ prompt: selection.prompt });
+      setSelectedExample(null);
+      promptRef.current?.fill(selection.prompt);
     },
-    [createNewProject],
+    [],
   );
 
   if (creating) {
@@ -342,21 +344,13 @@ export default function HomePage() {
                     <Trash2 size={14} />
                   </button>
 
-                  <div className="aspect-[395/227] w-full overflow-hidden rounded-lg bg-muted">
-                    {project.thumbnailUrl ? (
-                      <img
-                        src={project.thumbnailUrl}
-                        alt=""
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                        loading="lazy"
-                        onError={(event) => {
-                          (
-                            event.currentTarget as HTMLImageElement
-                          ).style.display = "none";
-                        }}
-                      />
-                    ) : null}
-                  </div>
+                  <ProjectThumbnailPreview
+                    src={project.thumbnailUrl}
+                    alt={projectName}
+                    previewLabel={t("recentProjects.previewCover", {
+                      name: projectName,
+                    })}
+                  />
 
                   <div className="mt-2 flex items-center justify-between sm:mt-3">
                     <div className="truncate text-xs text-foreground sm:text-sm">

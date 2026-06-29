@@ -7,39 +7,78 @@
   "agentModelSelector": {
     "apiProvider": "API provider",
     "assistantMode": "助手模式",
-    "connectNextopManaged": "去设置连接",
+    "connectTuttiManaged": "去设置连接",
     "customModelId": "自定义模型 ID",
     "localAgent": "本地 Agent",
     "localAssistant": "本地助手",
-    "nextopManaged": "Nextop Managed",
     "noApiProviderModels": "未配置 API provider 模型。",
     "noLocalCliModels": "未检测到本地 CLI 模型。",
-    "noNextopManagedModels": "未连接 Nextop Managed 模型。",
+    "noTuttiManagedModels": "未连接 Tutti Managed 模型。",
     "openSettings": "打开 Agent 设置",
     "settings": "设置",
     "tooltip": "选择 Agent 模型",
+    "tuttiManaged": "Tutti Managed",
     "useCustomModel": "使用自定义模型",
     "usesConfiguredDefaultRoute": "使用你配置的默认路由",
     "usesDefaultModel": "使用默认模型：{{model}}"
   },
   "assistant": {
-    "title": "AI Media Canvas 助手"
+    "title": "AI Canvas 助手"
   },
+  "capabilityRequired": {
+    "configureMedia": "去连接",
+    "continueAfterSave": "媒体模型已保存，发送“继续”即可重试刚才的生成。",
+    "continueDraft": "继续",
+    "imageDescription": "连接后，我会继续按你的描述生成图片。",
+    "imageTitle": "先连接图片生成能力",
+    "videoDescription": "连接后，我会继续按你的描述生成视频。",
+    "videoTitle": "先连接视频生成能力"
+  },
+  "connectionReconnecting": "连接已断开，正在重连...",
   "conversation": "对话",
   "input": {
     "ariaLabel": "输入消息",
     "attachImages": "添加图片",
+    "cancel": "取消生成",
+    "mentionEmpty": "无匹配项",
+    "mentionLoading": "正在搜索...",
+    "mentionRemove": "移除引用",
     "modelPreference": "图片/视频模型",
-    "placeholder": "从一个想法开始，或输入 “@” 提及内容",
+    "placeholder": "从一个想法开始",
     "send": "发送消息"
+  },
+  "lightbox": {
+    "close": "关闭 (Esc)",
+    "copyImage": "复制图片",
+    "copyImageFailed": "图片复制失败",
+    "copyImageSuccess": "图片已复制",
+    "downloadFailed": "图片下载失败",
+    "downloadImage": "下载图片",
+    "flipHorizontal": "左右翻转",
+    "flipVertical": "上下翻转",
+    "imageFailedToLoad": "图片加载失败",
+    "rotateClockwise": "顺时针旋转 (R)",
+    "rotateCounterClockwise": "逆时针旋转",
+    "viewerLabel": "图片查看器",
+    "zoomIn": "放大 (+)",
+    "zoomOut": "缩小 (-)"
+  },
+  "media": {
+    "generationCanceled": "已取消",
+    "imageGenerating": "图片生成中...",
+    "imageGenerationCanceled": "图片生成已取消",
+    "imageGenerationFailed": "图片生成失败",
+    "videoGenerating": "视频生成中...",
+    "videoGenerationCanceled": "视频生成已取消",
+    "videoGenerationFailed": "视频生成失败"
   },
   "mediaModelPreference": {
     "configure": "配置媒体模型",
     "description": {
-      "autoImage": "AI Media Canvas 会使用内置本地渲染器处理图片任务。",
-      "autoVideo": "AI Media Canvas 会使用本地视频规划预设处理分镜和动态任务。",
-      "manualImage": "AI Media Canvas 仍使用本地渲染器，并优先使用你固定的预设。",
-      "manualVideo": "AI Media Canvas 会使用你选择的本地视频规划预设。"
+      "autoImage": "AI Canvas 会使用内置本地渲染器处理图片任务。",
+      "autoVideo": "AI Canvas 会使用本地视频规划预设处理分镜和动态任务。",
+      "manualImage": "AI Canvas 仍使用本地渲染器，并优先使用你固定的预设。",
+      "manualVideo": "AI Canvas 会使用你选择的本地视频规划预设。"
     },
     "empty": {
       "image": "未配置可用的图片模型",
@@ -59,9 +98,7 @@
       "video": "视频规划器"
     }
   },
-  "mentions": {
-    "remove": "移除提及"
-  },
+  "previewModelUnstable": "当前 Preview 模型请求不稳定，建议切换模型后重试",
   "reconnecting": "连接已断开，正在重连...",
   "selection": {
     "image": "张图片",
@@ -110,5 +147,7 @@
     },
     "title": "试试这些本地创作模板"
   },
-  "thinking": "思考中"
+  "thinking": "思考中",
+  "thinkingCollapsed": "已思考片刻",
+  "thinkingToggle": "展开或收起思考内容"
 }

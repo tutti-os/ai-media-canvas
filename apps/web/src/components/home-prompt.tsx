@@ -8,9 +8,7 @@ import type {
 import {
   forwardRef,
   useCallback,
-  useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -18,11 +16,11 @@ import {
 import { AgentModelSelector } from "@/components/agent-model-selector";
 import { ImageAttachmentBar } from "@/components/image-attachment-bar";
 import { ImageModelPreferencePopover } from "@/components/image-model-preference";
-import {
-  type MissingModelConfiguration,
-  ModelConfigurationBanner,
-} from "@/components/model-configuration-banner";
 import { SettingsDialog } from "@/components/settings-dialog";
+import {
+  TuttiRichTextInput,
+  type TuttiRichTextInputHandle,
+} from "@/components/tutti-rich-text-input";
 import { useAgentModelRequirement } from "@/hooks/use-agent-model-requirement";
 import type {
   ImageAttachmentState,
@@ -91,17 +89,17 @@ function buildSeedImageAttachments(
 ): ReadyAttachment[] {
   if (!selectedSeed) return [];
 
-  return selectedSeed.inputMentions
-    .filter((mention) => mention.type === "image")
-    .map((mention, index) => ({
-      assetId: `seed-${selectedSeed.categoryKey}-${index}-${mention.name
+  return selectedSeed.inputItems
+    .filter((item) => item.type === "image")
+    .map((item, index) => ({
+      assetId: `seed-${selectedSeed.categoryKey}-${index}-${item.name
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-|-$/g, "")}`,
-      url: new URL(mention.imgSrc, window.location.origin).href,
-      mimeType: inferImageMimeType(mention.imgSrc),
+      url: new URL(item.imgSrc, window.location.origin).href,
+      mimeType: inferImageMimeType(item.imgSrc),
       source: "upload" as const,
-      name: mention.name,
+      name: item.name,
     }));
 }
 
@@ -130,7 +128,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     ref,
   ) {
     const [value, setValue] = useState("");
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const inputRef = useRef<TuttiRichTextInputHandle>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -138,48 +136,30 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       "agent" | "media"
     >("agent");
     const { t } = useAppTranslation("home");
-    const agentBtnRef = useRef<HTMLButtonElement>(null);
     const { preference } = useImageModelPreference();
     const { preference: videoPreference } = useVideoModelPreference();
     const agentRequirement = useAgentModelRequirement();
     const {
-      isAgentModelConfigured,
       model: agentModel,
       modelSource: agentModelSource,
       ensureAgentModelConfigured,
     } = agentRequirement;
     const { missingImageModel, missingVideoModel } =
       useMediaModelConfigurationStatus();
-    const isAgentModelConfigurationLoaded =
-      agentRequirement.isAgentModelConfigurationLoaded ?? true;
-    const missingModelConfiguration = useMemo(() => {
-      const missing: MissingModelConfiguration[] = [];
-      if (isAgentModelConfigurationLoaded && !isAgentModelConfigured) {
-        missing.push("agent");
-      }
-      if (missingImageModel) missing.push("image");
-      if (missingVideoModel) missing.push("video");
-      return missing;
-    }, [
-      isAgentModelConfigurationLoaded,
-      isAgentModelConfigured,
-      missingImageModel,
-      missingVideoModel,
-    ]);
-    const seedImageMentions =
-      selectedSeed?.inputMentions.filter(
-        (mention) => mention.type === "image",
-      ) ?? [];
+    const seedImageItems =
+      selectedSeed?.inputItems.filter((item) => item.type === "image") ?? [];
 
     useImperativeHandle(ref, () => ({
       fill(text: string) {
         setValue(text);
         requestAnimationFrame(() => {
-          const textarea = textareaRef.current;
-          if (!textarea) return;
-          textarea.style.height = "auto";
-          textarea.style.height = `${textarea.scrollHeight}px`;
-          textarea.focus();
+          inputRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+          window.setTimeout(() => {
+            inputRef.current?.focus();
+          }, 220);
         });
       },
     }));
@@ -225,12 +205,9 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
           ? videoPreference
           : undefined,
         agentModel ?? undefined,
-        agentModel ? agentModelSource ?? undefined : undefined,
+        agentModel ? (agentModelSource ?? undefined) : undefined,
       );
       setValue("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
     }, [
       agentModel,
       agentModelSource,
@@ -248,29 +225,9 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       missingVideoModel,
     ]);
 
-    const handleKeyDown = useCallback(
-      (event: React.KeyboardEvent) => {
-        if (
-          event.key === "Enter" &&
-          !event.shiftKey &&
-          !event.nativeEvent.isComposing
-        ) {
-          event.preventDefault();
-          handleSubmit();
-        }
-      },
-      [handleSubmit],
-    );
-
     const handleOpenMediaSettings = useCallback(() => {
       setModelPopoverOpen(false);
       setSettingsInitialTab("media");
-      setSettingsOpen(true);
-    }, []);
-
-    const handleOpenAgentSettings = useCallback(() => {
-      setModelPopoverOpen(false);
-      setSettingsInitialTab("agent");
       setSettingsOpen(true);
     }, []);
 
@@ -289,20 +246,8 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       [onAddFiles],
     );
 
-    const handleInput = useCallback(() => {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-      textarea.style.height = "auto";
-      textarea.style.height = `${textarea.scrollHeight}px`;
-    }, []);
-
     return (
       <div className="space-y-2">
-        <ModelConfigurationBanner
-          missing={missingModelConfiguration}
-          onConfigureAgent={handleOpenAgentSettings}
-          onConfigureMedia={handleOpenMediaSettings}
-        />
         <div className="overflow-visible rounded-xl border-[0.5px] border-border bg-muted shadow-[0_4px_8px_rgba(0,0,0,0.04)] sm:rounded-2xl">
           {attachments && onRemoveAttachment ? (
             <ImageAttachmentBar
@@ -334,16 +279,16 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
                 ) : null}
               </div>
 
-              {seedImageMentions.length > 0 ? (
+              {seedImageItems.length > 0 ? (
                 <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
-                  {seedImageMentions.map((mention) => (
+                  {seedImageItems.map((item) => (
                     <div
-                      key={`${selectedSeed.title}-${mention.imgSrc}`}
+                      key={`${selectedSeed.title}-${item.imgSrc}`}
                       className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-border bg-background"
                     >
                       <img
-                        src={mention.imgSrc}
-                        alt={mention.name}
+                        src={item.imgSrc}
+                        alt={item.name}
                         className="h-full w-full object-cover"
                       />
                     </div>
@@ -353,17 +298,21 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             </div>
           ) : null}
 
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            onInput={handleInput}
-            placeholder={t("prompt.placeholder")}
+          <TuttiRichTextInput
+            ref={inputRef}
+            ariaLabel={t("prompt.ariaLabel")}
+            className="aimc-rich-text-field px-3 pt-3 pb-2 sm:px-4 sm:pt-4"
             disabled={disabled}
-            rows={2}
-            className="w-full resize-none bg-transparent px-3 pt-3 pb-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50 sm:px-4 sm:pt-4"
+            editorClassName="aimc-rich-text-editor aimc-home-rich-text-editor min-h-[52px] bg-transparent text-sm leading-relaxed text-foreground focus:outline-none"
+            menuAnchor="cursor"
+            menuPlacement="bottom-start"
+            placeholderClassName="aimc-rich-text-placeholder aimc-home-rich-text-placeholder min-h-[52px] text-sm leading-relaxed text-muted-foreground"
+            placeholder={t("prompt.placeholder")}
+            rootClassName="aimc-rich-text-root"
+            value={value}
+            onChange={setValue}
+            onPaste={handlePaste}
+            onSubmit={handleSubmit}
           />
 
           <div className="flex items-center justify-between px-2 pb-2 sm:px-3 sm:pb-3">
@@ -402,22 +351,27 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
                 </>
               ) : null}
 
-              <button
-                ref={agentBtnRef}
-                type="button"
-                aria-label={t("prompt.modelPreference")}
-                onClick={() => setModelPopoverOpen((current) => !current)}
-                className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-              >
-                <svg
-                  aria-hidden="true"
-                  viewBox={toolbarButtons[1].viewBox}
-                  className="h-4 w-4 fill-current"
-                >
-                  <path d={toolbarButtons[1].path} />
-                </svg>
-                <PromptToolbarTooltip label={t("prompt.modelPreference")} />
-              </button>
+              <ImageModelPreferencePopover
+                open={modelPopoverOpen}
+                onOpenChange={setModelPopoverOpen}
+                onOpenSettings={handleOpenMediaSettings}
+                trigger={
+                  <button
+                    type="button"
+                    aria-label={t("prompt.modelPreference")}
+                    className="group relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox={toolbarButtons[1].viewBox}
+                      className="h-4 w-4 fill-current"
+                    >
+                      <path d={toolbarButtons[1].path} />
+                    </svg>
+                    <PromptToolbarTooltip label={t("prompt.modelPreference")} />
+                  </button>
+                }
+              />
 
               <div className="ml-1">
                 <AgentModelSelector compact tooltipPlacement="bottom" />
@@ -441,12 +395,6 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             </button>
           </div>
 
-          <ImageModelPreferencePopover
-            open={modelPopoverOpen}
-            onClose={() => setModelPopoverOpen(false)}
-            anchorRef={agentBtnRef}
-            onOpenSettings={handleOpenMediaSettings}
-          />
           <SettingsDialog
             open={settingsOpen}
             onOpenChange={setSettingsOpen}

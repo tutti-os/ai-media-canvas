@@ -1,11 +1,15 @@
-import { readFile, stat } from "node:fs/promises";
-import { extname, relative, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { readFile, realpath, stat } from "node:fs/promises";
+import { extname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
+import type { ManagedAgentInvocationCredentialHeaders } from "@tutti-os/agent-acp-kit";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import {
+  type ManagedFileAssetMetadata,
   type RunCreateRequest,
   type StreamEvent,
   applicationErrorResponseSchema,
@@ -41,7 +45,6 @@ import {
   ChatServiceError,
 } from "./features/chat/chat-service.js";
 import { createJobService } from "./features/jobs/job-service.js";
-import { createNextopManagedCredentialService } from "./features/nextop-managed/credential-service.js";
 import {
   type ProjectService,
   ProjectServiceError,
@@ -54,6 +57,10 @@ import {
   type SkillService,
   SkillServiceError,
 } from "./features/skills/skill-service.js";
+import {
+  createTuttiManagedCredentialService,
+  isManagedModelId,
+} from "./features/tutti-managed/credential-service.js";
 import {
   type UploadService,
   UploadServiceError,
@@ -70,13 +77,14 @@ import { registerImageModelRoutes } from "./http/image-models.js";
 import { createJobOperations } from "./http/job-operations.js";
 import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
-import { registerNextopCliRoutes } from "./http/nextop-cli.js";
-import { registerNextopManagedModelConnectionRoutes } from "./http/nextop-managed-model-connection.js";
 import { createProjectOperations } from "./http/project-operations.js";
 import { registerProjectRoutes } from "./http/projects.js";
+import { registerReferenceRoutes } from "./http/references.js";
 import { registerSettingsRoutes } from "./http/settings.js";
 import { createSkillOperations } from "./http/skill-operations.js";
 import { registerSkillRoutes } from "./http/skills.js";
+import { registerTuttiCliRoutes } from "./http/tutti-cli.js";
+import { registerTuttiManagedModelConnectionRoutes } from "./http/tutti-managed-model-connection.js";
 import { registerUploadRoutes } from "./http/uploads.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
 import { type LocalStore, createLocalStore } from "./local/store.js";
@@ -84,6 +92,7 @@ import { createLocalUserClient } from "./local/user-client.js";
 import { ConnectionManager } from "./ws/connection-manager.js";
 import { CanvasEventBuffer } from "./ws/event-buffer.js";
 import { registerWsRoute } from "./ws/handler.js";
+import { createPipelineLogger } from "./ws/logger.js";
 
 export type BuildAppOptions = {
   env?: Partial<ServerEnv>;
@@ -149,17 +158,31 @@ const LOCAL_FONT_LIBRARY = [
   },
 ];
 
-function isAllowedLocalOrigin(origin: string, expectedOrigin: string) {
+function isLoopbackHttpOrigin(url: URL) {
+  return (
+    (url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
+    /^https?:$/.test(url.protocol)
+  );
+}
+
+function resolveCorsAllowOrigin(
+  origin: string | undefined,
+  expectedOrigin: string,
+) {
   try {
-    const url = new URL(origin);
     const expected = new URL(expectedOrigin);
-    return (
-      (url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
-      url.port === expected.port &&
-      /^https?:$/.test(url.protocol)
-    );
+    if (!origin) return expected.origin;
+
+    const request = new URL(origin);
+    if (request.origin === expected.origin) return request.origin;
+
+    if (isLoopbackHttpOrigin(expected) && isLoopbackHttpOrigin(request)) {
+      return request.origin;
+    }
+
+    return expected.origin;
   } catch {
-    return false;
+    return expectedOrigin;
   }
 }
 
@@ -261,14 +284,23 @@ function buildCanvasService(store: LocalStore): CanvasService {
       }
       return canvas;
     },
-    async saveCanvasContent(_user, canvasId, content) {
-      if (!store.saveCanvas(canvasId, content)) {
+    async saveCanvasContent(_user, canvasId, content, options) {
+      const result = store.saveCanvas(canvasId, content, options);
+      if (!result.ok) {
+        if (result.reason === "revision_conflict") {
+          throw new CanvasServiceError(
+            "canvas_conflict",
+            "Canvas has changed. Fetch the latest canvas before saving again.",
+            409,
+          );
+        }
         throw new CanvasServiceError(
           "canvas_not_found",
           "Canvas not found.",
           404,
         );
       }
+      return { revision: result.revision };
     },
   };
 }
@@ -452,7 +484,7 @@ function buildBrandKitService(store: LocalStore): BrandKitService {
   };
 }
 
-function buildUploadService(store: LocalStore): UploadService {
+function buildUploadService(store: LocalStore, env: ServerEnv): UploadService {
   return {
     async uploadFile(_user, input) {
       return store.uploadFile({
@@ -460,6 +492,18 @@ function buildUploadService(store: LocalStore): UploadService {
         fileName: input.fileName,
         fileBuffer: input.fileBuffer,
         mimeType: input.mimeType,
+        ...(input.projectId !== undefined
+          ? { projectId: input.projectId }
+          : {}),
+      });
+    },
+    async createManagedFileAsset(_user, input) {
+      const file = await validateManagedFileAsset(input.file, {
+        managedFilesRoot: env.tuttiManagedFilesRoot,
+      });
+      return store.createManagedFileAsset({
+        bucket: input.bucket,
+        file,
         ...(input.projectId !== undefined
           ? { projectId: input.projectId }
           : {}),
@@ -494,6 +538,120 @@ function buildUploadService(store: LocalStore): UploadService {
       }
     },
   };
+}
+
+async function validateManagedFileAsset(
+  file: ManagedFileAssetMetadata,
+  options: { managedFilesRoot: string | undefined },
+): Promise<ManagedFileAssetMetadata> {
+  if (!options.managedFilesRoot) {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file upload root is not configured.",
+      400,
+    );
+  }
+
+  const managedRoot = await realpathOrUploadError(
+    resolve(options.managedFilesRoot),
+    "Managed file upload root is unavailable.",
+  );
+  const filePath = await realpathOrUploadError(
+    resolve(file.path),
+    "Managed file does not exist.",
+  );
+
+  if (!isPathInsideRoot(filePath, managedRoot)) {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file path is outside the configured upload root.",
+      400,
+    );
+  }
+
+  const fileStat = await statOrUploadError(filePath);
+  if (!fileStat.isFile()) {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file path must point to a file.",
+      400,
+    );
+  }
+
+  if (fileStat.size !== file.sizeBytes) {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file metadata size does not match the uploaded file.",
+      400,
+    );
+  }
+
+  const sha256 = await calculateSha256OrUploadError(filePath);
+  if (sha256 !== file.sha256.toLowerCase()) {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file metadata checksum does not match the uploaded file.",
+      400,
+    );
+  }
+
+  return {
+    ...file,
+    path: filePath,
+    sha256,
+    sizeBytes: fileStat.size,
+  };
+}
+
+async function realpathOrUploadError(path: string, message: string) {
+  try {
+    return await realpath(path);
+  } catch {
+    throw new UploadServiceError("upload_failed", message, 400);
+  }
+}
+
+async function statOrUploadError(path: string) {
+  try {
+    return await stat(path);
+  } catch {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file is unavailable.",
+      400,
+    );
+  }
+}
+
+function isPathInsideRoot(filePath: string, managedRoot: string) {
+  const relativePath = relative(managedRoot, filePath);
+  return (
+    relativePath !== "" &&
+    !relativePath.startsWith("..") &&
+    !isAbsolute(relativePath)
+  );
+}
+
+async function calculateSha256OrUploadError(filePath: string) {
+  try {
+    return await calculateSha256(filePath);
+  } catch {
+    throw new UploadServiceError(
+      "upload_failed",
+      "Managed file checksum could not be verified.",
+      400,
+    );
+  }
+}
+
+function calculateSha256(filePath: string): Promise<string> {
+  return new Promise((resolveHash, rejectHash) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(filePath);
+    stream.on("error", rejectHash);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolveHash(hash.digest("hex")));
+  });
 }
 
 function buildSkillService(store: LocalStore): SkillService {
@@ -636,7 +794,7 @@ function sendStandaloneFeatureUnavailable(
   return sendApplicationError(
     reply,
     "application_error",
-    `${feature} is not available in the standalone AI Media Canvas build.`,
+    `${feature} is not available in the standalone AI Canvas build.`,
     statusCode,
   );
 }
@@ -693,6 +851,39 @@ function createStandaloneAgentEnv(baseEnv: ServerEnv): ServerEnv {
   };
 }
 
+function parseByteRange(
+  rangeHeader: string | undefined,
+  fileSize: number,
+): { start: number; end: number } | null | false {
+  if (!rangeHeader) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match) return false;
+
+  const [, startRaw, endRaw] = match;
+  if (!startRaw && !endRaw) return false;
+
+  if (!startRaw) {
+    const suffixLength = Number(endRaw);
+    if (!Number.isInteger(suffixLength) || suffixLength <= 0) return false;
+    const start = Math.max(0, fileSize - suffixLength);
+    return { start, end: fileSize - 1 };
+  }
+
+  const start = Number(startRaw);
+  const end = endRaw ? Number(endRaw) : fileSize - 1;
+  if (
+    !Number.isInteger(start) ||
+    !Number.isInteger(end) ||
+    start < 0 ||
+    end < start ||
+    start >= fileSize
+  ) {
+    return false;
+  }
+
+  return { start, end: Math.min(end, fileSize - 1) };
+}
+
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const env = loadServerEnv(options.env);
   registerAllProviders(env);
@@ -707,18 +898,44 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify({
     logger: { level: "info" },
   });
+  const chatRequestLog = createPipelineLogger("chat.message");
   const connectionManager = new ConnectionManager();
   const eventBuffer = new CanvasEventBuffer();
 
+  app.addHook("onError", async (request, _reply, error) => {
+    if (
+      request.method === "POST" &&
+      request.url.startsWith("/api/sessions/") &&
+      request.url.endsWith("/messages")
+    ) {
+      chatRequestLog.error("request_failed", {
+        code:
+          typeof (error as { code?: unknown }).code === "string"
+            ? (error as { code: string }).code
+            : "unknown",
+        contentLength: request.headers["content-length"] ?? "unknown",
+        message: error.message,
+        statusCode:
+          typeof (error as { statusCode?: unknown }).statusCode === "number"
+            ? (error as { statusCode: number }).statusCode
+            : "unknown",
+        url: request.url,
+      });
+    }
+  });
+
   app.addHook("onRequest", async (request, reply) => {
-    const requestOrigin = request.headers.origin;
-    const allowOrigin =
-      requestOrigin && isAllowedLocalOrigin(requestOrigin, env.webOrigin)
-        ? requestOrigin
-        : env.webOrigin;
+    const allowOrigin = resolveCorsAllowOrigin(
+      request.headers.origin,
+      env.webOrigin,
+    );
     reply.header("Access-Control-Allow-Origin", allowOrigin);
     reply.header("Vary", "Origin");
-    reply.header("Access-Control-Allow-Headers", "Content-Type");
+    reply.header("Access-Control-Allow-Headers", "Content-Type, Range");
+    reply.header(
+      "Access-Control-Expose-Headers",
+      "Accept-Ranges, Content-Range, Content-Length",
+    );
     reply.header(
       "Access-Control-Allow-Methods",
       "GET,POST,PUT,PATCH,DELETE,OPTIONS",
@@ -738,11 +955,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const canvasService = buildCanvasService(store);
   const chatService = buildChatService(store);
   const brandKitService = buildBrandKitService(store);
-  const uploadService = buildUploadService(store);
+  const uploadService = buildUploadService(store, env);
   const skillService = buildSkillService(store);
   const jobService = createJobService(store);
   const settingsService = createSettingsService(store, env);
-  const nextopManagedCredentials = createNextopManagedCredentialService({
+  const tuttiManagedCredentials = createTuttiManagedCredentialService({
     env,
     store,
   });
@@ -750,6 +967,32 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     localUser,
     projectService,
   });
+  const assetOperations = {
+    async listProjectAssets(input: {
+      projectId: string;
+      filterText?: string;
+      limit: number;
+      cursor?: string | null;
+    }) {
+      const { files, nextCursor } = store.listReferenceProjectAssets(input);
+      return {
+        assets: files.map((file) => {
+          const asset = store.assetObjectFromId(file.id);
+          const assetResponse = store.getAssetResponse(file.id);
+          const storageUrl = store.getAssetUrl(file.id);
+          return {
+            ...file,
+            ...(asset?.objectPath ? { objectPath: asset.objectPath } : {}),
+            ...(assetResponse?.filePath
+              ? { filePath: assetResponse.filePath }
+              : {}),
+            ...(storageUrl ? { storageUrl } : {}),
+          };
+        }),
+        nextCursor,
+      };
+    },
+  };
   const canvasOperations = createCanvasOperations({
     canvasClient: createLocalUserClient(store),
     canvasService,
@@ -775,6 +1018,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const localToolGateway = createLocalToolGatewayService({
     connectionPublisher: connectionManager,
     createUserClient,
+    patchWorkspaceSettings: async ({ patch }) => {
+      const current = await settingsService.getWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+      );
+      return settingsService.updateWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+        {
+          ...current,
+          ...patch,
+        },
+      );
+    },
   });
   const localToolGatewayBaseUrl = `http://127.0.0.1:${env.port}/api/agent-tools`;
   const localAuth: RequestAuthenticator = {
@@ -827,6 +1084,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     },
     toolGateway: localToolGateway,
     toolGatewayBaseUrl: localToolGatewayBaseUrl,
+    patchWorkspaceSettings: async ({ patch }) => {
+      const current = await settingsService.getWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+      );
+      return settingsService.updateWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+        {
+          ...current,
+          ...patch,
+        },
+      );
+    },
   });
   const agentRunOrchestrator = createAgentRunOrchestrator({
     eventPersistence: {
@@ -863,7 +1134,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           }
         : undefined;
       const assistantMessageState =
-        agentRunOrchestrator.createAssistantProjection();
+        agentRunOrchestrator.createAssistantProjection({
+          locale: options.payload.locale,
+        });
       const updateAssistantMessage = async () => {
         if (!options.runState.assistantMessageId) return;
         await chatService.updateMessage(
@@ -926,7 +1199,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     })();
   };
 
-  const startLocalAgentRun = async (payload: RunCreateRequest) => {
+  const startLocalAgentRun = async (
+    payload: RunCreateRequest,
+    managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders,
+  ) => {
     if (store.listMessages(payload.sessionId) === null) {
       throw new LocalAgentRunError(
         "session_not_found",
@@ -960,7 +1236,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       }
       throw error;
     }
-    const runtimeEnv = await nextopManagedCredentials.resolveEnvForModel(
+    const runtimeEnv = await tuttiManagedCredentials.resolveEnvForModel(
       baseRuntimeEnv,
       resolvedModel ?? baseRuntimeEnv.agentModel,
       payload.model
@@ -968,7 +1244,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         : workspaceSettings.defaultModelSource,
     );
     const runtimeModel =
-      resolvedModel?.startsWith("nextop:") && runtimeEnv.agentModel
+      isManagedModelId(resolvedModel) && runtimeEnv.agentModel
         ? runtimeEnv.agentModel
         : resolvedModel;
     if (
@@ -1001,10 +1277,17 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         accessToken: LOCAL_AGENT_ACCESS_TOKEN,
         assistantMessageId: assistantMessage.id,
         env: runtimeEnv,
+        ...(managedAgentHeaders ? { managedAgentHeaders } : {}),
         ...(runtimeModel ? { model: runtimeModel } : {}),
         ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
         ...(payload.runtimeProvider
           ? { runtimeProvider: payload.runtimeProvider }
+          : {}),
+        ...(workspaceSettings.codexImagegenDelegation
+          ? {
+              codexImagegenDelegation:
+                workspaceSettings.codexImagegenDelegation,
+            }
           : {}),
         userId: localUser.id,
       }),
@@ -1073,7 +1356,33 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     return canceledRun;
   };
 
+  const submitLocalAgentConsent = async (payload: {
+    decision: "allow-once" | "always" | "deny";
+    runId: string;
+  }) => {
+    if (payload.decision === "always") {
+      const current = await settingsService.getWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+      );
+      await settingsService.updateWorkspaceSettings(
+        localUser,
+        LOCAL_WORKSPACE_ID,
+        {
+          ...current,
+          codexImagegenDelegation: "always",
+        },
+      );
+    }
+    return {
+      decision: payload.decision,
+      runId: payload.runId,
+      status: "accepted",
+    };
+  };
+
   void registerHealthRoutes(app, env);
+  void registerReferenceRoutes(app, { store });
   void registerProjectRoutes(app, {
     localUser,
     projectOperations,
@@ -1092,11 +1401,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     uploadService,
   });
   void registerSettingsRoutes(app, { localUser, settingsService });
-  void registerNextopManagedModelConnectionRoutes(app, {
-    nextopManagedCredentials,
+  void registerTuttiManagedModelConnectionRoutes(app, {
+    tuttiManagedCredentials,
   });
   void registerModelRoutes(app, env, settingsService, {
-    nextopManagedCredentials,
+    tuttiManagedCredentials,
   });
   void registerImageModelRoutes(app, env, settingsService);
   void registerVideoModelRoutes(app, env, settingsService);
@@ -1108,17 +1417,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     settingsService,
     uploadService,
   });
-  void registerNextopCliRoutes(app, {
+  void registerTuttiCliRoutes(app, {
     agentOperations: {
       cancelRun: cancelLocalAgentRun,
       listRunEvents: listLocalAgentRunEvents,
+      submitConsent: submitLocalAgentConsent,
       startRun: startLocalAgentRun,
     },
+    assetOperations,
     canvasOperations,
     chatOperations,
     env,
     jobOperations,
-    nextopManagedCredentials,
+    localCanvasClient: createLocalUserClient(store),
+    tuttiManagedCredentials,
     projectOperations,
     settingsService,
     skillOperations,
@@ -1127,7 +1439,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     await wsApp.register(websocket);
     await registerWsRoute(wsApp, {
       agentRuns,
-      nextopManagedCredentials,
+      tuttiManagedCredentials,
       agentRunOrchestrator,
       agentRunPersistence: {
         appendEvent: store.appendAgentRunEvent,
@@ -1195,8 +1507,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.post("/api/agent/runs", async (request, reply) => {
     try {
-      const payload = runCreateRequestSchema.parse(request.body);
-      return reply.code(202).send(await startLocalAgentRun(payload));
+      const parsedPayload = runCreateRequestSchema.parse(request.body);
+      return reply
+        .code(202)
+        .send(await startLocalAgentRun(parsedPayload, request.headers));
     } catch (error) {
       if (error instanceof LocalAgentRunError) {
         return sendApplicationError(
@@ -1388,24 +1702,55 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     }
   });
 
-  app.get("/local-assets/:assetId", async (request, reply) => {
-    const asset = store.getAssetResponse(
-      (request.params as { assetId: string }).assetId,
-    );
-    if (!asset) {
-      return reply.code(404).send(
-        applicationErrorResponseSchema.parse({
-          error: {
-            code: "asset_not_found",
-            message: "Asset not found.",
-          },
-        }),
+  app.route({
+    method: ["GET", "HEAD"],
+    url: "/local-assets/:assetId",
+    async handler(request, reply) {
+      const asset = store.getAssetResponse(
+        (request.params as { assetId: string }).assetId,
       );
-    }
+      if (!asset) {
+        return reply.code(404).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "asset_not_found",
+              message: "Asset not found.",
+            },
+          }),
+        );
+      }
 
-    const payload = await readFile(asset.filePath);
-    reply.header("content-type", asset.mimeType);
-    return reply.code(200).send(payload);
+      const fileStat = await stat(asset.filePath);
+      const fileSize = fileStat.size;
+      const range = parseByteRange(request.headers.range, fileSize);
+      if (range === false) {
+        reply.header("content-range", `bytes */${fileSize}`);
+        return reply.code(416).send();
+      }
+
+      reply.header("content-type", asset.mimeType);
+      reply.header("accept-ranges", "bytes");
+
+      if (range) {
+        const payload = await readFile(asset.filePath);
+        const chunk = payload.subarray(range.start, range.end + 1);
+        reply.header(
+          "content-range",
+          `bytes ${range.start}-${range.end}/${fileSize}`,
+        );
+        reply.header("content-length", String(chunk.length));
+        return reply
+          .code(206)
+          .send(request.method === "HEAD" ? undefined : chunk);
+      }
+
+      reply.header("content-length", String(fileSize));
+      if (request.method === "HEAD") {
+        return reply.code(200).send();
+      }
+      const payload = await readFile(asset.filePath);
+      return reply.code(200).send(payload);
+    },
   });
 
   app.route({

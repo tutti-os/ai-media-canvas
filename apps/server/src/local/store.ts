@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { extname, join, resolve } from "node:path";
+import {
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { extname, join, relative, resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 
 import type {
@@ -8,6 +15,7 @@ import type {
   AgentRunResumeMode,
   AssetBucket,
   AssetObject,
+  AssetSource,
   BackgroundJob,
   BackgroundJobStatus,
   BackgroundJobType,
@@ -25,9 +33,9 @@ import type {
   ChatMessageCreateRequest,
   ChatSessionSummary,
   ImageGenerationPayload,
-  NextopManagedConnection,
-  NextopManagedModel,
-  NextopManagedProviderId,
+  TuttiManagedConnection,
+  TuttiManagedModel,
+  TuttiManagedProviderId,
   ProjectCreateRequest,
   ProjectSummary,
   ProjectUpdateRequest,
@@ -74,10 +82,13 @@ const EMPTY_WORKSPACE_SETTINGS: WorkspaceSettings = {
   googleVertexLocation: "",
   googleVertexVideoLocation: "",
   replicateApiToken: "",
+  kieApiKey: "",
+  kieBaseUrl: "",
   volcesApiKey: "",
   volcesBaseUrl: "",
+  codexImagegenDelegation: "ask",
 };
-const EMPTY_NEXTOP_MANAGED_CONNECTION: NextopManagedConnection = {
+const EMPTY_TUTTI_MANAGED_CONNECTION: TuttiManagedConnection = {
   connected: false,
   providers: [],
   models: [],
@@ -101,41 +112,47 @@ function normalizeAgentModelSourceForStore(
   source: string | undefined,
 ): WorkspaceSettings["defaultModelSource"] | undefined {
   return source === "local-agent" ||
-    source === "nextop-managed" ||
+    source === "tutti-managed" ||
     source === "api-provider"
     ? source
     : undefined;
 }
 
-function normalizeNextopManagedProviders(
+function normalizeCodexImagegenDelegationForStore(
+  value: string | undefined,
+): WorkspaceSettings["codexImagegenDelegation"] {
+  return value === "always" || value === "never" ? value : "ask";
+}
+
+function normalizeTuttiManagedProviders(
   providers: readonly string[] | undefined,
-): NextopManagedProviderId[] {
+): TuttiManagedProviderId[] {
   const supported = new Set(["agnes", "openai", "anthropic"]);
   const seen = new Set<string>();
-  const normalized: NextopManagedProviderId[] = [];
+  const normalized: TuttiManagedProviderId[] = [];
 
   for (const provider of providers ?? []) {
     const value = provider.trim();
     if (!supported.has(value) || seen.has(value)) continue;
     seen.add(value);
-    normalized.push(value as NextopManagedProviderId);
+    normalized.push(value as TuttiManagedProviderId);
   }
 
   return normalized;
 }
 
-function normalizeNextopManagedModels(
-  models: readonly NextopManagedModel[] | undefined,
-): NextopManagedModel[] {
+function normalizeTuttiManagedModels(
+  models: readonly TuttiManagedModel[] | undefined,
+): TuttiManagedModel[] {
   const seen = new Set<string>();
-  const normalized: NextopManagedModel[] = [];
+  const normalized: TuttiManagedModel[] = [];
 
   for (const model of models ?? []) {
     const provider = model.provider.trim();
     const id = model.id.trim();
     const name = model.name.trim() || id;
     if (!id) continue;
-    const [normalizedProvider] = normalizeNextopManagedProviders([provider]);
+    const [normalizedProvider] = normalizeTuttiManagedProviders([provider]);
     if (!normalizedProvider) continue;
     const modelId = id.includes(":") ? id : `${normalizedProvider}:${id}`;
     if (seen.has(modelId)) continue;
@@ -150,15 +167,15 @@ function normalizeNextopManagedModels(
   return normalized;
 }
 
-function normalizeNextopManagedConnection(
-  connection: NextopManagedConnection,
-): NextopManagedConnection {
+function normalizeTuttiManagedConnection(
+  connection: TuttiManagedConnection,
+): TuttiManagedConnection {
   if (!connection.connected || !connection.grantRef?.trim()) {
-    return { ...EMPTY_NEXTOP_MANAGED_CONNECTION };
+    return { ...EMPTY_TUTTI_MANAGED_CONNECTION };
   }
 
-  const models = normalizeNextopManagedModels(connection.models);
-  const providers = normalizeNextopManagedProviders(
+  const models = normalizeTuttiManagedModels(connection.models);
+  const providers = normalizeTuttiManagedProviders(
     connection.providers.length > 0
       ? connection.providers
       : models.map((model) => model.provider),
@@ -181,6 +198,10 @@ type AssetRow = {
   byte_size: number | null;
   workspace_id: string;
   project_id: string | null;
+  file_path: string;
+  source: AssetSource;
+  display_name: string | null;
+  sha256: string | null;
   created_at: string;
 };
 
@@ -216,7 +237,12 @@ type BackgroundJobRow = {
   remote_updated_at: string | null;
 };
 
-type AgentRunStatus = "accepted" | "canceled" | "completed" | "failed" | "running";
+type AgentRunStatus =
+  | "accepted"
+  | "canceled"
+  | "completed"
+  | "failed"
+  | "running";
 
 type AgentRunEventRow = {
   created_at: string;
@@ -280,9 +306,34 @@ function mimeToExt(mimeType: string) {
       return ".svg";
     case "image/gif":
       return ".gif";
+    case "video/mp4":
+      return ".mp4";
+    case "video/quicktime":
+      return ".mov";
+    case "video/webm":
+      return ".webm";
     default:
       return ".bin";
   }
+}
+
+function normalizeAssetDisplayName(
+  displayName: string | undefined,
+  fallbackExt: string,
+) {
+  const normalized = displayName
+    ?.trim()
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replaceAll(
+      /./g,
+      (char) => ((char.codePointAt(0) ?? 0) < 32 ? "_" : char),
+    )
+    .replace(/\s+/g, " ")
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 120)
+    .trim();
+  if (!normalized) return null;
+  return extname(normalized) ? normalized : `${normalized}${fallbackExt}`;
 }
 
 export type LocalStore = ReturnType<typeof createLocalStore>;
@@ -331,9 +382,10 @@ export function createLocalStore(options: {
       google_vertex_video_location TEXT NOT NULL DEFAULT '',
       replicate_api_token TEXT NOT NULL DEFAULT '',
       volces_api_key TEXT NOT NULL DEFAULT '',
-      volces_base_url TEXT NOT NULL DEFAULT ''
+      volces_base_url TEXT NOT NULL DEFAULT '',
+      codex_imagegen_delegation TEXT NOT NULL DEFAULT 'ask'
     );
-    CREATE TABLE IF NOT EXISTS nextop_managed_model_connection (
+    CREATE TABLE IF NOT EXISTS tutti_managed_model_connection (
       workspace_id TEXT PRIMARY KEY,
       grant_ref TEXT NOT NULL,
       expires_at TEXT,
@@ -359,6 +411,7 @@ export function createLocalStore(options: {
       name TEXT NOT NULL,
       is_primary INTEGER NOT NULL DEFAULT 0,
       content TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -390,6 +443,9 @@ export function createLocalStore(options: {
       workspace_id TEXT NOT NULL,
       project_id TEXT,
       file_path TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'local',
+      display_name TEXT,
+      sha256 TEXT,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS brand_kits (
@@ -520,6 +576,8 @@ export function createLocalStore(options: {
   `);
 
   ensureWorkspaceSettingsSchema();
+  ensureAssetSchema();
+  ensureCanvasSchema();
   ensureAgentRunSchema();
   ensureBackgroundJobSchema();
   seedBaseData();
@@ -557,9 +615,11 @@ export function createLocalStore(options: {
           google_vertex_location,
           google_vertex_video_location,
           replicate_api_token,
+          kie_api_key,
+          kie_base_url,
           volces_api_key,
           volces_base_url
-        ) VALUES (?, '', NULL, '{}', '', '', '', '', '', '', '', '', '', '', '', '', '', '')
+        ) VALUES (?, '', NULL, '{}', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '')
       `,
     ).run(LOCAL_WORKSPACE_ID);
   }
@@ -572,9 +632,7 @@ export function createLocalStore(options: {
     workspaceSettingsHasLegacyIdColumn = columnNames.has("id");
 
     if (!columnNames.has("workspace_id")) {
-      db.exec(
-        `ALTER TABLE workspace_settings ADD COLUMN workspace_id TEXT`,
-      );
+      db.exec(`ALTER TABLE workspace_settings ADD COLUMN workspace_id TEXT`);
       db.prepare(
         `UPDATE workspace_settings SET workspace_id = ? WHERE workspace_id IS NULL`,
       ).run(LOCAL_WORKSPACE_ID);
@@ -596,8 +654,11 @@ export function createLocalStore(options: {
       ["google_vertex_location", "TEXT NOT NULL DEFAULT ''"],
       ["google_vertex_video_location", "TEXT NOT NULL DEFAULT ''"],
       ["replicate_api_token", "TEXT NOT NULL DEFAULT ''"],
+      ["kie_api_key", "TEXT NOT NULL DEFAULT ''"],
+      ["kie_base_url", "TEXT NOT NULL DEFAULT ''"],
       ["volces_api_key", "TEXT NOT NULL DEFAULT ''"],
       ["volces_base_url", "TEXT NOT NULL DEFAULT ''"],
+      ["codex_imagegen_delegation", "TEXT NOT NULL DEFAULT 'ask'"],
     ];
 
     for (const [columnName, columnSql] of missingColumns) {
@@ -611,6 +672,37 @@ export function createLocalStore(options: {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_settings_workspace_id
       ON workspace_settings(workspace_id)
     `);
+  }
+
+  function ensureAssetSchema() {
+    const columns = db.prepare("PRAGMA table_info(assets)").all() as Array<{
+      name: string;
+    }>;
+    const columnNames = new Set(columns.map((column) => column.name));
+    const missingColumns = [
+      ["source", "TEXT NOT NULL DEFAULT 'local'"],
+      ["display_name", "TEXT"],
+      ["sha256", "TEXT"],
+    ] as const;
+
+    for (const [columnName, columnSql] of missingColumns) {
+      if (columnNames.has(columnName)) continue;
+      db.prepare(`ALTER TABLE assets ADD COLUMN ${columnName} ${columnSql}`)
+        .run();
+    }
+  }
+
+  function ensureCanvasSchema() {
+    const columns = db.prepare(`PRAGMA table_info(canvases)`).all() as Array<{
+      name: string;
+    }>;
+    const columnNames = new Set(columns.map((column) => column.name));
+
+    if (!columnNames.has("revision")) {
+      db.exec(
+        `ALTER TABLE canvases ADD COLUMN revision INTEGER NOT NULL DEFAULT 0`,
+      );
+    }
   }
 
   function ensureAgentRunSchema() {
@@ -633,9 +725,9 @@ export function createLocalStore(options: {
       db.exec(`ALTER TABLE chat_messages ADD COLUMN last_run_event_id TEXT`);
     }
 
-    const columns = db
-      .prepare(`PRAGMA table_info(agent_runs)`)
-      .all() as Array<{ name: string }>;
+    const columns = db.prepare(`PRAGMA table_info(agent_runs)`).all() as Array<{
+      name: string;
+    }>;
     const columnNames = new Set(columns.map((column) => column.name));
 
     if (!columnNames.has("runtime_kind")) {
@@ -736,6 +828,24 @@ export function createLocalStore(options: {
             source_url = excluded.source_url,
             package_name = excluded.package_name,
             is_catalog = 1,
+            installed = CASE
+              WHEN excluded.installed = 1
+                AND skills.installed = 0
+                AND skills.installed_at IS NULL THEN 1
+              ELSE skills.installed
+            END,
+            enabled = CASE
+              WHEN excluded.enabled = 1
+                AND skills.installed = 0
+                AND skills.installed_at IS NULL THEN 1
+              ELSE skills.enabled
+            END,
+            installed_at = CASE
+              WHEN excluded.installed = 1
+                AND skills.installed = 0
+                AND skills.installed_at IS NULL THEN excluded.installed_at
+              ELSE skills.installed_at
+            END,
             updated_at = excluded.updated_at
         `,
       ).run(
@@ -870,8 +980,11 @@ export function createLocalStore(options: {
             google_vertex_location,
             google_vertex_video_location,
             replicate_api_token,
+            kie_api_key,
+            kie_base_url,
             volces_api_key,
-            volces_base_url
+            volces_base_url,
+            codex_imagegen_delegation
           FROM workspace_settings
           WHERE workspace_id = ?
         `,
@@ -893,8 +1006,11 @@ export function createLocalStore(options: {
           google_vertex_location: string;
           google_vertex_video_location: string;
           replicate_api_token: string;
+          kie_api_key: string;
+          kie_base_url: string;
           volces_api_key: string;
           volces_base_url: string;
+          codex_imagegen_delegation: string;
         }
       | undefined;
 
@@ -909,7 +1025,9 @@ export function createLocalStore(options: {
       >;
       providerModels = {
         openai: Array.isArray(parsed.openai)
-          ? parsed.openai.filter((value): value is string => typeof value === "string")
+          ? parsed.openai.filter(
+              (value): value is string => typeof value === "string",
+            )
           : [],
         anthropic: Array.isArray(parsed.anthropic)
           ? parsed.anthropic.filter(
@@ -917,13 +1035,19 @@ export function createLocalStore(options: {
             )
           : [],
         agnes: Array.isArray(parsed.agnes)
-          ? parsed.agnes.filter((value): value is string => typeof value === "string")
+          ? parsed.agnes.filter(
+              (value): value is string => typeof value === "string",
+            )
           : [],
         google: Array.isArray(parsed.google)
-          ? parsed.google.filter((value): value is string => typeof value === "string")
+          ? parsed.google.filter(
+              (value): value is string => typeof value === "string",
+            )
           : [],
         vertex: Array.isArray(parsed.vertex)
-          ? parsed.vertex.filter((value): value is string => typeof value === "string")
+          ? parsed.vertex.filter(
+              (value): value is string => typeof value === "string",
+            )
           : [],
       };
     } catch {
@@ -948,8 +1072,13 @@ export function createLocalStore(options: {
       googleVertexLocation: row.google_vertex_location ?? "",
       googleVertexVideoLocation: row.google_vertex_video_location ?? "",
       replicateApiToken: row.replicate_api_token ?? "",
+      kieApiKey: row.kie_api_key ?? "",
+      kieBaseUrl: row.kie_base_url ?? "",
       volcesApiKey: row.volces_api_key ?? "",
       volcesBaseUrl: row.volces_base_url ?? "",
+      codexImagegenDelegation: normalizeCodexImagegenDelegationForStore(
+        row.codex_imagegen_delegation ?? undefined,
+      ),
     };
   }
 
@@ -963,6 +1092,9 @@ export function createLocalStore(options: {
         ? normalizeAgentModelSourceForStore(settings.defaultModelSource)
         : undefined,
       providerModels: normalizeProviderModelsForStore(settings.providerModels),
+      codexImagegenDelegation: normalizeCodexImagegenDelegationForStore(
+        settings.codexImagegenDelegation,
+      ),
     };
 
     if (workspaceSettingsHasLegacyIdColumn) {
@@ -986,9 +1118,12 @@ export function createLocalStore(options: {
             google_vertex_location,
             google_vertex_video_location,
             replicate_api_token,
+            kie_api_key,
+            kie_base_url,
             volces_api_key,
-            volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            volces_base_url,
+            codex_imagegen_delegation
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             workspace_id = excluded.workspace_id,
             default_model = excluded.default_model,
@@ -1006,8 +1141,11 @@ export function createLocalStore(options: {
             google_vertex_location = excluded.google_vertex_location,
             google_vertex_video_location = excluded.google_vertex_video_location,
             replicate_api_token = excluded.replicate_api_token,
+            kie_api_key = excluded.kie_api_key,
+            kie_base_url = excluded.kie_base_url,
             volces_api_key = excluded.volces_api_key,
-            volces_base_url = excluded.volces_base_url
+            volces_base_url = excluded.volces_base_url,
+            codex_imagegen_delegation = excluded.codex_imagegen_delegation
         `,
       ).run(
         1,
@@ -1027,8 +1165,11 @@ export function createLocalStore(options: {
         normalizedSettings.googleVertexLocation,
         normalizedSettings.googleVertexVideoLocation,
         normalizedSettings.replicateApiToken,
+        normalizedSettings.kieApiKey,
+        normalizedSettings.kieBaseUrl,
         normalizedSettings.volcesApiKey,
         normalizedSettings.volcesBaseUrl,
+        normalizedSettings.codexImagegenDelegation,
       );
     } else {
       db.prepare(
@@ -1050,9 +1191,12 @@ export function createLocalStore(options: {
             google_vertex_location,
             google_vertex_video_location,
             replicate_api_token,
+            kie_api_key,
+            kie_base_url,
             volces_api_key,
-            volces_base_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            volces_base_url,
+            codex_imagegen_delegation
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(workspace_id) DO UPDATE SET
             default_model = excluded.default_model,
             default_model_source = excluded.default_model_source,
@@ -1069,8 +1213,11 @@ export function createLocalStore(options: {
             google_vertex_location = excluded.google_vertex_location,
             google_vertex_video_location = excluded.google_vertex_video_location,
             replicate_api_token = excluded.replicate_api_token,
+            kie_api_key = excluded.kie_api_key,
+            kie_base_url = excluded.kie_base_url,
             volces_api_key = excluded.volces_api_key,
-            volces_base_url = excluded.volces_base_url
+            volces_base_url = excluded.volces_base_url,
+            codex_imagegen_delegation = excluded.codex_imagegen_delegation
         `,
       ).run(
         LOCAL_WORKSPACE_ID,
@@ -1089,20 +1236,23 @@ export function createLocalStore(options: {
         normalizedSettings.googleVertexLocation,
         normalizedSettings.googleVertexVideoLocation,
         normalizedSettings.replicateApiToken,
+        normalizedSettings.kieApiKey,
+        normalizedSettings.kieBaseUrl,
         normalizedSettings.volcesApiKey,
         normalizedSettings.volcesBaseUrl,
+        normalizedSettings.codexImagegenDelegation,
       );
     }
 
     return getWorkspaceSettings();
   }
 
-  function getNextopManagedConnection(): NextopManagedConnection {
+  function getTuttiManagedConnection(): TuttiManagedConnection {
     const row = db
       .prepare(
         `
           SELECT grant_ref, expires_at, providers_json, models_json
-          FROM nextop_managed_model_connection
+          FROM tutti_managed_model_connection
           WHERE workspace_id = ?
         `,
       )
@@ -1116,33 +1266,30 @@ export function createLocalStore(options: {
       | undefined;
 
     if (!row) {
-      return { ...EMPTY_NEXTOP_MANAGED_CONNECTION };
+      return { ...EMPTY_TUTTI_MANAGED_CONNECTION };
     }
 
-    return normalizeNextopManagedConnection({
+    return normalizeTuttiManagedConnection({
       connected: true,
       grantRef: row.grant_ref,
       ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
-      providers: parseJson<NextopManagedProviderId[]>(
-        row.providers_json,
-        [],
-      ),
-      models: parseJson<NextopManagedModel[]>(row.models_json, []),
+      providers: parseJson<TuttiManagedProviderId[]>(row.providers_json, []),
+      models: parseJson<TuttiManagedModel[]>(row.models_json, []),
     });
   }
 
-  function updateNextopManagedConnection(
-    connection: NextopManagedConnection,
-  ): NextopManagedConnection {
-    const normalized = normalizeNextopManagedConnection(connection);
+  function updateTuttiManagedConnection(
+    connection: TuttiManagedConnection,
+  ): TuttiManagedConnection {
+    const normalized = normalizeTuttiManagedConnection(connection);
     if (!normalized.connected || !normalized.grantRef) {
-      clearNextopManagedConnection();
-      return { ...EMPTY_NEXTOP_MANAGED_CONNECTION };
+      clearTuttiManagedConnection();
+      return { ...EMPTY_TUTTI_MANAGED_CONNECTION };
     }
 
     db.prepare(
       `
-        INSERT INTO nextop_managed_model_connection (
+        INSERT INTO tutti_managed_model_connection (
           workspace_id,
           grant_ref,
           expires_at,
@@ -1166,13 +1313,13 @@ export function createLocalStore(options: {
       new Date().toISOString(),
     );
 
-    return getNextopManagedConnection();
+    return getTuttiManagedConnection();
   }
 
-  function clearNextopManagedConnection() {
+  function clearTuttiManagedConnection() {
     db.prepare(
       `
-        DELETE FROM nextop_managed_model_connection
+        DELETE FROM tutti_managed_model_connection
         WHERE workspace_id = ?
       `,
     ).run(LOCAL_WORKSPACE_ID);
@@ -1182,18 +1329,17 @@ export function createLocalStore(options: {
     return db
       .prepare(
         `
-          SELECT id, bucket, object_path, mime_type, byte_size, workspace_id, project_id, file_path, created_at
+          SELECT id, bucket, object_path, mime_type, byte_size, workspace_id,
+                 project_id, file_path, source, display_name, sha256, created_at
           FROM assets
           WHERE id = ?
         `,
       )
-      .get(assetId) as
-      | (AssetRow & { file_path: string })
-      | undefined;
+      .get(assetId) as AssetRow | undefined;
   }
 
   function assetObjectFromRow(row: AssetRow): AssetObject {
-    return {
+    const asset: AssetObject = {
       id: row.id,
       bucket: row.bucket,
       objectPath: row.object_path,
@@ -1202,6 +1348,16 @@ export function createLocalStore(options: {
       projectId: row.project_id,
       createdAt: row.created_at,
     };
+    if (row.source !== "local") {
+      asset.source = row.source;
+    }
+    if (row.display_name) {
+      asset.displayName = row.display_name;
+    }
+    if (row.sha256) {
+      asset.sha256 = row.sha256;
+    }
+    return asset;
   }
 
   function mapBackgroundJobRow(row: BackgroundJobRow): BackgroundJob {
@@ -1257,9 +1413,11 @@ export function createLocalStore(options: {
     mimeType: string;
     projectId?: string;
     fileName: string;
+    displayName?: string;
     scope: "upload" | "brand-kit" | "project" | "generated";
   }) {
     const ext = extname(input.fileName) || mimeToExt(input.mimeType);
+    const displayName = normalizeAssetDisplayName(input.displayName, ext);
     const assetId = randomUUID();
     const objectPath = `${input.scope}/${assetId}${ext}`;
     const dir =
@@ -1276,8 +1434,8 @@ export function createLocalStore(options: {
     db.prepare(
       `
         INSERT INTO assets (
-          id, bucket, object_path, mime_type, byte_size, workspace_id, project_id, file_path, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, bucket, object_path, mime_type, byte_size, workspace_id, project_id, file_path, display_name, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     ).run(
       assetId,
@@ -1288,6 +1446,7 @@ export function createLocalStore(options: {
       LOCAL_WORKSPACE_ID,
       input.projectId ?? null,
       filePath,
+      displayName,
       createdAt,
     );
     const row = getAssetRow(assetId);
@@ -1307,9 +1466,7 @@ export function createLocalStore(options: {
 
   function findAssetReference(assetId: string) {
     const thumbnailReference = db
-      .prepare(
-        `SELECT id FROM projects WHERE thumbnail_asset_id = ? LIMIT 1`,
-      )
+      .prepare(`SELECT id FROM projects WHERE thumbnail_asset_id = ? LIMIT 1`)
       .get(assetId) as { id: string } | undefined;
     if (thumbnailReference) {
       return { kind: "project_thumbnail", id: thumbnailReference.id };
@@ -1325,9 +1482,7 @@ export function createLocalStore(options: {
     }
 
     const brandKitCoverReference = db
-      .prepare(
-        `SELECT id FROM brand_kits WHERE cover_asset_id = ? LIMIT 1`,
-      )
+      .prepare(`SELECT id FROM brand_kits WHERE cover_asset_id = ? LIMIT 1`)
       .get(assetId) as { id: string } | undefined;
     if (brandKitCoverReference) {
       return { kind: "brand_kit_cover", id: brandKitCoverReference.id };
@@ -1343,9 +1498,7 @@ export function createLocalStore(options: {
     }
 
     const canvasReference = db
-      .prepare(
-        `SELECT id FROM canvases WHERE content LIKE ? LIMIT 1`,
-      )
+      .prepare(`SELECT id FROM canvases WHERE content LIKE ? LIMIT 1`)
       .get(`%"id":"${assetId}"%`) as { id: string } | undefined;
     if (canvasReference) {
       return { kind: "canvas_content", id: canvasReference.id };
@@ -1363,10 +1516,12 @@ export function createLocalStore(options: {
     if (!options?.force && findAssetReference(assetId)) {
       return { ok: false, reason: "asset_in_use" };
     }
-    try {
-      unlinkSync(row.file_path);
-    } catch {
-      // ignore missing local file
+    if (row.source === "local") {
+      try {
+        unlinkSync(row.file_path);
+      } catch {
+        // ignore missing local file
+      }
     }
     db.prepare(`DELETE FROM assets WHERE id = ?`).run(assetId);
     return { ok: true };
@@ -1390,9 +1545,7 @@ export function createLocalStore(options: {
     updated_at: string;
   }): ProjectSummary {
     const canvas = db
-      .prepare(
-        `SELECT id, name, is_primary FROM canvases WHERE id = ? LIMIT 1`,
-      )
+      .prepare(`SELECT id, name, is_primary FROM canvases WHERE id = ? LIMIT 1`)
       .get(row.primary_canvas_id) as
       | { id: string; name: string; is_primary: number }
       | undefined;
@@ -1420,7 +1573,7 @@ export function createLocalStore(options: {
           SELECT id, name, slug, description, primary_canvas_id, thumbnail_asset_id, created_at, updated_at
           FROM projects
           WHERE archived_at IS NULL
-          ORDER BY updated_at DESC
+          ORDER BY updated_at DESC, created_at DESC, id DESC
         `,
       )
       .all() as Array<{
@@ -1564,7 +1717,9 @@ export function createLocalStore(options: {
   function updateProject(
     projectId: string,
     input: ProjectUpdateRequest,
-  ): { ok: true } | { ok: false; reason: "project_not_found" | "brand_kit_not_found" } {
+  ):
+    | { ok: true }
+    | { ok: false; reason: "project_not_found" | "brand_kit_not_found" } {
     const existing = getProject(projectId);
     if (!existing) return { ok: false, reason: "project_not_found" };
     const patch: string[] = [];
@@ -1583,24 +1738,26 @@ export function createLocalStore(options: {
     patch.push("updated_at = ?");
     values.push(nowIso());
     values.push(projectId);
-    db.prepare(
-      `UPDATE projects SET ${patch.join(", ")} WHERE id = ?`,
-    ).run(...values);
+    db.prepare(`UPDATE projects SET ${patch.join(", ")} WHERE id = ?`).run(
+      ...values,
+    );
     return { ok: true };
   }
 
   function archiveProject(projectId: string) {
     const existing = getProject(projectId);
     if (!existing) return false;
-    db.prepare(`UPDATE projects SET archived_at = ?, updated_at = ? WHERE id = ?`).run(
-      nowIso(),
-      nowIso(),
-      projectId,
-    );
+    db.prepare(
+      `UPDATE projects SET archived_at = ?, updated_at = ? WHERE id = ?`,
+    ).run(nowIso(), nowIso(), projectId);
     return true;
   }
 
-  function saveProjectThumbnail(projectId: string, buffer: Buffer, mimeType: string) {
+  function saveProjectThumbnail(
+    projectId: string,
+    buffer: Buffer,
+    mimeType: string,
+  ) {
     const existing = getProject(projectId);
     if (!existing) return null;
     const stored = writeAssetFile({
@@ -1621,7 +1778,8 @@ export function createLocalStore(options: {
     const row = db
       .prepare(
         `
-          SELECT canvases.id, canvases.name, canvases.project_id, canvases.content
+          SELECT canvases.id, canvases.name, canvases.project_id, canvases.content,
+            canvases.revision
           FROM canvases
           INNER JOIN projects ON projects.id = canvases.project_id
           WHERE canvases.id = ? AND projects.archived_at IS NULL
@@ -1634,6 +1792,7 @@ export function createLocalStore(options: {
           name: string;
           project_id: string;
           content: string;
+          revision: number;
         }
       | undefined;
     if (!row) return null;
@@ -1641,6 +1800,7 @@ export function createLocalStore(options: {
       id: row.id,
       name: row.name,
       projectId: row.project_id,
+      revision: row.revision ?? 0,
       content: parseJson<CanvasContent>(row.content, {
         elements: [],
         appState: {},
@@ -1653,13 +1813,49 @@ export function createLocalStore(options: {
     return !!getCanvas(canvasId);
   }
 
-  function saveCanvas(canvasId: string, content: CanvasContent) {
+  function saveCanvas(
+    canvasId: string,
+    content: CanvasContent,
+    options: { baseRevision?: number } = {},
+  ):
+    | { ok: true; revision: number }
+    | { ok: false; reason: "canvas_not_found" | "revision_conflict" } {
     const existing = getCanvas(canvasId);
-    if (!existing) return false;
+    if (!existing) return { ok: false, reason: "canvas_not_found" };
     const timestamp = nowIso();
-    db.prepare(
-      `UPDATE canvases SET content = ?, updated_at = ? WHERE id = ?`,
-    ).run(JSON.stringify(content), timestamp, canvasId);
+
+    const result =
+      options.baseRevision === undefined
+        ? db
+            .prepare(
+              `
+                UPDATE canvases
+                SET content = ?, updated_at = ?, revision = revision + 1
+                WHERE id = ?
+              `,
+            )
+            .run(JSON.stringify(content), timestamp, canvasId)
+        : db
+            .prepare(
+              `
+                UPDATE canvases
+                SET content = ?, updated_at = ?, revision = revision + 1
+                WHERE id = ? AND revision = ?
+              `,
+            )
+            .run(
+              JSON.stringify(content),
+              timestamp,
+              canvasId,
+              options.baseRevision,
+            );
+
+    if (result.changes === 0) {
+      if (!getCanvas(canvasId))
+        return { ok: false, reason: "canvas_not_found" };
+      return { ok: false, reason: "revision_conflict" };
+    }
+
     db.prepare(
       `
         UPDATE projects
@@ -1667,7 +1863,10 @@ export function createLocalStore(options: {
         WHERE id = (SELECT project_id FROM canvases WHERE id = ?)
       `,
     ).run(timestamp, canvasId);
-    return true;
+    const row = db
+      .prepare(`SELECT revision FROM canvases WHERE id = ? LIMIT 1`)
+      .get(canvasId) as { revision: number } | undefined;
+    return { ok: true, revision: row?.revision ?? existing.revision + 1 };
   }
 
   function listSessions(canvasId: string): ChatSessionSummary[] | null {
@@ -1709,7 +1908,10 @@ export function createLocalStore(options: {
     return !!row;
   }
 
-  function createSession(canvasId: string, title?: string): ChatSessionSummary | null {
+  function createSession(
+    canvasId: string,
+    title?: string,
+  ): ChatSessionSummary | null {
     if (!hasCanvas(canvasId)) return null;
     const timestamp = nowIso();
     const id = randomUUID();
@@ -1735,9 +1937,11 @@ export function createLocalStore(options: {
   }
 
   function updateSessionTitle(sessionId: string, title: string) {
-    const result = db.prepare(
-      `UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?`,
-    ).run(title, nowIso(), sessionId);
+    const result = db
+      .prepare(
+        `UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?`,
+      )
+      .run(title, nowIso(), sessionId);
     return result.changes > 0;
   }
 
@@ -1754,9 +1958,9 @@ export function createLocalStore(options: {
         `,
       )
       .all(sessionId) as Array<{
-        canvas_id: string | null;
-        id: string;
-      }>;
+      canvas_id: string | null;
+      id: string;
+    }>;
 
     for (const run of activeRuns) {
       updateAgentRun({
@@ -2084,10 +2288,9 @@ export function createLocalStore(options: {
     const coverAssetId = db
       .prepare(`SELECT cover_asset_id FROM brand_kits WHERE id = ?`)
       .get(kitId) as { cover_asset_id: string | null } | undefined;
-    db.prepare(`UPDATE projects SET brand_kit_id = NULL, updated_at = ? WHERE brand_kit_id = ?`).run(
-      nowIso(),
-      kitId,
-    );
+    db.prepare(
+      `UPDATE projects SET brand_kit_id = NULL, updated_at = ? WHERE brand_kit_id = ?`,
+    ).run(nowIso(), kitId);
     db.prepare(`DELETE FROM brand_kit_assets WHERE kit_id = ?`).run(kitId);
     db.prepare(`DELETE FROM brand_kits WHERE id = ?`).run(kitId);
     const ownedAssetIds = new Set(
@@ -2135,7 +2338,9 @@ export function createLocalStore(options: {
             bucket: originalFileAsset.bucket,
             buffer: readFileSync(originalFileAsset.file_path),
             mimeType: originalFileAsset.mime_type ?? "application/octet-stream",
-            fileName: originalFileAsset.object_path.split("/").at(-1) ?? asset.display_name,
+            fileName:
+              originalFileAsset.object_path.split("/").at(-1) ??
+              asset.display_name,
             scope: "brand-kit",
           });
           duplicatedFileAssetId = duplicatedFile.asset.id;
@@ -2166,14 +2371,12 @@ export function createLocalStore(options: {
       .prepare(`SELECT cover_asset_id FROM brand_kits WHERE id = ?`)
       .get(kitId) as { cover_asset_id: string | null } | undefined;
     const duplicatedCoverAssetId = sourceCoverAssetId?.cover_asset_id
-      ? copiedAssetIds.get(sourceCoverAssetId.cover_asset_id) ?? null
+      ? (copiedAssetIds.get(sourceCoverAssetId.cover_asset_id) ?? null)
       : null;
     if (duplicatedCoverAssetId) {
-      db.prepare(`UPDATE brand_kits SET cover_asset_id = ?, updated_at = ? WHERE id = ?`).run(
-        duplicatedCoverAssetId,
-        nowIso(),
-        duplicated.id,
-      );
+      db.prepare(
+        `UPDATE brand_kits SET cover_asset_id = ?, updated_at = ? WHERE id = ?`,
+      ).run(duplicatedCoverAssetId, nowIso(), duplicated.id);
     }
     return getBrandKit(duplicated.id);
   }
@@ -2253,11 +2456,9 @@ export function createLocalStore(options: {
       .get(assetId, kitId) as { file_asset_id: string | null } | undefined;
     if (!row) return false;
     if (row.file_asset_id) {
-      db.prepare(`UPDATE brand_kits SET cover_asset_id = NULL, updated_at = ? WHERE id = ? AND cover_asset_id = ?`).run(
-        nowIso(),
-        kitId,
-        row.file_asset_id,
-      );
+      db.prepare(
+        `UPDATE brand_kits SET cover_asset_id = NULL, updated_at = ? WHERE id = ? AND cover_asset_id = ?`,
+      ).run(nowIso(), kitId, row.file_asset_id);
     }
     db.prepare(`DELETE FROM brand_kit_assets WHERE id = ? AND kit_id = ?`).run(
       assetId,
@@ -2303,11 +2504,9 @@ export function createLocalStore(options: {
       timestamp,
     );
     if (!existing.cover_url && assetType === "logo") {
-      db.prepare(`UPDATE brand_kits SET cover_asset_id = ?, updated_at = ? WHERE id = ?`).run(
-        stored.asset.id,
-        timestamp,
-        kitId,
-      );
+      db.prepare(
+        `UPDATE brand_kits SET cover_asset_id = ?, updated_at = ? WHERE id = ?`,
+      ).run(stored.asset.id, timestamp, kitId);
     }
     const detail = getBrandKit(kitId);
     return detail?.assets.find((asset) => asset.id === assetId) ?? null;
@@ -2495,7 +2694,9 @@ export function createLocalStore(options: {
   function deriveSkillDescription(skillContent: string) {
     const frontmatter = parseSkillFrontmatter(skillContent);
     if (frontmatter.description) return frontmatter.description;
-    const match = /## Description\s+([\s\S]*?)(?:\n## |\n# |$)/i.exec(skillContent);
+    const match = /## Description\s+([\s\S]*?)(?:\n## |\n# |$)/i.exec(
+      skillContent,
+    );
     return match?.[1]?.trim() || "Imported local skill.";
   }
 
@@ -2509,12 +2710,14 @@ export function createLocalStore(options: {
     if (/^SKILL\.md$/i.test(basename) && parts.length > 1) {
       return titleCaseSkillName(parts.at(-2) ?? "Imported Skill");
     }
-    return filePath
-      .split("/")
-      .at(-1)
-      ?.replace(/\.[^.]+$/, "")
-      .replace(/[-_]+/g, " ")
-      .replace(/\b\w/g, (char) => char.toUpperCase()) || "Imported Skill";
+    return (
+      filePath
+        .split("/")
+        .at(-1)
+        ?.replace(/\.[^.]+$/, "")
+        .replace(/[-_]+/g, " ")
+        .replace(/\b\w/g, (char) => char.toUpperCase()) || "Imported Skill"
+    );
   }
 
   function parseSkillFrontmatter(skillContent: string) {
@@ -2563,10 +2766,11 @@ export function createLocalStore(options: {
     const skillId = randomUUID();
     const slug = nextAvailableSlug(
       (
-        db.prepare(`SELECT slug FROM skills WHERE slug = ? OR slug LIKE ?`).all(
-          slugify(input.name),
-          `${slugify(input.name)}-%`,
-        ) as Array<{ slug: string }>
+        db
+          .prepare(`SELECT slug FROM skills WHERE slug = ? OR slug LIKE ?`)
+          .all(slugify(input.name), `${slugify(input.name)}-%`) as Array<{
+          slug: string;
+        }>
       ).map((row) => row.slug),
       slugify(input.name),
     );
@@ -2657,7 +2861,8 @@ export function createLocalStore(options: {
       return null;
     }
     return insertSkillRecord({
-      name: input.name?.trim() || deriveSkillName(skillContent, skillFile.filePath),
+      name:
+        input.name?.trim() || deriveSkillName(skillContent, skillFile.filePath),
       description:
         input.description?.trim() || deriveSkillDescription(skillContent),
       category: input.category ?? "custom",
@@ -2689,11 +2894,9 @@ export function createLocalStore(options: {
       .prepare(`SELECT id FROM skills WHERE id = ? AND installed = 1 LIMIT 1`)
       .get(skillId) as { id: string } | undefined;
     if (!row) return null;
-    db.prepare(`UPDATE skills SET enabled = ?, updated_at = ? WHERE id = ?`).run(
-      input.enabled ? 1 : 0,
-      nowIso(),
-      skillId,
-    );
+    db.prepare(
+      `UPDATE skills SET enabled = ?, updated_at = ? WHERE id = ?`,
+    ).run(input.enabled ? 1 : 0, nowIso(), skillId);
     return getSkillDetail(skillId);
   }
 
@@ -2844,7 +3047,8 @@ export function createLocalStore(options: {
       input.runId,
     );
     const run = getAgentRun(input.runId);
-    const assistantMessageId = input.assistantMessageId ?? run?.assistant_message_id;
+    const assistantMessageId =
+      input.assistantMessageId ?? run?.assistant_message_id;
     if (assistantMessageId) {
       db.prepare(
         `
@@ -2952,15 +3156,19 @@ export function createLocalStore(options: {
     }
 
     const current = db
-      .prepare(`SELECT COALESCE(MAX(seq), 0) AS max_seq FROM agent_run_events WHERE run_id = ?`)
+      .prepare(
+        `SELECT COALESCE(MAX(seq), 0) AS max_seq FROM agent_run_events WHERE run_id = ?`,
+      )
       .get(input.runId) as { max_seq: number | null };
     const nextSeq = (current.max_seq ?? 0) + 1;
     const nextCanvasSeq = input.canvasId
-      ? ((db
-          .prepare(
-            `SELECT COALESCE(MAX(canvas_seq), 0) AS max_seq FROM agent_run_events WHERE canvas_id = ?`,
-          )
-          .get(input.canvasId) as { max_seq: number | null }).max_seq ?? 0) + 1
+      ? ((
+          db
+            .prepare(
+              `SELECT COALESCE(MAX(canvas_seq), 0) AS max_seq FROM agent_run_events WHERE canvas_id = ?`,
+            )
+            .get(input.canvasId) as { max_seq: number | null }
+        ).max_seq ?? 0) + 1
       : null;
     const timestamp = nowIso();
     const eventId = `${input.runId}:${nextSeq}`;
@@ -2993,9 +3201,17 @@ export function createLocalStore(options: {
             END
         WHERE run_id = ?
       `,
-    ).run(eventId, input.event.type, input.event.type, input.event.type, input.runId);
+    ).run(
+      eventId,
+      input.event.type,
+      input.event.type,
+      input.event.type,
+      input.runId,
+    );
     return {
-      ...(input.canvasId && nextCanvasSeq != null ? { canvasSeq: nextCanvasSeq } : {}),
+      ...(input.canvasId && nextCanvasSeq != null
+        ? { canvasSeq: nextCanvasSeq }
+        : {}),
       eventId,
       seq: nextSeq,
     };
@@ -3049,10 +3265,10 @@ export function createLocalStore(options: {
         `,
       )
       .all(canvasId, cursor) as Array<
-        AgentRunEventRow & {
-          canvas_seq: number | null;
-        }
-      >;
+      AgentRunEventRow & {
+        canvas_seq: number | null;
+      }
+    >;
     return rows.map((row) => ({
       createdAt: row.created_at,
       event: parseJson<StreamEvent>(row.payload, {
@@ -3072,7 +3288,9 @@ export function createLocalStore(options: {
     }));
   }
 
-  function recoverInterruptedAgentRuns(message = "Server restarted during an active agent run.") {
+  function recoverInterruptedAgentRuns(
+    message = "Server restarted during an active agent run.",
+  ) {
     const interruptedRuns = db
       .prepare(
         `
@@ -3082,9 +3300,9 @@ export function createLocalStore(options: {
         `,
       )
       .all() as Array<{
-        canvas_id: string | null;
-        id: string;
-      }>;
+      canvas_id: string | null;
+      id: string;
+    }>;
 
     for (const run of interruptedRuns) {
       updateAgentRun({
@@ -3105,7 +3323,10 @@ export function createLocalStore(options: {
           `,
         )
         .get(run.id) as { type: string } | undefined;
-      if (lastEvent && ["run.completed", "run.failed", "run.canceled"].includes(lastEvent.type)) {
+      if (
+        lastEvent &&
+        ["run.completed", "run.failed", "run.canceled"].includes(lastEvent.type)
+      ) {
         continue;
       }
 
@@ -3243,8 +3464,9 @@ export function createLocalStore(options: {
 
   function cancelBackgroundJob(jobId: string) {
     const updatedAt = nowIso();
-    const result = db.prepare(
-      `
+    const result = db
+      .prepare(
+        `
         UPDATE background_jobs
         SET status = 'canceled',
             updated_at = ?,
@@ -3254,7 +3476,8 @@ export function createLocalStore(options: {
         WHERE id = ?
           AND status IN ('queued', 'running', 'failed')
       `,
-    ).run(updatedAt, updatedAt, jobId);
+      )
+      .run(updatedAt, updatedAt, jobId);
 
     if (result.changes === 0) {
       return null;
@@ -3302,8 +3525,9 @@ export function createLocalStore(options: {
     const claimed: BackgroundJob[] = [];
     for (const row of rows) {
       const updatedAt = nowIso();
-      const result = db.prepare(
-        `
+      const result = db
+        .prepare(
+          `
           UPDATE background_jobs
           SET status = 'running',
               attempt_count = CASE
@@ -3330,14 +3554,15 @@ export function createLocalStore(options: {
               )
             )
         `,
-      ).run(
-        updatedAt,
-        updatedAt,
-        updatedAt,
-        input.workerId,
-        row.id,
-        staleCutoff,
-      );
+        )
+        .run(
+          updatedAt,
+          updatedAt,
+          updatedAt,
+          input.workerId,
+          row.id,
+          staleCutoff,
+        );
       if (result.changes > 0) {
         const claimedRow = getBackgroundJobRow(row.id);
         if (claimedRow) {
@@ -3419,15 +3644,63 @@ export function createLocalStore(options: {
     fileBuffer: Buffer;
     mimeType: string;
     projectId?: string;
+    displayName?: string;
   }) {
     return writeAssetFile({
       bucket: input.bucket,
       buffer: input.fileBuffer,
       mimeType: input.mimeType,
       fileName: input.fileName,
+      ...(input.displayName !== undefined
+        ? { displayName: input.displayName }
+        : {}),
       scope: "upload",
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
     });
+  }
+
+  function createManagedFileAsset(input: {
+    bucket: AssetBucket;
+    file: {
+      path: string;
+      name: string;
+      mimeType: string;
+      sizeBytes: number;
+      sha256: string;
+    };
+    projectId?: string;
+  }) {
+    const assetId = randomUUID();
+    const createdAt = nowIso();
+    db.prepare(
+      `
+        INSERT INTO assets (
+          id, bucket, object_path, mime_type, byte_size, workspace_id,
+          project_id, file_path, source, display_name, sha256, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      assetId,
+      input.bucket,
+      input.file.path,
+      input.file.mimeType,
+      input.file.sizeBytes,
+      LOCAL_WORKSPACE_ID,
+      input.projectId ?? null,
+      input.file.path,
+      "managed-file",
+      input.file.name,
+      input.file.sha256,
+      createdAt,
+    );
+    const row = getAssetRow(assetId);
+    if (!row) {
+      throw new Error("Failed to persist managed file asset.");
+    }
+    return {
+      asset: assetObjectFromRow(row),
+      url: assetUrl(assetId),
+    };
   }
 
   function buildGeneratedPreviewSvg(input: {
@@ -3468,7 +3741,7 @@ export function createLocalStore(options: {
 
   function createGeneratedImage(prompt: string) {
     const svg = buildGeneratedPreviewSvg({
-      title: "AI Media Canvas Local Preview",
+      title: "AI Canvas Local Preview",
       subtitle: "Prompt",
       body: prompt,
     });
@@ -3499,7 +3772,7 @@ export function createLocalStore(options: {
     const duration = input.duration ?? 8;
     const resolution = input.resolution ?? "1080p";
     const previewSvg = buildGeneratedPreviewSvg({
-      title: "AI Media Canvas Video Storyboard",
+      title: "AI Canvas Video Storyboard",
       subtitle: `${input.model ?? "local:storyboard-motion"} · ${duration}s · ${resolution}`,
       body: input.prompt,
       width: 1280,
@@ -3514,7 +3787,7 @@ export function createLocalStore(options: {
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
     });
     const plan = {
-      title: "AI Media Canvas Local Video Plan",
+      title: "AI Canvas Local Video Plan",
       prompt: input.prompt,
       model: input.model ?? "local:storyboard-motion",
       durationSeconds: duration,
@@ -3560,6 +3833,675 @@ export function createLocalStore(options: {
     };
   }
 
+  // --- Tutti reference protocol (project-scoped asset browsing) ---------------
+  // Agent-generated media outputs are exposed under their project. Generated
+  // media without a project is exposed under a special group. Non-media files
+  // (e.g. generated video plan JSON) and intermediate UI assets are excluded.
+  const UNASSIGNED_REFERENCE_GROUP_ID = "unassigned";
+  const UNASSIGNED_REFERENCE_GROUP_LABEL = "项目外资源";
+  const REFERENCE_MEDIA_TYPE_PREDICATE =
+    "(a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%')";
+  const REFERENCE_MEDIA_TYPE_PREDICATE_FILE =
+    "(mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')";
+
+  function referenceString(value: unknown) {
+    return typeof value === "string" && value.trim() ? value : null;
+  }
+
+  function referenceRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+
+  function addReferenceAssetId(ids: Set<string>, value: unknown) {
+    const direct = referenceString(value);
+    if (direct) {
+      ids.add(direct);
+      return;
+    }
+  }
+
+  function addReferenceAssetIdFromUrl(ids: Set<string>, value: unknown) {
+    const url = referenceString(value);
+    if (!url) return;
+    const match = /(?:^|\/)local-assets\/([^/?#]+)/.exec(url);
+    if (match?.[1]) ids.add(match[1]);
+  }
+
+  function collectGeneratedCanvasAssetIds(content: CanvasContent) {
+    const ids = new Set<string>();
+    const files = referenceRecord(content.files) ?? {};
+    for (const element of content.elements ?? []) {
+      const item = referenceRecord(element);
+      if (!item || item.isDeleted === true) continue;
+      const customData = referenceRecord(item.customData);
+      if (!customData) continue;
+      const isGenerated =
+        customData.source === "generated" ||
+        (customData.isVideo === true && typeof customData.assetId === "string");
+      if (!isGenerated) continue;
+
+      addReferenceAssetId(ids, customData.assetId);
+      addReferenceAssetIdFromUrl(ids, customData.storageUrl);
+      addReferenceAssetIdFromUrl(ids, customData.videoUrl);
+
+      const fileId = referenceString(item.fileId);
+      const file = fileId ? referenceRecord(files[fileId]) : null;
+      if (file) {
+        addReferenceAssetId(ids, file.assetId);
+        addReferenceAssetIdFromUrl(ids, file.storageUrl);
+      }
+    }
+    return ids;
+  }
+
+  function listGeneratedCanvasAssetIds(projectId?: string) {
+    const ids = new Set<string>();
+    const conditions = projectId ? "WHERE project_id = ?" : "";
+    const params: SQLInputValue[] = projectId ? [projectId] : [];
+    const rows = db
+      .prepare(`SELECT content FROM canvases ${conditions}`)
+      .all(...params) as Array<{ content: string }>;
+    for (const row of rows) {
+      const content = parseJson<CanvasContent>(row.content, {
+        elements: [],
+        appState: {},
+        files: {},
+      });
+      for (const id of collectGeneratedCanvasAssetIds(content)) ids.add(id);
+    }
+    return Array.from(ids);
+  }
+
+  function collectGeneratedJobAssetIds(projectId?: string | null) {
+    const ids = new Set<string>();
+    const rows = db
+      .prepare(
+        `
+          SELECT background_jobs.result, background_jobs.project_id,
+                 canvases.project_id AS canvas_project_id
+          FROM background_jobs
+          LEFT JOIN canvases ON canvases.id = background_jobs.canvas_id
+          WHERE background_jobs.status = 'succeeded'
+            AND background_jobs.job_type IN ('image_generation', 'video_generation')
+            AND background_jobs.result IS NOT NULL
+        `,
+      )
+      .all() as Array<{
+      result: string | null;
+      project_id: string | null;
+      canvas_project_id: string | null;
+    }>;
+    for (const row of rows) {
+      const ownerProjectId = row.project_id ?? row.canvas_project_id ?? null;
+      if (projectId !== undefined && ownerProjectId !== projectId) continue;
+
+      const result = parseJson<Record<string, unknown>>(row.result, {});
+      const assetId = referenceString(result.asset_id ?? result.assetId);
+      if (assetId) ids.add(assetId);
+    }
+    return Array.from(ids);
+  }
+
+  function listGeneratedReferenceAssetIds(projectId?: string | null) {
+    const ids = new Set<string>();
+    if (projectId !== null) {
+      for (const id of listGeneratedCanvasAssetIds(projectId)) ids.add(id);
+    }
+    for (const id of collectGeneratedJobAssetIds(projectId)) ids.add(id);
+    return Array.from(ids);
+  }
+
+  function countAdditionalCanvasGeneratedReferenceAssets(input: {
+    projectId: string;
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+  }) {
+    const assetIds = listGeneratedReferenceAssetIds(input.projectId);
+    if (assetIds.length === 0) return 0;
+    const { fromIso, toIso } = referenceTimeBounds(input);
+    const placeholders = assetIds.map(() => "?").join(", ");
+    const conditions = [
+      `id IN (${placeholders})`,
+      REFERENCE_MEDIA_TYPE_PREDICATE_FILE,
+      "(project_id IS NULL OR project_id != ?)",
+    ];
+    const params: SQLInputValue[] = [...assetIds, input.projectId];
+    if (fromIso) {
+      conditions.push("created_at >= ?");
+      params.push(fromIso);
+    }
+    if (toIso) {
+      conditions.push("created_at <= ?");
+      params.push(toIso);
+    }
+    const row = db
+      .prepare(
+        `SELECT COUNT(DISTINCT id) AS count FROM assets WHERE ${conditions.join(" AND ")}`,
+      )
+      .get(...params) as { count: number } | undefined;
+    return row?.count ?? 0;
+  }
+
+  function referenceTimeBounds(timeRange?: {
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+  }) {
+    const fromIso =
+      timeRange?.fromMs != null && Number.isFinite(timeRange.fromMs)
+        ? new Date(timeRange.fromMs).toISOString()
+        : null;
+    const toIso =
+      timeRange?.toMs != null && Number.isFinite(timeRange.toMs)
+        ? new Date(timeRange.toMs).toISOString()
+        : null;
+    return { fromIso, toIso };
+  }
+
+  function encodeReferenceCursor(parts: string[]): string {
+    return Buffer.from(parts.join(" "), "utf8").toString("base64url");
+  }
+
+  function decodeReferenceCursor(cursor?: string | null): string[] | null {
+    if (!cursor) return null;
+    try {
+      const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+      return decoded.split(" ");
+    } catch {
+      return null;
+    }
+  }
+
+  function dataRelativePath(filePath: string): string {
+    return relative(dataRoot, filePath).split("\\").join("/");
+  }
+
+  function assetReferencePath(row: {
+    file_path: string;
+    object_path: string;
+    source?: AssetSource | null;
+  }): string {
+    return row.source === "managed-file"
+      ? row.object_path
+      : dataRelativePath(row.file_path);
+  }
+
+  // Root level: one group per active project plus one special group for
+  // unassigned media assets when any exist. referenceCount only includes
+  // in-range reusable media assets; projects with no reusable outputs remain
+  // navigable empty groups so newly created projects are visible in Tutti.
+  // Keyset paginated on (updated_at desc, group id desc).
+  function listReferenceProjectGroups(input: {
+    filterText?: string | undefined;
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+    limit: number;
+    cursor?: string | null | undefined;
+  }): {
+    groups: Array<{
+      projectId: string | null;
+      name: string;
+      referenceCount: number;
+    }>;
+    nextCursor: string | null;
+  } {
+    const { fromIso, toIso } = referenceTimeBounds(input);
+    const generatedAssetIds = listGeneratedReferenceAssetIds();
+    const generatedUnassignedAssetIds = listGeneratedReferenceAssetIds(null);
+    const generatedPlaceholders =
+      generatedAssetIds.length > 0
+        ? generatedAssetIds.map(() => "?").join(", ")
+        : null;
+    const generatedUnassignedPlaceholders =
+      generatedUnassignedAssetIds.length > 0
+        ? generatedUnassignedAssetIds.map(() => "?").join(", ")
+        : null;
+    const joinConditions = [
+      "a.project_id = p.id",
+      REFERENCE_MEDIA_TYPE_PREDICATE,
+      generatedPlaceholders ? `a.id IN (${generatedPlaceholders})` : "0",
+    ];
+    const joinParams: SQLInputValue[] = [...generatedAssetIds];
+    const unassignedConditions = [
+      "a.project_id IS NULL",
+      REFERENCE_MEDIA_TYPE_PREDICATE,
+      generatedUnassignedPlaceholders
+        ? `a.id IN (${generatedUnassignedPlaceholders})`
+        : "0",
+    ];
+    const unassignedParams: SQLInputValue[] = [...generatedUnassignedAssetIds];
+    const conditions = ["p.archived_at IS NULL"];
+    const params: SQLInputValue[] = [];
+    if (fromIso) {
+      joinConditions.push("a.created_at >= ?");
+      joinParams.push(fromIso);
+      unassignedConditions.push("a.created_at >= ?");
+      unassignedParams.push(fromIso);
+    }
+    if (toIso) {
+      joinConditions.push("a.created_at <= ?");
+      joinParams.push(toIso);
+      unassignedConditions.push("a.created_at <= ?");
+      unassignedParams.push(toIso);
+    }
+    if (input.filterText) {
+      conditions.push("(p.id LIKE ? COLLATE NOCASE OR p.name LIKE ? COLLATE NOCASE)");
+      params.push(`%${input.filterText}%`, `%${input.filterText}%`);
+      unassignedConditions.push("? LIKE ? COLLATE NOCASE");
+      unassignedParams.push(
+        UNASSIGNED_REFERENCE_GROUP_LABEL,
+        `%${input.filterText}%`,
+      );
+    }
+    const cursorConditions: string[] = [];
+    const cursorParams: SQLInputValue[] = [];
+    const cursor = decodeReferenceCursor(input.cursor);
+    if (cursor && cursor.length === 2) {
+      const cursorUpdatedAt = cursor[0] ?? "";
+      const cursorId = cursor[1] ?? "";
+      cursorConditions.push(
+        "(updated_at < ? OR (updated_at = ? AND group_id < ?))",
+      );
+      cursorParams.push(cursorUpdatedAt, cursorUpdatedAt, cursorId);
+    }
+    const limit = Math.max(1, Math.min(50, input.limit));
+    const outerWhere =
+      cursorConditions.length > 0
+        ? `WHERE ${cursorConditions.join(" AND ")}`
+        : "";
+    const rows = db
+      .prepare(
+        `
+          SELECT group_id, project_id, name, updated_at, reference_count
+          FROM (
+            SELECT
+              'project:' || p.id AS group_id,
+              p.id AS project_id,
+              p.name AS name,
+              p.updated_at AS updated_at,
+              COUNT(a.id) AS reference_count
+            FROM projects p
+            LEFT JOIN assets a ON ${joinConditions.join(" AND ")}
+            WHERE ${conditions.join(" AND ")}
+            GROUP BY p.id, p.name, p.updated_at
+
+            UNION ALL
+
+            SELECT
+              ? AS group_id,
+              NULL AS project_id,
+              ? AS name,
+              COALESCE(MAX(a.created_at), '') AS updated_at,
+              COUNT(a.id) AS reference_count
+            FROM assets a
+            WHERE ${unassignedConditions.join(" AND ")}
+            HAVING COUNT(a.id) > 0
+          )
+          ${outerWhere}
+          ORDER BY updated_at DESC, group_id DESC
+          LIMIT ?
+        `,
+      )
+      .all(
+        ...joinParams,
+        ...params,
+        UNASSIGNED_REFERENCE_GROUP_ID,
+        UNASSIGNED_REFERENCE_GROUP_LABEL,
+        ...unassignedParams,
+        ...cursorParams,
+        limit + 1,
+      ) as Array<{
+      group_id: string;
+      project_id: string | null;
+      name: string;
+      updated_at: string;
+      reference_count: number;
+    }>;
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
+    return {
+      groups: page.map((row) => ({
+        projectId: row.project_id,
+        name: row.name,
+        referenceCount:
+          row.reference_count +
+          (row.project_id
+            ? countAdditionalCanvasGeneratedReferenceAssets({
+                projectId: row.project_id,
+                fromMs: input.fromMs,
+                toMs: input.toMs,
+              })
+            : 0),
+      })),
+      nextCursor:
+        hasMore && last
+          ? encodeReferenceCursor([last.updated_at, last.group_id])
+          : null,
+    };
+  }
+
+  // Project level: in-range media assets for one project.
+  // Keyset paginated on (created_at desc, id desc); filterText matches the
+  // file name (which embeds the asset id, the displayed name).
+  function listReferenceProjectAssets(input: {
+    projectId: string;
+    filterText?: string | undefined;
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+    limit: number;
+    cursor?: string | null | undefined;
+  }): {
+    files: Array<{
+      id: string;
+      displayName: string;
+      relativePath: string;
+      mimeType: string | null;
+      sizeBytes: number | null;
+      mtimeMs: number | null;
+    }>;
+    nextCursor: string | null;
+  } {
+    const { fromIso, toIso } = referenceTimeBounds(input);
+    const generatedAssetIds = listGeneratedReferenceAssetIds(input.projectId);
+    if (generatedAssetIds.length === 0) {
+      return { files: [], nextCursor: null };
+    }
+    const params: SQLInputValue[] = [...generatedAssetIds];
+    const conditions = [
+      `id IN (${generatedAssetIds.map(() => "?").join(", ")})`,
+      REFERENCE_MEDIA_TYPE_PREDICATE_FILE,
+    ];
+    if (fromIso) {
+      conditions.push("created_at >= ?");
+      params.push(fromIso);
+    }
+    if (toIso) {
+      conditions.push("created_at <= ?");
+      params.push(toIso);
+    }
+    if (input.filterText) {
+      conditions.push(
+        "(object_path LIKE ? COLLATE NOCASE OR display_name LIKE ? COLLATE NOCASE)",
+      );
+      params.push(`%${input.filterText}%`, `%${input.filterText}%`);
+    }
+    const cursor = decodeReferenceCursor(input.cursor);
+    if (cursor && cursor.length === 2) {
+      const cursorTime = cursor[0] ?? "";
+      const cursorId = cursor[1] ?? "";
+      conditions.push("(created_at < ? OR (created_at = ? AND id < ?))");
+      params.push(cursorTime, cursorTime, cursorId);
+    }
+    const limit = Math.max(1, Math.min(50, input.limit));
+    const rows = db
+      .prepare(
+        `
+          SELECT id, object_path, mime_type, byte_size, file_path, source, display_name, created_at
+          FROM assets
+          WHERE ${conditions.join(" AND ")}
+          ORDER BY created_at DESC, id DESC
+          LIMIT ?
+        `,
+      )
+      .all(...params, limit + 1) as Array<{
+      id: string;
+      object_path: string;
+      mime_type: string | null;
+      byte_size: number | null;
+      file_path: string;
+      source: AssetSource | null;
+      display_name: string | null;
+      created_at: string;
+    }>;
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
+    return {
+      files: page.map((row) => {
+        const mtime = Date.parse(row.created_at);
+        return {
+          id: row.id,
+          displayName: row.display_name ?? row.object_path.split("/").at(-1) ?? row.id,
+          relativePath: assetReferencePath(row),
+          mimeType: row.mime_type,
+          sizeBytes: row.byte_size,
+          mtimeMs: Number.isNaN(mtime) ? null : mtime,
+        };
+      }),
+      nextCursor:
+        hasMore && last
+          ? encodeReferenceCursor([last.created_at, last.id])
+          : null,
+    };
+  }
+
+  function listReferenceUnassignedAssets(input: {
+    filterText?: string | undefined;
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+    limit: number;
+    cursor?: string | null | undefined;
+  }): {
+    files: Array<{
+      id: string;
+      displayName: string;
+      relativePath: string;
+      mimeType: string | null;
+      sizeBytes: number | null;
+      mtimeMs: number | null;
+    }>;
+    nextCursor: string | null;
+  } {
+    const { fromIso, toIso } = referenceTimeBounds(input);
+    const generatedAssetIds = listGeneratedReferenceAssetIds(null);
+    if (generatedAssetIds.length === 0) {
+      return { files: [], nextCursor: null };
+    }
+    const conditions = [
+      "project_id IS NULL",
+      `id IN (${generatedAssetIds.map(() => "?").join(", ")})`,
+      REFERENCE_MEDIA_TYPE_PREDICATE_FILE,
+    ];
+    const params: SQLInputValue[] = [...generatedAssetIds];
+    if (fromIso) {
+      conditions.push("created_at >= ?");
+      params.push(fromIso);
+    }
+    if (toIso) {
+      conditions.push("created_at <= ?");
+      params.push(toIso);
+    }
+    if (input.filterText) {
+      conditions.push(
+        "(object_path LIKE ? COLLATE NOCASE OR display_name LIKE ? COLLATE NOCASE)",
+      );
+      params.push(`%${input.filterText}%`, `%${input.filterText}%`);
+    }
+    const cursor = decodeReferenceCursor(input.cursor);
+    if (cursor && cursor.length === 2) {
+      const cursorTime = cursor[0] ?? "";
+      const cursorId = cursor[1] ?? "";
+      conditions.push("(created_at < ? OR (created_at = ? AND id < ?))");
+      params.push(cursorTime, cursorTime, cursorId);
+    }
+    const limit = Math.max(1, Math.min(50, input.limit));
+    const rows = db
+      .prepare(
+        `
+          SELECT id, object_path, mime_type, byte_size, file_path, source, display_name, created_at
+          FROM assets
+          WHERE ${conditions.join(" AND ")}
+          ORDER BY created_at DESC, id DESC
+          LIMIT ?
+        `,
+      )
+      .all(...params, limit + 1) as Array<{
+      id: string;
+      object_path: string;
+      mime_type: string | null;
+      byte_size: number | null;
+      file_path: string;
+      source: AssetSource | null;
+      display_name: string | null;
+      created_at: string;
+    }>;
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
+    return {
+      files: page.map((row) => {
+        const mtime = Date.parse(row.created_at);
+        return {
+          id: row.id,
+          displayName: row.display_name ?? row.object_path.split("/").at(-1) ?? row.id,
+          relativePath: assetReferencePath(row),
+          mimeType: row.mime_type,
+          sizeBytes: row.byte_size,
+          mtimeMs: Number.isNaN(mtime) ? null : mtime,
+        };
+      }),
+      nextCursor:
+        hasMore && last
+          ? encodeReferenceCursor([last.created_at, last.id])
+          : null,
+    };
+  }
+
+  // Search: recursive across the whole app, flat ranked list of media file
+  // references. Unlike the list protocol there is no parentGroupId; query and
+  // file-type `extensions`/`includeOther` filters combine, and either alone is a
+  // valid query. Keyset paginated on (created_at desc, id desc).
+  function searchReferenceAssets(input: {
+    query?: string | undefined;
+    extensions?: string[] | undefined;
+    includeOther?: boolean | undefined;
+    knownExtensions?: string[] | undefined;
+    fromMs?: number | undefined;
+    toMs?: number | undefined;
+    limit: number;
+    cursor?: string | null | undefined;
+  }): {
+    files: Array<{
+      id: string;
+      displayName: string;
+      relativePath: string;
+      mimeType: string | null;
+      sizeBytes: number | null;
+      mtimeMs: number | null;
+      projectName: string | null;
+    }>;
+    nextCursor: string | null;
+  } {
+    const { fromIso, toIso } = referenceTimeBounds(input);
+    const generatedAssetIds = listGeneratedReferenceAssetIds();
+    if (generatedAssetIds.length === 0) {
+      return { files: [], nextCursor: null };
+    }
+    const conditions = [
+      `a.id IN (${generatedAssetIds.map(() => "?").join(", ")})`,
+      REFERENCE_MEDIA_TYPE_PREDICATE,
+    ];
+    const params: SQLInputValue[] = [...generatedAssetIds];
+    if (input.query) {
+      conditions.push(
+        "(a.object_path LIKE ? COLLATE NOCASE OR a.display_name LIKE ? COLLATE NOCASE OR p.id LIKE ? COLLATE NOCASE OR p.name LIKE ? COLLATE NOCASE)",
+      );
+      params.push(
+        `%${input.query}%`,
+        `%${input.query}%`,
+        `%${input.query}%`,
+        `%${input.query}%`,
+      );
+    }
+    // Build the OR group of file-type categories. Each known extension maps to a
+    // suffix match; `other` matches anything whose extension is not recognized.
+    const extensions = input.extensions ?? [];
+    const includeOther = input.includeOther ?? false;
+    if (extensions.length > 0 || includeOther) {
+      const orClauses: string[] = [];
+      for (const ext of extensions) {
+        orClauses.push("a.object_path LIKE ? COLLATE NOCASE");
+        params.push(`%.${ext}`);
+      }
+      if (includeOther) {
+        const known = input.knownExtensions ?? [];
+        const notClauses = known.map(
+          () => "a.object_path LIKE ? COLLATE NOCASE",
+        );
+        for (const ext of known) {
+          params.push(`%.${ext}`);
+        }
+        orClauses.push(
+          notClauses.length > 0 ? `NOT (${notClauses.join(" OR ")})` : "1=1",
+        );
+      }
+      conditions.push(`(${orClauses.join(" OR ")})`);
+    }
+    if (fromIso) {
+      conditions.push("a.created_at >= ?");
+      params.push(fromIso);
+    }
+    if (toIso) {
+      conditions.push("a.created_at <= ?");
+      params.push(toIso);
+    }
+    const cursor = decodeReferenceCursor(input.cursor);
+    if (cursor && cursor.length === 2) {
+      const cursorTime = cursor[0] ?? "";
+      const cursorId = cursor[1] ?? "";
+      conditions.push("(a.created_at < ? OR (a.created_at = ? AND a.id < ?))");
+      params.push(cursorTime, cursorTime, cursorId);
+    }
+    const limit = Math.max(1, Math.min(50, input.limit));
+    const rows = db
+      .prepare(
+        `
+          SELECT a.id, a.object_path, a.mime_type, a.byte_size, a.file_path,
+                 a.source, a.display_name,
+                 a.created_at, p.name AS project_name
+          FROM assets a
+          LEFT JOIN projects p ON p.id = a.project_id
+          WHERE ${conditions.join(" AND ")}
+          ORDER BY a.created_at DESC, a.id DESC
+          LIMIT ?
+        `,
+      )
+      .all(...params, limit + 1) as Array<{
+      id: string;
+      object_path: string;
+      mime_type: string | null;
+      byte_size: number | null;
+      file_path: string;
+      source: AssetSource | null;
+      display_name: string | null;
+      created_at: string;
+      project_name: string | null;
+    }>;
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
+    return {
+      files: page.map((row) => {
+        const mtime = Date.parse(row.created_at);
+        return {
+          id: row.id,
+          displayName: row.display_name ?? row.object_path.split("/").at(-1) ?? row.id,
+          relativePath: assetReferencePath(row),
+          mimeType: row.mime_type,
+          sizeBytes: row.byte_size,
+          mtimeMs: Number.isNaN(mtime) ? null : mtime,
+          projectName: row.project_name,
+        };
+      }),
+      nextCursor:
+        hasMore && last
+          ? encodeReferenceCursor([last.created_at, last.id])
+          : null,
+    };
+  }
+
   function resetAllData() {
     db.close();
     rmSync(dataRoot, { force: true, recursive: true });
@@ -3577,9 +4519,9 @@ export function createLocalStore(options: {
     updateProfile,
     getWorkspaceSettings,
     updateWorkspaceSettings,
-    getNextopManagedConnection,
-    updateNextopManagedConnection,
-    clearNextopManagedConnection,
+    getTuttiManagedConnection,
+    updateTuttiManagedConnection,
+    clearTuttiManagedConnection,
     listProjects,
     createProject,
     getProject,
@@ -3632,6 +4574,7 @@ export function createLocalStore(options: {
     markBackgroundJobSucceeded,
     markBackgroundJobFailed,
     uploadFile,
+    createManagedFileAsset,
     getAssetUrl(assetId: string) {
       return resolveAssetUrl(assetId);
     },
@@ -3643,6 +4586,10 @@ export function createLocalStore(options: {
       const row = getAssetRow(assetId);
       return row ? assetObjectFromRow(row) : null;
     },
+    listReferenceProjectGroups,
+    listReferenceProjectAssets,
+    listReferenceUnassignedAssets,
+    searchReferenceAssets,
     resetAllData,
   };
 }

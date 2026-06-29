@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,20 +20,18 @@ import {
 } from "../src/i18n";
 
 const {
-  connectNextopManagedModelsMock,
-  disconnectNextopManagedModelsMock,
-  fetchNextopManagedConnectionMock,
+  connectTuttiManagedModelsMock,
+  disconnectTuttiManagedModelsMock,
+  fetchTuttiManagedConnectionMock,
   fetchWorkspaceSettingsMock,
   fetchModelsMock,
-  installAgentProviderMock,
   updateWorkspaceSettingsMock,
 } = vi.hoisted(() => ({
-  connectNextopManagedModelsMock: vi.fn(),
-  disconnectNextopManagedModelsMock: vi.fn(),
-  fetchNextopManagedConnectionMock: vi.fn(),
+  connectTuttiManagedModelsMock: vi.fn(),
+  disconnectTuttiManagedModelsMock: vi.fn(),
+  fetchTuttiManagedConnectionMock: vi.fn(),
   fetchWorkspaceSettingsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
-  installAgentProviderMock: vi.fn(),
   updateWorkspaceSettingsMock: vi.fn(),
 }));
 
@@ -36,12 +40,11 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("../src/lib/server-api", () => ({
-  connectNextopManagedModels: connectNextopManagedModelsMock,
-  disconnectNextopManagedModels: disconnectNextopManagedModelsMock,
+  connectTuttiManagedModels: connectTuttiManagedModelsMock,
+  disconnectTuttiManagedModels: disconnectTuttiManagedModelsMock,
   fetchModels: fetchModelsMock,
-  fetchNextopManagedConnection: fetchNextopManagedConnectionMock,
+  fetchTuttiManagedConnection: fetchTuttiManagedConnectionMock,
   fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
-  installAgentProvider: installAgentProviderMock,
   updateWorkspaceSettings: updateWorkspaceSettingsMock,
 }));
 
@@ -61,30 +64,27 @@ describe("SettingsPage", () => {
     void i18n.changeLanguage("en");
     fetchWorkspaceSettingsMock.mockReset();
     fetchModelsMock.mockReset();
-    fetchNextopManagedConnectionMock.mockReset();
-    connectNextopManagedModelsMock.mockReset();
-    disconnectNextopManagedModelsMock.mockReset();
-    installAgentProviderMock.mockReset();
+    fetchTuttiManagedConnectionMock.mockReset();
+    connectTuttiManagedModelsMock.mockReset();
+    disconnectTuttiManagedModelsMock.mockReset();
     updateWorkspaceSettingsMock.mockReset();
     fetchModelsMock.mockResolvedValue({ models: [] });
-    fetchNextopManagedConnectionMock.mockResolvedValue({
+    fetchTuttiManagedConnectionMock.mockResolvedValue({
       connection: {
         connected: false,
         models: [],
         providers: [],
       },
     });
-    installAgentProviderMock.mockResolvedValue({
-      provider: "codex",
-      status: "succeeded",
-      availability: "ready",
-      reason: "ready",
-      message: "Codex is installed and ready.",
-    });
   });
 
   afterEach(() => {
     cleanup();
+    (
+      window as Window & {
+        tuttiExternal?: unknown;
+      }
+    ).tuttiExternal = undefined;
     window.localStorage.clear();
     vi.clearAllMocks();
   });
@@ -107,11 +107,12 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
     });
-
     render(<SettingsPage />);
 
     await userEvent.click(await screen.findByRole("button", { name: /通用/ }));
@@ -145,6 +146,8 @@ describe("SettingsPage", () => {
           googleVertexLocation: "",
           googleVertexVideoLocation: "",
           replicateApiToken: "",
+          kieApiKey: "",
+          kieBaseUrl: "",
           volcesApiKey: "",
           volcesBaseUrl: "",
         },
@@ -156,7 +159,7 @@ describe("SettingsPage", () => {
     const retryButton = screen.getByRole("button", { name: "Retry" });
     await userEvent.click(retryButton);
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
 
     await waitFor(() =>
@@ -181,6 +184,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -189,7 +194,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
 
     expect(await screen.findByLabelText("Agnes API Key")).toHaveValue(
@@ -199,6 +204,185 @@ describe("SettingsPage", () => {
       "https://agnes.example/v1",
     );
     expect(screen.queryByLabelText("OpenAI API Key")).not.toBeInTheDocument();
+  });
+
+  it("prefills Agnes base URL and preset model IDs when Agnes settings are empty", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    updateWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
+        },
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+        agnesDefaultModel: "agnes:agnes-2.0-flash",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("tab", { name: "API provider" }),
+    );
+
+    expect(await screen.findByLabelText("Agnes Base URL")).toHaveValue(
+      "https://apihub.agnes-ai.com/v1",
+    );
+    expect(screen.getByLabelText("Agnes model 1")).toHaveValue(
+      "agnes-2.0-flash",
+    );
+    expect(screen.getByLabelText("Agnes model 2")).toHaveValue(
+      "agnes-1.5-flash",
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Get Agnes API Key" }),
+    );
+
+    expect(openSpy).toHaveBeenCalledWith(
+      "https://platform.agnes-ai.com/settings/apiKeys",
+      "_blank",
+      "noopener,noreferrer",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerModels: expect.objectContaining({
+            agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
+          }),
+          agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+          agnesDefaultModel: "agnes:agnes-2.0-flash",
+        }),
+      ),
+    );
+    openSpy.mockRestore();
+  });
+
+  it("adds missing Agnes preset model IDs without removing existing custom models", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "agnes:agnes-custom",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          agnes: ["agnes:agnes-custom"],
+        },
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "agnes:agnes-custom",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("tab", { name: "API provider" }),
+    );
+
+    expect(await screen.findByLabelText("Agnes model 1")).toHaveValue(
+      "agnes-2.0-flash",
+    );
+    expect(screen.getByLabelText("Agnes model 2")).toHaveValue(
+      "agnes-1.5-flash",
+    );
+    expect(screen.getByLabelText("Agnes model 3")).toHaveValue("agnes-custom");
+  });
+
+  it("hides Google Gemini and Vertex AI protocol credential entries", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "google:gemini-2.5-flash",
+        providerModels: {
+          ...EMPTY_PROVIDER_MODELS,
+          google: ["google:gemini-2.5-flash"],
+        },
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-local-agnes",
+        agnesBaseUrl: "https://agnes.example/v1",
+        agnesDefaultModel: "",
+        googleApiKey: "google-local-key",
+        googleVertexProject: "vertex-project",
+        googleVertexLocation: "global",
+        googleVertexVideoLocation: "us-central1",
+        replicateApiToken: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("tab", { name: "API provider" }),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Google Gemini" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Vertex AI" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Agnes" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "OpenAI-compatible" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Anthropic" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Agnes API Key")).toHaveValue(
+      "sk-local-agnes",
+    );
+    expect(screen.queryByLabelText("Google API Key")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Vertex Project")).not.toBeInTheDocument();
   });
 
   it("auto-imports detected API provider models when the provider has no configured models", async () => {
@@ -218,6 +402,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -236,7 +422,7 @@ describe("SettingsPage", () => {
         defaultModel: "agnes:agnes-2.0-flash",
         providerModels: {
           ...EMPTY_PROVIDER_MODELS,
-          agnes: ["agnes:agnes-2.0-flash"],
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
         },
         openAIApiKey: "",
         openAIApiBase: "",
@@ -250,6 +436,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -258,7 +446,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
 
     await waitFor(
@@ -277,9 +465,9 @@ describe("SettingsPage", () => {
     await waitFor(() =>
       expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          defaultModel: "agnes:agnes-2.0-flash",
+          defaultModel: "",
           providerModels: expect.objectContaining({
-            agnes: ["agnes:agnes-2.0-flash"],
+            agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
           }),
           agnesDefaultModel: "agnes:agnes-2.0-flash",
         }),
@@ -294,7 +482,7 @@ describe("SettingsPage", () => {
         providerModels: {
           openai: ["openai:gpt-4.1"],
           anthropic: ["anthropic:claude-sonnet-4-5"],
-          agnes: ["agnes:agnes-2.0-flash"],
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
           google: ["google:gemini-2.5-flash"],
           vertex: [],
         },
@@ -310,6 +498,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "global",
         googleVertexVideoLocation: "us-central1",
         replicateApiToken: "replicate-local-token",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -320,7 +510,7 @@ describe("SettingsPage", () => {
         providerModels: {
           openai: ["openai:gpt-4.1"],
           anthropic: ["anthropic:claude-sonnet-4-5"],
-          agnes: ["agnes:agnes-2.0-flash"],
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
           google: ["google:gemini-2.5-flash"],
           vertex: [],
         },
@@ -336,6 +526,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "global",
         googleVertexVideoLocation: "us-central1",
         replicateApiToken: "replicate-local-token",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -344,7 +536,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
     expect(
       (await screen.findAllByText("openai:gpt-4.1")).length,
@@ -403,7 +595,7 @@ describe("SettingsPage", () => {
         providerModels: {
           openai: ["openai:gpt-4.1"],
           anthropic: ["anthropic:claude-sonnet-4-5"],
-          agnes: ["agnes:agnes-2.0-flash"],
+          agnes: ["agnes:agnes-2.0-flash", "agnes:agnes-1.5-flash"],
           google: ["google:gemini-2.5-flash"],
           vertex: [],
         },
@@ -419,6 +611,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "global",
         googleVertexVideoLocation: "us-central1",
         replicateApiToken: "replicate-local-token",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       }),
@@ -445,6 +639,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -486,6 +682,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -494,7 +692,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
     await screen.findByLabelText("OpenAI API Key");
     const customModelInput = screen.getByRole("textbox", {
@@ -540,24 +738,104 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
     });
     updateWorkspaceSettingsMock.mockResolvedValue({
       settings: {
-        defaultModel: "openai:deepseek-chat",
+        defaultModel: "openai:deepseek-v4-flash",
         providerModels: {
           ...EMPTY_PROVIDER_MODELS,
           openai: [
-            "openai:deepseek-chat",
-            "openai:deepseek-reasoner",
             "openai:deepseek-v4-flash",
             "openai:deepseek-v4-pro",
+            "openai:deepseek-chat",
+            "openai:deepseek-reasoner",
           ],
         },
         openAIApiKey: "sk-local-openai",
         openAIApiBase: "https://api.deepseek.com",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+
+    render(<SettingsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("tab", { name: "API provider" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "OpenAI-compatible" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("combobox", { name: "Quick fill provider" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "DeepSeek - OpenAI" }),
+    );
+
+    expect(screen.getByLabelText("OpenAI Base URL")).toHaveValue(
+      "https://api.deepseek.com",
+    );
+    expect(screen.getByLabelText("OpenAI-compatible model 1")).toHaveValue(
+      "deepseek-v4-flash",
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Get DeepSeek - OpenAI API Key" }),
+    );
+
+    expect(openSpy).toHaveBeenCalledWith(
+      "https://platform.deepseek.com/api_keys",
+      "_blank",
+      "noopener,noreferrer",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaultModel: "openai:deepseek-v4-flash",
+          openAIApiBase: "https://api.deepseek.com",
+          providerModels: expect.objectContaining({
+            openai: [
+              "openai:deepseek-v4-flash",
+              "openai:deepseek-v4-pro",
+              "openai:deepseek-chat",
+              "openai:deepseek-reasoner",
+            ],
+          }),
+        }),
+      ),
+    );
+    openSpy.mockRestore();
+  });
+
+  it("quick fills current OpenAI API model presets", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
         anthropicApiKey: "",
         anthropicBaseUrl: "",
         agnesApiKey: "",
@@ -576,40 +854,32 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
     await userEvent.click(
       await screen.findByRole("button", { name: "OpenAI-compatible" }),
     );
-    await userEvent.selectOptions(
-      await screen.findByLabelText("Quick fill provider"),
-      "https://api.deepseek.com",
+    await userEvent.click(
+      await screen.findByRole("combobox", { name: "Quick fill provider" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "OpenAI" }),
     );
 
     expect(screen.getByLabelText("OpenAI Base URL")).toHaveValue(
-      "https://api.deepseek.com",
+      "https://api.openai.com/v1",
     );
     expect(screen.getByLabelText("OpenAI-compatible model 1")).toHaveValue(
-      "deepseek-chat",
+      "gpt-5.5",
     );
-
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          defaultModel: "openai:deepseek-chat",
-          openAIApiBase: "https://api.deepseek.com",
-          providerModels: expect.objectContaining({
-            openai: [
-              "openai:deepseek-chat",
-              "openai:deepseek-reasoner",
-              "openai:deepseek-v4-flash",
-              "openai:deepseek-v4-pro",
-            ],
-          }),
-        }),
-      ),
+    expect(screen.getByLabelText("OpenAI-compatible model 2")).toHaveValue(
+      "gpt-5.4",
+    );
+    expect(screen.getByLabelText("OpenAI-compatible model 3")).toHaveValue(
+      "gpt-5.4-mini",
+    );
+    expect(screen.getByLabelText("OpenAI-compatible model 4")).toHaveValue(
+      "gpt-5.4-nano",
     );
   });
 
@@ -636,6 +906,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -676,6 +948,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -684,7 +958,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
     await screen.findByText("Default LLM Model");
     await userEvent.click(
@@ -704,7 +978,10 @@ describe("SettingsPage", () => {
     );
   });
 
-  it("shows the Media tab with Replicate and Volces provider cards", async () => {
+  it("shows Media settings across image and video provider tabs", async () => {
+    updateWorkspaceSettingsMock.mockImplementation(async (settings) => ({
+      settings,
+    }));
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "openai:gpt-4.1",
@@ -721,6 +998,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "replicate-local-token",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "volces-local-key",
         volcesBaseUrl: "https://ark.cn-beijing.volces.com/api/v3",
       },
@@ -733,26 +1012,99 @@ describe("SettingsPage", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Replicate" }),
+      await screen.findByRole("heading", { name: "Media Generation" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Volces" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Agnes" })).toBeInTheDocument();
-    expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
+    const agnesHeading = await screen.findByRole("heading", { name: "Agnes" });
+    expect(agnesHeading).toBeInTheDocument();
+    expect(screen.getByText("Codex image permission")).toBeInTheDocument();
+    const codexHeading = screen.getByRole("heading", {
+      name: "Codex image permission",
+    });
+    const codexCard = codexHeading.closest(".rounded-xl");
+    expect(codexCard).not.toBeNull();
+    await userEvent.click(
+      within(codexCard as HTMLElement).getByRole("button", {
+        name: "Settings",
+      }),
+    );
     expect(
-      screen.getAllByRole("link", { name: "Get Agnes API Key" })[0],
+      within(codexCard as HTMLElement).getByRole("combobox", {
+        name: "Codex image permission",
+      }),
+    ).toHaveTextContent("Ask each time");
+
+    const agnesCard = agnesHeading.closest(".rounded-xl");
+    expect(agnesCard).not.toBeNull();
+    await userEvent.click(
+      within(agnesCard as HTMLElement).getByRole("button", {
+        name: "Settings",
+      }),
+    );
+    expect(screen.getByDisplayValue("sk-local-agnes")).toBeInTheDocument();
+    expect(
+      within(agnesCard as HTMLElement).getByRole("link", {
+        name: "Get Agnes API Key",
+      }),
     ).toHaveAttribute("href", "https://platform.agnes-ai.com/settings/apiKeys");
     expect(
-      screen.getAllByRole("link", { name: "Quick Start Docs" })[0],
+      within(agnesCard as HTMLElement).getByRole("link", {
+        name: "Quick Start Docs",
+      }),
     ).toHaveAttribute("href", "https://agnes-ai.com/doc/quick-start");
+
+    await userEvent.clear(screen.getByDisplayValue("sk-local-agnes"));
+    await userEvent.type(screen.getByLabelText("Agnes API Key"), "sk-updated");
+    expect(
+      within(codexCard as HTMLElement).getByRole("button", { name: "Save" }),
+    ).toBeDisabled();
+    expect(
+      within(agnesCard as HTMLElement).getByRole("button", { name: "Save" }),
+    ).toBeEnabled();
+
+    await userEvent.click(
+      within(codexCard as HTMLElement).getByRole("combobox", {
+        name: "Codex image permission",
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Use by default" }),
+    );
+    await userEvent.click(
+      within(codexCard as HTMLElement).getByRole("button", { name: "Save" }),
+    );
+
+    await waitFor(() =>
+      expect(updateWorkspaceSettingsMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          agnesApiKey: "sk-local-agnes",
+          codexImagegenDelegation: "always",
+        }),
+      ),
+    );
+    expect(screen.getByLabelText("Agnes API Key")).toHaveValue("sk-updated");
+
+    await userEvent.click(screen.getByRole("tab", { name: "Video" }));
+
+    const replicateHeading = await screen.findByRole("heading", {
+      name: "Replicate",
+    });
+    expect(replicateHeading).toBeInTheDocument();
+    const replicateCard = replicateHeading.closest(".rounded-xl");
+    expect(replicateCard).not.toBeNull();
+    await userEvent.click(
+      within(replicateCard as HTMLElement).getByRole("button", {
+        name: "Settings",
+      }),
+    );
     expect(screen.getByText("Seedance 1.5 Pro")).toBeInTheDocument();
-    expect(screen.getByText("Agnes Video v2.0")).toBeInTheDocument();
     expect(
       screen.getByDisplayValue("replicate-local-token"),
     ).toBeInTheDocument();
-    expect(screen.getByDisplayValue("sk-local-agnes")).toBeInTheDocument();
     expect(
-      screen.getByDisplayValue("https://ark.cn-beijing.volces.com/api/v3"),
-    ).toBeInTheDocument();
+      within(replicateCard as HTMLElement).getByRole("link", {
+        name: "Get Replicate API Key",
+      }),
+    ).toHaveAttribute("href", "https://replicate.com/account/api-tokens");
   });
 
   it("localizes Media settings copy in Chinese", async () => {
@@ -773,6 +1125,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -782,19 +1136,30 @@ describe("SettingsPage", () => {
 
     await userEvent.click(await screen.findByText("媒体"));
 
-    expect(await screen.findByText("媒体提供商")).toBeInTheDocument();
+    expect(await screen.findByText("媒体生成")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "按平台配置图片与视频提供商。如果同一模型家族后续存在多个平台版本，AIMC 会按提供商范围的模型 ID 分开保存，方便你显式选择路由。",
-      ),
+      screen.getByText("连接 AI 服务，用来生成图片和视频。"),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("图片 + 视频").length).toBeGreaterThan(0);
+    expect(screen.getByRole("tab", { name: "图片" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "视频" })).toBeInTheDocument();
     expect(screen.getAllByText("未配置").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("受影响模型").length).toBeGreaterThan(0);
-    expect(screen.getByText("免费")).toBeInTheDocument();
+    expect(screen.getByText("手动添加")).toBeInTheDocument();
+    expect(screen.getByText("Codex 生图权限")).toBeInTheDocument();
+    const codexHeading = screen.getByRole("heading", {
+      name: "Codex 生图权限",
+    });
+    const codexCard = codexHeading.closest(".rounded-xl");
+    expect(codexCard).not.toBeNull();
+    await userEvent.click(
+      within(codexCard as HTMLElement).getByRole("button", {
+        name: "设置",
+      }),
+    );
     expect(
-      screen.getByRole("link", { name: "获取 Agnes API Key" }),
-    ).toHaveAttribute("href", "https://platform.agnes-ai.com/settings/apiKeys");
+      within(codexCard as HTMLElement).getByRole("combobox", {
+        name: "Codex 生图权限",
+      }),
+    ).toHaveTextContent("每次询问");
     expect(screen.queryByText("Media Providers")).not.toBeInTheDocument();
     expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
   });
@@ -822,6 +1187,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -838,30 +1205,33 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     expect(
-      await screen.findByRole("button", { name: "Local agent" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      await screen.findByRole("tab", { name: "Local agent" }),
+    ).toHaveAttribute("aria-selected", "true");
     expect((await screen.findAllByText("Codex")).length).toBeGreaterThan(0);
     expect(screen.getByText("2 models")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Claude Code/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Codex image permission"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Custom model id")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Claude Code/i }));
     expect(screen.queryByLabelText("OpenAI API Key")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "API provider" }));
+    await userEvent.click(screen.getByRole("tab", { name: "API provider" }));
     await userEvent.click(
       await screen.findByRole("button", { name: "OpenAI-compatible" }),
     );
 
-    expect(screen.getByRole("button", { name: "Local agent" })).toHaveAttribute(
-      "aria-pressed",
+    expect(screen.getByRole("tab", { name: "Local agent" })).toHaveAttribute(
+      "aria-selected",
       "false",
     );
     expect(
-      screen.getByRole("button", { name: "API provider" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      screen.getByRole("tab", { name: "API provider" }),
+    ).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByLabelText("OpenAI API Key")).toHaveValue(
       "sk-local-openai",
     );
@@ -891,6 +1261,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -905,10 +1277,10 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     expect(
-      await screen.findByRole("button", { name: "API provider" }),
-    ).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Local agent" })).toHaveAttribute(
-      "aria-pressed",
+      await screen.findByRole("tab", { name: "API provider" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Local agent" })).toHaveAttribute(
+      "aria-selected",
       "false",
     );
     expect(await screen.findByText("Default LLM Model")).toBeInTheDocument();
@@ -931,6 +1303,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -962,6 +1336,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -1002,6 +1378,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -1041,6 +1419,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
@@ -1067,15 +1447,23 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
     });
 
-    render(<SettingsDialog open onOpenChange={onOpenChange} />);
+    render(
+      <SettingsDialog
+        open
+        onOpenChange={onOpenChange}
+        onSaved={() => onOpenChange(false)}
+      />,
+    );
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "API provider" }),
+      await screen.findByRole("tab", { name: "API provider" }),
     );
     await userEvent.type(screen.getByLabelText("OpenAI API Key"), "sk-updated");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -1083,7 +1471,82 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
-  it("installs missing pinned Local agent providers with a loading state", async () => {
+  it("closes the settings dialog after a successful media provider save", async () => {
+    const onOpenChange = vi.fn();
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-old-agnes",
+        agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    updateWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "sk-agnes",
+        agnesBaseUrl: "https://apihub.agnes-ai.com/v1",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+
+    render(
+      <SettingsDialog
+        open
+        onOpenChange={onOpenChange}
+        initialTab="media"
+        onSaved={() => onOpenChange(false)}
+      />,
+    );
+
+    const agnesHeading = await screen.findByRole("heading", { name: "Agnes" });
+    const agnesSection = agnesHeading.closest(".rounded-xl");
+    expect(agnesSection).not.toBeNull();
+    await userEvent.click(
+      within(agnesSection as HTMLElement).getByRole("button", {
+        name: "Settings",
+      }),
+    );
+    await userEvent.clear(await screen.findByLabelText("Agnes API Key"));
+    await userEvent.type(screen.getByLabelText("Agnes API Key"), "sk-agnes");
+    await userEvent.click(
+      within(agnesSection as HTMLElement).getByRole("button", {
+        name: "Save",
+      }),
+    );
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("opens Tutti manager for missing pinned Local agent providers without rescanning", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "",
@@ -1100,21 +1563,25 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },
     });
-    let resolveInstall: (value: unknown) => void = () => {};
-    installAgentProviderMock.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveInstall = resolve;
-      }),
-    );
-    fetchModelsMock
-      .mockResolvedValueOnce({ models: [] })
-      .mockResolvedValueOnce({
-        models: [{ id: "codex:gpt-5.4", name: "gpt-5.4", provider: "codex" }],
-      });
+    const openFeature = vi.fn().mockResolvedValue(undefined);
+    (
+      window as Window & {
+        tuttiExternal?: {
+          workspace?: {
+            openFeature?: typeof openFeature;
+          };
+        };
+      }
+    ).tuttiExternal = {
+      workspace: { openFeature },
+    };
+    fetchModelsMock.mockResolvedValue({ models: [] });
 
     render(<SettingsPage />);
 
@@ -1123,30 +1590,72 @@ describe("SettingsPage", () => {
 
     expect(codexButton).toBeEnabled();
     expect(claudeButton).toBeEnabled();
-    expect(screen.getAllByText("Install required")).toHaveLength(2);
+    expect(screen.getAllByText("Manage in Tutti")).toHaveLength(2);
     expect(
-      screen.getByText(/Install Codex or Claude Code/i),
+      screen.getByText(/Use Tutti to install or sign in/i),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
 
     await userEvent.click(codexButton);
 
-    expect(installAgentProviderMock).toHaveBeenCalledWith("codex");
-    expect(await screen.findByText("Installing...")).toBeInTheDocument();
-
-    resolveInstall({
+    expect(openFeature).toHaveBeenCalledWith({
+      feature: "agent-manage",
       provider: "codex",
-      status: "succeeded",
-      availability: "ready",
-      reason: "ready",
-      message: "Codex is installed and ready.",
     });
+    expect(fetchModelsMock).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText(/Tutti agent manager opened/i),
+    ).toBeInTheDocument();
+
+    await userEvent.click(claudeButton);
+
+    expect(openFeature).toHaveBeenLastCalledWith({
+      feature: "agent-manage",
+      provider: "claude-code",
+    });
+    expect(fetchModelsMock).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Rescan" }));
 
     await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("1 model")).toBeInTheDocument();
+    expect(fetchModelsMock).toHaveBeenLastCalledWith({ refresh: true });
+  });
+
+  it("shows an error when the Tutti agent manager bridge is unavailable", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({ models: [] });
+
+    render(<SettingsPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Codex/i }));
+
     expect(
-      screen.getByText("Codex is installed and ready."),
+      await screen.findByText(
+        "Open AI Canvas inside Tutti to manage local agents.",
+      ),
     ).toBeInTheDocument();
+    expect(fetchModelsMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not preselect a Local agent provider when no local model is selected", async () => {
@@ -1166,6 +1675,8 @@ describe("SettingsPage", () => {
         googleVertexLocation: "",
         googleVertexVideoLocation: "",
         replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
         volcesApiKey: "",
         volcesBaseUrl: "",
       },

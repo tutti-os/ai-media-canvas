@@ -4,14 +4,24 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 
 import { generateImage } from "../../generation/image-generation.js";
+import { validateImageGenerationParams } from "../../generation/model-schemas.js";
 import {
   type AvailableModel,
   getAvailableImageModels,
   resolveImageProviderName,
 } from "../../generation/providers/registry.js";
 import type { CanvasLayoutInspectionState } from "./inspect-canvas.js";
+import {
+  buildMediaCapabilityRequired,
+  isUnavailableMediaGenerationError,
+  type MediaCapabilityRequired,
+} from "./media-capability.js";
+import {
+  collectStringEnumValues,
+  summarizeModelSchemaForTool,
+} from "./model-schema-summary.js";
 
-const DEFAULT_MODEL = "black-forest-labs/flux-kontext-pro";
+const DEFAULT_MODEL = "codex/gpt-image-2";
 
 /**
  * Build the zod schema dynamically from the models available in the registry.
@@ -24,17 +34,14 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
     : (modelIds[0] ?? DEFAULT_MODEL);
 
   const modelDescription = models.length
-    ? `Model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.displayName} — ${m.description}`).join("\n")}`
+    ? `Model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.displayName} — ${m.description}. Limits: ${summarizeModelSchemaForTool(m)}`).join("\n")}`
     : "Model identifier (no providers currently registered)";
+  const aspectRatioValues = collectStringEnumValues(models, "aspectRatio");
+  const defaultAspectRatio = aspectRatioValues.includes("1:1")
+    ? "1:1"
+    : (aspectRatioValues[0] ?? "1:1");
 
-  // z.enum needs [string, ...string[]], but we may have 0 models at test time.
-  const modelField =
-    modelIds.length >= 1
-      ? z
-          .enum(modelIds as [string, ...string[]])
-          .default(defaultModel as (typeof modelIds)[number])
-          .describe(modelDescription)
-      : z.string().default(DEFAULT_MODEL).describe(modelDescription);
+  const modelField = z.string().default(defaultModel).describe(modelDescription);
 
   return z.object({
     title: z
@@ -52,13 +59,22 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .optional()
       .describe("Detailed image generation prompt"),
     model: modelField,
-    aspectRatio: z
-      .string()
-      .optional()
-      .default("1:1")
-      .describe(
-        "Aspect ratio (e.g. 1:1, 16:9, 9:16, 4:3, 3:4, 4:5, 5:4, 2:3, 3:2). Provider auto-normalizes unsupported ratios to nearest match.",
-      ),
+    aspectRatio:
+      aspectRatioValues.length >= 1
+        ? z
+            .enum(aspectRatioValues as [string, ...string[]])
+            .optional()
+            .default(defaultAspectRatio)
+            .describe(
+              "Aspect ratio. Must be one of the values listed for the selected model in the model field description.",
+            )
+        : z
+            .string()
+            .optional()
+            .default("1:1")
+            .describe(
+              "Aspect ratio. Must match the selected model's schema limits.",
+            ),
     quality: z
       .enum(["standard", "hd", "ultra"])
       .optional()
@@ -76,7 +92,7 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .array(z.string())
       .optional()
       .describe(
-        "Reference image URLs for editing/transformation. Google models accept up to 14, Flux models accept 1. Imagen 4 and Recraft V3 are text-only.",
+        "Reference image URLs for editing/transformation. Only use models whose schema supports inputImages; respect each selected model's limits.",
       ),
     size: z
       .string()
@@ -151,6 +167,8 @@ type ImageGenerateResult = {
   width?: number;
   height?: number;
   error?: string;
+  errorCode?: string;
+  capabilityRequired?: MediaCapabilityRequired;
   jobId?: string;
   jobType?: "image_generation";
   placement?: { x: number; y: number; width: number; height: number };
@@ -283,6 +301,21 @@ export async function runImageGenerate(
   if (submitImageJob) {
     try {
       lap("job_submit", { model: effectiveInput.model });
+      validateImageGenerationParams({
+        prompt: effectiveInput.prompt,
+        model: effectiveInput.model,
+        ...(effectiveInput.aspectRatio
+          ? { aspectRatio: effectiveInput.aspectRatio }
+          : {}),
+        ...(effectiveInput.inputImages?.length
+          ? { inputImages: effectiveInput.inputImages }
+          : {}),
+        ...(effectiveInput.quality ? { quality: effectiveInput.quality } : {}),
+        ...(effectiveInput.size ? { size: effectiveInput.size } : {}),
+        ...(effectiveInput.seed !== undefined
+          ? { seed: effectiveInput.seed }
+          : {}),
+      });
       const jobResult = await submitImageJob({
         prompt: effectiveInput.prompt,
         title: effectiveInput.title,
@@ -363,6 +396,16 @@ export async function runImageGenerate(
       }
       return result;
     } catch (error) {
+      if (isUnavailableMediaGenerationError(error)) {
+        const capabilityRequired =
+          buildMediaCapabilityRequired("image_generation");
+        return {
+          summary: "media_provider_configuration_required",
+          error: "media_provider_configuration_required",
+          errorCode: "media_provider_configuration_required",
+          capabilityRequired,
+        };
+      }
       const message = error instanceof Error ? error.message : "Unknown error";
       return {
         summary: `Image generation failed with model ${effectiveInput.model}: ${message}. Consider trying a different model or simplifying the prompt.`,
@@ -375,6 +418,24 @@ export async function runImageGenerate(
   try {
     lap("direct_generate_start", { model: effectiveInput.model });
     const providerName = resolveImageProviderName(effectiveInput.model);
+    validateImageGenerationParams({
+      prompt: effectiveInput.prompt,
+      model: effectiveInput.model,
+      ...(effectiveInput.aspectRatio
+        ? { aspectRatio: effectiveInput.aspectRatio }
+        : {}),
+      ...(effectiveInput.inputImages?.length
+        ? { inputImages: effectiveInput.inputImages }
+        : {}),
+      ...(effectiveInput.quality ? { quality: effectiveInput.quality } : {}),
+      ...(effectiveInput.outputFormat
+        ? { outputFormat: effectiveInput.outputFormat }
+        : {}),
+      ...(effectiveInput.size ? { size: effectiveInput.size } : {}),
+      ...(effectiveInput.seed !== undefined
+        ? { seed: effectiveInput.seed }
+        : {}),
+    });
     const result = await generateImage(providerName, {
       prompt: effectiveInput.prompt,
       model: effectiveInput.model,
@@ -430,6 +491,16 @@ export async function runImageGenerate(
     }
     return directResult;
   } catch (error) {
+    if (isUnavailableMediaGenerationError(error)) {
+      const capabilityRequired =
+        buildMediaCapabilityRequired("image_generation");
+      return {
+        summary: "media_provider_configuration_required",
+        error: "media_provider_configuration_required",
+        errorCode: "media_provider_configuration_required",
+        capabilityRequired,
+      };
+    }
     const message = error instanceof Error ? error.message : "Unknown error";
     return {
       summary: `Image generation failed: ${message}`,
@@ -444,12 +515,17 @@ export function createImageGenerateTool(deps?: {
   layoutInspectionState?: CanvasLayoutInspectionState;
   /** Override for testing — defaults to querying the provider registry. */
   availableModels?: AvailableModel[];
+  codexImagegenConfirmationRequired?: boolean;
 }) {
   const models = deps?.availableModels ?? getAvailableImageModels();
 
   const modelSummary = models.length
     ? models.map((m) => `${m.displayName} (${m.id})`).join(", ")
     : "No models available";
+
+  const confirmationNotice = deps?.codexImagegenConfirmationRequired
+    ? " Before calling this tool with model codex/gpt-image-2, non-Codex agents must call get_workspace_settings. If codexImagegen.confirmationRequired is true, ask the user whether to delegate image generation to Codex, then call update_workspace_settings with patch.codexImagegenDelegation=allow-once for one current-task call, patch.codexImagegenDelegation=always for a durable allow, or patch.codexImagegenDelegation=deny before retrying or stopping. Do not call generate_image with codex/gpt-image-2 until that consent state has been written."
+    : "";
 
   return tool(
     async (input: ImageGenerateInput, config) => {
@@ -469,7 +545,7 @@ export function createImageGenerateTool(deps?: {
     },
     {
       name: "generate_image",
-      description: `Generate an image using AI. Available models: ${modelSummary}. Returns the generated image URL. When creating multiple exploration images, leave placementX and placementY unset unless exact positioning is necessary so the canvas can auto-place results without overlap.`,
+      description: `Generate an image using AI. Available models: ${modelSummary}. Returns the generated image URL. When creating multiple exploration images, leave placementX and placementY unset unless exact positioning is necessary so the canvas can auto-place results without overlap.${confirmationNotice}`,
       schema: buildImageGenerateSchema(models),
     },
   );

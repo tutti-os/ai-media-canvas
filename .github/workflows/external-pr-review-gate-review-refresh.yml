@@ -1,0 +1,26 @@
+name: External PR Review Gate Review Refresh
+
+on:
+  workflow_run:
+    workflows:
+      - External PR Review Gate Review Signal
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  external-pr-review-refresh:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    uses: tutti-os/tutti/.github/workflows/reusable-external-pr-review-refresh.yml@main
+    secrets: inherit
+    with:
+      review_signal_run_id: ${{ github.event.workflow_run.id }}
+      review_signal_head_sha: ${{ github.event.workflow_run.head_sha }}
+      review_team_slug: tutti-rd
+      official_member_logins: ${{ vars.TUTTI_RD_MEMBERS }}
+      status_context: external-pr-review-gate

@@ -2,8 +2,6 @@
 
 import { useAppTranslation } from "@/i18n";
 
-const AGNES_API_KEYS_URL = "https://platform.agnes-ai.com/settings/apiKeys";
-
 type MissingModelConfiguration = "agent" | "image" | "video";
 
 export function ModelConfigurationBanner({
@@ -31,17 +29,6 @@ export function ModelConfigurationBanner({
       <div className="min-w-0 text-xs leading-relaxed text-foreground">
         <div className="font-medium">
           {t("modelConfiguration.missing", { models: missingLabels })}
-        </div>
-        <div className="text-muted-foreground">
-          {t("modelConfiguration.description")}
-          <a
-            href={AGNES_API_KEYS_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="ml-1 whitespace-nowrap font-medium text-foreground underline underline-offset-2 transition-colors hover:text-foreground/70"
-          >
-            {t("modelConfiguration.getAgnesKey")}
-          </a>
         </div>
       </div>
       <div className="flex shrink-0 flex-col gap-1.5 self-start md:self-center">

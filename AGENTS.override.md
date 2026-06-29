@@ -7,6 +7,12 @@
 - When changing a translation value in one locale, update the same namespace/key in every supported locale in `apps/web/src/i18n/locales`.
 - Run `pnpm check:i18n` before finishing any change that touches web UI copy or translation resources.
 - Do not bypass i18n checks with ignore comments unless the string is a product name, technical identifier, provider/model label, API identifier, file extension, keyboard shortcut, route name, or user-generated content.
-- Keep static export compatibility: do not introduce locale-prefixed routes or server-cookie rendering dependencies for language switching.<!-- subspace-session:start -->
+- Keep static export compatibility: do not introduce locale-prefixed routes or server-cookie rendering dependencies for language switching.
+
+## Agnes Asset Uploads
+
+- When invoking Agnes with local files, data URLs, or private/local asset URLs that need a temporary public URL, prefer Uguu as the first temporary upload provider.
+- For `agnes-ai-cli` or its JS client, use `temporaryMediaProviderOrder: ["uguu", "litterbox", "tmpfiles", "x0"]` when provider order is configurable, while preserving explicit caller overrides.
+- If Uguu fails during a live request, allow the existing fallback providers to run instead of failing solely because Uguu was unavailable.<!-- subspace-session:start -->
 
 <!-- subspace-session:end -->

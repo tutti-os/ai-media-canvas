@@ -15,6 +15,13 @@ export type VideoGeneratorStatus =
   | "generating"
   | "completed"
   | "error";
+export type VideoGeneratorInputMode =
+  | "text"
+  | "image"
+  | "keyframes"
+  | "reference"
+  | "multivideo"
+  | "video";
 
 export type VideoGeneratorData = {
   type: "video-generator";
@@ -24,15 +31,49 @@ export type VideoGeneratorData = {
   aspectRatio: string;
   duration: number;
   resolution: string;
+  inputMode?: VideoGeneratorInputMode;
   inputImages?: string[];
   jobId?: string;
+  runId?: string;
   errorMessage?: string;
+};
+
+type ViewportAppState = Parameters<typeof getViewportCenter>[0];
+type PartialViewportAppState = {
+  height?: number;
+  scrollX?: number;
+  scrollY?: number;
+  width?: number;
+  zoom?: { value?: number };
+};
+type VideoGeneratorElement = Record<string, unknown> & {
+  backgroundColor?: string;
+  customData?: Partial<VideoGeneratorData>;
+  height?: number;
+  id?: string;
+  isDeleted?: boolean;
+  strokeColor?: string;
+  updated?: number;
+  version?: number;
+  versionNonce?: number;
+  width?: number;
+  x?: number;
+  y?: number;
+};
+type VideoGeneratorSceneApi = {
+  getSceneElements: () => readonly VideoGeneratorElement[];
+  updateScene: (scene: {
+    elements: VideoGeneratorElement[];
+    captureUpdate?: string;
+  }) => void;
+};
+type VideoGeneratorCreateApi = VideoGeneratorSceneApi & {
+  getAppState: () => PartialViewportAppState;
 };
 
 function generateId(): string {
   return (
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2)
+    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   ).slice(0, 20);
 }
 
@@ -40,7 +81,8 @@ export function getDisplayDimensions(
   aspectRatio: string,
   displayMaxSize = 400,
 ): { width: number; height: number } {
-  const dims = RATIO_DIMENSIONS[aspectRatio] ?? RATIO_DIMENSIONS["16:9"]!;
+  const dims = RATIO_DIMENSIONS[aspectRatio] ??
+    RATIO_DIMENSIONS["16:9"] ?? { w: 1024, h: 576 };
   const scale = Math.min(displayMaxSize / dims.w, displayMaxSize / dims.h);
   return {
     width: Math.round(dims.w * scale),
@@ -49,11 +91,7 @@ export function getDisplayDimensions(
 }
 
 export function createVideoGeneratorElement(
-  api: {
-    getAppState: () => any;
-    getSceneElements: () => readonly any[];
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: VideoGeneratorCreateApi,
   options?: {
     aspectRatio?: string;
     model?: string;
@@ -63,7 +101,14 @@ export function createVideoGeneratorElement(
 ): string {
   const aspectRatio = options?.aspectRatio ?? "16:9";
   const { width, height } = getDisplayDimensions(aspectRatio);
-  const center = getViewportCenter(api.getAppState());
+  const appState = api.getAppState();
+  const center = getViewportCenter({
+    scrollX: appState.scrollX ?? 0,
+    scrollY: appState.scrollY ?? 0,
+    width: appState.width ?? 0,
+    height: appState.height ?? 0,
+    zoom: { value: appState.zoom?.value ?? 1 },
+  });
 
   const customData: VideoGeneratorData = {
     type: "video-generator",
@@ -118,25 +163,26 @@ export function createVideoGeneratorElement(
 }
 
 export function isVideoGeneratorElement(
-  element: any,
-): element is { customData: VideoGeneratorData } & Record<string, unknown> {
-  return element?.customData?.type === "video-generator";
+  element: unknown,
+): element is VideoGeneratorElement & { customData: VideoGeneratorData } {
+  if (!element || typeof element !== "object") return false;
+  const item = element as { customData?: { type?: unknown } };
+  return item.customData?.type === "video-generator";
 }
 
-export function getVideoGeneratorData(element: any): VideoGeneratorData | null {
+export function getVideoGeneratorData(
+  element: unknown,
+): VideoGeneratorData | null {
   if (!isVideoGeneratorElement(element)) return null;
   return element.customData as VideoGeneratorData;
 }
 
 export function updateVideoGeneratorElement(
-  api: {
-    getSceneElements: () => readonly any[];
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: VideoGeneratorSceneApi,
   elementId: string,
   updates: Partial<VideoGeneratorData>,
 ): void {
-  const elements = api.getSceneElements().map((el: any) => {
+  const elements = api.getSceneElements().map((el) => {
     if (el.id !== elementId || !isVideoGeneratorElement(el)) return el;
     return {
       ...el,
@@ -158,18 +204,15 @@ export function updateVideoGeneratorElement(
 }
 
 export function resizeVideoGeneratorElement(
-  api: {
-    getSceneElements: () => readonly any[];
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: VideoGeneratorSceneApi,
   elementId: string,
   aspectRatio: string,
 ): void {
   const { width, height } = getDisplayDimensions(aspectRatio);
-  const elements = api.getSceneElements().map((el: any) => {
+  const elements = api.getSceneElements().map((el) => {
     if (el.id !== elementId) return el;
-    const cx = el.x + el.width / 2;
-    const cy = el.y + el.height / 2;
+    const cx = (el.x ?? 0) + (el.width ?? 0) / 2;
+    const cy = (el.y ?? 0) + (el.height ?? 0) / 2;
     return {
       ...el,
       x: cx - width / 2,
@@ -179,7 +222,7 @@ export function resizeVideoGeneratorElement(
       strokeColor: VIDEO_GENERATOR_STROKE,
       backgroundColor: VIDEO_GENERATOR_BACKGROUND,
       customData: { ...el.customData, aspectRatio },
-      version: (el.version ?? 1) + 1,
+      version: ((el.version as number | undefined) ?? 1) + 1,
       versionNonce: Math.floor(Math.random() * 2_000_000_000),
       updated: Date.now(),
     };
@@ -188,13 +231,10 @@ export function resizeVideoGeneratorElement(
 }
 
 export function deleteVideoGeneratorElement(
-  api: {
-    getSceneElements: () => readonly any[];
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: VideoGeneratorSceneApi,
   elementId: string,
 ): void {
-  const elements = api.getSceneElements().map((el: any) => {
+  const elements = api.getSceneElements().map((el) => {
     if (el.id !== elementId) return el;
     return { ...el, isDeleted: true };
   });

@@ -13,6 +13,7 @@
       "defaultLlmModel": "Default LLM Model",
       "defaultModelDescription": "Pick the workspace default from the model lists configured below.",
       "defaultModelTitle": "Default model",
+      "getApiKey": "Get {{provider}} API Key",
       "importDetected": "Import detected",
       "noApiProviderModelSelected": "No API provider model selected",
       "noModelsYet": "No models yet",
@@ -28,7 +29,6 @@
       "workspaceModelsDescription": "Choose from the model lists configured under each provider."
     },
     "feedback": {
-      "installFailed": "Unable to install local agent provider.",
       "updated": "Local agent settings updated.",
       "updateFailed": "Failed to update local agent settings. Please try again."
     },
@@ -38,47 +38,51 @@
       "customOption": "Custom (type below)...",
       "description": "Pick the CLI route generations should use.",
       "detectedCli": "Detected CLI",
-      "empty": "No local CLI models detected yet. Rescan after installing or signing in to a supported local CLI.",
+      "empty": "No local CLI models detected yet. Manage supported agents in Tutti, then rescan.",
+      "feedback": {
+        "managerOpened": "Tutti agent manager opened. Finish setup there, then rescan.",
+        "openManagerFailed": "Open AI Canvas inside Tutti to manage local agents."
+      },
       "fetchedDescription": "Fetched from the CLI when it exposes models. Custom lets you type any model id this CLI accepts.",
-      "installHint": "Install Codex or Claude Code, then rescan to enable local agent routes.",
-      "installing": "Installing...",
-      "installRequired": "Install required",
+      "manageInTutti": "Manage in Tutti",
       "modelCountOne": "{{modelCount}} model",
       "modelCountOther": "{{modelCount}} models",
       "modelLabel": "Model",
       "noCliSelected": "No CLI selected",
+      "openingManager": "Opening...",
       "rescan": "Rescan",
       "selectCliFirst": "Select a CLI first...",
-      "selectModel": "Select a model..."
-    },
-    "nextopManaged": {
-      "bridgeUnavailable": "Open AI Media Canvas inside Nextop to authorize managed models.",
-      "chooseModel": "Choose a Nextop Managed model below.",
-      "connect": "Connect",
-      "connected": "Connected",
-      "connectFirst": "Connect to Nextop Managed to import available models.",
-      "defaultModel": "Default model",
-      "description": "Use model credentials managed by Nextop without storing provider keys in this app.",
-      "disconnect": "Disconnect",
-      "emptyModels": "No Nextop Managed models are available. Configure providers in Nextop settings.",
-      "feedback": {
-        "connected": "Nextop Managed models connected.",
-        "connectFailed": "Unable to connect Nextop Managed models.",
-        "disconnected": "Nextop Managed models disconnected.",
-        "disconnectFailed": "Unable to disconnect Nextop Managed models.",
-        "openSettingsFailed": "Unable to open Nextop settings."
-      },
-      "manageInNextop": "Manage in Nextop",
-      "noModelSelected": "No Nextop Managed model selected",
-      "notConnected": "Not connected",
-      "reauthorize": "Reauthorize",
-      "title": "Nextop Managed"
+      "selectModel": "Select a model...",
+      "setupHint": "Use Tutti to install or sign in to Codex or Claude Code, then rescan to enable local agent routes."
     },
     "source": {
       "apiProvider": "API provider",
       "detected": "{{cliCount}} detected",
       "localAgent": "Local agent",
-      "nextopManaged": "Nextop Managed"
+      "tuttiManaged": "Tutti Managed"
+    },
+    "tuttiManaged": {
+      "bridgeUnavailable": "Open AI Canvas inside Tutti to authorize managed models.",
+      "chooseModel": "Choose a Tutti Managed model below.",
+      "connect": "Connect",
+      "connected": "Connected",
+      "connectFirst": "Connect to Tutti Managed to import available models.",
+      "defaultModel": "Default model",
+      "description": "Use model credentials managed by Tutti without storing provider keys in this app.",
+      "disconnect": "Disconnect",
+      "emptyModels": "No Tutti Managed models are available. Configure providers in Tutti settings.",
+      "feedback": {
+        "connected": "Tutti Managed models connected.",
+        "connectFailed": "Unable to connect Tutti Managed models.",
+        "disconnected": "Tutti Managed models disconnected.",
+        "disconnectFailed": "Unable to disconnect Tutti Managed models.",
+        "openSettingsFailed": "Unable to open Tutti settings."
+      },
+      "manageInTutti": "Manage in Tutti",
+      "noModelSelected": "No Tutti Managed model selected",
+      "notConnected": "Not connected",
+      "reauthorize": "Reauthorize",
+      "title": "Tutti Managed"
     }
   },
   "dialogTitle": "Settings",
@@ -94,10 +98,17 @@
   },
   "media": {
     "actions": {
+      "add": "Add",
+      "adding": "Adding",
+      "cancel": "Cancel",
+      "collapse": "Collapse",
+      "enable": "Enable",
+      "expand": "Expand",
+      "getApiKey": "Get {{provider}} API Key",
       "save": "Save",
-      "saving": "Saving..."
+      "saving": "Saving...",
+      "settings": "Settings"
     },
-    "affectedModels": "Affected models",
     "agnesHint": {
       "description": "Agnes offers a free starter route.",
       "free": "Free",
@@ -106,43 +117,82 @@
     },
     "capabilities": {
       "image": "Image",
-      "imageVideo": "Image + Video"
+      "video": "Video"
     },
     "cards": {
       "agnes": {
+        "remark": "Recommended · free tier",
         "summary": "Agnes multimodal route. Uses agnes-ai-cli for image/video generation, including compose and keyframe-capable video modes."
       },
       "google": {
         "summary": "Google AI Studio / Developer API route. Best for Nano Banana and Google-official image/video families."
       },
+      "kie": {
+        "remark": "Most model choices",
+        "summary": "Third-party aggregation route for Kie Market image and video models, including Seedream, Nano Banana, Runway, Veo, Kling, and Seedance."
+      },
       "openai": {
         "summary": "OpenAI-compatible image route. Uses the same key/base URL pair as the OpenAI-compatible agent protocol."
       },
       "replicate": {
+        "remark": "Rich open models",
         "summary": "Third-party hosted models. Use this when you want Seedream, Seedance, Kling, or Replicate-routed Veo/Sora families."
-      },
-      "vertex": {
-        "summary": "Google Cloud hosted route. Uses Vertex project and locations, with service-account credentials still coming from env."
-      },
-      "volces": {
-        "summary": "ByteDance / Volcengine's official channel. Use this for Doubao Seedream models served through Ark."
       }
     },
-    "description": "Configure image and video providers by platform. If the same model family exists on multiple platforms later, AIMC keeps them separate by provider-scoped model IDs so you can choose the route explicitly.",
+    "codexImagegen": {
+      "description": "Set whether the current agent can use Codex Image 2.0 for image generation.",
+      "options": {
+        "always": {
+          "description": "Use Codex automatically for future matching image requests.",
+          "label": "Use by default"
+        },
+        "ask": {
+          "description": "Ask before delegating each matching image request.",
+          "label": "Ask each time"
+        },
+        "never": {
+          "description": "Do not delegate image generation to Codex.",
+          "label": "Do not use"
+        }
+      },
+      "title": "Codex image permission"
+    },
+    "connected": {
+      "providerMeta": "API Key configured · {{count}} models",
+      "providerMeta_one": "API Key configured · {{count}} model",
+      "providerMeta_other": "API Key configured · {{count}} models"
+    },
+    "description": "Connect AI services for image and video generation.",
     "feedback": {
       "updated": "Local media provider settings updated.",
       "updateFailed": "Failed to update local media provider settings. Please try again."
     },
+    "localDetection": {
+      "codexMeta": "The current agent can call Codex Image 2.0 for image generation",
+      "codexTitle": "Codex image permission",
+      "detected": "1 detected",
+      "enabled": "Enabled"
+    },
     "localStorageNote": "These values are stored in the local sqlite settings database and reused by the matching media providers.",
-    "providerNotes": {
-      "replicate": "{{provider}} is a third-party hosting platform.",
-      "volces": "{{provider}} is the ByteDance / Volcengine official channel."
+    "manualAdd": {
+      "advanced": "Advanced options",
+      "advancedHint": "Usually does not need changes",
+      "description": "Connect more image and video services with your own API Key ({{count}} available).",
+      "description_one": "Connect {{count}} more image or video service with your own API Key.",
+      "description_other": "Connect more image and video services with your own API Key ({{count}} available).",
+      "supportedModels": "Supported models"
+    },
+    "sections": {
+      "connected": "Connected",
+      "localDetection": "Local detection",
+      "manualAdd": "Manual add"
     },
     "status": {
-      "configured": "Configured",
-      "notConfigured": "Not configured"
+      "enabled": "✓ Enabled",
+      "notConfigured": "Not configured",
+      "ready": "Ready"
     },
-    "title": "Media Providers"
+    "title": "Media Generation"
   },
   "modelConfiguration": {
     "configureAgent": "Configure Agent",

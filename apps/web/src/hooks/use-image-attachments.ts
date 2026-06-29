@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+
+import { toRuntimeAssetUrl } from "../lib/local-assets";
 import { uploadFile } from "../lib/server-api";
 
 export type ImageAttachmentState = {
@@ -33,7 +35,18 @@ export type ReadyAttachment = {
 };
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
-const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const ALLOWED_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+
+function isReadyAttachmentState(
+  attachment: ImageAttachmentState,
+): attachment is ImageAttachmentState & { assetId: string; url: string } {
+  return Boolean(attachment.assetId && attachment.url && !attachment.error);
+}
 
 export function useImageAttachments(projectId?: string) {
   const [attachments, setAttachments] = useState<ImageAttachmentState[]>([]);
@@ -96,7 +109,12 @@ export function useImageAttachments(projectId?: string) {
             setAttachments((prev) =>
               prev.map((a) =>
                 a.id === id
-                  ? { ...a, uploading: false, assetId: res.asset.id, url: res.url }
+                  ? {
+                      ...a,
+                      uploading: false,
+                      assetId: res.asset.id,
+                      url: res.url,
+                    }
                   : a,
               ),
             );
@@ -106,7 +124,12 @@ export function useImageAttachments(projectId?: string) {
             setAttachments((prev) =>
               prev.map((a) =>
                 a.id === id
-                  ? { ...a, uploading: false, error: err instanceof Error ? err.message : "Upload failed" }
+                  ? {
+                      ...a,
+                      uploading: false,
+                      error:
+                        err instanceof Error ? err.message : "Upload failed",
+                    }
                   : a,
               ),
             );
@@ -122,14 +145,15 @@ export function useImageAttachments(projectId?: string) {
 
   const addCanvasRef = useCallback((ref: CanvasImageRef) => {
     const id = crypto.randomUUID();
+    const url = toRuntimeAssetUrl(ref.url, ref.assetId);
     setAttachments((prev) => [
       ...prev,
       {
         id,
-        preview: ref.url,
+        preview: url,
         uploading: false,
         assetId: ref.assetId,
-        url: ref.url,
+        url,
         mimeType: ref.mimeType,
         source: "canvas-ref",
         ...(ref.name ? { name: ref.name } : {}),
@@ -159,7 +183,12 @@ export function useImageAttachments(projectId?: string) {
           setAttachments((prev) =>
             prev.map((a) =>
               a.id === id
-                ? { ...a, uploading: false, assetId: res.asset.id, url: res.url }
+                ? {
+                    ...a,
+                    uploading: false,
+                    assetId: res.asset.id,
+                    url: res.url,
+                  }
                 : a,
             ),
           );
@@ -169,7 +198,11 @@ export function useImageAttachments(projectId?: string) {
           setAttachments((prev) =>
             prev.map((a) =>
               a.id === id
-                ? { ...a, uploading: false, error: err instanceof Error ? err.message : "Upload failed" }
+                ? {
+                    ...a,
+                    uploading: false,
+                    error: err instanceof Error ? err.message : "Upload failed",
+                  }
                 : a,
             ),
           );
@@ -202,10 +235,10 @@ export function useImageAttachments(projectId?: string) {
   const isUploading = attachments.some((a) => a.uploading);
 
   const readyAttachments = attachments
-    .filter((a) => a.assetId && a.url && !a.error)
+    .filter(isReadyAttachmentState)
     .map((a) => ({
-      assetId: a.assetId!,
-      url: a.url!,
+      assetId: a.assetId,
+      url: a.url,
       mimeType: a.mimeType,
       source: a.source,
       ...(a.name ? { name: a.name } : {}),

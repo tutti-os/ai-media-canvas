@@ -1,7 +1,7 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDown, ImageIcon, Loader2, Sparkles, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
@@ -13,33 +13,75 @@ import {
 import { calculateCenteredGeneratorPanelPosition } from "../../lib/canvas-generator-panel-position";
 import {
   type ImageGeneratorData,
-  deleteImageGeneratorElement,
   resizeImageGeneratorElement,
   updateImageGeneratorElement,
 } from "../../lib/canvas-image-generator";
 import { withNormalizedCanvasElementIndices } from "../../lib/canvas-normalize";
 import { isExcalidrawContextMenuTarget } from "../../lib/excalidraw-context-menu";
+import {
+  imageTargetForAspectRatio,
+  isAgnesModel,
+  normalizeImageDataUrlToTarget,
+} from "../../lib/image-input-normalization";
 import { normalizeLocalAssetStorageUrl } from "../../lib/local-assets";
 import { formatProviderLabel } from "../../lib/provider-labels";
 import type { ImageModelInfo } from "../../lib/server-api";
-import { fetchImageModels, generateImageDirect } from "../../lib/server-api";
+import {
+  fetchImageModels,
+  generateImageDirect,
+  uploadFile,
+} from "../../lib/server-api";
 
 type ImageGeneratorPanelProps = {
   elementId: string;
   elementBounds: { x: number; y: number; width: number; height: number };
   data: ImageGeneratorData;
-  excalidrawApi: any;
+  excalidrawApi: ImageGeneratorExcalidrawApi;
   canvasScrollZoom: { scrollX: number; scrollY: number; zoom: number };
+  projectId?: string;
   onClose: () => void;
 };
 
 const ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 const PANEL_WIDTH = 450;
+type ReferenceImageData = { dataUrl: string; file: File };
+type CanvasElement = Record<string, unknown> & {
+  id?: string;
+  isDeleted?: boolean;
+};
+type ImageGeneratorExcalidrawApi = {
+  addFiles(files: Record<string, unknown>[]): void;
+  getSceneElements(): readonly CanvasElement[];
+  updateScene(scene: Record<string, unknown>): void;
+};
 
 function generateId(): string {
   return (
     Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   ).slice(0, 20);
+}
+
+function getSchemaEnum<T extends string | number>(
+  model: ImageModelInfo | undefined,
+  property: string,
+): T[] {
+  const values = model?.schema?.properties?.[property]?.enum;
+  return Array.isArray(values)
+    ? values.filter(
+        (value): value is T =>
+          typeof value === "string" || typeof value === "number",
+      )
+    : [];
+}
+
+function getAspectRatioOptions(model?: ImageModelInfo): string[] {
+  const schemaRatios = getSchemaEnum<string>(model, "aspectRatio");
+  return schemaRatios.length ? schemaRatios : [...ASPECT_RATIOS];
+}
+
+function getMaxInputImages(model?: ImageModelInfo): number {
+  const value = model?.schema?.properties?.inputImages?.maxItems;
+  return typeof value === "number" ? value : 0;
 }
 
 export function ImageGeneratorPanel({
@@ -48,6 +90,7 @@ export function ImageGeneratorPanel({
   data,
   excalidrawApi,
   canvasScrollZoom,
+  projectId,
   onClose,
 }: ImageGeneratorPanelProps) {
   const { t } = useAppTranslation("canvas");
@@ -62,7 +105,11 @@ export function ImageGeneratorPanel({
   const [models, setModels] = useState<ImageModelInfo[]>([]);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showRatioDropdown, setShowRatioDropdown] = useState(false);
+  const [referenceImage, setReferenceImage] =
+    useState<ReferenceImageData | null>(null);
+  const [referenceLoading, setReferenceLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const referenceInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const { handleGenerationError } = useGenerationErrorHandler();
   // AbortController for canceling only when a newer generation supersedes this one.
@@ -98,9 +145,7 @@ export function ImageGeneratorPanel({
         if (cancelled) return;
         setModels(response.models);
         if (response.models.length === 0) {
-          setAvailabilityError(
-            "未配置可用生图模型，请先在设置中配置 Replicate、Agnes 或 Volces provider。",
-          );
+          setAvailabilityError(t("tools.imagePanel.noAvailableModels"));
           return;
         }
 
@@ -119,13 +164,13 @@ export function ImageGeneratorPanel({
       .catch((err) => {
         console.warn("[image-gen] Failed to fetch models:", err);
         if (!cancelled) {
-          setAvailabilityError("生图服务不可用，请确认本地 3001 服务已启动。");
+          setAvailabilityError(t("tools.imagePanel.serviceUnavailable"));
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [excalidrawApi, elementId]);
+  }, [excalidrawApi, elementId, t]);
 
   // Close dropdowns when clicking outside the panel
   useEffect(() => {
@@ -153,7 +198,7 @@ export function ImageGeneratorPanel({
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
-  }, [prompt]);
+  });
 
   // Calculate panel screen position from canvas coordinates
   const panelPosition = calculateCenteredGeneratorPanelPosition({
@@ -162,6 +207,33 @@ export function ImageGeneratorPanel({
     panelWidth: PANEL_WIDTH,
   });
   const currentModel = models.find((item) => item.id === model);
+  const aspectRatioOptions = useMemo(
+    () => getAspectRatioOptions(currentModel),
+    [currentModel],
+  );
+  const maxInputImages = getMaxInputImages(currentModel);
+
+  useEffect(() => {
+    if (!currentModel) return;
+    if (maxInputImages === 0 && referenceImage) setReferenceImage(null);
+    const nextAspectRatio = aspectRatioOptions.includes(aspectRatio)
+      ? aspectRatio
+      : (aspectRatioOptions[0] ?? aspectRatio);
+    if (nextAspectRatio === aspectRatio) return;
+    setAspectRatio(nextAspectRatio);
+    resizeImageGeneratorElement(excalidrawApi, elementId, nextAspectRatio);
+    updateImageGeneratorElement(excalidrawApi, elementId, {
+      aspectRatio: nextAspectRatio,
+    });
+  }, [
+    aspectRatio,
+    aspectRatioOptions,
+    currentModel,
+    excalidrawApi,
+    elementId,
+    maxInputImages,
+    referenceImage,
+  ]);
 
   const handleModelChange = useCallback(
     (nextModel: string) => {
@@ -186,11 +258,25 @@ export function ImageGeneratorPanel({
     [excalidrawApi, elementId],
   );
 
-  const handleDelete = useCallback(() => {
-    abortRef.current?.abort();
-    deleteImageGeneratorElement(excalidrawApi, elementId);
-    onClose();
-  }, [excalidrawApi, elementId, onClose]);
+  const handleReferenceUpload = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setReferenceLoading(true);
+      const reader = new FileReader();
+      reader.onload = () => {
+        setReferenceImage({ dataUrl: reader.result as string, file });
+        setReferenceLoading(false);
+      };
+      reader.onerror = () => {
+        setReferenceLoading(false);
+        setError(t("tools.imagePanel.referenceUploadFailed"));
+      };
+      reader.readAsDataURL(file);
+      e.target.value = "";
+    },
+    [t],
+  );
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || loading || availabilityError) return;
@@ -209,10 +295,28 @@ export function ImageGeneratorPanel({
     });
 
     try {
+      const inputImage =
+        referenceImage && maxInputImages > 0
+          ? isAgnesModel(model)
+            ? await normalizeImageDataUrlToTarget(
+                referenceImage.dataUrl,
+                imageTargetForAspectRatio(aspectRatio),
+              )
+            : referenceImage.dataUrl
+          : null;
+      const inputImageUrl = inputImage
+        ? await uploadReferenceImageForGeneration(
+            inputImage,
+            referenceImage?.file,
+            projectId,
+          )
+        : null;
       const result = await generateImageDirect(prompt.trim(), {
         model,
         aspectRatio,
         quality: data.quality,
+        ...(inputImageUrl ? { inputImages: [inputImageUrl] } : {}),
+        ...(projectId ? { projectId } : {}),
         onJobCreated: (jobId) => {
           updateImageGeneratorElement(excalidrawApi, elementId, {
             jobId,
@@ -231,7 +335,7 @@ export function ImageGeneratorPanel({
 
       const currentElements = excalidrawApi.getSceneElements();
       const generatorElement = currentElements.find(
-        (el: any) => el.id === elementId,
+        (el) => el.id === elementId,
       );
       if (!generatorElement || generatorElement.isDeleted) return;
 
@@ -263,7 +367,7 @@ export function ImageGeneratorPanel({
       });
 
       // Replace: delete placeholder, add image
-      const elements = currentElements.map((el: any) => {
+      const elements = currentElements.map((el) => {
         if (el.id === elementId) return { ...el, isDeleted: true };
         return el;
       });
@@ -283,14 +387,14 @@ export function ImageGeneratorPanel({
       console.error("[image-gen] Generation error:", err);
       const handled = handleGenerationError(err);
       if (!handled && mountedRef.current) {
-        setError("图片生成失败，请重试或更换模型。");
+        setError(t("tools.imagePanel.generationFailed"));
       }
       if (mountedRef.current) {
         setLoading(false);
       }
       updateImageGeneratorElement(excalidrawApi, elementId, {
         status: "error",
-        errorMessage: "生成失败",
+        errorMessage: t("tools.generateFailed"),
       });
     }
   }, [
@@ -299,11 +403,16 @@ export function ImageGeneratorPanel({
     loading,
     model,
     aspectRatio,
+    data.quality,
+    referenceImage,
+    maxInputImages,
+    projectId,
     excalidrawApi,
     elementId,
     elementBounds,
     onClose,
     handleGenerationError,
+    t,
   ]);
 
   return createPortal(
@@ -315,6 +424,64 @@ export function ImageGeneratorPanel({
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
+      {maxInputImages > 0 && (
+        <div className="relative mb-2 inline-block">
+          <input
+            ref={referenceInputRef}
+            aria-label={t("tools.imagePanel.uploadReferenceImage")}
+            type="file"
+            accept="image/*"
+            hidden
+            disabled={loading}
+            onChange={handleReferenceUpload}
+          />
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => referenceInputRef.current?.click()}
+            className="group relative flex h-[48px] w-[118px] cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-[18px] border border-border/55 bg-muted/25 px-3 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:border-border/80 hover:bg-muted/45 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {referenceImage ? (
+              <>
+                <img
+                  src={referenceImage.dataUrl}
+                  alt={t("tools.imagePanel.referenceImagePreview")}
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+                <div className="absolute inset-x-0 bottom-0 bg-background/80 px-1.5 py-1 text-center text-[11px] font-medium text-foreground backdrop-blur">
+                  {t("tools.imagePanel.referenceImage")}
+                </div>
+              </>
+            ) : referenceLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/70" />
+                <span className="whitespace-nowrap">
+                  {t("tools.imagePanel.uploadingReference")}
+                </span>
+              </>
+            ) : (
+              <>
+                <ImageIcon className="h-4 w-4 text-muted-foreground/55" />
+                <span className="whitespace-nowrap">
+                  {t("tools.imagePanel.referenceImage")}
+                </span>
+              </>
+            )}
+          </button>
+          {referenceImage && !loading && (
+            <button
+              type="button"
+              aria-label={t("tools.imagePanel.removeReferenceImage")}
+              title={t("tools.imagePanel.removeReferenceImage")}
+              onClick={() => setReferenceImage(null)}
+              className="absolute right-1 top-1 inline-flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-background/85 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Prompt textarea */}
       <textarea
         ref={textareaRef}
@@ -326,7 +493,7 @@ export function ImageGeneratorPanel({
             void handleGenerate();
           }
         }}
-        placeholder="今天我们要创作什么"
+        placeholder={t("tools.imagePanel.placeholder")}
         disabled={loading}
         style={{ scrollbarWidth: "none" }}
         className="min-h-[74px] max-h-[140px] w-full resize-none border-none bg-transparent p-1 text-[14px] leading-[18px] text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-scrollbar]:hidden"
@@ -353,15 +520,9 @@ export function ImageGeneratorPanel({
                   ? currentModel.displayName
                   : models.length > 0
                     ? model
-                    : "未配置模型"}
+                    : t("tools.imagePanel.noModel")}
               </span>
-              <svg
-                className="h-3 w-3 text-muted-foreground"
-                viewBox="0 0 12 24"
-                fill="currentColor"
-              >
-                <path d="M8.546 10.33a.4.4 0 0 1 .566 0l.424.424a.4.4 0 0 1 0 .566l-3.041 3.041a.7.7 0 0 1-.99 0l-3.04-3.04a.4.4 0 0 1 0-.567l.423-.424a.4.4 0 0 1 .567 0L6 12.876z" />
-              </svg>
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
             </button>
             {showModelDropdown && (
               <div className="absolute bottom-full left-0 z-50 mb-1 w-[280px] overflow-hidden rounded-2xl border-[0.5px] border-border bg-card py-1 shadow-card">
@@ -393,16 +554,6 @@ export function ImageGeneratorPanel({
         </div>
 
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            aria-label={t("tools.imagePanel.deleteCard")}
-            title={t("tools.imagePanel.deleteCard")}
-            onClick={handleDelete}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-
           <div className="relative">
             <button
               type="button"
@@ -410,17 +561,11 @@ export function ImageGeneratorPanel({
               className="flex h-8 items-center gap-0.5 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
             >
               <span className="text-foreground">{aspectRatio}</span>
-              <svg
-                className="h-3 w-3 text-muted-foreground"
-                viewBox="0 0 12 24"
-                fill="currentColor"
-              >
-                <path d="M8.546 10.33a.4.4 0 0 1 .566 0l.424.424a.4.4 0 0 1 0 .566l-3.041 3.041a.7.7 0 0 1-.99 0l-3.04-3.04a.4.4 0 0 1 0-.567l.423-.424a.4.4 0 0 1 .567 0L6 12.876z" />
-              </svg>
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
             </button>
             {showRatioDropdown && (
               <div className="absolute bottom-full right-0 z-50 mb-1 rounded-lg border-[0.5px] border-border bg-card py-1 shadow-card">
-                {ASPECT_RATIOS.map((r) => (
+                {aspectRatioOptions.map((r) => (
                   <button
                     key={r}
                     type="button"
@@ -438,20 +583,14 @@ export function ImageGeneratorPanel({
           <button
             type="button"
             onClick={() => void handleGenerate()}
-            aria-label="生成图片"
+            aria-label={t("tools.imagePanel.generateImage")}
             disabled={!prompt.trim() || loading || Boolean(availabilityError)}
             className="flex h-8 min-w-12 items-center justify-center gap-1 rounded-full bg-primary p-2 text-primary-foreground transition-colors hover:bg-primary/80 hover:accent-glow disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
           >
             {loading ? (
               <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-white/30 border-t-white" />
             ) : (
-              <svg
-                className="h-3.5 w-[9.3px] shrink-0"
-                viewBox="0 0 8 10"
-                fill="currentColor"
-              >
-                <path d="M6.9 4.36H5.385V.76c0-.84-.447-1.01-.991-.38L4 .835.677 4.685c-.457.525-.265.955.422.955h1.517v3.6c0 .84.446 1.01.991.38L4 9.165l3.323-3.85c.456-.525.265-.955-.422-.955" />
-              </svg>
+              <Sparkles className="h-3.5 w-3.5 shrink-0" />
             )}
           </button>
         </div>
@@ -459,4 +598,49 @@ export function ImageGeneratorPanel({
     </div>,
     document.body,
   );
+}
+
+async function uploadReferenceImageForGeneration(
+  dataUrl: string,
+  sourceFile: File | undefined,
+  projectId: string | undefined,
+): Promise<string> {
+  const file = dataUrlToFile(dataUrl, sourceFile);
+  const upload = await uploadFile(file, projectId);
+  return upload.url;
+}
+
+function dataUrlToFile(dataUrl: string, sourceFile: File | undefined): File {
+  const match = dataUrl.match(/^data:([^;,]+)?((?:;[^,]+)*?),(.*)$/s);
+  if (!match) {
+    return (
+      sourceFile ??
+      new File([dataUrl], "reference-image.txt", {
+        type: "text/plain",
+      })
+    );
+  }
+
+  const mimeType = match[1] || sourceFile?.type || "application/octet-stream";
+  const metadata = match[2] ?? "";
+  const body = match[3] ?? "";
+  const binary = metadata.includes(";base64")
+    ? atob(body)
+    : decodeURIComponent(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return new File([bytes], sourceFile?.name || fileNameForMimeType(mimeType), {
+    type: mimeType,
+  });
+}
+
+function fileNameForMimeType(mimeType: string): string {
+  if (mimeType === "image/jpeg") return "reference-image.jpg";
+  if (mimeType === "image/webp") return "reference-image.webp";
+  if (mimeType === "image/gif") return "reference-image.gif";
+  if (mimeType === "image/svg+xml") return "reference-image.svg";
+  return "reference-image.png";
 }
