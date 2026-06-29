@@ -151,6 +151,10 @@ function formatTuttiSkillGuidance(systemPrompt: string | undefined) {
     : undefined;
 }
 
+function shouldUseTuttiSkillContext(prompt: string) {
+  return prompt.includes("mention://");
+}
+
 function tuttiWorkspaceCwd(fallback: string) {
   return process.env.TUTTI_WORKSPACE_ROOT?.trim() || fallback;
 }
@@ -412,14 +416,16 @@ export function createLocalAgentRuntimeProvider(
             : {}),
           sessionId: run.sessionId,
         });
-        const tuttiSkillContext = await loadTuttiLocalAgentSkillContext({
-          cwd: runDir,
-          provider: runtimeProvider,
-          runId: run.runId,
-          ...(runtimeEnv.tuttiCliPath
-            ? { tuttiCliPath: runtimeEnv.tuttiCliPath }
-            : {}),
-        });
+        const tuttiSkillContext = shouldUseTuttiSkillContext(enrichedPrompt)
+          ? await loadTuttiLocalAgentSkillContext({
+              cwd: runDir,
+              provider: runtimeProvider,
+              runId: run.runId,
+              ...(runtimeEnv.tuttiCliPath
+                ? { tuttiCliPath: runtimeEnv.tuttiCliPath }
+                : {}),
+            })
+          : { skillManifest: [] };
         const skillManifest = [
           ...mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills),
           ...tuttiSkillContext.skillManifest,
