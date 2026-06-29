@@ -1,6 +1,6 @@
 import type { CanvasContent } from "@aimc/shared";
 
-type CanvasClient = {
+export type CanvasClient = {
   from(table: "canvases"): {
     select(columns: string): unknown;
   };

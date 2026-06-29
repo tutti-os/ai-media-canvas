@@ -751,8 +751,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     projectService,
   });
   const canvasOperations = createCanvasOperations({
+    canvasClient: createLocalUserClient(store),
     canvasService,
     localUser,
+    uploadService,
   });
   const chatOperations = createChatOperations({
     chatService,

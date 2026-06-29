@@ -81,15 +81,119 @@ const CLI_COMMANDS = [
     path: ["canvases", "save"],
     summary: "Save a canvas",
     description:
-      "Save canvas content by canvas-id. Pass content-json as a JSON string matching the canvas content object.",
+      "Save small canvas content by canvas-id. Do not embed generated media data in content-json; use aimc canvases insert-image or aimc canvases insert-video for local media files.",
     properties: {
       "canvas-id": { type: "string", description: "Canvas id to save." },
       "content-json": {
         type: "string",
-        description: "Canvas content JSON string.",
+        description: "Canvas content JSON string without embedded media data.",
       },
     },
     required: ["canvas-id", "content-json"],
+  },
+  {
+    path: ["canvases", "insert-image"],
+    summary: "Insert a local image file into a canvas",
+    description:
+      "Import a local image file as a managed AI Media Canvas asset and insert it into the canvas. Prefer this after an agent generates a PNG/JPEG/WebP/GIF/SVG file locally instead of embedding image data in canvases save content-json.",
+    properties: {
+      "canvas-id": { type: "string", description: "Canvas id to update." },
+      "file-path": {
+        type: "string",
+        description: "Absolute path to the local image file to import.",
+      },
+      "project-id": {
+        type: "string",
+        description: "Optional project id for asset ownership.",
+      },
+      title: {
+        type: "string",
+        description: "Optional image title stored in canvas metadata.",
+      },
+      "mime-type": {
+        type: "string",
+        description: "Optional image MIME type override.",
+      },
+      width: {
+        type: "integer",
+        description: "Optional source image width when it cannot be detected.",
+      },
+      height: {
+        type: "integer",
+        description: "Optional source image height when it cannot be detected.",
+      },
+      x: {
+        type: "integer",
+        description: "Optional canvas placement x coordinate.",
+      },
+      y: {
+        type: "integer",
+        description: "Optional canvas placement y coordinate.",
+      },
+      "placement-width": {
+        type: "integer",
+        description: "Optional display width on the canvas.",
+      },
+      "placement-height": {
+        type: "integer",
+        description: "Optional display height on the canvas.",
+      },
+    },
+    required: ["canvas-id", "file-path"],
+  },
+  {
+    path: ["canvases", "insert-video"],
+    summary: "Insert a local video file into a canvas",
+    description:
+      "Import a local video file as a managed AI Media Canvas asset and insert it into the canvas. Prefer this after an agent generates an MP4/MOV/WebM file locally instead of embedding media data in canvases save content-json.",
+    properties: {
+      "canvas-id": { type: "string", description: "Canvas id to update." },
+      "file-path": {
+        type: "string",
+        description: "Absolute path to the local video file to import.",
+      },
+      "project-id": {
+        type: "string",
+        description: "Optional project id for asset ownership.",
+      },
+      title: {
+        type: "string",
+        description: "Optional video title stored in canvas metadata.",
+      },
+      "mime-type": {
+        type: "string",
+        description: "Optional video MIME type override.",
+      },
+      width: {
+        type: "integer",
+        description: "Optional source video width, defaults to 1280.",
+      },
+      height: {
+        type: "integer",
+        description: "Optional source video height, defaults to 720.",
+      },
+      duration: {
+        type: "integer",
+        description: "Optional video duration in seconds.",
+      },
+      x: {
+        type: "integer",
+        description: "Optional canvas placement x coordinate.",
+      },
+      y: {
+        type: "integer",
+        description: "Optional canvas placement y coordinate.",
+      },
+      "placement-width": {
+        type: "integer",
+        description: "Optional display width on the canvas.",
+      },
+      "placement-height": {
+        type: "integer",
+        description: "Optional display height on the canvas.",
+      },
+    },
+    required: ["canvas-id", "file-path"],
   },
   {
     path: ["sessions", "list"],
@@ -657,9 +761,7 @@ export async function validatePackageRoot(root) {
 
 function validateCliManifest(manifest) {
   if (manifest.schemaVersion !== "tutti.app.cli.v1") {
-    throw new Error(
-      "tutti.cli.json must use schemaVersion tutti.app.cli.v1.",
-    );
+    throw new Error("tutti.cli.json must use schemaVersion tutti.app.cli.v1.");
   }
   if (!isCliPathSegment(manifest.scope)) {
     throw new Error(

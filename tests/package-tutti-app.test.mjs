@@ -183,6 +183,18 @@ test("createCliManifest returns the Tutti CLI manifest contract", () => {
   assert.ok(manifest.commands.length >= 20);
   assert.deepEqual(
     manifest.commands.find(
+      (command) => command.path.join(" ") === "canvases insert-image",
+    )?.inputSchema.required,
+    ["canvas-id", "file-path"],
+  );
+  assert.deepEqual(
+    manifest.commands.find(
+      (command) => command.path.join(" ") === "canvases insert-video",
+    )?.inputSchema.required,
+    ["canvas-id", "file-path"],
+  );
+  assert.deepEqual(
+    manifest.commands.find(
       (command) => command.path.join(" ") === "projects create",
     ),
     {
