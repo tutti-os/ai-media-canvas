@@ -52,6 +52,15 @@ type AgentCliOperations = {
   startRun: (payload: RunCreateRequest) => Promise<RunCreateResponse>;
 };
 
+type AssetCliOperations = {
+  listProjectAssets: (input: {
+    projectId: string;
+    filterText?: string;
+    limit: number;
+    cursor?: string | null;
+  }) => Promise<unknown>;
+};
+
 type CanvasWriterClient = Parameters<typeof insertImageGenerationNode>[0];
 type AppOpenRequester = (input: {
   appId: string;
@@ -79,6 +88,12 @@ const canvasSaveCliBodySchema = z.object({
   "canvas-id": z.string().min(1),
   "base-revision": z.coerce.number().int().nonnegative().optional(),
   "content-json": z.string().min(1),
+});
+const assetListCliBodySchema = z.object({
+  "project-id": z.string().min(1),
+  "filter-text": z.string().min(1).optional(),
+  limit: z.coerce.number().int().positive().max(50).optional(),
+  cursor: z.string().min(1).optional(),
 });
 const sessionCreateCliBodySchema = z.object({
   "canvas-id": z.string().min(1),
@@ -155,6 +170,7 @@ export async function registerTuttiCliRoutes(
   app: FastifyInstance,
   options: {
     agentOperations: AgentCliOperations;
+    assetOperations: AssetCliOperations;
     canvasOperations: CanvasOperations;
     chatOperations: ChatOperations;
     env: ServerEnv;
@@ -234,8 +250,10 @@ export async function registerTuttiCliRoutes(
   );
 
   route("/tutti/cli/canvases/get", async (body) => {
-    return options.canvasOperations.getCanvas(
-      parseRequiredString(body, "canvas-id"),
+    return stripCanvasResponseFilePayloads(
+      await options.canvasOperations.getCanvas(
+        parseRequiredString(body, "canvas-id"),
+      ),
     );
   });
   route("/tutti/cli/canvases/save", async (body) => {
@@ -250,6 +268,15 @@ export async function registerTuttiCliRoutes(
         ? {}
         : { baseRevision: payload["base-revision"] },
     );
+  });
+  route("/tutti/cli/assets/list", async (body) => {
+    const payload = assetListCliBodySchema.parse(body);
+    return options.assetOperations.listProjectAssets({
+      projectId: payload["project-id"],
+      ...(payload["filter-text"] ? { filterText: payload["filter-text"] } : {}),
+      limit: payload.limit ?? 50,
+      cursor: payload.cursor ?? null,
+    });
   });
 
   route("/tutti/cli/sessions/list", async (body) => {
@@ -815,6 +842,38 @@ function isCliInvokeEnvelope(body: Record<string, unknown>) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stripCanvasResponseFilePayloads(response: unknown) {
+  if (!isRecord(response) || !isRecord(response.canvas)) return response;
+  const canvas = response.canvas;
+  if (!isRecord(canvas.content) || !isRecord(canvas.content.files)) {
+    return response;
+  }
+  return {
+    ...response,
+    canvas: {
+      ...canvas,
+      content: {
+        ...canvas.content,
+        files: stripCanvasFilePayloads(canvas.content.files),
+      },
+    },
+  };
+}
+
+function stripCanvasFilePayloads(files: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(files).map(([fileId, file]) => {
+      if (!isRecord(file)) return [fileId, file];
+      const metadata = Object.fromEntries(
+        Object.entries(file).filter(
+          ([key]) => key !== "dataURL" && key !== "dataUrl",
+        ),
+      );
+      return [fileId, metadata];
+    }),
+  );
 }
 
 function splitCsv(value: string) {

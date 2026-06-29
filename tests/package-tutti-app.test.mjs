@@ -245,6 +245,49 @@ test("createCliManifest returns the Tutti CLI manifest contract", () => {
       },
     },
   );
+  assert.deepEqual(
+    manifest.commands.find(
+      (command) => command.path.join(" ") === "assets list",
+    ),
+    {
+      path: ["assets", "list"],
+      summary: "List project assets",
+      description:
+        "List reusable media assets referenced by a project. Use this instead of reading full canvas JSON when an agent only needs project images or videos.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          "project-id": {
+            type: "string",
+            description: "Project id whose media assets should be listed.",
+          },
+          "filter-text": {
+            type: "string",
+            description: "Optional filename or asset id filter.",
+          },
+          limit: {
+            type: "integer",
+            description: "Optional page size from 1 to 50.",
+          },
+          cursor: {
+            type: "string",
+            description: "Optional cursor from a previous response.",
+          },
+        },
+        required: ["project-id"],
+      },
+      output: {
+        defaultMode: "json",
+        json: true,
+      },
+      handler: {
+        kind: "http",
+        method: "POST",
+        path: "/tutti/cli/assets/list",
+        timeoutMs: 30000,
+      },
+    },
+  );
 });
 
 test("createCliManifest keeps command metadata discoverable for agents", () => {
@@ -272,6 +315,7 @@ test("renderCommandsGuide documents CLI commands", () => {
   assert.match(guide, /AI Canvas CLI Commands/);
   assert.match(guide, /`aimc open --project-id`/);
   assert.match(guide, /`aimc projects create --name <required> --description`/);
+  assert.match(guide, /`aimc assets list --project-id <required>/);
   assert.match(guide, /\/tutti\/cli\/agent\/run/);
 });
 

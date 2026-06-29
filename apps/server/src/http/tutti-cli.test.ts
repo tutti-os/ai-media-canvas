@@ -340,6 +340,124 @@ describe("registerTuttiCliRoutes", () => {
     });
   });
 
+  it("strips embedded canvas file payloads from CLI canvas reads", async () => {
+    const canvasOperations = {
+      getCanvas: vi.fn(async () => ({
+        canvas: {
+          id: "canvas-1",
+          name: "Main Canvas",
+          projectId: "project-1",
+          revision: 2,
+          content: {
+            elements: [],
+            appState: {},
+            files: {
+              "file-1": {
+                id: "file-1",
+                dataURL: "data:image/png;base64,large",
+                dataUrl: "data:image/png;base64,large",
+                assetId: "asset-1",
+                storageUrl: "/local-assets/asset-1",
+              },
+            },
+          },
+        },
+      })),
+      saveCanvas: vi.fn(),
+    };
+    const app = buildTestApp({ canvasOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/canvases/get",
+      payload: { "canvas-id": "canvas-1" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      kind: "json",
+      value: {
+        canvas: {
+          id: "canvas-1",
+          name: "Main Canvas",
+          projectId: "project-1",
+          revision: 2,
+          content: {
+            elements: [],
+            appState: {},
+            files: {
+              "file-1": {
+                id: "file-1",
+                assetId: "asset-1",
+                storageUrl: "/local-assets/asset-1",
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("lists project assets without reading canvas content", async () => {
+    const assetOperations = {
+      listProjectAssets: vi.fn(async () => ({
+        assets: [
+          {
+            id: "asset-1",
+            displayName: "asset-1.png",
+            relativePath: "assets/projects/asset-1.png",
+            objectPath: "generated/asset-1.png",
+            filePath: "/tmp/asset-1.png",
+            storageUrl: "http://127.0.0.1:3001/local-assets/asset-1",
+            mimeType: "image/png",
+            sizeBytes: 123,
+            mtimeMs: 1_780_000_000_000,
+          },
+        ],
+        nextCursor: null,
+      })),
+    };
+    const app = buildTestApp({ assetOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/assets/list",
+      payload: {
+        "project-id": "project-1",
+        "filter-text": "asset",
+        limit: "10",
+        cursor: "cursor-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(assetOperations.listProjectAssets).toHaveBeenCalledWith({
+      projectId: "project-1",
+      filterText: "asset",
+      limit: 10,
+      cursor: "cursor-1",
+    });
+    expect(response.json()).toEqual({
+      kind: "json",
+      value: {
+        assets: [
+          {
+            id: "asset-1",
+            displayName: "asset-1.png",
+            relativePath: "assets/projects/asset-1.png",
+            objectPath: "generated/asset-1.png",
+            filePath: "/tmp/asset-1.png",
+            storageUrl: "http://127.0.0.1:3001/local-assets/asset-1",
+            mimeType: "image/png",
+            sizeBytes: 123,
+            mtimeMs: 1_780_000_000_000,
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+  });
+
   it("requires generation image commands to pass a model", async () => {
     const jobOperations = {
       createImageJob: vi.fn(),
@@ -483,12 +601,7 @@ describe("registerTuttiCliRoutes", () => {
         nextAction: {
           command: "aimc jobs get --job-id job-1",
           intermediateStatuses: ["queued", "running"],
-          terminalStatuses: [
-            "succeeded",
-            "failed",
-            "canceled",
-            "dead_letter",
-          ],
+          terminalStatuses: ["succeeded", "failed", "canceled", "dead_letter"],
           initialDelayMs: 15_000,
           pollIntervalMs: 5_000,
           maxWaitMs: 600_000,
@@ -892,6 +1005,10 @@ function buildTestApp(overrides: Record<string, unknown> = {}) {
       listRunEvents: vi.fn(),
       startRun: vi.fn(),
       ...(overrides.agentOperations as object | undefined),
+    } as never,
+    assetOperations: {
+      listProjectAssets: vi.fn(),
+      ...(overrides.assetOperations as object | undefined),
     } as never,
     canvasOperations: {
       getCanvas: vi.fn(),
