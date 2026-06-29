@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { loadServerEnv } from "../../config/env.js";
 import { registerAllProviders } from "./register-all.js";
@@ -74,16 +74,13 @@ describe("registerAllProviders", () => {
   });
 
   it("registers Codex Imagegen models when default-enabled and ready", () => {
-    registerAllProviders(
-      loadServerEnv({}, {}),
-      {
-        detectCodexImagegenCapability: () => ({
-          ready: true,
-          reasons: [],
-          checkedAt: "2026-06-15T00:00:00.000Z",
-        }),
-      },
-    );
+    registerAllProviders(loadServerEnv({}, {}), {
+      detectCodexImagegenCapability: () => ({
+        ready: true,
+        reasons: [],
+        checkedAt: "2026-06-15T00:00:00.000Z",
+      }),
+    });
 
     expect(getAvailableImageModels()).toContainEqual(
       expect.objectContaining({
@@ -94,16 +91,13 @@ describe("registerAllProviders", () => {
   });
 
   it("orders Codex Imagegen before API-backed image models when ready", () => {
-    registerAllProviders(
-      loadServerEnv({ kieApiKey: "test-kie-key" }, {}),
-      {
-        detectCodexImagegenCapability: () => ({
-          ready: true,
-          reasons: [],
-          checkedAt: "2026-06-15T00:00:00.000Z",
-        }),
-      },
-    );
+    registerAllProviders(loadServerEnv({ kieApiKey: "test-kie-key" }, {}), {
+      detectCodexImagegenCapability: () => ({
+        ready: true,
+        reasons: [],
+        checkedAt: "2026-06-15T00:00:00.000Z",
+      }),
+    });
 
     expect(getAvailableImageModels()[0]).toEqual(
       expect.objectContaining({
@@ -131,21 +125,44 @@ describe("registerAllProviders", () => {
   });
 
   it("does not register Codex Imagegen when capability detection fails", () => {
-    registerAllProviders(
-      loadServerEnv({}, {}),
-      {
-        detectCodexImagegenCapability: () => ({
-          ready: false,
-          reasons: ["codex_not_logged_in"],
-          checkedAt: "2026-06-15T00:00:00.000Z",
-        }),
-      },
-    );
+    registerAllProviders(loadServerEnv({}, {}), {
+      detectCodexImagegenCapability: () => ({
+        ready: false,
+        reasons: ["codex_not_logged_in"],
+        checkedAt: "2026-06-15T00:00:00.000Z",
+      }),
+    });
 
     expect(getAvailableImageModels()).not.toContainEqual(
       expect.objectContaining({
         id: "codex/gpt-image-2",
       }),
+    );
+  });
+
+  it("logs Codex Imagegen capability detection failures", () => {
+    const logger = { info: vi.fn() };
+
+    registerAllProviders(loadServerEnv({}, {}), {
+      detectCodexImagegenCapability: () => ({
+        ready: false,
+        reasons: ["imagegen_skill_missing"],
+        codexVersion: "0.124.0",
+        codexHome: "/tmp/codex-home",
+        checkedAt: "2026-06-29T00:00:00.000Z",
+      }),
+      logger,
+    });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        provider: "codex-imagegen",
+        ready: false,
+        reasons: ["imagegen_skill_missing"],
+        codexVersion: "0.124.0",
+        codexHome: "/tmp/codex-home",
+      },
+      "Codex Imagegen provider unavailable.",
     );
   });
 });

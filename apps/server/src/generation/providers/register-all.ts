@@ -8,11 +8,11 @@
 import type { ServerEnv } from "../../config/env.js";
 import { AgnesImageProvider } from "./agnes-image.js";
 import { AgnesVideoProvider } from "./agnes-video.js";
-import { CodexImagegenProvider } from "./codex-imagegen.js";
 import {
-  detectCodexImagegenCapability,
   type CodexImagegenCapability,
+  detectCodexImagegenCapability,
 } from "./codex-imagegen-capability.js";
+import { CodexImagegenProvider } from "./codex-imagegen.js";
 import { GoogleImageProvider } from "./google-image.js";
 import { GoogleVertexImageProvider } from "./google-vertex-image.js";
 import { GoogleVertexVideoProvider } from "./google-vertex-video.js";
@@ -28,6 +28,12 @@ import { ReplicateImageProvider } from "./replicate-image.js";
 import { ReplicateVideoProvider } from "./replicate-video.js";
 import { VolcesImageProvider } from "./volces-image.js";
 
+type GenerationProviderLogger = {
+  info: (context: Record<string, unknown>, message: string) => void;
+};
+
+let lastCodexImagegenCapabilityLogKey: string | undefined;
+
 /**
  * Register all available generation providers based on the provided env config.
  *
@@ -38,12 +44,20 @@ import { VolcesImageProvider } from "./volces-image.js";
 export function registerAllProviders(
   env: ServerEnv,
   options: {
-    detectCodexImagegenCapability?: (
-      env: ServerEnv,
-    ) => CodexImagegenCapability;
+    detectCodexImagegenCapability?: (env: ServerEnv) => CodexImagegenCapability;
+    logger?: GenerationProviderLogger;
   } = {},
 ): void {
-  if (env.codexImagegenEnabled) {
+  if (!env.codexImagegenEnabled) {
+    logCodexImagegenCapability(
+      {
+        ready: false,
+        reasons: ["disabled"],
+        checkedAt: new Date().toISOString(),
+      },
+      options.logger,
+    );
+  } else {
     const capability = options.detectCodexImagegenCapability
       ? options.detectCodexImagegenCapability(env)
       : detectCodexImagegenCapability({
@@ -58,6 +72,7 @@ export function registerAllProviders(
             ? { timeoutMs: env.codexImagegenTimeoutMs }
             : {}),
         });
+    logCodexImagegenCapability(capability, options.logger);
     if (capability.ready) {
       registerImageProvider(
         new CodexImagegenProvider({
@@ -131,4 +146,30 @@ export function registerAllProviders(
       new VolcesImageProvider(env.volcesApiKey, env.volcesBaseUrl),
     );
   }
+}
+
+function logCodexImagegenCapability(
+  capability: CodexImagegenCapability,
+  logger?: GenerationProviderLogger,
+) {
+  const context = {
+    provider: "codex-imagegen",
+    ready: capability.ready,
+    reasons: capability.reasons,
+    codexVersion: capability.codexVersion ?? null,
+    codexHome: capability.codexHome ?? null,
+  };
+  const message = capability.ready
+    ? "Codex Imagegen provider available."
+    : "Codex Imagegen provider unavailable.";
+
+  if (logger) {
+    logger.info(context, message);
+    return;
+  }
+
+  const logKey = JSON.stringify(context);
+  if (logKey === lastCodexImagegenCapabilityLogKey) return;
+  lastCodexImagegenCapabilityLogKey = logKey;
+  console.info(`[generation] ${message}`, context);
 }
