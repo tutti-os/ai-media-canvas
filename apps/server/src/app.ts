@@ -5,8 +5,8 @@ import { extname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
-import Fastify, { type FastifyInstance } from "fastify";
 import type { ManagedAgentInvocationCredentialHeaders } from "@tutti-os/agent-acp-kit";
+import Fastify, { type FastifyInstance } from "fastify";
 
 import {
   type ManagedFileAssetMetadata,
@@ -967,6 +967,32 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     localUser,
     projectService,
   });
+  const assetOperations = {
+    async listProjectAssets(input: {
+      projectId: string;
+      filterText?: string;
+      limit: number;
+      cursor?: string | null;
+    }) {
+      const { files, nextCursor } = store.listReferenceProjectAssets(input);
+      return {
+        assets: files.map((file) => {
+          const asset = store.assetObjectFromId(file.id);
+          const assetResponse = store.getAssetResponse(file.id);
+          const storageUrl = store.getAssetUrl(file.id);
+          return {
+            ...file,
+            ...(asset?.objectPath ? { objectPath: asset.objectPath } : {}),
+            ...(assetResponse?.filePath
+              ? { filePath: assetResponse.filePath }
+              : {}),
+            ...(storageUrl ? { storageUrl } : {}),
+          };
+        }),
+        nextCursor,
+      };
+    },
+  };
   const canvasOperations = createCanvasOperations({
     canvasService,
     localUser,
@@ -1396,6 +1422,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       submitConsent: submitLocalAgentConsent,
       startRun: startLocalAgentRun,
     },
+    assetOperations,
     canvasOperations,
     chatOperations,
     env,
@@ -1481,9 +1508,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       const parsedPayload = runCreateRequestSchema.parse(request.body);
       return reply
         .code(202)
-        .send(
-          await startLocalAgentRun(parsedPayload, request.headers),
-        );
+        .send(await startLocalAgentRun(parsedPayload, request.headers));
     } catch (error) {
       if (error instanceof LocalAgentRunError) {
         return sendApplicationError(

@@ -104,6 +104,31 @@ const CLI_COMMANDS = [
     required: ["canvas-id", "content-json"],
   },
   {
+    path: ["assets", "list"],
+    summary: "List project assets",
+    description:
+      "List reusable media assets referenced by a project. Use this instead of reading full canvas JSON when an agent only needs project images or videos.",
+    properties: {
+      "project-id": {
+        type: "string",
+        description: "Project id whose media assets should be listed.",
+      },
+      "filter-text": {
+        type: "string",
+        description: "Optional filename or asset id filter.",
+      },
+      limit: {
+        type: "integer",
+        description: "Optional page size from 1 to 50.",
+      },
+      cursor: {
+        type: "string",
+        description: "Optional cursor from a previous response.",
+      },
+    },
+    required: ["project-id"],
+  },
+  {
     path: ["sessions", "list"],
     summary: "List chat sessions",
     description: "List chat sessions for a canvas-id.",
