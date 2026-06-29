@@ -89,6 +89,22 @@ const canvasSaveCliBodySchema = z.object({
   "base-revision": z.coerce.number().int().nonnegative().optional(),
   "content-json": z.string().min(1),
 });
+const canvasInsertImageCliBodySchema = z.object({
+  "canvas-id": z.string().min(1),
+  "file-path": z.string().min(1),
+  "project-id": z.string().min(1).optional(),
+  title: z.string().min(1).optional(),
+  "mime-type": z.string().min(1).optional(),
+  width: z.number().positive().optional(),
+  height: z.number().positive().optional(),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  "placement-width": z.number().positive().optional(),
+  "placement-height": z.number().positive().optional(),
+});
+const canvasInsertVideoCliBodySchema = canvasInsertImageCliBodySchema.extend({
+  duration: z.number().int().positive().optional(),
+});
 const assetListCliBodySchema = z.object({
   "project-id": z.string().min(1),
   "filter-text": z.string().min(1).optional(),
@@ -268,6 +284,55 @@ export async function registerTuttiCliRoutes(
         ? {}
         : { baseRevision: payload["base-revision"] },
     );
+  });
+  route("/tutti/cli/canvases/insert-image", async (body) => {
+    const payload = canvasInsertImageCliBodySchema.parse(body);
+    const placement = {
+      ...(payload.x !== undefined ? { x: payload.x } : {}),
+      ...(payload.y !== undefined ? { y: payload.y } : {}),
+      ...(payload["placement-width"] !== undefined
+        ? { width: payload["placement-width"] }
+        : {}),
+      ...(payload["placement-height"] !== undefined
+        ? { height: payload["placement-height"] }
+        : {}),
+    };
+    return options.canvasOperations.importImageFile({
+      canvasId: payload["canvas-id"],
+      filePath: payload["file-path"],
+      ...(payload["project-id"] ? { projectId: payload["project-id"] } : {}),
+      ...(payload.title ? { title: payload.title } : {}),
+      ...(payload["mime-type"] ? { mimeType: payload["mime-type"] } : {}),
+      ...(payload.width !== undefined ? { width: payload.width } : {}),
+      ...(payload.height !== undefined ? { height: payload.height } : {}),
+      ...(Object.keys(placement).length > 0 ? { placement } : {}),
+    });
+  });
+  route("/tutti/cli/canvases/insert-video", async (body) => {
+    const payload = canvasInsertVideoCliBodySchema.parse(body);
+    const placement = {
+      ...(payload.x !== undefined ? { x: payload.x } : {}),
+      ...(payload.y !== undefined ? { y: payload.y } : {}),
+      ...(payload["placement-width"] !== undefined
+        ? { width: payload["placement-width"] }
+        : {}),
+      ...(payload["placement-height"] !== undefined
+        ? { height: payload["placement-height"] }
+        : {}),
+    };
+    return options.canvasOperations.importVideoFile({
+      canvasId: payload["canvas-id"],
+      filePath: payload["file-path"],
+      ...(payload["project-id"] ? { projectId: payload["project-id"] } : {}),
+      ...(payload.title ? { title: payload.title } : {}),
+      ...(payload["mime-type"] ? { mimeType: payload["mime-type"] } : {}),
+      ...(payload.width !== undefined ? { width: payload.width } : {}),
+      ...(payload.height !== undefined ? { height: payload.height } : {}),
+      ...(payload.duration !== undefined
+        ? { durationSeconds: payload.duration }
+        : {}),
+      ...(Object.keys(placement).length > 0 ? { placement } : {}),
+    });
   });
   route("/tutti/cli/assets/list", async (body) => {
     const payload = assetListCliBodySchema.parse(body);

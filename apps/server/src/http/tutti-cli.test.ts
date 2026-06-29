@@ -398,6 +398,108 @@ describe("registerTuttiCliRoutes", () => {
     });
   });
 
+  it("imports local image files without embedding them in canvas content JSON", async () => {
+    const canvasOperations = {
+      importImageFile: vi.fn(async (input) => ({
+        assetId: "asset-1",
+        elementId: "element-1",
+        url: "http://127.0.0.1:3001/local-assets/asset-1",
+        width: input.width,
+        height: input.height,
+      })),
+    };
+    const app = buildTestApp({ canvasOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/canvases/insert-image",
+      payload: {
+        "canvas-id": "canvas-1",
+        "file-path": "/tmp/generated.png",
+        title: "Generated poster",
+        width: 1200,
+        height: 1600,
+        x: 10,
+        y: 20,
+        "placement-width": 300,
+        "placement-height": 400,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(canvasOperations.importImageFile).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      filePath: "/tmp/generated.png",
+      title: "Generated poster",
+      width: 1200,
+      height: 1600,
+      placement: {
+        x: 10,
+        y: 20,
+        width: 300,
+        height: 400,
+      },
+    });
+    expect(response.json()).toEqual({
+      kind: "json",
+      value: {
+        assetId: "asset-1",
+        elementId: "element-1",
+        url: "http://127.0.0.1:3001/local-assets/asset-1",
+        width: 1200,
+        height: 1600,
+      },
+    });
+  });
+
+  it("imports local video files without embedding them in canvas content JSON", async () => {
+    const canvasOperations = {
+      importVideoFile: vi.fn(async (input) => ({
+        assetId: "video-asset-1",
+        durationSeconds: input.durationSeconds,
+        elementId: "element-1",
+        url: "http://127.0.0.1:3001/local-assets/video-asset-1",
+        width: input.width,
+        height: input.height,
+      })),
+    };
+    const app = buildTestApp({ canvasOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/canvases/insert-video",
+      payload: {
+        "canvas-id": "canvas-1",
+        "file-path": "/tmp/generated.mp4",
+        title: "Generated clip",
+        width: 1920,
+        height: 1080,
+        duration: 8,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(canvasOperations.importVideoFile).toHaveBeenCalledWith({
+      canvasId: "canvas-1",
+      filePath: "/tmp/generated.mp4",
+      title: "Generated clip",
+      width: 1920,
+      height: 1080,
+      durationSeconds: 8,
+    });
+    expect(response.json()).toEqual({
+      kind: "json",
+      value: {
+        assetId: "video-asset-1",
+        durationSeconds: 8,
+        elementId: "element-1",
+        url: "http://127.0.0.1:3001/local-assets/video-asset-1",
+        width: 1920,
+        height: 1080,
+      },
+    });
+  });
+
   it("lists project assets without reading canvas content", async () => {
     const assetOperations = {
       listProjectAssets: vi.fn(async () => ({
@@ -1012,6 +1114,8 @@ function buildTestApp(overrides: Record<string, unknown> = {}) {
     } as never,
     canvasOperations: {
       getCanvas: vi.fn(),
+      importImageFile: vi.fn(),
+      importVideoFile: vi.fn(),
       saveCanvas: vi.fn(),
       ...(overrides.canvasOperations as object | undefined),
     } as never,

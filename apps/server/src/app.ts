@@ -994,8 +994,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     },
   };
   const canvasOperations = createCanvasOperations({
+    canvasClient: createLocalUserClient(store),
     canvasService,
     localUser,
+    uploadService,
   });
   const chatOperations = createChatOperations({
     chatService,
