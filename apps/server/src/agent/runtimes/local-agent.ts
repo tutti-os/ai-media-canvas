@@ -6,12 +6,7 @@ import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 import type {
   AgentEvent,
   LocalAgentProviderPlugin,
-  SkillMaterializationRecord,
 } from "@tutti-os/agent-acp-kit";
-import {
-  type TuttiRecommendedSystemPrompt,
-  loadTuttiAgentSkillContext,
-} from "@tutti-os/agent-acp-kit/tutti";
 
 import {
   type ImageAttachmentMetadata,
@@ -23,6 +18,12 @@ import {
   materializeWorkspaceSkillsForLocalAgent,
 } from "../local-agent-host/skills.js";
 import { buildAimcSystemPrompt } from "../prompts/aimc-main.js";
+import {
+  formatTuttiSkillGuidance,
+  loadTuttiAgentSkillContextForRun,
+  shouldUseTuttiSkillContext,
+  tuttiCliEnv,
+} from "../tutti-skill-context.js";
 import { loadNormalizedSessionHistory } from "./history.js";
 import {
   adaptLocalAgentEvent,
@@ -39,10 +40,6 @@ type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   "local-agent",
   AgentRuntimeProvider
 >;
-type TuttiLocalAgentSkillContext = {
-  recommendedSystemPrompt?: TuttiRecommendedSystemPrompt;
-  skillManifest: SkillMaterializationRecord[];
-};
 
 const LOCAL_AGENT_RUNS_DIR_NAME = ".aimc-agent-runs";
 
@@ -142,60 +139,6 @@ function joinPromptParts(...parts: Array<string | undefined>) {
     .map((part) => part?.trim())
     .filter(Boolean)
     .join("\n\n");
-}
-
-function formatTuttiSkillGuidance(systemPrompt: string | undefined) {
-  const trimmed = systemPrompt?.trim();
-  return trimmed
-    ? `Additional Tutti CLI skill guidance:\n${trimmed}`
-    : undefined;
-}
-
-function shouldUseTuttiSkillContext(prompt: string) {
-  return prompt.includes("mention://");
-}
-
-function tuttiWorkspaceCwd(fallback: string) {
-  return process.env.TUTTI_WORKSPACE_ROOT?.trim() || fallback;
-}
-
-function tuttiCliEnv(tuttiCliPath: string) {
-  return { TUTTI_CLI: tuttiCliPath };
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-async function loadTuttiLocalAgentSkillContext(input: {
-  cwd: string;
-  provider: AgentRuntimeProvider;
-  runId: string;
-  tuttiCliPath?: string;
-}): Promise<TuttiLocalAgentSkillContext> {
-  if (!input.tuttiCliPath) {
-    return { skillManifest: [] };
-  }
-
-  try {
-    const context = await loadTuttiAgentSkillContext({
-      command: input.tuttiCliPath,
-      cwd: tuttiWorkspaceCwd(input.cwd),
-      provider: input.provider,
-      agentSessionId: input.runId,
-    });
-    return {
-      skillManifest: context.skillManifest,
-      ...(context.recommendedSystemPrompt
-        ? { recommendedSystemPrompt: context.recommendedSystemPrompt }
-        : {}),
-    };
-  } catch (error) {
-    console.warn(
-      `[aimc] Unable to load Tutti agent skill bundle: ${errorMessage(error)}`,
-    );
-    return { skillManifest: [] };
-  }
 }
 
 const DEFAULT_LOCAL_AGENT_TIMEOUT_MS = 30 * 60_000;
@@ -417,7 +360,7 @@ export function createLocalAgentRuntimeProvider(
           sessionId: run.sessionId,
         });
         const tuttiSkillContext = shouldUseTuttiSkillContext(enrichedPrompt)
-          ? await loadTuttiLocalAgentSkillContext({
+          ? await loadTuttiAgentSkillContextForRun({
               cwd: runDir,
               provider: runtimeProvider,
               runId: run.runId,

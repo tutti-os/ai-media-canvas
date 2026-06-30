@@ -13,6 +13,7 @@ type AgentBackendEnv = Pick<
   | "agentFilesRoot"
   | "appDataDir"
   | "skillsRoot"
+  | "tuttiCliPath"
 >;
 
 export type AgentBackendResult = {
@@ -46,6 +47,7 @@ export function createAgentBackend(
       ? { sandboxRoot: join(env.appDataDir, "ai-media-canvas-sandbox") }
       : {}),
     ...(env.skillsRoot ? { skillsRoot: env.skillsRoot } : {}),
+    ...(env.tuttiCliPath ? { tuttiCliPath: env.tuttiCliPath } : {}),
     ...(options?.workspaceSkills
       ? { workspaceSkills: options.workspaceSkills }
       : {}),
