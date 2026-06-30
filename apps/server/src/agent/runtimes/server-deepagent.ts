@@ -1,4 +1,4 @@
-import type { StreamEvent } from "@aimc/shared";
+import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 import { HumanMessage } from "@langchain/core/messages";
 
 import type { UserDataClient } from "../../auth/request.js";
@@ -6,10 +6,17 @@ import {
   type ImageAttachmentMetadata,
   buildImageAttachmentMetadata,
 } from "../image-attachment-metadata.js";
+import {
+  formatTuttiSkillGuidance,
+  loadTuttiAgentSkillContextForRun,
+  shouldUseTuttiSkillContext,
+} from "../tutti-skill-context.js";
 import type {
   RuntimeExecutionContext,
   ServerDeepAgentRuntimeProviderDeps,
 } from "./types.js";
+
+const SERVER_DEEPAGENT_TUTTI_PROVIDER: AgentRuntimeProvider = "codex";
 
 export function createServerDeepAgentRuntimeProvider(
   deps: ServerDeepAgentRuntimeProviderDeps,
@@ -100,27 +107,9 @@ export function createServerDeepAgentRuntimeProvider(
 
       const canvasSummary = await deps.loadCanvasSummaryForRuntime(context);
 
-      const agent = deps.resolvedAgentFactory({
-        backendResult,
-        ...(brandKitId ? { brandKitId } : {}),
-        ...(run.canvasId ? { canvasId: run.canvasId } : {}),
-        ...(deps.connectionManager
-          ? { connectionManager: deps.connectionManager }
-          : {}),
-        env: runtimeEnv,
-        ...(getWorkspaceSettings ? { getWorkspaceSettings } : {}),
-        ...(run.locale ? { locale: run.locale } : {}),
-        ...(resolvedModel ? { model: resolvedModel } : {}),
-        ...(persistImage ? { persistImage } : {}),
-        ...(submitImageJob ? { submitImageJob } : {}),
-        ...(submitVideoJob ? { submitVideoJob } : {}),
-        ...(updateWorkspaceSettings ? { updateWorkspaceSettings } : {}),
-        ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
-      });
-      rlog.lap("agent_factory_done");
-
       const hasAttachments = run.attachments && run.attachments.length > 0;
       let userMessage: HumanMessage;
+      let enrichedPrompt = "";
       let attachmentDataMap: Record<string, string> = {};
       const attachmentMetadata: Record<string, ImageAttachmentMetadata> = {};
 
@@ -176,7 +165,7 @@ export function createServerDeepAgentRuntimeProvider(
           }),
         );
 
-        const { text: enrichedPrompt } = deps.buildUserMessage(
+        const { text } = deps.buildUserMessage(
           run.prompt,
           attachments,
           run.imageGenerationPreference,
@@ -184,6 +173,7 @@ export function createServerDeepAgentRuntimeProvider(
           canvasSummary,
           attachmentMetadata,
         );
+        enrichedPrompt = text;
 
         attachmentDataMap = deps.buildAttachmentDataMap(downloaded);
         userMessage = new HumanMessage({
@@ -193,15 +183,61 @@ export function createServerDeepAgentRuntimeProvider(
           ],
         });
       } else {
-        const { text: enrichedPrompt } = deps.buildUserMessage(
+        const { text } = deps.buildUserMessage(
           run.prompt,
           [],
           run.imageGenerationPreference,
           run.videoGenerationPreference,
           canvasSummary,
         );
+        enrichedPrompt = text;
         userMessage = new HumanMessage(enrichedPrompt);
       }
+
+      let extraSystemPrompt: string | undefined;
+      if (
+        shouldUseTuttiSkillContext(enrichedPrompt) &&
+        runtimeEnv.tuttiCliPath
+      ) {
+        const tuttiSkillContext = await loadTuttiAgentSkillContextForRun({
+          cwd: backendResult.sandboxDir ?? process.cwd(),
+          provider: SERVER_DEEPAGENT_TUTTI_PROVIDER,
+          runId: run.runId,
+          tuttiCliPath: runtimeEnv.tuttiCliPath,
+        });
+        extraSystemPrompt = formatTuttiSkillGuidance(
+          tuttiSkillContext.recommendedSystemPrompt?.content,
+        );
+        if (extraSystemPrompt) {
+          // Server-deepagent v1 consumes only the Tutti bundle's recommended
+          // prompt guidance. skillManifest remains a local-agent delivery
+          // mechanism until deepagents has an explicit materialization path.
+          rlog.lap("tutti_skill_context_loaded", {
+            provider: SERVER_DEEPAGENT_TUTTI_PROVIDER,
+            skillCount: tuttiSkillContext.skillManifest.length,
+          });
+        }
+      }
+
+      const agent = deps.resolvedAgentFactory({
+        backendResult,
+        ...(brandKitId ? { brandKitId } : {}),
+        ...(run.canvasId ? { canvasId: run.canvasId } : {}),
+        ...(deps.connectionManager
+          ? { connectionManager: deps.connectionManager }
+          : {}),
+        env: runtimeEnv,
+        ...(extraSystemPrompt ? { extraSystemPrompt } : {}),
+        ...(getWorkspaceSettings ? { getWorkspaceSettings } : {}),
+        ...(run.locale ? { locale: run.locale } : {}),
+        ...(resolvedModel ? { model: resolvedModel } : {}),
+        ...(persistImage ? { persistImage } : {}),
+        ...(submitImageJob ? { submitImageJob } : {}),
+        ...(submitVideoJob ? { submitVideoJob } : {}),
+        ...(updateWorkspaceSettings ? { updateWorkspaceSettings } : {}),
+        ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
+      });
+      rlog.lap("agent_factory_done");
 
       const messages = [
         ...(await deps.buildSessionHistoryMessages(

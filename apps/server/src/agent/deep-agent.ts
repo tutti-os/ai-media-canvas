@@ -45,6 +45,7 @@ export type AimcAgentFactory = (options: {
   createUserClient?: (accessToken: string) => unknown;
   env: ServerEnv;
   getWorkspaceSettings?: ReadWorkspaceSettings;
+  extraSystemPrompt?: string;
   locale?: "zh-CN" | "en";
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
@@ -76,6 +77,7 @@ export function createAimcDeepAgent(options: {
   createUserClient?: (accessToken: string) => unknown;
   env: ServerEnv;
   getWorkspaceSettings?: ReadWorkspaceSettings;
+  extraSystemPrompt?: string;
   locale?: "zh-CN" | "en";
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
@@ -135,6 +137,9 @@ export function createAimcDeepAgent(options: {
       })
       .join("\n");
     systemPrompt += `\n\n## Skills\n\nThe following skills are enabled in this workspace:\n${skillsList}`;
+  }
+  if (options.extraSystemPrompt?.trim()) {
+    systemPrompt += `\n\n${options.extraSystemPrompt.trim()}`;
   }
 
   return createDeepAgent({

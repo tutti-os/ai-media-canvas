@@ -129,7 +129,9 @@ describe("createAimcDeepAgent", () => {
     expect(config?.systemPrompt).toContain(
       "Stop condition for image-generation tasks",
     );
-    expect(config?.systemPrompt).toContain("prefer a single generate_image call");
+    expect(config?.systemPrompt).toContain(
+      "prefer a single generate_image call",
+    );
   });
 
   it("tells the agent to follow the latest user message language when clear", () => {
@@ -173,5 +175,26 @@ describe("createAimcDeepAgent", () => {
         store,
       }),
     );
+  });
+
+  it("appends runtime-provided system prompt guidance", () => {
+    createAimcDeepAgent({
+      canvasId: "canvas-1",
+      env: {
+        agentBackendMode: "state",
+        agentModel: "openai:gpt-4.1",
+        openAIApiKey: "openai-test-key",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      extraSystemPrompt: "Additional Tutti CLI skill guidance:\nUse mentions.",
+    });
+
+    const config = createDeepAgentMock.mock.calls.at(-1)?.[0];
+    expect(config?.systemPrompt).toContain(
+      "Additional Tutti CLI skill guidance:",
+    );
+    expect(config?.systemPrompt).toContain("Use mentions.");
   });
 });

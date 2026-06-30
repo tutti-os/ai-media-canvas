@@ -9,6 +9,7 @@ import {
   StoreBackend,
 } from "deepagents";
 
+import { tuttiCliEnv } from "../tutti-skill-context.js";
 import type { WorkspaceSkillEntry } from "../workspace-skills.js";
 import type { AgentBackendResult } from "./index.js";
 import { createWorkspaceSkillsFilesystemBackend } from "./workspace-skills.js";
@@ -37,6 +38,7 @@ export function createProductionBackendFactory(
   options?: {
     sandboxRoot?: string;
     skillsRoot?: string;
+    tuttiCliPath?: string;
     workspaceSkills?: WorkspaceSkillEntry[];
   },
 ): AgentBackendResult & { sandboxDir: string } {
@@ -64,6 +66,7 @@ export function createProductionBackendFactory(
       HOME: sandboxDir,
       FONT_DIR: join(skillsRoot, "canvas-design", "canvas-fonts"),
       PYTHONDONTWRITEBYTECODE: "1",
+      ...(options?.tuttiCliPath ? tuttiCliEnv(options.tuttiCliPath) : {}),
     },
   });
 

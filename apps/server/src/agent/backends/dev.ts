@@ -8,13 +8,14 @@ import {
 } from "deepagents";
 
 import type { ServerEnv } from "../../config/env.js";
+import { tuttiCliEnv } from "../tutti-skill-context.js";
 import type { WorkspaceSkillEntry } from "../workspace-skills.js";
 import type { AgentBackendResult } from "./index.js";
 import { createWorkspaceSkillsFilesystemBackend } from "./workspace-skills.js";
 
 type AgentBackendEnv = Pick<
   ServerEnv,
-  "agentFilesRoot" | "appDataDir" | "skillsRoot"
+  "agentFilesRoot" | "appDataDir" | "skillsRoot" | "tuttiCliPath"
 >;
 
 const DEFAULT_DEV_SANDBOX_ROOT = "/tmp/ai-media-canvas-sandbox-dev";
@@ -63,6 +64,7 @@ export function createDevelopmentBackend(
       HOME: process.env.HOME ?? "/tmp",
       FONT_DIR: join(skillsRoot, "canvas-design", "canvas-fonts"),
       PYTHONDONTWRITEBYTECODE: "1",
+      ...(env.tuttiCliPath ? tuttiCliEnv(env.tuttiCliPath) : {}),
     },
   });
   const skillsBackend = new FilesystemBackend({
