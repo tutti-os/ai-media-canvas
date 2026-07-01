@@ -298,10 +298,8 @@ export function CanvasEditor({
         maxWidthOrHeight: THUMBNAIL_MAX_SIZE,
       });
 
-      console.log("[canvas-editor] uploading thumbnail, blob size:", blob.size);
       await uploadThumbnail(projectId, blob);
       lastThumbnailSignatureRef.current = signature;
-      console.log("[canvas-editor] thumbnail uploaded OK");
     } catch (err) {
       console.warn("[canvas-editor] thumbnail generation/upload failed:", err);
     } finally {
@@ -384,9 +382,6 @@ export function CanvasEditor({
       );
       if (!cancelled && Object.keys(resolved).length > 0) {
         api.addFiles(Object.values(resolved));
-        console.log(
-          `[canvas-editor] Resolved ${Object.keys(resolved).length} storage files`,
-        );
       }
     }
 
@@ -421,7 +416,6 @@ export function CanvasEditor({
         const { changed } = normalizeCanvasElements(mutableElements);
 
         if (changed || initialIndicesChangedRef.current) {
-          console.log("[canvas-editor] normalized agent-created elements");
           excalidrawApi.updateScene({
             elements: mutableElements,
             captureUpdate: "NONE",

@@ -904,13 +904,6 @@ export function ChatSidebar({
           await userMessageSave;
           failureStage = "agent_run_ack";
 
-          const perf = {
-            t0Send: performance.now(),
-            tAck: 0,
-            tFirstToken: 0,
-            gotFirstToken: false,
-          };
-
           let resolveStream: () => void;
           const streamDone = new Promise<void>((r) => {
             resolveStream = r;
@@ -935,16 +928,6 @@ export function ChatSidebar({
                 resolveStream();
               }
               return;
-            }
-
-            // Track first token timing
-            if (!perf.gotFirstToken && event.type === "message.delta") {
-              perf.tFirstToken = performance.now();
-              perf.gotFirstToken = true;
-              console.log(
-                `[perf] send → first token: ${(perf.tFirstToken - perf.t0Send).toFixed(0)}ms` +
-                  ` (ack→token: ${(perf.tFirstToken - perf.tAck).toFixed(0)}ms)`,
-              );
             }
 
             // Apply event to messages (single source of truth — shared with reconnect)
@@ -1037,10 +1020,6 @@ export function ChatSidebar({
 
             ws.startRun(runPayload, (ack) => {
               clearTimeout(timeout);
-              perf.tAck = performance.now();
-              console.log(
-                `[perf] send → ack: ${(perf.tAck - perf.t0Send).toFixed(0)}ms`,
-              );
               const payloadRecord = ack.payload as Record<string, unknown>;
               const id = payloadRecord.runId as string;
               const assistantMessageId =
