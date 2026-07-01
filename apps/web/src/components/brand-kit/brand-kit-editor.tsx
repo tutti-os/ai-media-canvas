@@ -141,7 +141,7 @@ export function BrandKitEditor({
         <InlineInput
           value={kit.name}
           onCommit={handleNameCommit}
-          placeholder="Kit name"
+          placeholder={t("kitNamePlaceholder")}
           inputClassName="text-2xl font-semibold text-foreground"
         />
 
