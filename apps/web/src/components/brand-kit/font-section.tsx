@@ -83,7 +83,7 @@ export function FontSection({
 
   return (
     <section>
-      <SectionHeader title="Fonts" count={fonts.length} />
+      <SectionHeader title={t("sections.fonts")} count={fonts.length} />
       <div className="flex flex-wrap gap-3">
         {fonts.map((font) => (
           <div key={font.id} className="flex flex-col items-center gap-1.5">

@@ -59,7 +59,7 @@ export function ColorSection({
 
   return (
     <section>
-      <SectionHeader title="Colors" count={colors.length} />
+      <SectionHeader title={t("sections.colors")} count={colors.length} />
       <div className="flex flex-wrap gap-3">
         {colors.map((color) => (
           <div key={color.id} className="flex flex-col items-center gap-1.5">
