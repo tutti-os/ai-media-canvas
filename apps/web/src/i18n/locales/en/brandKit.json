@@ -1,4 +1,9 @@
 {
+  "actions": {
+    "addColor": "Add color",
+    "addFont": "Add font",
+    "moreActions": "More actions"
+  },
   "empty": "No brand kits",
   "selector": {
     "invalid": "Brand kit: unavailable",

@@ -1,4 +1,9 @@
 {
+  "actions": {
+    "addColor": "添加颜色",
+    "addFont": "添加字体",
+    "moreActions": "更多操作"
+  },
   "empty": "暂无品牌套件",
   "selector": {
     "invalid": "品牌套件: 已失效",
