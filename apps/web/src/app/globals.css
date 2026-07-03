@@ -344,11 +344,46 @@
   scrollbar-width: none;
 }
 
+.tutti-rich-text-at-menu:has(.rich-text-at-mention-palette) {
+  width: min(32rem, calc(100vw - 24px));
+  max-height: min(360px, calc(100vh - 24px));
+  overflow: hidden;
+  padding: 0;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  --rich-text-at-mention-bg: var(--popover);
+  --rich-text-at-mention-text-primary: var(--popover-foreground);
+  --rich-text-at-mention-text-secondary: var(--muted-foreground);
+  --rich-text-at-mention-text-tertiary: color-mix(
+    in srgb,
+    var(--muted-foreground) 78%,
+    transparent
+  );
+  --rich-text-at-mention-line-1: var(--border);
+  --rich-text-at-mention-line-2: color-mix(
+    in srgb,
+    var(--border) 72%,
+    transparent
+  );
+  --rich-text-at-mention-hover: var(--accent);
+  --rich-text-at-mention-active: color-mix(
+    in srgb,
+    var(--accent) 78%,
+    transparent
+  );
+  --rich-text-at-mention-accent: var(--primary);
+}
+
+.tutti-rich-text-at-menu:has(.rich-text-at-mention-palette)
+  .rich-text-at-mention-palette {
+  width: 100%;
+}
+
 .tutti-rich-text-at-menu::-webkit-scrollbar {
   display: none;
 }
 
-.tutti-rich-text-at-menu button {
+.tutti-rich-text-at-menu:not(:has(.rich-text-at-mention-palette)) button {
   display: flex;
   width: 100%;
   cursor: pointer;
@@ -364,13 +399,15 @@
   outline: 0;
 }
 
-.tutti-rich-text-at-menu button:hover,
-.tutti-rich-text-at-menu button[aria-selected="true"] {
+.tutti-rich-text-at-menu:not(:has(.rich-text-at-mention-palette)) button:hover,
+.tutti-rich-text-at-menu:not(:has(.rich-text-at-mention-palette))
+  button[aria-selected="true"] {
   background: var(--accent);
   color: var(--accent-foreground);
 }
 
-.tutti-rich-text-at-menu [data-rich-text-trigger-thumbnail] {
+.tutti-rich-text-at-menu:not(:has(.rich-text-at-mention-palette))
+  [data-rich-text-trigger-thumbnail] {
   display: inline-grid;
   width: 16px;
   height: 16px;
@@ -381,7 +418,9 @@
   background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
-.tutti-rich-text-at-menu [data-rich-text-trigger-thumbnail] img {
+.tutti-rich-text-at-menu:not(:has(.rich-text-at-mention-palette))
+  [data-rich-text-trigger-thumbnail]
+  img {
   display: block;
   width: 100%;
   height: 100%;
@@ -389,15 +428,22 @@
   object-position: center;
 }
 
-.tutti-rich-text-at-menu .tutti-rich-text-at-menu-item__label,
-.tutti-rich-text-at-menu button > div:first-child {
+.tutti-rich-text-at-menu:not(:has(.rich-text-at-mention-palette))
+  .tutti-rich-text-at-menu-item__label,
+.tutti-rich-text-at-menu:not(:has(.rich-text-at-mention-palette))
+  button
+  > div:first-child {
   font-size: 13px;
   font-weight: 650;
   line-height: 20px;
 }
 
-.tutti-rich-text-at-menu .tutti-rich-text-at-menu-item__subtitle,
-.tutti-rich-text-at-menu button > div + div {
+.tutti-rich-text-at-menu:not(:has(.rich-text-at-mention-palette))
+  .tutti-rich-text-at-menu-item__subtitle,
+.tutti-rich-text-at-menu:not(:has(.rich-text-at-mention-palette))
+  button
+  > div
+  + div {
   color: var(--muted-foreground);
   font-size: 11px;
   line-height: 16px;

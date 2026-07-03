@@ -1,12 +1,16 @@
 "use client";
 
+import type { MentionPaletteCategoryConfig } from "@tutti-os/ui-rich-text/at-panel";
 import {
   RichTextTriggerEditor,
   type RichTextTriggerMenuAnchor,
   type RichTextTriggerMenuPlacement,
 } from "@tutti-os/ui-rich-text/editor";
 import type { RichTextTriggerProvider } from "@tutti-os/ui-rich-text/types";
-import type { TuttiExternalAtQueryResult } from "@tutti-os/workspace-external-core/contracts";
+import type {
+  TuttiExternalAtProviderId,
+  TuttiExternalAtQueryResult,
+} from "@tutti-os/workspace-external-core/contracts";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
@@ -16,6 +20,7 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from "react";
 
 import { useAppTranslation } from "@/i18n";
@@ -44,6 +49,11 @@ type TuttiRichTextInputProps = {
   onPaste?: (event: ClipboardEvent<HTMLDivElement>) => void;
   onSubmit: () => void;
 };
+
+const mentionPaletteProviderIds = [
+  "workspace-app",
+  "agent-target",
+] as const satisfies readonly TuttiExternalAtProviderId[];
 
 function focusEditableElement(root: HTMLElement | null) {
   const target = root?.querySelector<HTMLElement>(
@@ -78,9 +88,34 @@ export const TuttiRichTextInput = forwardRef<
 ) {
   const { t } = useAppTranslation("chat");
   const fieldRef = useRef<HTMLDivElement | null>(null);
+  const [activeMentionProviderId, setActiveMentionProviderId] =
+    useState<TuttiExternalAtProviderId>("agent-target");
   const triggerProviders = useMemo<
     readonly RichTextTriggerProvider<TuttiExternalAtQueryResult>[]
-  >(() => createTuttiExternalAgentContextMentionProviders(), []);
+  >(
+    () =>
+      createTuttiExternalAgentContextMentionProviders({
+        activeProviderId: activeMentionProviderId,
+      }),
+    [activeMentionProviderId],
+  );
+  const mentionPaletteCategories = useMemo<
+    readonly MentionPaletteCategoryConfig[]
+  >(
+    () => [
+      {
+        id: "apps",
+        label: t("input.mentionPaletteApps"),
+        providerIds: ["workspace-app"],
+      },
+      {
+        id: "agents",
+        label: t("input.mentionPaletteAgents"),
+        providerIds: ["agent-target"],
+      },
+    ],
+    [t],
+  );
 
   useImperativeHandle(ref, () => ({
     focus() {
@@ -110,8 +145,58 @@ export const TuttiRichTextInput = forwardRef<
     return () => observer.disconnect();
   }, [ariaLabel]);
 
+  useEffect(() => {
+    const handlePaletteTabClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      const tab = target.closest<HTMLElement>(
+        '[data-slot="underline-tabs-tab"]',
+      );
+      const tabList = tab?.closest<HTMLElement>('[data-slot="underline-tabs"]');
+      if (!tab || !tabList?.closest(".rich-text-at-mention-palette")) return;
+
+      const tabs = Array.from(
+        tabList.querySelectorAll<HTMLElement>(
+          '[data-slot="underline-tabs-tab"]',
+        ),
+      );
+      const tabIndex = tabs.indexOf(tab);
+      const nextProviderId = mentionPaletteProviderIds[tabIndex];
+      if (nextProviderId) {
+        setActiveMentionProviderId(nextProviderId);
+      }
+    };
+
+    document.addEventListener("click", handlePaletteTabClick, true);
+    return () =>
+      document.removeEventListener("click", handlePaletteTabClick, true);
+  }, []);
+
   const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
+      return;
+    }
+    if (
+      event.key === "Tab" &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      document.querySelector(".rich-text-at-mention-palette")
+    ) {
+      setActiveMentionProviderId((current) => {
+        const currentIndex = mentionPaletteProviderIds.indexOf(
+          current as (typeof mentionPaletteProviderIds)[number],
+        );
+        const nextIndex =
+          currentIndex < 0
+            ? 1
+            : (currentIndex +
+                (event.shiftKey ? -1 : 1) +
+                mentionPaletteProviderIds.length) %
+              mentionPaletteProviderIds.length;
+        return mentionPaletteProviderIds[nextIndex] ?? "agent-target";
+      });
       return;
     }
     if (
@@ -147,6 +232,18 @@ export const TuttiRichTextInput = forwardRef<
         menuPlacement={menuPlacement}
         menuZIndex={menuZIndex}
         minQueryLength={0}
+        palette={{
+          categories: mentionPaletteCategories,
+          defaultCategoryId: "agents",
+          labels: {
+            tabHint: t("input.mentionPaletteTabHint"),
+            cycleFilter: t("input.mentionPaletteCycleFilter"),
+            moveSelection: t("input.mentionPaletteMoveSelection"),
+            empty: t("input.mentionEmpty"),
+            listbox: t("input.mentionPaletteListbox"),
+          },
+          maxHeightPx: 320,
+        }}
         placeholder={value.trim() ? "" : placeholder}
         placeholderClassName={placeholderClassName}
         textareaClassName={editorClassName}

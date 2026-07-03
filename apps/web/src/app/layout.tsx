@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import { Providers } from "../components/providers";
 
+import "@tutti-os/ui-rich-text/at-panel/index.css";
 import "./globals.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
