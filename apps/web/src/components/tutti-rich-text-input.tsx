@@ -1,5 +1,6 @@
 "use client";
 
+import type { MentionPaletteCategoryConfig } from "@tutti-os/ui-rich-text/at-panel";
 import {
   RichTextTriggerEditor,
   type RichTextTriggerMenuAnchor,
@@ -81,6 +82,23 @@ export const TuttiRichTextInput = forwardRef<
   const triggerProviders = useMemo<
     readonly RichTextTriggerProvider<TuttiExternalAtQueryResult>[]
   >(() => createTuttiExternalAgentContextMentionProviders(), []);
+  const mentionPaletteCategories = useMemo<
+    readonly MentionPaletteCategoryConfig[]
+  >(
+    () => [
+      {
+        id: "apps",
+        label: t("input.mentionPaletteApps"),
+        providerIds: ["workspace-app"],
+      },
+      {
+        id: "agents",
+        label: t("input.mentionPaletteAgents"),
+        providerIds: ["agent-target"],
+      },
+    ],
+    [t],
+  );
 
   useImperativeHandle(ref, () => ({
     focus() {
@@ -147,6 +165,18 @@ export const TuttiRichTextInput = forwardRef<
         menuPlacement={menuPlacement}
         menuZIndex={menuZIndex}
         minQueryLength={0}
+        palette={{
+          categories: mentionPaletteCategories,
+          defaultCategoryId: "agents",
+          labels: {
+            tabHint: t("input.mentionPaletteTabHint"),
+            cycleFilter: t("input.mentionPaletteCycleFilter"),
+            moveSelection: t("input.mentionPaletteMoveSelection"),
+            empty: t("input.mentionEmpty"),
+            listbox: t("input.mentionPaletteListbox"),
+          },
+          maxHeightPx: 320,
+        }}
         placeholder={value.trim() ? "" : placeholder}
         placeholderClassName={placeholderClassName}
         textareaClassName={editorClassName}
