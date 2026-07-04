@@ -42,6 +42,7 @@ import {
   fetchRunEvents,
   saveMessage,
 } from "../lib/server-api";
+import { reportUserActive } from "../lib/tutti-activity";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import { ChatInput } from "./chat-input";
 import { ChatMessage } from "./chat-message";
@@ -1066,6 +1067,7 @@ export function ChatSidebar({
               if (activeSessionIdRef.current === currentSessionId) {
                 setActiveRunId(id);
               }
+              reportUserActive();
               resolve(id);
             });
           });
