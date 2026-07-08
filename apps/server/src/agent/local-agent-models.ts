@@ -8,7 +8,6 @@ import {
 
 import {
   createAimcLocalAgentProviderPlugins,
-  isAimcLocalAgentProvider,
 } from "./local-agent-providers.js";
 
 type LocalAgentRuntimeDetect = LocalAgentRuntime<
@@ -69,8 +68,6 @@ export function buildLocalAgentModels(
   const seen = new Set<string>();
 
   for (const detection of detections) {
-    if (!isAimcLocalAgentProvider(String(detection.provider))) continue;
-
     const result = detection.result as AgentDetection | null;
     if (!result || result.supported === false) continue;
 
