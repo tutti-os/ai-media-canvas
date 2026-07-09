@@ -1,7 +1,8 @@
 import type { TuttiAgentProviderCatalogModel } from "./tutti-daemon-client.js";
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
   return value as Record<string, unknown>;
 }
 
@@ -33,14 +34,13 @@ function settingOptionsFromRawOptions(
     const record = toRecord(item);
     if (!record) continue;
     const id =
-      keys.valueKeys.map((key) => readString(record[key])).find(Boolean)
-      ?? readString(record.value)
-      ?? readString(record.id);
+      keys.valueKeys.map((key) => readString(record[key])).find(Boolean) ??
+      readString(record.value) ??
+      readString(record.id);
     if (!id || seen.has(id)) continue;
     seen.add(id);
     const label =
-      keys.labelKeys.map((key) => readString(record[key])).find(Boolean)
-      ?? id;
+      keys.labelKeys.map((key) => readString(record[key])).find(Boolean) ?? id;
     const description = readString(record.description);
     options.push({
       id,
@@ -51,12 +51,16 @@ function settingOptionsFromRawOptions(
   return options;
 }
 
-function settingOptionsFromComposerConfig(config: Record<string, unknown>): TuttiAgentProviderCatalogModel[] {
+function settingOptionsFromComposerConfig(
+  config: Record<string, unknown>,
+): TuttiAgentProviderCatalogModel[] {
   const options = settingOptionsFromRawOptions(config.options, {
-    labelKeys: ["label", "name", "displayName"],
+    labelKeys: ["label", "name", "displayName", "display_name"],
     valueKeys: ["value", "id"],
   });
-  const currentValue = readString(config.currentValue ?? config.current_value ?? config.defaultValue);
+  const currentValue = readString(
+    config.currentValue ?? config.current_value ?? config.defaultValue,
+  );
   if (!currentValue || options.some((option) => option.id === currentValue)) {
     return options;
   }
@@ -77,10 +81,12 @@ function settingOptionsFromConfigOption(
       }) ?? null;
   if (!configOption) return [];
   const options = settingOptionsFromRawOptions(configOption.options, {
-    labelKeys: ["name", "label", "displayName"],
+    labelKeys: ["name", "label", "displayName", "display_name"],
     valueKeys: ["value", "id"],
   });
-  const currentValue = readString(configOption.currentValue ?? configOption.current_value);
+  const currentValue = readString(
+    configOption.currentValue ?? configOption.current_value,
+  );
   if (!currentValue || options.some((option) => option.id === currentValue)) {
     return options;
   }
@@ -98,13 +104,23 @@ export function modelsFromTuttiComposerOptions(value: unknown): {
     : [];
   const modelConfig = toRecord(result.modelConfig) ?? {};
   const modelsFromConfig = settingOptionsFromComposerConfig(modelConfig);
-  const modelsFromLiveConfig = settingOptionsFromConfigOption(rawConfigOptions, ["model"]);
-  const models = modelsFromLiveConfig.length > 0 ? modelsFromLiveConfig : modelsFromConfig;
+  const modelsFromLiveConfig = settingOptionsFromConfigOption(
+    rawConfigOptions,
+    ["model"],
+  );
+  const models =
+    modelsFromLiveConfig.length > 0 ? modelsFromLiveConfig : modelsFromConfig;
+  const liveModelConfig = rawConfigOptions
+    .map((item) => toRecord(item))
+    .find((option) => readString(option?.id) === "model");
   const defaultModelId =
-    readString(modelConfig.currentValue)
-    ?? readString(modelConfig.current_value)
-    ?? readString(modelConfig.defaultValue)
-    ?? models[0]?.id;
+    readString(liveModelConfig?.currentValue) ??
+    readString(liveModelConfig?.current_value) ??
+    readString(liveModelConfig?.defaultValue) ??
+    readString(modelConfig.currentValue) ??
+    readString(modelConfig.current_value) ??
+    readString(modelConfig.defaultValue) ??
+    models[0]?.id;
   return {
     models,
     ...(defaultModelId ? { defaultModelId } : {}),

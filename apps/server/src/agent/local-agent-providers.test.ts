@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { createDefaultLocalAgentProviderPlugins } from "@tutti-os/agent-acp-kit";
+import { describe, expect, it } from "vitest";
 
 import { createAimcLocalAgentProviderPlugins } from "./local-agent-providers.js";
 
@@ -12,7 +12,7 @@ async function collect<T>(stream: AsyncIterable<T>) {
 }
 
 describe("createAimcLocalAgentProviderPlugins", () => {
-  it("registers every default local agent provider", () => {
+  it("registers every default local agent provider and the Nexight compatibility provider", () => {
     const providerIds = createAimcLocalAgentProviderPlugins().map(
       (provider) => provider.id,
     );
@@ -20,7 +20,11 @@ describe("createAimcLocalAgentProviderPlugins", () => {
       (provider) => provider.id,
     );
 
-    expect(providerIds).toEqual(defaultProviderIds);
+    expect(providerIds).toEqual(
+      defaultProviderIds.includes("nexight")
+        ? defaultProviderIds
+        : [...defaultProviderIds, "nexight"],
+    );
   });
 
   it("maps current Claude Code assistant stream-json content into text deltas", async () => {

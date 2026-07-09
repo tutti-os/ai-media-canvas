@@ -3,6 +3,7 @@ import {
   type RawAgentEvent,
   type RawAgentStream,
   createDefaultLocalAgentProviderPlugins,
+  createGenericAcpProvider,
 } from "@tutti-os/agent-acp-kit";
 
 type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
@@ -129,7 +130,20 @@ function withAimcClaudeStreamCompatibility(
 }
 
 export function createAimcLocalAgentProviderPlugins(): AimcLocalAgentProviderPlugin[] {
-  const providers = createDefaultLocalAgentProviderPlugins();
+  const packageProviders = createDefaultLocalAgentProviderPlugins();
+  const providers = packageProviders.some(
+    (provider) => provider.id === "nexight",
+  )
+    ? packageProviders
+    : [
+        ...packageProviders,
+        createGenericAcpProvider({
+          args: ["acp"],
+          command: "nexight",
+          displayName: "Nexight",
+          providerId: "nexight",
+        }),
+      ];
 
   return providers.map((provider) =>
     provider.id === "claude"

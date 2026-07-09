@@ -4,7 +4,11 @@ import {
   toKitAgentProviderId,
 } from "./agent-provider-id.js";
 
-export type TuttiAgentProviderAuthState = "ok" | "missing" | "expired" | "unknown";
+export type TuttiAgentProviderAuthState =
+  | "ok"
+  | "missing"
+  | "expired"
+  | "unknown";
 
 export interface TuttiAgentProviderCatalogModel {
   id: string;
@@ -84,11 +88,21 @@ export interface TuttiAgentProviderDaemonStatus {
 
 function readEnv(options: TuttiDaemonClientOptions) {
   return {
-    apiBaseUrl: options.apiBaseUrl?.trim() || process.env.TUTTI_API_BASE_URL?.trim() || "",
+    apiBaseUrl:
+      options.apiBaseUrl?.trim() ||
+      process.env.TUTTI_API_BASE_URL?.trim() ||
+      "",
     appId: options.appId?.trim() || process.env.TUTTI_APP_ID?.trim() || "",
-    appServerToken: options.appServerToken?.trim() || process.env.TUTTI_APP_SERVER_TOKEN?.trim() || "",
-    tuttiCliPath: options.tuttiCliPath?.trim() || process.env.TUTTI_CLI?.trim() || "",
-    workspaceId: options.workspaceId?.trim() || process.env.TUTTI_WORKSPACE_ID?.trim() || "",
+    appServerToken:
+      options.appServerToken?.trim() ||
+      process.env.TUTTI_APP_SERVER_TOKEN?.trim() ||
+      "",
+    tuttiCliPath:
+      options.tuttiCliPath?.trim() || process.env.TUTTI_CLI?.trim() || "",
+    workspaceId:
+      options.workspaceId?.trim() ||
+      process.env.TUTTI_WORKSPACE_ID?.trim() ||
+      "",
     requestTimeoutMs: options.requestTimeoutMs ?? 15_000,
   };
 }
@@ -97,7 +111,12 @@ function workspaceAppDaemonPath(
   env: ReturnType<typeof readEnv>,
   suffix: string,
 ): string | null {
-  if (!env.apiBaseUrl || !env.appServerToken || !env.workspaceId || !env.appId) {
+  if (
+    !env.apiBaseUrl ||
+    !env.appServerToken ||
+    !env.workspaceId ||
+    !env.appId
+  ) {
     return null;
   }
   const encodedWorkspaceId = encodeURIComponent(env.workspaceId);
@@ -107,7 +126,8 @@ function workspaceAppDaemonPath(
 }
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
   return value as Record<string, unknown>;
 }
 
@@ -199,7 +219,11 @@ export async function queryTuttiDesktopPreferences(
 export async function queryTuttiAgentProviderStatuses(
   providerIds: readonly string[] = [],
   options: TuttiDaemonClientOptions = {},
-): Promise<{ capturedAt: string | null; defaultProvider: string | null; providers: TuttiAgentProviderDaemonStatus[] } | null> {
+): Promise<{
+  capturedAt: string | null;
+  defaultProvider: string | null;
+  providers: TuttiAgentProviderDaemonStatus[];
+} | null> {
   const env = readEnv(options);
   const workspacePath = workspaceAppDaemonPath(env, "/agent-providers/status");
   if (workspacePath) {
@@ -268,33 +292,34 @@ export async function queryTuttiAgentProviderStatuses(
     }
   }
 
-  if (!env.tuttiCliPath) return null;
-  const payload = await runTuttiCliJson(
-    ["agent", "providers"],
-    options,
-  );
+  if (!env.tuttiCliPath && !options.runTuttiCli) return null;
+  const payload = await runTuttiCliJson(["agent", "providers"], options);
   const record = unwrapDaemonPayload(payload);
   const availability = Array.isArray(record.providers) ? record.providers : [];
-  const providers = availability.flatMap((item): TuttiAgentProviderDaemonStatus[] => {
-    const status = toRecord(item);
-    if (!status) return [];
-    const provider = readString(status.provider);
-    if (!provider) return [];
-    const cliStatus = readString(status.status)?.toLowerCase();
-    const available = cliStatus === "available" || cliStatus === "ready";
-    const reasonCode = readString(status.detail);
-    return [{
-      provider,
-      availability: {
-        status: available ? "ready" : cliStatus ?? "unknown",
-        ...(reasonCode ? { reasonCode } : {}),
-      },
-      cli: {
-        installed: available,
-        ...(reasonCode ? { binaryPath: reasonCode } : {}),
-      },
-    }];
-  });
+  const providers = availability.flatMap(
+    (item): TuttiAgentProviderDaemonStatus[] => {
+      const status = toRecord(item);
+      if (!status) return [];
+      const provider = readString(status.provider);
+      if (!provider) return [];
+      const cliStatus = readString(status.status)?.toLowerCase();
+      const available = cliStatus === "available" || cliStatus === "ready";
+      const reasonCode = readString(status.detail);
+      return [
+        {
+          provider,
+          availability: {
+            status: available ? "ready" : (cliStatus ?? "unknown"),
+            ...(reasonCode ? { reasonCode } : {}),
+          },
+          cli: {
+            installed: available,
+            ...(reasonCode ? { binaryPath: reasonCode } : {}),
+          },
+        },
+      ];
+    },
+  );
   return {
     capturedAt: null,
     defaultProvider: readString(record.defaultProvider) ?? null,
@@ -340,7 +365,10 @@ export async function queryTuttiAgentProviderComposerOptions(
 
   if (env.apiBaseUrl && env.appServerToken) {
     const payload = await fetchJson(
-      new URL(`/v1/agent-providers/${encodeURIComponent(provider)}/composer-options`, env.apiBaseUrl).toString(),
+      new URL(
+        `/v1/agent-providers/${encodeURIComponent(provider)}/composer-options`,
+        env.apiBaseUrl,
+      ).toString(),
       {
         method: "POST",
         headers: {
@@ -355,7 +383,7 @@ export async function queryTuttiAgentProviderComposerOptions(
     return unwrapDaemonPayload(payload);
   }
 
-  if (!env.tuttiCliPath) return null;
+  if (!env.tuttiCliPath && !options.runTuttiCli) return null;
   const args = ["agent", "composer-options", "--provider", provider];
   if (options.cwd) args.push("--cwd", options.cwd);
   if (env.workspaceId) args.push("--workspace-id", env.workspaceId);
@@ -383,10 +411,14 @@ export async function runTuttiCliJson(
   const { promisify } = await import("node:util");
   const execFileAsync = promisify(execFile);
   try {
-    const { stdout } = await execFileAsync(env.tuttiCliPath, ["--json", ...args], {
-      timeout: env.requestTimeoutMs,
-      maxBuffer: 1024 * 1024,
-    });
+    const { stdout } = await execFileAsync(
+      env.tuttiCliPath,
+      ["--json", ...args],
+      {
+        timeout: env.requestTimeoutMs,
+        maxBuffer: 1024 * 1024,
+      },
+    );
     const text = String(stdout ?? "").trim();
     return text ? JSON.parse(text) : {};
   } catch {
@@ -394,14 +426,18 @@ export async function runTuttiCliJson(
   }
 }
 
-export function authStateFromTuttiAgentProvider(status: string | null | undefined): TuttiAgentProviderAuthState {
+export function authStateFromTuttiAgentProvider(
+  status: string | null | undefined,
+): TuttiAgentProviderAuthState {
   if (status === "authenticated") return "ok";
   if (status === "required") return "missing";
   if (status === "expired") return "expired";
   return "unknown";
 }
 
-export function unavailableReasonFromTuttiAgentProvider(status: TuttiAgentProviderDaemonStatus): string {
+export function unavailableReasonFromTuttiAgentProvider(
+  status: TuttiAgentProviderDaemonStatus,
+): string {
   const displayName = displayNameForAgentProvider(status.provider);
   switch (status.availability?.status) {
     case "not_installed":
@@ -409,9 +445,14 @@ export function unavailableReasonFromTuttiAgentProvider(status: TuttiAgentProvid
     case "auth_required":
       return `${displayName} is installed but authentication is missing.`;
     case "unsupported":
-      return status.availability.reasonCode ?? `${displayName} is not supported on this machine.`;
+      return (
+        status.availability.reasonCode ??
+        `${displayName} is not supported on this machine.`
+      );
     default:
-      return status.availability?.reasonCode ?? `${displayName} is not available.`;
+      return (
+        status.availability?.reasonCode ?? `${displayName} is not available.`
+      );
   }
 }
 
@@ -422,39 +463,56 @@ export function parseDaemonStatusModels(
   const configuration = toRecord(status.configuration);
   const catalog = toRecord(status.modelCatalog);
   const rawModels =
-    (Array.isArray(status.models) ? status.models : undefined)
-    ?? (Array.isArray(status.availableModels) ? status.availableModels : undefined)
-    ?? (Array.isArray(status.modelOptions) ? status.modelOptions : undefined)
-    ?? readArray(root, "models", "availableModels", "modelOptions")
-    ?? readArray(configuration, "models", "availableModels", "modelOptions")
-    ?? readArray(catalog, "models", "availableModels", "modelOptions");
+    (Array.isArray(status.models) ? status.models : undefined) ??
+    (Array.isArray(status.availableModels)
+      ? status.availableModels
+      : undefined) ??
+    (Array.isArray(status.modelOptions) ? status.modelOptions : undefined) ??
+    readArray(root, "models", "availableModels", "modelOptions") ??
+    readArray(configuration, "models", "availableModels", "modelOptions") ??
+    readArray(catalog, "models", "availableModels", "modelOptions");
   if (!rawModels?.length) return undefined;
 
   const models: TuttiAgentProviderCatalogModel[] = [];
   const seen = new Set<string>();
   for (const entry of rawModels) {
+    const stringId = readString(entry);
+    if (stringId) {
+      if (!seen.has(stringId)) {
+        seen.add(stringId);
+        models.push({ id: stringId, label: stringId });
+      }
+      continue;
+    }
     const record = toRecord(entry);
     if (!record) continue;
     if (record.hidden === true || record.visibility === "hide") continue;
-    const id = readString(record.id) ?? readString(record.model) ?? readString(record.slug) ?? readString(record.value);
+    const id =
+      readString(record.id) ??
+      readString(record.model) ??
+      readString(record.slug) ??
+      readString(record.value);
     if (!id || seen.has(id)) continue;
     seen.add(id);
     const description = readString(record.description);
     models.push({
       id,
       label:
-        readString(record.label)
-        ?? readString(record.displayName)
-        ?? readString(record.display_name)
-        ?? readString(record.name)
-        ?? id,
+        readString(record.label) ??
+        readString(record.displayName) ??
+        readString(record.display_name) ??
+        readString(record.name) ??
+        id,
       ...(description ? { description } : {}),
     });
   }
   return models.length ? models : undefined;
 }
 
-function readArray(record: Record<string, unknown> | undefined, ...keys: string[]) {
+function readArray(
+  record: Record<string, unknown> | undefined,
+  ...keys: string[]
+) {
   if (!record) return undefined;
   for (const key of keys) {
     const value = record[key];
@@ -463,32 +521,43 @@ function readArray(record: Record<string, unknown> | undefined, ...keys: string[
   return undefined;
 }
 
-export function parseDaemonDefaultModelId(status: TuttiAgentProviderDaemonStatus): string | undefined {
+export function parseDaemonDefaultModelId(
+  status: TuttiAgentProviderDaemonStatus,
+): string | undefined {
   const root = toRecord(status);
   const configuration = toRecord(status.configuration);
   const defaults = toRecord(status.defaults);
   const catalog = toRecord(status.modelCatalog);
-  return readString(status.defaultModelId)
-    ?? readString(status.defaultModel)
-    ?? readString(root?.defaultModelId)
-    ?? readString(root?.defaultModel)
-    ?? readString(configuration?.defaultModelId)
-    ?? readString(configuration?.defaultModel)
-    ?? readString(defaults?.modelId)
-    ?? readString(defaults?.model)
-    ?? readString(catalog?.defaultModelId)
-    ?? readString(catalog?.defaultModel);
+  return (
+    readString(status.defaultModelId) ??
+    readString(status.defaultModel) ??
+    readString(root?.defaultModelId) ??
+    readString(root?.defaultModel) ??
+    readString(configuration?.defaultModelId) ??
+    readString(configuration?.defaultModel) ??
+    readString(defaults?.modelId) ??
+    readString(defaults?.model) ??
+    readString(catalog?.defaultModelId) ??
+    readString(catalog?.defaultModel)
+  );
 }
 
 export function normalizeDefaultProviderId(
   defaultProvider: string | null | undefined,
   preferences: TuttiDesktopPreferencesSnapshot | null,
 ): string | null {
-  const candidate = readString(defaultProvider) ?? readString(preferences?.defaultAgentProvider);
+  const candidate =
+    readString(defaultProvider) ??
+    readString(preferences?.defaultAgentProvider);
   if (!candidate) return null;
   return toKitAgentProviderId(candidate);
 }
 
-export function kitProviderMatchesDaemonProvider(kitProvider: string, daemonProvider: string): boolean {
-  return toDaemonAgentProviderId(kitProvider) === daemonProvider.trim().toLowerCase();
+export function kitProviderMatchesDaemonProvider(
+  kitProvider: string,
+  daemonProvider: string,
+): boolean {
+  return (
+    toDaemonAgentProviderId(kitProvider) === daemonProvider.trim().toLowerCase()
+  );
 }
