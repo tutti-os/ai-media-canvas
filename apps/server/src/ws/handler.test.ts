@@ -1,3 +1,4 @@
+import { createDefaultLocalAgentProviderPlugins } from "@tutti-os/agent-acp-kit";
 import { describe, expect, it } from "vitest";
 
 import { isLocalAgentRuntimeRequested } from "../agent/run-orchestrator.js";
@@ -12,8 +13,12 @@ describe("isLocalAgentRuntimeRequested", () => {
     );
   });
 
-  it("detects all AIMC-supported local model prefixes", () => {
-    for (const provider of ["codex", "claude", "nexight"]) {
+  it("detects registered local agent model prefixes", () => {
+    const providerIds = createDefaultLocalAgentProviderPlugins().map(
+      (item) => item.id,
+    );
+    expect(providerIds.length).toBeGreaterThan(0);
+    for (const provider of providerIds) {
       expect(
         isLocalAgentRuntimeRequested({ model: `${provider}:default` }),
       ).toBe(true);

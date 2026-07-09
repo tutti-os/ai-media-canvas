@@ -130,6 +130,12 @@ function stripLocalAgentProviderPrefix(model: string, provider: string) {
   return model.startsWith(prefix) ? model.slice(prefix.length) : model;
 }
 
+function localAgentModelIdForAcp(model: string, provider: string) {
+  const stripped = stripLocalAgentProviderPrefix(model, provider);
+  if (provider === "cursor" && stripped === "default") return "default[]";
+  return stripped;
+}
+
 function normalizeWorkspaceSkillPathsForLocalAgent(prompt: string) {
   return prompt.replaceAll("/workspace-skills/", "workspace-skills/");
 }
@@ -409,7 +415,7 @@ export function createLocalAgentRuntimeProvider(
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
           ...(managedAgentInvocation ? { managedAgentInvocation } : {}),
-          model: stripLocalAgentProviderPrefix(resolvedModel, runtimeProvider),
+          model: localAgentModelIdForAcp(resolvedModel, runtimeProvider),
           runtimeKind: "local-agent",
           runtimeProvider,
           mcpServers,

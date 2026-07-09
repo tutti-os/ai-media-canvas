@@ -12,7 +12,10 @@ const API_PROVIDER_IDS = new Set([
 ]);
 const MANAGED_MODEL_PREFIXES = ["tutti"];
 
-export const SUPPORTED_LOCAL_CLI_PROVIDERS = ["codex", "claude", "nexight"];
+export const PREFERRED_LOCAL_CLI_PROVIDER_ORDER = ["codex", "claude", "cursor", "nexight"];
+
+/** @deprecated Use PREFERRED_LOCAL_CLI_PROVIDER_ORDER for ordering only. */
+export const SUPPORTED_LOCAL_CLI_PROVIDERS = PREFERRED_LOCAL_CLI_PROVIDER_ORDER;
 
 export const LOCAL_CLI_PROVIDER_LABELS: Record<string, string> = {
   codex: "Codex",
@@ -24,7 +27,7 @@ export const LOCAL_CLI_PROVIDER_LABELS: Record<string, string> = {
   kilo: "Kilo",
   kimi: "Kimi CLI",
   kiro: "Kiro CLI",
-  nexight: "Nexight",
+  nexight: "Tutti Agent",
   opencode: "OpenCode",
   qoder: "Qoder CLI",
   qwen: "Qwen Code",
@@ -37,7 +40,7 @@ export const LOCAL_CLI_PROVIDER_FALLBACK_MARKS: Record<string, string> = {
   devin: "D",
   hermes: "H",
   kiro: "K",
-  nexight: "NX",
+  nexight: "TA",
 };
 
 export function isApiProvider(provider: string) {
@@ -49,7 +52,7 @@ export function isLocalCliProvider(provider: string) {
 }
 
 export function isSupportedLocalCliProvider(provider: string) {
-  return SUPPORTED_LOCAL_CLI_PROVIDERS.includes(provider);
+  return isLocalCliProvider(provider);
 }
 
 export function getAgentModelSourceTab(modelId: string | null | undefined) {

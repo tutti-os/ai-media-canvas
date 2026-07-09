@@ -1,4 +1,3 @@
-import type { AgentRuntimeProvider } from "@aimc/shared";
 import {
   type LocalAgentProviderPlugin,
   type RawAgentEvent,
@@ -9,14 +8,8 @@ import {
 
 type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   "local-agent",
-  AgentRuntimeProvider
+  import("@aimc/shared").AgentRuntimeProvider
 >;
-
-const AIMC_LOCAL_AGENT_PROVIDER_IDS = new Set(["codex", "claude", "nexight"]);
-
-export function isAimcLocalAgentProvider(provider: string) {
-  return AIMC_LOCAL_AGENT_PROVIDER_IDS.has(provider);
-}
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -152,11 +145,9 @@ export function createAimcLocalAgentProviderPlugins(): AimcLocalAgentProviderPlu
         }),
       ];
 
-  return providers
-    .filter((provider) => isAimcLocalAgentProvider(provider.id))
-    .map((provider) =>
-      provider.id === "claude"
-        ? withAimcClaudeStreamCompatibility(provider)
-        : provider,
-    ) as AimcLocalAgentProviderPlugin[];
+  return providers.map((provider) =>
+    provider.id === "claude"
+      ? withAimcClaudeStreamCompatibility(provider)
+      : provider,
+  ) as AimcLocalAgentProviderPlugin[];
 }

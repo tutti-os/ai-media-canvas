@@ -361,10 +361,13 @@ describe("registerModelRoutes", () => {
           provider: "claude",
           source: "local-agent",
         },
+        {
+          id: "hermes:openai-codex:gpt-5.4",
+          name: "Hermes GPT",
+          provider: "hermes",
+          source: "local-agent",
+        },
       ]),
-    );
-    expect(models).not.toContainEqual(
-      expect.objectContaining({ provider: "hermes" }),
     );
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(1);
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith(undefined);
@@ -568,5 +571,4 @@ describe("registerModelRoutes", () => {
     );
     expect(localAgentModelDiscovery.detect).not.toHaveBeenCalled();
   });
-
 });
