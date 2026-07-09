@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createDefaultLocalAgentProviderPlugins } from "@tutti-os/agent-acp-kit";
 
 import { isLocalAgentRuntimeRequested } from "../agent/run-orchestrator.js";
 
@@ -12,15 +13,13 @@ describe("isLocalAgentRuntimeRequested", () => {
     );
   });
 
-  it("detects all AIMC-supported local model prefixes", () => {
-    for (const provider of ["codex", "claude", "nexight"]) {
+  it("detects registered local agent model prefixes", () => {
+    for (const provider of createDefaultLocalAgentProviderPlugins().map((item) => item.id)) {
       expect(
         isLocalAgentRuntimeRequested({ model: `${provider}:default` }),
       ).toBe(true);
     }
-    expect(isLocalAgentRuntimeRequested({ model: "nextop:default" })).toBe(
-      false,
-    );
+    expect(isLocalAgentRuntimeRequested({ model: "nextop:default" })).toBe(false);
   });
 
   it("does not treat server model specifiers as local-agent requests", () => {

@@ -386,13 +386,14 @@ export async function listAgentModels(options: {
       options.refreshLocalAgentModels
         ? { ...(managedAgentDetectContext ?? {}), refresh: true }
         : managedAgentDetectContext;
+    const workspaceCwd = process.env.TUTTI_WORKSPACE_ROOT?.trim();
     try {
       const catalog = await resolveTuttiAgentProviderCatalog({
         runtime: createLocalAgentRuntime({
           providers: createAimcLocalAgentProviderPlugins(),
         }),
         detectContext: localAgentDetectContext,
-        workspaceCwd: process.env.TUTTI_WORKSPACE_ROOT?.trim() || undefined,
+        ...(workspaceCwd ? { workspaceCwd } : {}),
       });
       models.push(...buildLocalAgentModelsFromCatalog(catalog.providers));
     } catch (error) {

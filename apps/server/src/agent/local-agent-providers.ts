@@ -3,28 +3,12 @@ import {
   type RawAgentEvent,
   type RawAgentStream,
   createDefaultLocalAgentProviderPlugins,
-  createGenericAcpProvider,
 } from "@tutti-os/agent-acp-kit";
-
-import {
-  toKitAgentProviderId,
-  tuttiManagedAgentProviders,
-} from "./tutti/index.js";
 
 type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   "local-agent",
   import("@aimc/shared").AgentRuntimeProvider
 >;
-
-const TUTTI_KIT_PROVIDER_IDS = new Set(
-  tuttiManagedAgentProviders.map((provider) => toKitAgentProviderId(provider)),
-);
-
-function filterTuttiManagedProviderPlugins(
-  providers: AimcLocalAgentProviderPlugin[],
-): AimcLocalAgentProviderPlugin[] {
-  return providers.filter((provider) => TUTTI_KIT_PROVIDER_IDS.has(provider.id));
-}
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -145,26 +129,11 @@ function withAimcClaudeStreamCompatibility(
 }
 
 export function createAimcLocalAgentProviderPlugins(): AimcLocalAgentProviderPlugin[] {
-  const packageProviders = createDefaultLocalAgentProviderPlugins();
-  const providers = packageProviders.some(
-    (provider) => provider.id === "nexight",
-  )
-    ? packageProviders
-    : [
-        ...packageProviders,
-        createGenericAcpProvider({
-          args: ["acp"],
-          command: "nexight",
-          displayName: "Nexight",
-          providerId: "nexight",
-        }),
-      ];
+  const providers = createDefaultLocalAgentProviderPlugins();
 
-  return filterTuttiManagedProviderPlugins(
-    providers.map((provider) =>
-      provider.id === "claude"
-        ? withAimcClaudeStreamCompatibility(provider)
-        : provider,
-    ) as AimcLocalAgentProviderPlugin[],
-  );
+  return providers.map((provider) =>
+    provider.id === "claude"
+      ? withAimcClaudeStreamCompatibility(provider)
+      : provider,
+  ) as AimcLocalAgentProviderPlugin[];
 }

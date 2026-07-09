@@ -6,6 +6,7 @@ import type {
   StreamEvent,
   ToolBlock,
 } from "@aimc/shared";
+import { createDefaultLocalAgentProviderPlugins } from "@tutti-os/agent-acp-kit";
 import type {
   AgentRuntimeCapabilities,
   AgentRuntimeMode,
@@ -51,12 +52,6 @@ export type RuntimeTarget = PackageRuntimeTarget<
   AgentRuntimeProvider
 >;
 
-export const AIMC_SUPPORTED_LOCAL_AGENT_PROVIDER_IDS = [
-  "codex",
-  "claude",
-  "nexight",
-] as const;
-
 export function createRuntimeControlPlane<TContext>(
   providers: RuntimeProvider<TContext>[],
   options?: {
@@ -78,12 +73,17 @@ export function inferRuntimeKind(
   return inferPackageRuntimeKind<RuntimeKind, AgentRuntimeProvider>(input);
 }
 
-const LOCAL_AGENT_MODEL_PREFIXES = AIMC_SUPPORTED_LOCAL_AGENT_PROVIDER_IDS.map(
-  (provider) => `${provider}:`,
-);
-
 function getModelProvider(model: string) {
   return model.includes(":") ? (model.split(":", 1)[0] ?? "") : "";
+}
+
+const LOCAL_AGENT_MODEL_PROVIDER_IDS = new Set(
+  createDefaultLocalAgentProviderPlugins().map((provider) => provider.id),
+);
+
+function hasLocalAgentModelProviderPrefix(model: string) {
+  const provider = getModelProvider(model);
+  return LOCAL_AGENT_MODEL_PROVIDER_IDS.has(provider);
 }
 
 export function isLocalAgentRuntimeRequested(input: {
@@ -95,8 +95,7 @@ export function isLocalAgentRuntimeRequested(input: {
   return (
     input.runtimeKind === "local-agent" ||
     Boolean(input.runtimeProvider) ||
-    (typeof model === "string" &&
-      LOCAL_AGENT_MODEL_PREFIXES.some((prefix) => model.startsWith(prefix)))
+    (typeof model === "string" && hasLocalAgentModelProviderPrefix(model))
   );
 }
 

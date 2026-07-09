@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createDefaultLocalAgentProviderPlugins } from "@tutti-os/agent-acp-kit";
 
 import {
   AgentRunModelResolutionError,
@@ -429,27 +430,21 @@ describe("agent run orchestrator", () => {
     ).toEqual({ kind: "local-agent", provider: "codex" });
   });
 
-  it("detects local-agent requests from AIMC-supported provider model prefixes", () => {
+  it("detects local-agent requests from provider model prefixes", () => {
     expect(isLocalAgentRuntimeRequested({ runtimeKind: "local-agent" })).toBe(
       true,
     );
     expect(isLocalAgentRuntimeRequested({ runtimeProvider: "claude" })).toBe(
       true,
     );
-    for (const provider of ["codex", "claude", "nexight"]) {
+    for (const provider of createDefaultLocalAgentProviderPlugins().map((item) => item.id)) {
       expect(
         isLocalAgentRuntimeRequested({ model: `${provider}:default` }),
       ).toBe(true);
     }
-    expect(isLocalAgentRuntimeRequested({ model: "nextop:default" })).toBe(
-      false,
-    );
-    expect(isLocalAgentRuntimeRequested({ model: "hermes:default" })).toBe(
-      false,
-    );
-    expect(
-      isLocalAgentRuntimeRequested({ model: "agnes:agnes-2.0-flash" }),
-    ).toBe(false);
+    expect(isLocalAgentRuntimeRequested({ model: "default" })).toBe(false);
+    expect(isLocalAgentRuntimeRequested({ model: ":default" })).toBe(false);
+    expect(isLocalAgentRuntimeRequested({ model: "agnes:agnes-2.0-flash" })).toBe(false);
   });
 
   it("uses the local provider default model for local-agent runs without a requested model", () => {

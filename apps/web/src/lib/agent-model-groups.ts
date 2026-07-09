@@ -27,7 +27,7 @@ export const LOCAL_CLI_PROVIDER_LABELS: Record<string, string> = {
   kilo: "Kilo",
   kimi: "Kimi CLI",
   kiro: "Kiro CLI",
-  nexight: "Nexight",
+  nexight: "Tutti Agent",
   opencode: "OpenCode",
   qoder: "Qoder CLI",
   qwen: "Qwen Code",
@@ -40,7 +40,7 @@ export const LOCAL_CLI_PROVIDER_FALLBACK_MARKS: Record<string, string> = {
   devin: "D",
   hermes: "H",
   kiro: "K",
-  nexight: "NX",
+  nexight: "TA",
 };
 
 export function isApiProvider(provider: string) {
