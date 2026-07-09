@@ -14,7 +14,6 @@ import {
 
 import {
   type LocalAgentModelDetectContext,
-  type LocalAgentModelDiscovery,
 } from "../agent/local-agent-models.js";
 import { createAimcLocalAgentProviderPlugins } from "../agent/local-agent-providers.js";
 import { buildLocalAgentModelsFromCatalog } from "../agent/tutti-catalog-models.js";
@@ -249,14 +248,9 @@ export async function registerModelRoutes(
   env: ServerEnv,
   settingsService?: SettingsService,
   options?: {
-    localAgentModelDiscovery?: LocalAgentModelDiscovery;
     tuttiManagedCredentials?: TuttiManagedCredentialService;
   },
 ) {
-  const localAgentModelDiscovery =
-    options?.localAgentModelDiscovery ??
-    createDefaultLocalAgentModelDiscovery();
-
   const sendModels = async (
     reply: FastifyReply,
     input: {
@@ -266,7 +260,6 @@ export async function registerModelRoutes(
   ) => {
     const models = await listAgentModels({
       env,
-      localAgentModelDiscovery,
       logger: app.log,
       ...(input.refreshLocalAgentModels
         ? { refreshLocalAgentModels: true }
@@ -299,7 +292,6 @@ export async function registerModelRoutes(
 
 export async function listAgentModels(options: {
   env: ServerEnv;
-  localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
   managedAgentDetectContext?: DetectContext;
   managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders;
