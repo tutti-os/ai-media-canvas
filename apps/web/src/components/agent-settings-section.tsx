@@ -18,7 +18,7 @@ import type {
 import { useAppTranslation } from "@/i18n";
 import {
   type AgentModelSourceTab,
-  SUPPORTED_LOCAL_CLI_PROVIDERS,
+  PREFERRED_LOCAL_CLI_PROVIDER_ORDER,
   formatLocalCliProviderLabel,
   getAgentModelSourceTab,
   getModelSourceTab,
@@ -91,7 +91,7 @@ type ApiProviderPreset = {
   models: string[];
 };
 
-const LOCAL_CLI_PROVIDER_ORDER = [...SUPPORTED_LOCAL_CLI_PROVIDERS];
+const LOCAL_CLI_PROVIDER_ORDER = [...PREFERRED_LOCAL_CLI_PROVIDER_ORDER];
 const INSTALLABLE_LOCAL_CLI_PROVIDER_PLACEHOLDERS = ["codex", "claude"];
 const AGNES_API_KEYS_URL = "https://platform.agnes-ai.com/settings/apiKeys";
 const ANTHROPIC_API_KEYS_URL = "https://console.anthropic.com/settings/keys";
