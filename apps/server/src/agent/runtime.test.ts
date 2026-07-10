@@ -1329,7 +1329,7 @@ describe("createAgentRunService", () => {
       expect.objectContaining({ id: "user-1" }),
       expect.objectContaining({
         payload: expect.objectContaining({
-          caller_provider: "claude",
+          caller_provider: "claude-code",
           codex_imagegen_consent: "allow-once",
           codex_imagegen_delegation_allowed: true,
           model: "codex/gpt-image-2",

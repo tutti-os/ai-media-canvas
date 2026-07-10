@@ -166,6 +166,7 @@ export function createLocalAgentRuntimeProvider(
   const runtimeProvider = providerPlugin.id;
 
   return {
+    ...(providerPlugin.aliases ? { aliases: providerPlugin.aliases } : {}),
     runtime: {
       id: `local-agent:${runtimeProvider}`,
       kind: "local-agent" as const,
