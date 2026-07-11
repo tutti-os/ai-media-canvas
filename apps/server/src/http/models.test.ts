@@ -271,7 +271,7 @@ describe("registerModelRoutes", () => {
           provider: "codex" as const,
           displayName: "Codex CLI",
           result: {
-            authState: "unknown" as const,
+            authState: "ok" as const,
             executablePath: "codex",
             models: [
               { id: "default", label: "Default (CLI config)" },
@@ -282,10 +282,10 @@ describe("registerModelRoutes", () => {
           },
         },
         {
-          provider: "claude" as const,
+          provider: "claude-code" as const,
           displayName: "Claude Code",
           result: {
-            authState: "unknown" as const,
+            authState: "ok" as const,
             executablePath: "claude",
             models: [
               {
@@ -303,7 +303,7 @@ describe("registerModelRoutes", () => {
           provider: "hermes" as const,
           displayName: "Hermes",
           result: {
-            authState: "unknown" as const,
+            authState: "ok" as const,
             executablePath: "hermes",
             models: [{ id: "openai-codex:gpt-5.4", label: "Hermes GPT" }],
             supported: true,
@@ -349,16 +349,16 @@ describe("registerModelRoutes", () => {
           source: "local-agent",
         },
         {
-          id: "claude:sonnet",
+          id: "claude-code:sonnet",
           name: "Sonnet (alias)",
           description: "Custom Sonnet model",
-          provider: "claude",
+          provider: "claude-code",
           source: "local-agent",
         },
         {
-          id: "claude:opus",
+          id: "claude-code:claude:opus",
           name: "Scoped Opus",
-          provider: "claude",
+          provider: "claude-code",
           source: "local-agent",
         },
         {
@@ -377,10 +377,10 @@ describe("registerModelRoutes", () => {
     const localAgentModelDiscovery = {
       detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
         {
-          provider: "claude" as const,
+          provider: "claude-code" as const,
           displayName: "Claude Code",
           result: {
-            authState: "unknown" as const,
+            authState: "ok" as const,
             executablePath: "claude",
             models: [{ id: "sonnet", label: "Sonnet" }],
             supported: true,
@@ -411,9 +411,9 @@ describe("registerModelRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().models).toContainEqual({
-      id: "claude:sonnet",
+      id: "claude-code:sonnet",
       name: "Sonnet",
-      provider: "claude",
+      provider: "claude-code",
       source: "local-agent",
     });
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({
@@ -431,7 +431,7 @@ describe("registerModelRoutes", () => {
           provider: "nexight" as const,
           displayName: "Nexight",
           result: {
-            authState: "unknown" as const,
+            authState: "ok" as const,
             executablePath: "nexight",
             models: [{ id: "default", label: "Default (Nexight)" }],
             supported: true,

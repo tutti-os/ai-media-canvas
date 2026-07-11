@@ -1,10 +1,10 @@
 import type { ModelInfo } from "@aimc/shared";
+import type { TuttiResolvedAgentProviderCatalogEntry } from "@tutti-os/agent-acp-kit/tutti";
 
 import { localAgentModelId } from "./local-agent-models.js";
-import type { TuttiAgentProviderCatalogEntry } from "./tutti/index.js";
 
 export function buildLocalAgentModelsFromCatalog(
-  providers: readonly TuttiAgentProviderCatalogEntry[],
+  providers: readonly TuttiResolvedAgentProviderCatalogEntry[],
 ): ModelInfo[] {
   const models: ModelInfo[] = [];
   const seen = new Set<string>();

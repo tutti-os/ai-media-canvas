@@ -146,7 +146,7 @@ export function createAimcLocalAgentProviderPlugins(): AimcLocalAgentProviderPlu
       ];
 
   return providers.map((provider) =>
-    provider.id === "claude"
+    provider.id === "claude-code"
       ? withAimcClaudeStreamCompatibility(provider)
       : provider,
   ) as AimcLocalAgentProviderPlugin[];

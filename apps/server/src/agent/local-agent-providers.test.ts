@@ -29,7 +29,7 @@ describe("createAimcLocalAgentProviderPlugins", () => {
 
   it("maps current Claude Code assistant stream-json content into text deltas", async () => {
     const claude = createAimcLocalAgentProviderPlugins().find(
-      (provider) => provider.id === "claude",
+      (provider) => provider.id === "claude-code",
     );
     const adapter = claude?.createAdapter?.();
     expect(adapter).toBeDefined();
@@ -58,7 +58,7 @@ describe("createAimcLocalAgentProviderPlugins", () => {
 
   it("falls back to Claude Code result text when no assistant item was emitted", async () => {
     const claude = createAimcLocalAgentProviderPlugins().find(
-      (provider) => provider.id === "claude",
+      (provider) => provider.id === "claude-code",
     );
     const adapter = claude?.createAdapter?.();
     expect(adapter).toBeDefined();
