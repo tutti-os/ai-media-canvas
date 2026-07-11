@@ -253,16 +253,21 @@ export async function registerModelRoutes(
   env: ServerEnv,
   settingsService?: SettingsService,
   options?: {
+    createManagedLocalAgentModelDiscovery?: () => LocalAgentModelDiscovery;
     localAgentModelDiscovery?: LocalAgentModelDiscovery;
     tuttiManagedCredentials?: TuttiManagedCredentialService;
   },
 ) {
-  // Keep one discovery instance for the lifetime of the model routes. Its
-  // refresh path swaps runtimes, so a slower pre-refresh probe cannot replace
-  // the cache observed by later requests.
-  const localAgentModelDiscovery =
+  // Credentialless requests share one discovery instance. Its refresh path
+  // swaps runtimes, so a slower pre-refresh probe cannot replace the cache
+  // observed by later requests. Managed invocations must never share this
+  // cache because the SDK cache key intentionally does not contain secrets.
+  const uncredentialedLocalAgentModelDiscovery =
     options?.localAgentModelDiscovery ??
     createDefaultLocalAgentModelDiscovery();
+  const createManagedLocalAgentModelDiscovery =
+    options?.createManagedLocalAgentModelDiscovery ??
+    createDefaultLocalAgentModelDiscovery;
   const sendModels = async (
     reply: FastifyReply,
     input: {
@@ -270,14 +275,20 @@ export async function registerModelRoutes(
       refreshLocalAgentModels?: boolean;
     } = {},
   ) => {
+    const managedAgentDetectContext = input.headers
+      ? createManagedAgentDetectContextFromHeaders(input.headers)
+      : undefined;
+    const localAgentModelDiscovery = managedAgentDetectContext
+      ? createManagedLocalAgentModelDiscovery()
+      : uncredentialedLocalAgentModelDiscovery;
     const result = await listAgentModelCatalog({
       env,
       logger: app.log,
       localAgentModelDiscovery,
+      ...(managedAgentDetectContext ? { managedAgentDetectContext } : {}),
       ...(input.refreshLocalAgentModels
         ? { refreshLocalAgentModels: true }
         : {}),
-      ...(input.headers ? { managedAgentHeaders: input.headers } : {}),
       ...(options?.tuttiManagedCredentials
         ? { tuttiManagedCredentials: options.tuttiManagedCredentials }
         : {}),

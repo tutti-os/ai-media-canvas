@@ -493,7 +493,9 @@ describe("registerModelRoutes", () => {
         {},
       ),
       undefined,
-      { localAgentModelDiscovery },
+      {
+        createManagedLocalAgentModelDiscovery: () => localAgentModelDiscovery,
+      },
     );
 
     const response = await app.inject({
@@ -534,6 +536,116 @@ describe("registerModelRoutes", () => {
         PATH: expect.any(String),
       }),
     );
+  });
+
+  it("isolates managed model discovery runtimes between credentials", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    const uncredentialedDiscovery = {
+      detect: vi.fn(async () => []),
+    };
+    const managedDiscoveries: Array<{
+      detect: ReturnType<typeof vi.fn>;
+    }> = [];
+    const createManagedLocalAgentModelDiscovery = vi.fn(() => {
+      const discovery = {
+        detect: vi.fn(async (context?: LocalAgentModelDetectContext) => {
+          const credential =
+            context?.managedAgentInvocation?.credential ?? "missing";
+          return [
+            {
+              provider: "tutti-agent" as const,
+              displayName: "Tutti Agent",
+              result: {
+                authState: "ok" as const,
+                executablePath: "tutti-agent",
+                models: [
+                  {
+                    id:
+                      credential === "credential-model-a"
+                        ? "managed-a"
+                        : "managed-b",
+                    label:
+                      credential === "credential-model-a"
+                        ? "Managed A"
+                        : "Managed B",
+                  },
+                ],
+                supported: true,
+                version: "1.0.0",
+              },
+            },
+          ];
+        }),
+      };
+      managedDiscoveries.push(discovery);
+      return discovery;
+    });
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
+        },
+        {},
+      ),
+      undefined,
+      {
+        createManagedLocalAgentModelDiscovery,
+        localAgentModelDiscovery: uncredentialedDiscovery,
+      },
+    );
+
+    const responseA = await app.inject({
+      method: "POST",
+      url: "/api/models",
+      headers: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-model-a",
+      },
+      payload: {},
+    });
+    const responseB = await app.inject({
+      method: "POST",
+      url: "/api/models",
+      headers: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-model-b",
+      },
+      payload: {},
+    });
+
+    expect(responseA.statusCode, responseA.body).toBe(200);
+    expect(responseB.statusCode, responseB.body).toBe(200);
+    expect(responseA.json().models).toContainEqual(
+      expect.objectContaining({ id: "tutti-agent:managed-a" }),
+    );
+    expect(responseA.json().models).not.toContainEqual(
+      expect.objectContaining({ id: "tutti-agent:managed-b" }),
+    );
+    expect(responseB.json().models).toContainEqual(
+      expect.objectContaining({ id: "tutti-agent:managed-b" }),
+    );
+    expect(responseB.json().models).not.toContainEqual(
+      expect.objectContaining({ id: "tutti-agent:managed-a" }),
+    );
+    expect(createManagedLocalAgentModelDiscovery).toHaveBeenCalledTimes(2);
+    expect(managedDiscoveries).toHaveLength(2);
+    expect(managedDiscoveries[0]?.detect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        managedAgentInvocation: expect.objectContaining({
+          credential: "credential-model-a",
+        }),
+      }),
+    );
+    expect(managedDiscoveries[1]?.detect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        managedAgentInvocation: expect.objectContaining({
+          credential: "credential-model-b",
+        }),
+      }),
+    );
+    expect(uncredentialedDiscovery.detect).not.toHaveBeenCalled();
   });
 
   it("keeps managed model discovery credentials out of logs", async () => {
