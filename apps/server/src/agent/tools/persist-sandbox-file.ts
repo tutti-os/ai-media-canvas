@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { basename, extname } from "node:path";
+import { basename, extname, isAbsolute, relative } from "node:path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 
@@ -51,8 +51,10 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
       // Use realpathSync to resolve symlinks (macOS /tmp → /private/tmp).
       if (deps.sandboxDir) {
         try {
+          const realSandboxDir = realpathSync(deps.sandboxDir);
           const realFilePath = realpathSync(input.filePath);
-          if (!realFilePath.startsWith(deps.sandboxDir)) {
+          const relativePath = relative(realSandboxDir, realFilePath);
+          if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
             return "Error: filePath must be inside the sandbox directory.";
           }
         } catch {
@@ -70,7 +72,9 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
         const ext = extname(input.filePath).toLowerCase();
         const mimeType = MIME_MAP[ext] ?? "application/octet-stream";
         const safeTitle = input.title
-          ? input.title.replace(/[^a-zA-Z0-9_\u4e00-\u9fff-]/g, "_").slice(0, 100)
+          ? input.title
+              .replace(/[^a-zA-Z0-9_\u4e00-\u9fff-]/g, "_")
+              .slice(0, 100)
           : null;
         const fileName = safeTitle
           ? `${safeTitle}${ext}`
