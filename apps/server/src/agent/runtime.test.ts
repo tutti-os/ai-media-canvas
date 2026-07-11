@@ -3021,8 +3021,18 @@ describe("createAgentRunService", () => {
       events.push(event);
     }
 
-    expect(events).toEqual([]);
+    expect(events).toEqual([
+      {
+        runId: run.runId,
+        timestamp: expect.any(String),
+        type: "run.canceled",
+      },
+    ]);
     expect(localAgentRuntimeRunMock).not.toHaveBeenCalled();
+    expect(updateRun).toHaveBeenCalledWith({
+      runId: run.runId,
+      status: "canceled",
+    });
     expect(updateRun).not.toHaveBeenCalledWith(
       expect.objectContaining({ status: "running" }),
     );

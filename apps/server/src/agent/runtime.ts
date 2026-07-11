@@ -675,6 +675,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       run.status = "canceled";
       clearTransientInvocation(run, options.onTransientInvocationCleared);
+      options.agentRunStore?.updateRun({
+        runId,
+        status: "canceled",
+      });
       return {
         runId,
         status: "canceled",
@@ -888,6 +892,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       if (run.controller.signal.aborted) {
         run.status = "canceled";
         clearTransientInvocation(run, options.onTransientInvocationCleared);
+        yield {
+          runId,
+          timestamp: now(),
+          type: "run.canceled",
+        };
         return;
       }
       run.status = "running";

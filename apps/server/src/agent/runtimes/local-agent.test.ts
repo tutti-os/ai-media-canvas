@@ -246,7 +246,8 @@ describe("createLocalAgentRuntimeProvider", () => {
   });
 
   it("stops provider work when cancellation races a managed context claim", async () => {
-    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    const tempRoot = mkdtempSync(join(tmpdir(), "aimc-managed-claim-cancel-"));
+    vi.stubEnv("TUTTI_APP_DATA_DIR", tempRoot);
     const createRunDirectory = vi.fn();
     const assertLocalAgentProviderAvailable = vi.fn(async () => undefined);
     const localAgentRuntimeRun = vi.fn(async function* () {
@@ -285,18 +286,28 @@ describe("createLocalAgentRuntimeProvider", () => {
       createProviderPlugin("codex"),
     );
 
-    const execution = collect(provider.streamRun(context));
-    await vi.waitFor(() => {
-      expect(loadManagedAgentRunContext).toHaveBeenCalledOnce();
-    });
-    context.run.controller.abort();
-    context.run.loadManagedAgentRunContext = undefined;
-    resolveManagedContext?.(await createManagedRunContext());
+    try {
+      const execution = collect(provider.streamRun(context));
+      await vi.waitFor(() => {
+        expect(loadManagedAgentRunContext).toHaveBeenCalledOnce();
+      });
+      context.run.controller.abort();
+      context.run.loadManagedAgentRunContext = undefined;
+      const managedContext = await createManagedRunContext();
+      if (!managedContext) {
+        throw new Error("managed context fixture was not created");
+      }
+      expect(existsSync(managedContext.cwd)).toBe(true);
+      resolveManagedContext?.(managedContext);
 
-    await expect(execution).rejects.toMatchObject({ name: "AbortError" });
-    expect(createRunDirectory).not.toHaveBeenCalled();
-    expect(assertLocalAgentProviderAvailable).not.toHaveBeenCalled();
-    expect(localAgentRuntimeRun).not.toHaveBeenCalled();
+      await expect(execution).rejects.toMatchObject({ name: "AbortError" });
+      expect(existsSync(managedContext.cwd)).toBe(false);
+      expect(createRunDirectory).not.toHaveBeenCalled();
+      expect(assertLocalAgentProviderAvailable).not.toHaveBeenCalled();
+      expect(localAgentRuntimeRun).not.toHaveBeenCalled();
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it("uses managed agent invocation for app data cwd values", async () => {
