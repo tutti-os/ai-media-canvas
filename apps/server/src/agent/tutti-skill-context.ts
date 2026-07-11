@@ -24,6 +24,7 @@ export async function loadTuttiAgentSkillContextForRun(input: {
   runId: string;
   signal?: AbortSignal;
 }): Promise<TuttiAgentSkillContext> {
+  input.signal?.throwIfAborted();
   try {
     return await loadTuttiAgentSkillContext({
       agentSessionId: input.runId,
@@ -33,6 +34,9 @@ export async function loadTuttiAgentSkillContextForRun(input: {
       ...(input.signal ? { signal: input.signal } : {}),
     });
   } catch (error) {
+    if (input.signal?.aborted) {
+      throw error;
+    }
     console.warn(
       `[aimc] Unable to load Tutti agent skill bundle: ${redactTuttiCliChildProcessText(
         errorMessage(error),

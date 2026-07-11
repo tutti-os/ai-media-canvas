@@ -885,6 +885,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
 
       run.consumed = true;
+      if (run.controller.signal.aborted) {
+        run.status = "canceled";
+        clearTransientInvocation(run, options.onTransientInvocationCleared);
+        return;
+      }
       run.status = "running";
       try {
         options.agentRunStore?.updateRun({
@@ -1617,6 +1622,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             }
           }
         } catch (streamError) {
+          if (run.controller.signal.aborted) {
+            run.status = "canceled";
+            yield {
+              runId,
+              timestamp: now(),
+              type: "run.canceled",
+            };
+            return;
+          }
           console.error(
             "[agent-runtime] Stream iteration failed:",
             streamError,

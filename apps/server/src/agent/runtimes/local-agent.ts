@@ -276,6 +276,7 @@ export function createLocalAgentRuntimeProvider(
         handoffSection,
         normalizedPrompt,
       ].join("\n\n");
+      run.controller.signal.throwIfAborted();
       const loadManagedAgentRunContext = run.loadManagedAgentRunContext;
       if (loadManagedAgentRunContext) {
         run.loadManagedAgentRunContext = undefined;
@@ -283,6 +284,7 @@ export function createLocalAgentRuntimeProvider(
       const managedRunContext = loadManagedAgentRunContext
         ? await loadManagedAgentRunContext()
         : undefined;
+      run.controller.signal.throwIfAborted();
       const managed = Boolean(managedRunContext);
       const runDirectory = managedRunContext
         ? undefined

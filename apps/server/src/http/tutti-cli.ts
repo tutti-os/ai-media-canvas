@@ -259,7 +259,6 @@ export async function registerTuttiCliRoutes(
         ...(options.env.appDataDir
           ? { appDataDir: options.env.appDataDir }
           : {}),
-        env: process.env,
       },
     );
     await requestTuttiAppOpen(

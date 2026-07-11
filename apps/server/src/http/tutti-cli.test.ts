@@ -2,7 +2,10 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
+import {
+  type DetectContext,
+  MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER,
+} from "@tutti-os/agent-acp-kit";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -14,6 +17,7 @@ const tempRoots: string[] = [];
 
 describe("registerTuttiCliRoutes", () => {
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await Promise.all(apps.splice(0).map((app) => app.close()));
     await Promise.all(
       tempRoots
@@ -223,8 +227,13 @@ describe("registerTuttiCliRoutes", () => {
   });
 
   it("passes a request-scoped DetectContext to app open", async () => {
+    vi.stubEnv("CODEX_HOME", "/tmp/ambient-codex-home");
+    vi.stubEnv(
+      "TSH_REVERSE_CAPABILITY_INVOCATION_CREDENTIAL",
+      "ambient-secret",
+    );
     const appOpenRequester = vi.fn(
-      async (_input: { detectContext?: unknown }) => undefined,
+      async (_input: { detectContext?: DetectContext }) => undefined,
     );
     const app = buildTestApp({
       appOpenRequester,
@@ -246,12 +255,19 @@ describe("registerTuttiCliRoutes", () => {
     expect(response.statusCode).toBe(200);
     const input = appOpenRequester.mock.calls[0]?.[0];
     expect(input?.detectContext).toMatchObject({
+      env: {
+        TUTTI_APP_DATA_DIR: "/tmp/aimc-app-data",
+      },
       managedAgentInvocation: {
         credential: "credential-open-1",
         cwd: "/tmp/aimc-app-data",
       },
       redactionSecrets: ["credential-open-1"],
     });
+    expect(input?.detectContext?.env).not.toHaveProperty("CODEX_HOME");
+    expect(input?.detectContext?.env).not.toHaveProperty(
+      "TSH_REVERSE_CAPABILITY_INVOCATION_CREDENTIAL",
+    );
   });
 
   it("requests opening a project's primary canvas", async () => {

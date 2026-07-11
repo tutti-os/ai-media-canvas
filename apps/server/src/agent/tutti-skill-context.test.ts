@@ -114,4 +114,28 @@ describe("loadTuttiAgentSkillContextForRun", () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain(secret);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("[REDACTED]"));
   });
+
+  it("rethrows cancellation instead of returning an empty skill bundle", async () => {
+    const controller = new AbortController();
+    const abortError = new DOMException(
+      "The operation was aborted",
+      "AbortError",
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    loadTuttiAgentSkillContextMock.mockImplementation(async () => {
+      controller.abort(abortError);
+      throw abortError;
+    });
+
+    await expect(
+      loadTuttiAgentSkillContextForRun({
+        cwd: "/workspace/run",
+        provider: "codex",
+        runId: "run-1",
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(abortError);
+
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
