@@ -648,6 +648,38 @@ describe("registerModelRoutes", () => {
     expect(uncredentialedDiscovery.detect).not.toHaveBeenCalled();
   });
 
+  it("uses an isolated discovery when managed credentials are supplied as headers", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    const uncredentialedDiscovery = { detect: vi.fn(async () => []) };
+    const managedDiscovery = { detect: vi.fn(async () => []) };
+    const createManagedLocalAgentModelDiscovery = vi.fn(() => managedDiscovery);
+
+    await listAgentModels({
+      env: loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
+        },
+        {},
+      ),
+      localAgentModelDiscovery: uncredentialedDiscovery,
+      createManagedLocalAgentModelDiscovery,
+      managedAgentHeaders: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-from-header",
+      },
+    });
+
+    expect(createManagedLocalAgentModelDiscovery).toHaveBeenCalledOnce();
+    expect(managedDiscovery.detect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        managedAgentInvocation: expect.objectContaining({
+          credential: "credential-from-header",
+        }),
+      }),
+    );
+    expect(uncredentialedDiscovery.detect).not.toHaveBeenCalled();
+  });
+
   it("keeps managed model discovery credentials out of logs", async () => {
     const logger = { warn: vi.fn() };
     await listAgentModels({

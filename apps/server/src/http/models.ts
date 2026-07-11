@@ -425,7 +425,7 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
       localAgentDetectContext?.cwd?.trim();
     try {
       const localAgentModelDiscovery =
-        options.managedAgentDetectContext &&
+        managedAgentDetectContext &&
         options.createManagedLocalAgentModelDiscovery
           ? options.createManagedLocalAgentModelDiscovery()
           : options.localAgentModelDiscovery;
