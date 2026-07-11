@@ -298,7 +298,7 @@ export async function registerModelRoutes(
   });
 }
 
-export async function listAgentModels(options: {
+export type ListAgentModelsOptions = {
   env: ServerEnv;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
@@ -307,20 +307,13 @@ export async function listAgentModels(options: {
   refreshLocalAgentModels?: boolean;
   tuttiManagedCredentials?: TuttiManagedCredentialService;
   settingsService?: SettingsService;
-}) {
+};
+
+export async function listAgentModels(options: ListAgentModelsOptions) {
   return (await listAgentModelCatalog(options)).models;
 }
 
-export async function listAgentModelCatalog(options: {
-  env: ServerEnv;
-  localAgentModelDiscovery?: LocalAgentModelDiscovery;
-  logger?: ModelDiscoveryLogger;
-  managedAgentDetectContext?: DetectContext;
-  managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders;
-  refreshLocalAgentModels?: boolean;
-  tuttiManagedCredentials?: TuttiManagedCredentialService;
-  settingsService?: SettingsService;
-}) {
+export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
   const workspaceSettings = options.settingsService
     ? await options.settingsService.getWorkspaceSettings(
         null,

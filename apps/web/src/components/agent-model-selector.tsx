@@ -241,29 +241,31 @@ export function AgentModelSelector({
     workspaceDefaultModelSource ??
     getAgentModelSourceTab(workspaceDefaultModel);
   const workspaceDefaultProvider = getModelProvider(workspaceDefaultModel);
-  const visibleLocalProviderIds = new Set(
-    localAgentProviders.map((provider) => provider.provider),
+  const availableLocalProviderIds = new Set(
+    localAgentProviders
+      .filter((provider) => provider.available)
+      .map((provider) => provider.provider),
   );
   const selectedProviderIsSupportedLocal =
     selectedModelSource === "local-agent" &&
     selectedProvider &&
     isLocalCliProvider(selectedProvider) &&
-    visibleLocalProviderIds.has(selectedProvider);
+    availableLocalProviderIds.has(selectedProvider);
   const selectedProviderIsUnsupportedLocal =
     selectedModelSource === "local-agent" &&
     selectedProvider &&
     isLocalCliProvider(selectedProvider) &&
-    !visibleLocalProviderIds.has(selectedProvider);
+    !availableLocalProviderIds.has(selectedProvider);
   const workspaceDefaultProviderIsSupportedLocal =
     resolvedWorkspaceDefaultModelSource === "local-agent" &&
     workspaceDefaultProvider &&
     isLocalCliProvider(workspaceDefaultProvider) &&
-    visibleLocalProviderIds.has(workspaceDefaultProvider);
+    availableLocalProviderIds.has(workspaceDefaultProvider);
   const workspaceDefaultProviderIsUnsupportedLocal =
     resolvedWorkspaceDefaultModelSource === "local-agent" &&
     workspaceDefaultProvider &&
     isLocalCliProvider(workspaceDefaultProvider) &&
-    !visibleLocalProviderIds.has(workspaceDefaultProvider);
+    !availableLocalProviderIds.has(workspaceDefaultProvider);
   const triggerLocalProvider = selectedProviderIsSupportedLocal
     ? selectedProvider
     : !model && workspaceDefaultProviderIsSupportedLocal

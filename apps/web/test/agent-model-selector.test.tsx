@@ -5,8 +5,21 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { fetchModelsMock, fetchWorkspaceSettingsMock, setModelMock } =
+const {
+  agentModelState,
+  fetchModelsMock,
+  fetchWorkspaceSettingsMock,
+  setModelMock,
+} =
   vi.hoisted(() => ({
+    agentModelState: {
+      model: null as string | null,
+      modelSource: undefined as
+        | "api-provider"
+        | "local-agent"
+        | "tutti-managed"
+        | undefined,
+    },
     fetchModelsMock: vi.fn(),
     fetchWorkspaceSettingsMock: vi.fn(),
     setModelMock: vi.fn(),
@@ -43,7 +56,8 @@ vi.mock("../src/lib/server-api", () => ({
 
 vi.mock("../src/hooks/use-agent-model", () => ({
   useAgentModel: () => ({
-    model: null,
+    model: agentModelState.model,
+    modelSource: agentModelState.modelSource,
     setModel: setModelMock,
   }),
 }));
@@ -76,6 +90,8 @@ describe("AgentModelSelector", () => {
     fetchModelsMock.mockReset();
     fetchWorkspaceSettingsMock.mockReset();
     setModelMock.mockReset();
+    agentModelState.model = null;
+    agentModelState.modelSource = undefined;
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "openai:gpt-5.4",
@@ -359,6 +375,48 @@ describe("AgentModelSelector", () => {
       screen.getByText("Tutti Agent is not logged in."),
     ).toBeInTheDocument();
     expect(setModelMock).not.toHaveBeenCalled();
+  });
+
+  it("does not present an unavailable local provider as the active selection", async () => {
+    agentModelState.model = "tutti-agent:default";
+    agentModelState.modelSource = "local-agent";
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "tutti-agent:default",
+        defaultModelSource: "local-agent",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "tutti-agent:default",
+          name: "Default (CLI config)",
+          provider: "tutti-agent",
+        },
+      ],
+      localAgentProviders: [
+        {
+          provider: "tutti-agent",
+          displayName: "Tutti Agent",
+          available: false,
+          authState: "missing",
+          reason: "Tutti Agent is not logged in.",
+          models: [],
+        },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    const trigger = await screen.findByRole("button", { name: /^Agent$/ });
+    await userEvent.click(trigger);
+
+    expect(
+      await screen.findByText("Uses your configured default route"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Tutti Agent is not logged in."),
+    ).toBeInTheDocument();
   });
 
   it("shows the default local CLI provider in the trigger", async () => {

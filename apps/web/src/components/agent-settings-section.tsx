@@ -76,6 +76,7 @@ type AgentProtocolId = "agnes" | "openai" | "google" | "vertex" | "anthropic";
 type ProviderModels = WorkspaceSettings["providerModels"];
 type LocalCliProviderGroup = {
   available: boolean;
+  defaultModelId?: string | undefined;
   provider: string;
   label: string;
   models: ModelInfo[];
@@ -321,6 +322,9 @@ function groupLocalCliProviders(
 ): LocalCliProviderGroup[] {
   return providers.map((provider) => ({
     available: provider.available,
+    ...(provider.defaultModelId
+      ? { defaultModelId: provider.defaultModelId }
+      : {}),
     provider: provider.provider,
     label: provider.displayName,
     models: provider.models,
@@ -330,6 +334,7 @@ function groupLocalCliProviders(
 
 function getLocalCliProviderDefaultModel(group: LocalCliProviderGroup) {
   return (
+    group.models.find((model) => model.id === group.defaultModelId) ??
     group.models.find((model) => model.id === `${group.provider}:default`) ??
     group.models.find((model) => model.id !== `${group.provider}:default`) ??
     group.models[0] ??
@@ -755,7 +760,10 @@ function LocalCliProviderModelPicker({
                     aria-pressed={selected}
                     aria-busy={openingManager}
                     disabled={
-                      openingManager || (!group.available && !canManage)
+                      openingManager ||
+                      (group.available
+                        ? group.models.length === 0
+                        : !canManage)
                     }
                     onClick={() => {
                       if (!group.available) {

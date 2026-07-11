@@ -307,68 +307,67 @@ export function createLocalAgentRuntimeProvider(
         throw new Error("Local agent run directory is required.");
       }
       const managedAgentInvocation = managedRunContext?.managedAgentInvocation;
-      if (!deps.assertLocalAgentProviderAvailable) {
-        throw new Error("Local agent provider authorization is not configured.");
-      }
-      await deps.assertLocalAgentProviderAvailable({
-        provider: runtimeProvider,
-        detectContext: {
-          cwd: runDir,
-          refresh: true,
-          ...(managedAgentInvocation ? { managedAgentInvocation } : {}),
-        },
-      });
-      await materializeWorkspaceSkillsForLocalAgent({
-        runDir,
-        workspaceSkills,
-      });
-      const gatewaySession = deps.toolGateway.createSession({
-        ...(run.accessToken ? { accessToken: run.accessToken } : {}),
-        ...(Object.keys(attachmentDataMap).length > 0
-          ? { attachmentDataMap }
-          : {}),
-        backendFactory: readyContext.backendResult.factory,
-        ...(readyContext.brandKitId
-          ? { brandKitId: readyContext.brandKitId }
-          : {}),
-        ...(run.canvasId ? { canvasId: run.canvasId } : {}),
-        ...(run.connectionId ? { connectionId: run.connectionId } : {}),
-        runId: run.runId,
-        runtimeProvider,
-        sessionId: run.sessionId,
-        runtimeEnv,
-        ...(run.delegationConsent
-          ? { delegationConsent: run.delegationConsent }
-          : {}),
-        codexImagegenConsentBudget: run.codexImagegenConsentBudget ?? 0,
-        onWorkspaceSettingsStateChange: (state) => {
-          if (state.codexImagegenConsentBudget !== undefined) {
-            run.codexImagegenConsentBudget = state.codexImagegenConsentBudget;
-          }
-          if (state.codexImagegenDelegation !== undefined) {
-            run.codexImagegenDelegation = state.codexImagegenDelegation;
-          }
-        },
-        ...(run.codexImagegenDelegation
-          ? {
-              workspaceSettings: {
-                codexImagegenDelegation: run.codexImagegenDelegation,
-              },
-            }
-          : {}),
-        sandboxDir: runDir,
-        ...(submitImageJob ? { submitImageJob } : {}),
-        ...(submitVideoJob ? { submitVideoJob } : {}),
-        ...(run.userId ? { userId: run.userId } : {}),
-      });
-
-      const messageId = run.assistantMessageId ?? `message_${run.runId}`;
-      let terminalEmitted = false;
-      let lastError: Extract<AgentEvent, { type: "error" }> | undefined;
-
-      rlog.lap("local_agent_runtime_start", { provider: runtimeProvider });
-
+      let gatewaySessionToken: string | undefined;
       try {
+        await deps.assertLocalAgentProviderAvailable({
+          provider: runtimeProvider,
+          detectContext: {
+            cwd: runDir,
+            refresh: true,
+            ...(managedAgentInvocation ? { managedAgentInvocation } : {}),
+          },
+        });
+        await materializeWorkspaceSkillsForLocalAgent({
+          runDir,
+          workspaceSkills,
+        });
+        const gatewaySession = deps.toolGateway.createSession({
+          ...(run.accessToken ? { accessToken: run.accessToken } : {}),
+          ...(Object.keys(attachmentDataMap).length > 0
+            ? { attachmentDataMap }
+            : {}),
+          backendFactory: readyContext.backendResult.factory,
+          ...(readyContext.brandKitId
+            ? { brandKitId: readyContext.brandKitId }
+            : {}),
+          ...(run.canvasId ? { canvasId: run.canvasId } : {}),
+          ...(run.connectionId ? { connectionId: run.connectionId } : {}),
+          runId: run.runId,
+          runtimeProvider,
+          sessionId: run.sessionId,
+          runtimeEnv,
+          ...(run.delegationConsent
+            ? { delegationConsent: run.delegationConsent }
+            : {}),
+          codexImagegenConsentBudget: run.codexImagegenConsentBudget ?? 0,
+          onWorkspaceSettingsStateChange: (state) => {
+            if (state.codexImagegenConsentBudget !== undefined) {
+              run.codexImagegenConsentBudget = state.codexImagegenConsentBudget;
+            }
+            if (state.codexImagegenDelegation !== undefined) {
+              run.codexImagegenDelegation = state.codexImagegenDelegation;
+            }
+          },
+          ...(run.codexImagegenDelegation
+            ? {
+                workspaceSettings: {
+                  codexImagegenDelegation: run.codexImagegenDelegation,
+                },
+              }
+            : {}),
+          sandboxDir: runDir,
+          ...(submitImageJob ? { submitImageJob } : {}),
+          ...(submitVideoJob ? { submitVideoJob } : {}),
+          ...(run.userId ? { userId: run.userId } : {}),
+        });
+        gatewaySessionToken = gatewaySession.token;
+
+        const messageId = run.assistantMessageId ?? `message_${run.runId}`;
+        let terminalEmitted = false;
+        let lastError: Extract<AgentEvent, { type: "error" }> | undefined;
+
+        rlog.lap("local_agent_runtime_start", { provider: runtimeProvider });
+
         const history = await loadNormalizedSessionHistory({
           currentPrompt: enrichedPrompt,
           ...(deps.loadSessionMessages
@@ -479,7 +478,9 @@ export function createLocalAgentRuntimeProvider(
           }
         }
       } finally {
-        deps.toolGateway.revokeSession(gatewaySession.token);
+        if (gatewaySessionToken) {
+          deps.toolGateway.revokeSession(gatewaySessionToken);
+        }
         await rm(runDir, { recursive: true, force: true });
       }
     },

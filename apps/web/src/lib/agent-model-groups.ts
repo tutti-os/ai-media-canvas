@@ -47,7 +47,7 @@ export function getModelSourceTab(model: {
 
 export function formatLocalCliProviderLabel(provider: string) {
   return provider
-    .split(/[-_.]+/)
+    .split(/[-_.:]+/)
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
@@ -55,7 +55,7 @@ export function formatLocalCliProviderLabel(provider: string) {
 
 export function getLocalCliProviderFallbackMark(provider: string) {
   return provider
-    .split(/[-_.]+/)
+    .split(/[-_.:]+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part.charAt(0).toUpperCase())

@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -591,7 +592,14 @@ describe("createLocalAgentRuntimeProvider", () => {
     );
   });
 
-  it("rejects a provider omitted by the fresh Tutti catalog before execution", async () => {
+  it("rejects a provider omitted by the fresh Tutti catalog and removes its run directory", async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "aimc-unavailable-agent-"));
+    const runDir = join(
+      tempRoot,
+      "app-data",
+      ".aimc-agent-runs",
+      "tutti-agent-run-1",
+    );
     const assertLocalAgentProviderAvailable = vi.fn(async () => {
       throw new Error(
         "Agent provider tutti-agent is not available from Tutti.",
@@ -610,7 +618,6 @@ describe("createLocalAgentRuntimeProvider", () => {
         assertLocalAgentProviderAvailable,
         buildAttachmentDataMap: vi.fn(() => ({})),
         buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
-        createRunDirectory: vi.fn(async () => "/tmp/aimc-local-agent-run"),
         loadCanvasSummaryForRuntime: vi.fn(async () => null),
         localAgentRuntime: { run: localAgentRuntimeRun },
         now: () => "2026-06-17T00:00:00.000Z",
@@ -623,18 +630,26 @@ describe("createLocalAgentRuntimeProvider", () => {
       createProviderPlugin("tutti-agent"),
     );
 
-    await expect(
-      collect(
-        provider.streamRun(
-          createRuntimeContext({ runtimeProvider: "tutti-agent" }),
-        ),
-      ),
-    ).rejects.toThrow("not available from Tutti");
-    expect(assertLocalAgentProviderAvailable).toHaveBeenCalledWith({
-      provider: "tutti-agent",
-      detectContext: { cwd: "/tmp/aimc-local-agent-run", refresh: true },
-    });
-    expect(localAgentRuntimeRun).not.toHaveBeenCalled();
+    try {
+      const context = createRuntimeContext({
+        runtimeProvider: "tutti-agent",
+      });
+      context.runtimeEnv = {
+        ...context.runtimeEnv,
+        appDataDir: join(tempRoot, "app-data"),
+      };
+      await expect(collect(provider.streamRun(context))).rejects.toThrow(
+        "not available from Tutti",
+      );
+      expect(assertLocalAgentProviderAvailable).toHaveBeenCalledWith({
+        provider: "tutti-agent",
+        detectContext: { cwd: runDir, refresh: true },
+      });
+      expect(localAgentRuntimeRun).not.toHaveBeenCalled();
+      expect(existsSync(runDir)).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it("revokes tool gateway token when local-agent run fails", async () => {

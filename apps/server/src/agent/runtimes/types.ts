@@ -120,7 +120,7 @@ export type LoadCanvasSummaryForRuntime = (
 ) => Promise<string | null>;
 
 export type LocalAgentRuntimeProviderDeps = {
-  assertLocalAgentProviderAvailable?: (input: {
+  assertLocalAgentProviderAvailable: (input: {
     detectContext: DetectContext;
     provider: AgentRuntimeProvider;
   }) => Promise<void>;

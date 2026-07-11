@@ -12,6 +12,11 @@ describe("agent model groups", () => {
     expect(getLocalCliProviderFallbackMark("tutti-agent")).toBe("TA");
   });
 
+  it("tokenizes scoped provider ids for labels and fallback marks", () => {
+    expect(formatLocalCliProviderLabel("vendor:agent")).toBe("Vendor Agent");
+    expect(getLocalCliProviderFallbackMark("vendor:agent")).toBe("VA");
+  });
+
   it("does not add providers back when the current server returns an explicit empty catalog", () => {
     expect(
       localAgentProvidersFromModelResponse({

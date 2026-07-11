@@ -23,7 +23,7 @@ export async function loadTuttiAgentSkillContextForRun(input: {
 }): Promise<TuttiAgentSkillContext> {
   return loadTuttiAgentSkillContext({
     agentSessionId: input.runId,
-    cwd: input.cwd,
+    cwd: process.env.TUTTI_WORKSPACE_ROOT?.trim() || input.cwd,
     provider: input.provider,
     ...(input.signal ? { signal: input.signal } : {}),
   });
