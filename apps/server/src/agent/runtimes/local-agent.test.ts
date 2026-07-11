@@ -245,6 +245,71 @@ describe("createLocalAgentRuntimeProvider", () => {
     expect(revokeSession).toHaveBeenCalledWith("tool-token");
   });
 
+  it("stops provider work when cancellation races a managed context claim", async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "aimc-managed-claim-cancel-"));
+    vi.stubEnv("TUTTI_APP_DATA_DIR", tempRoot);
+    const createRunDirectory = vi.fn();
+    const assertLocalAgentProviderAvailable = vi.fn(async () => undefined);
+    const localAgentRuntimeRun = vi.fn(async function* () {
+      yield {
+        type: "done" as const,
+        status: "completed" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+    let resolveManagedContext:
+      | ((value: Awaited<ReturnType<typeof createManagedRunContext>>) => void)
+      | undefined;
+    const managedContextPromise = new Promise<
+      Awaited<ReturnType<typeof createManagedRunContext>>
+    >((resolve) => {
+      resolveManagedContext = resolve;
+    });
+    const loadManagedAgentRunContext = vi.fn(() => managedContextPromise);
+    const context = createRuntimeContext({ loadManagedAgentRunContext });
+    const provider = createLocalAgentRuntimeProvider(
+      {
+        assertLocalAgentProviderAvailable,
+        buildAttachmentDataMap: vi.fn(() => ({})),
+        buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
+        createRunDirectory,
+        loadCanvasSummaryForRuntime: vi.fn(async () => null),
+        localAgentRuntime: { run: localAgentRuntimeRun },
+        now: () => "2026-06-17T00:00:00.000Z",
+        toolGateway: {
+          createSession: vi.fn(() => ({ token: "tool-token" })),
+          revokeSession: vi.fn(),
+        } as never,
+        toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+      },
+      createProviderPlugin("codex"),
+    );
+
+    try {
+      const execution = collect(provider.streamRun(context));
+      await vi.waitFor(() => {
+        expect(loadManagedAgentRunContext).toHaveBeenCalledOnce();
+      });
+      context.run.controller.abort();
+      context.run.loadManagedAgentRunContext = undefined;
+      const managedContext = await createManagedRunContext();
+      if (!managedContext) {
+        throw new Error("managed context fixture was not created");
+      }
+      expect(existsSync(managedContext.cwd)).toBe(true);
+      resolveManagedContext?.(managedContext);
+
+      await expect(execution).rejects.toMatchObject({ name: "AbortError" });
+      expect(existsSync(managedContext.cwd)).toBe(false);
+      expect(createRunDirectory).not.toHaveBeenCalled();
+      expect(assertLocalAgentProviderAvailable).not.toHaveBeenCalled();
+      expect(localAgentRuntimeRun).not.toHaveBeenCalled();
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("uses managed agent invocation for app data cwd values", async () => {
     vi.stubEnv("AIMC_TOOLS_MCP_PATH", "/package/server/tools-mcp.js");
     const localAgentRuntimeRun = vi.fn(async function* () {

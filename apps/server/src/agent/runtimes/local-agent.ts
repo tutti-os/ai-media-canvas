@@ -6,6 +6,7 @@ import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 import type {
   AgentEvent,
   LocalAgentProviderPlugin,
+  ManagedAgentRunContext,
 } from "@tutti-os/agent-acp-kit";
 
 import {
@@ -276,35 +277,46 @@ export function createLocalAgentRuntimeProvider(
         handoffSection,
         normalizedPrompt,
       ].join("\n\n");
-      const loadManagedAgentRunContext = run.loadManagedAgentRunContext;
-      if (loadManagedAgentRunContext) {
-        run.loadManagedAgentRunContext = undefined;
-      }
-      const managedRunContext = loadManagedAgentRunContext
-        ? await loadManagedAgentRunContext()
-        : undefined;
-      const managed = Boolean(managedRunContext);
-      const runDirectory = managedRunContext
-        ? undefined
-        : normalizeRunDirectoryResult(
-            deps.createRunDirectory
-              ? await deps.createRunDirectory({
-                  managed,
-                  runId: run.runId,
-                  runtimeProvider,
-                })
-              : await createLocalAgentRunDirectory({
-                  ...(runtimeEnv.appDataDir
-                    ? { appDataDir: runtimeEnv.appDataDir }
-                    : {}),
-                  runId: run.runId,
-                  runtimeProvider,
-                }),
-            managed,
-          );
-      const runDir = managedRunContext?.cwd ?? runDirectory?.runDir;
-      if (!runDir) {
-        throw new Error("Local agent run directory is required.");
+      let managedRunContext: ManagedAgentRunContext | undefined;
+      let runDir: string | undefined;
+      try {
+        run.controller.signal.throwIfAborted();
+        const loadManagedAgentRunContext = run.loadManagedAgentRunContext;
+        if (loadManagedAgentRunContext) {
+          run.loadManagedAgentRunContext = undefined;
+        }
+        managedRunContext = loadManagedAgentRunContext
+          ? await loadManagedAgentRunContext()
+          : undefined;
+        const managed = Boolean(managedRunContext);
+        const runDirectory = managedRunContext
+          ? undefined
+          : normalizeRunDirectoryResult(
+              deps.createRunDirectory
+                ? await deps.createRunDirectory({
+                    managed,
+                    runId: run.runId,
+                    runtimeProvider,
+                  })
+                : await createLocalAgentRunDirectory({
+                    ...(runtimeEnv.appDataDir
+                      ? { appDataDir: runtimeEnv.appDataDir }
+                      : {}),
+                    runId: run.runId,
+                    runtimeProvider,
+                  }),
+              managed,
+            );
+        runDir = managedRunContext?.cwd ?? runDirectory?.runDir;
+        if (!runDir) {
+          throw new Error("Local agent run directory is required.");
+        }
+        run.controller.signal.throwIfAborted();
+      } catch (error) {
+        if (runDir) {
+          await rm(runDir, { recursive: true, force: true });
+        }
+        throw error;
       }
       const managedAgentInvocation = managedRunContext?.managedAgentInvocation;
       let gatewaySessionToken: string | undefined;
@@ -378,6 +390,9 @@ export function createLocalAgentRuntimeProvider(
         const tuttiSkillContext = shouldUseTuttiSkillContext(enrichedPrompt)
           ? await loadTuttiAgentSkillContextForRun({
               cwd: runDir,
+              ...(run.detectContext
+                ? { detectContext: run.detectContext }
+                : {}),
               provider: runtimeProvider,
               runId: run.runId,
               signal: run.controller.signal,

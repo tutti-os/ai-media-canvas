@@ -35,6 +35,7 @@ import { buildUserMessage, createAgentRunService } from "./runtime.js";
 const tempDirs: string[] = [];
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.useRealTimers();
   clearProviders();
   for (const dir of tempDirs.splice(0)) {
@@ -2833,6 +2834,7 @@ describe("createAgentRunService", () => {
   });
 
   it("does not expose managed agent invocation credentials outside local-agent runs", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
     let capturedAgentOptions: unknown;
     let capturedStreamConfig: unknown;
     const agentFactory = vi.fn((agentOptions) => {
@@ -2903,6 +2905,136 @@ describe("createAgentRunService", () => {
     );
     expect(JSON.stringify(capturedStreamConfig)).not.toContain(
       "credential-run-1",
+    );
+  });
+
+  it("clears transient invocation when the initial run-store update fails", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    const onTransientInvocationCleared = vi.fn();
+    const updateRun = vi.fn(() => {
+      throw new Error("run store unavailable");
+    });
+    const runs = createAgentRunService({
+      agentRunStore: {
+        createRun: vi.fn(),
+        updateRun,
+      },
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        appDataDir: "/tmp/aimc-app-data",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      onTransientInvocationCleared,
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "hi",
+        sessionId: "session-1",
+      },
+      {
+        managedAgentHeaders: {
+          [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
+        },
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+    );
+
+    const consume = async () => {
+      for await (const _event of runs.streamRun(run.runId)) {
+        // The store throws before any stream event can be produced.
+      }
+    };
+
+    await expect(consume()).rejects.toThrow("run store unavailable");
+    expect(onTransientInvocationCleared).toHaveBeenCalledWith({
+      hasDetectContext: false,
+      hasManagedAgentRunContextLoader: false,
+      runId: run.runId,
+    });
+  });
+
+  it("does not start local provider work after an accepted run is canceled", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    localAgentRuntimeRunMock.mockClear();
+    const updateRun = vi.fn();
+    const runs = createAgentRunService({
+      agentRunStore: {
+        createRun: vi.fn(),
+        updateRun,
+      },
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        appDataDir: "/tmp/aimc-app-data",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        run: localAgentRuntimeRunMock,
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "hi",
+        sessionId: "session-1",
+      },
+      {
+        managedAgentHeaders: {
+          [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
+        },
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+    );
+
+    expect(runs.cancelRun(run.runId)).toEqual({
+      runId: run.runId,
+      status: "canceled",
+    });
+    const events = [];
+    for await (const event of runs.streamRun(run.runId)) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      {
+        runId: run.runId,
+        timestamp: expect.any(String),
+        type: "run.canceled",
+      },
+    ]);
+    expect(localAgentRuntimeRunMock).not.toHaveBeenCalled();
+    expect(updateRun).toHaveBeenCalledWith({
+      runId: run.runId,
+      status: "canceled",
+    });
+    expect(updateRun).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "running" }),
     );
   });
 });

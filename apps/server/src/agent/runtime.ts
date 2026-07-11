@@ -27,6 +27,7 @@ import {
   type ManagedAgentRunContext,
   createDefaultLocalAgentProviderPlugins,
   createLocalAgentRuntime,
+  createManagedAgentDetectContextFromHeaders,
   createManagedAgentRunContextFromHeaders,
 } from "@tutti-os/agent-acp-kit";
 import {
@@ -314,6 +315,8 @@ type RuntimeRunStatus =
 
 type RuntimeRunCreateInput = RunCreateRequest;
 
+const TRANSIENT_INVOCATION_CONTEXT_TTL_MS = 10 * 60 * 1000;
+
 type RuntimeRunRecord = RuntimeRunCreateInput & {
   accessToken?: string;
   assistantMessageId?: string;
@@ -322,10 +325,11 @@ type RuntimeRunRecord = RuntimeRunCreateInput & {
   controller: AbortController;
   codexImagegenDelegation?: "ask" | "always" | "never";
   codexImagegenConsentBudget?: number;
+  detectContext?: DetectContext | undefined;
   envOverride?: ServerEnv;
-  loadManagedAgentRunContext?: () => Promise<
-    ManagedAgentRunContext | undefined
-  >;
+  loadManagedAgentRunContext?:
+    | (() => Promise<ManagedAgentRunContext | undefined>)
+    | undefined;
   modelOverride?: string;
   resumeContext?: {
     mode: "provider-local" | "handoff" | "fresh";
@@ -340,6 +344,29 @@ type RuntimeRunRecord = RuntimeRunCreateInput & {
   threadId?: string;
   userId?: string;
 };
+
+function clearTransientInvocation(
+  run: RuntimeRunRecord,
+  onCleared?: (state: {
+    hasDetectContext: boolean;
+    hasManagedAgentRunContextLoader: boolean;
+    runId: string;
+  }) => void,
+) {
+  const hadTransientInvocation =
+    run.detectContext !== undefined ||
+    run.loadManagedAgentRunContext !== undefined;
+  run.detectContext = undefined;
+  run.loadManagedAgentRunContext = undefined;
+  if (hadTransientInvocation) {
+    onCleared?.({
+      hasDetectContext: run.detectContext !== undefined,
+      hasManagedAgentRunContextLoader:
+        run.loadManagedAgentRunContext !== undefined,
+      runId: run.runId,
+    });
+  }
+}
 
 type PatchWorkspaceSettings = (input: {
   patch: Pick<WorkspaceSettings, "codexImagegenDelegation">;
@@ -412,6 +439,11 @@ type CreateAgentRuntimeOptions = {
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
   model?: BaseLanguageModel | string;
   now?: () => string;
+  onTransientInvocationCleared?: (state: {
+    hasDetectContext: boolean;
+    hasManagedAgentRunContextLoader: boolean;
+    runId: string;
+  }) => void;
   patchWorkspaceSettings?: PatchWorkspaceSettings;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
@@ -642,6 +674,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
 
       run.status = "canceled";
+      clearTransientInvocation(run, options.onTransientInvocationCleared);
+      options.agentRunStore?.updateRun({
+        runId,
+        status: "canceled",
+      });
       return {
         runId,
         status: "canceled",
@@ -692,6 +729,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         initialRuntimeTarget?.kind ?? requestedRuntimeKind;
       const persistedRuntimeProvider =
         initialRuntimeTarget?.provider ?? requestedRuntimeProvider;
+      const detectContext = runOptions?.managedAgentHeaders
+        ? createManagedAgentDetectContextFromHeaders(
+            runOptions.managedAgentHeaders,
+            {
+              ...(runOptions.env?.appDataDir
+                ? { appDataDir: runOptions.env.appDataDir }
+                : {}),
+            },
+          )
+        : undefined;
       const loadManagedAgentRunContext =
         persistedRuntimeKind === "local-agent" &&
         persistedRuntimeProvider &&
@@ -753,7 +800,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           }
         : undefined;
 
-      runs.set(runId, {
+      const run: RuntimeRunRecord = {
         ...runInput,
         ...(runOptions?.accessToken
           ? { accessToken: runOptions.accessToken }
@@ -766,6 +813,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           : {}),
         consumed: false,
         controller: new AbortController(),
+        ...(detectContext ? { detectContext } : {}),
         ...(runOptions?.env ? { envOverride: runOptions.env } : {}),
         ...(loadManagedAgentRunContext ? { loadManagedAgentRunContext } : {}),
         ...(runOptions?.codexImagegenDelegation
@@ -783,7 +831,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         ...(runOptions?.userId ? { userId: runOptions.userId } : {}),
         runId,
         status: "accepted",
-      });
+      };
+      runs.set(runId, run);
+      setTimeout(() => {
+        if (!run.consumed) {
+          clearTransientInvocation(run, options.onTransientInvocationCleared);
+        }
+      }, TRANSIENT_INVOCATION_CONTEXT_TTL_MS).unref?.();
 
       options.agentRunStore?.createRun({
         ...(runOptions?.assistantMessageId
@@ -835,10 +889,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
 
       run.consumed = true;
+      if (run.controller.signal.aborted) {
+        run.status = "canceled";
+        clearTransientInvocation(run, options.onTransientInvocationCleared);
+        yield {
+          runId,
+          timestamp: now(),
+          type: "run.canceled",
+        };
+        return;
+      }
       run.status = "running";
-      options.agentRunStore?.updateRun({
-        runId,
-        status: "running",
+      try {
+        options.agentRunStore?.updateRun({
+          runId,
+          status: "running",
       });
 
       const rlog = createPipelineLogger("runtime", { runId });
@@ -1284,13 +1349,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               throw err;
             }
             creditsCost = options.tierGuard.calculateCreditCost(
-              input.model,
-              "video_generation",
-              {
-                ...(input.duration != null ? { duration: input.duration } : {}),
-                ...(input.resolution ? { resolution: input.resolution } : {}),
-              },
-            );
+                input.model,
+                "video_generation",
+                {
+                  ...(input.duration != null
+                    ? { duration: input.duration }
+                    : {}),
+                  ...(input.resolution ? { resolution: input.resolution } : {}),
+                },
+              );
           }
 
           // ── Balance pre-check: stop run immediately if insufficient ──
@@ -1375,13 +1442,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   model: input.model,
                   aspectRatio: input.aspectRatio ?? "16:9",
                   runId,
-                  ...(input.duration != null
-                    ? { duration: input.duration }
-                    : {}),
-                  ...(input.resolution ? { resolution: input.resolution } : {}),
-                  ...(input.inputImages
-                    ? { inputImages: input.inputImages }
-                    : {}),
+                    ...(input.duration != null
+                      ? { duration: input.duration }
+                      : {}),
+                    ...(input.resolution
+                      ? { resolution: input.resolution }
+                      : {}),
+                    ...(input.inputImages
+                      ? { inputImages: input.inputImages }
+                      : {}),
                 },
                 explicitPlacement,
               );
@@ -1443,24 +1512,25 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             : run.modelOverride;
         const resolvedModel = modelOverride
           ? run.runtimeKind === "local-agent" || modelOverride.includes(":")
-            ? modelOverride
-            : createDefaultModelSpecifier({ agentModel: modelOverride })
-          : options.model;
-        const resolvedRuntimeTarget = runtimeControlPlane.resolveRuntimeTarget({
-          model: resolvedModel,
-          requestedRuntimeKind: run.runtimeKind,
-          ...(run.runtimeProvider
+              ? modelOverride
+              : createDefaultModelSpecifier({ agentModel: modelOverride })
+            : options.model;
+          const resolvedRuntimeTarget =
+            runtimeControlPlane.resolveRuntimeTarget({
+              model: resolvedModel,
+              requestedRuntimeKind: run.runtimeKind,
+              ...(run.runtimeProvider
             ? { requestedRuntimeProvider: run.runtimeProvider }
             : {}),
         });
         activeRuntimeTarget = resolvedRuntimeTarget;
-        run.runtimeKind = resolvedRuntimeTarget.kind;
-        run.runtimeProvider = resolvedRuntimeTarget.provider;
-        if (resolvedRuntimeTarget.kind !== "local-agent") {
-          delete run.loadManagedAgentRunContext;
-        }
-        runtimeLease = runtimeControlPlane.acquireRuntimeLease(
-          resolvedRuntimeTarget,
+          run.runtimeKind = resolvedRuntimeTarget.kind;
+          run.runtimeProvider = resolvedRuntimeTarget.provider;
+          if (resolvedRuntimeTarget.kind !== "local-agent") {
+            run.loadManagedAgentRunContext = undefined;
+          }
+          runtimeLease = runtimeControlPlane.acquireRuntimeLease(
+            resolvedRuntimeTarget,
           run.runId,
         );
 
@@ -1558,28 +1628,45 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               };
               return;
             }
+            }
           }
-        }
-      } catch (streamError) {
-        console.error("[agent-runtime] Stream iteration failed:", streamError);
-        if (activeRuntimeTarget) {
-          runtimeControlPlane.updateRuntimeStatus(
-            activeRuntimeTarget,
+        } catch (streamError) {
+          if (run.controller.signal.aborted) {
+            run.status = "canceled";
+            yield {
+              runId,
+              timestamp: now(),
+              type: "run.canceled",
+            };
+            return;
+          }
+          console.error(
+            "[agent-runtime] Stream iteration failed:",
+            streamError,
+          );
+          if (activeRuntimeTarget) {
+            runtimeControlPlane.updateRuntimeStatus(
+              activeRuntimeTarget,
             "degraded",
           );
         }
         const failedEvent = toFailedEvent(runId, now, streamError);
         run.status = "failed";
-        yield failedEvent;
-        return;
-      } finally {
-        delete run.loadManagedAgentRunContext;
-        runtimeLease?.release();
-        if (backendResult.sandboxDir) {
-          rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(
-            (err) => console.warn("[sandbox] cleanup failed:", err.message),
-          );
+          yield failedEvent;
+          return;
+        } finally {
+          runtimeLease?.release();
+          if (backendResult.sandboxDir) {
+            rm(backendResult.sandboxDir, {
+              recursive: true,
+              force: true,
+            }).catch((err) =>
+              console.warn("[sandbox] cleanup failed:", err.message),
+            );
+          }
         }
+      } finally {
+        clearTransientInvocation(run, options.onTransientInvocationCleared);
       }
     },
   };
