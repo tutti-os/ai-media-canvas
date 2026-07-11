@@ -513,6 +513,98 @@ describe("createTuttiManagedCredentialService", () => {
     expect(requestCount).toBe(1);
   });
 
+  it("keeps the active credential cache when a newer grant exchange fails", async () => {
+    const env = createEnv();
+    let exchangeCount = 0;
+    let credentialRequestCount = 0;
+    const store = createStore();
+    const service = createTuttiManagedCredentialService({
+      env,
+      exchangeClient: async () => {
+        exchangeCount += 1;
+        if (exchangeCount > 1) {
+          throw new Error("grant exchange failed");
+        }
+        return {
+          grantRef: "active-grant-ref",
+          models: [{ id: "gpt-5.1", name: "GPT-5.1", provider: "openai" }],
+          providers: ["openai" as const],
+        };
+      },
+      providerCredentialClient: async () => {
+        credentialRequestCount += 1;
+        return {
+          credential: { provider: "openai", apiKey: "managed-key" },
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        };
+      },
+      store,
+    });
+    await connectService(service, env);
+    await service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+
+    await expect(connectService(service, env)).rejects.toThrow(
+      "grant exchange failed",
+    );
+
+    const resolved = await service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+    expect(resolved.openAIApiKey).toBe("managed-key");
+    expect(credentialRequestCount).toBe(1);
+    expect(store.getTuttiManagedConnection()).toMatchObject({
+      connected: true,
+      grantRef: "active-grant-ref",
+    });
+  });
+
+  it("does not restore a connection when clear supersedes an in-flight grant exchange", async () => {
+    const env = createEnv();
+    const exchange = createDeferred<{
+      grantRef: string;
+      models: [{ id: string; name: string; provider: "openai" }];
+      providers: ["openai"];
+    }>();
+    let exchangeCount = 0;
+    const store = createStore();
+    const service = createTuttiManagedCredentialService({
+      env,
+      exchangeClient: async () => {
+        exchangeCount += 1;
+        if (exchangeCount === 1) {
+          return {
+            grantRef: "active-grant-ref",
+            models: [{ id: "gpt-5.1", name: "GPT-5.1", provider: "openai" }],
+            providers: ["openai"],
+          };
+        }
+        return exchange.promise;
+      },
+      revokeClient: async () => undefined,
+      store,
+    });
+    await connectService(service, env);
+
+    const pendingConnect = connectService(service, env);
+    await service.clearConnection();
+    exchange.resolve({
+      grantRef: "stale-grant-ref",
+      models: [{ id: "gpt-5.1", name: "GPT-5.1", provider: "openai" }],
+      providers: ["openai"],
+    });
+
+    await expect(pendingConnect).rejects.toThrow(
+      "connection request became stale",
+    );
+    expect(store.getTuttiManagedConnection().connected).toBe(false);
+  });
+
   it("does not overwrite a shorter credential lease with a stale model catalog snapshot", async () => {
     const env = createEnv();
     const nowMs = Date.now();

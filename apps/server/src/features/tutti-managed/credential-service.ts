@@ -106,6 +106,7 @@ export function createTuttiManagedCredentialService(options: {
   const cache = new Map<string, CachedCredential>();
   const challenges = new Map<string, StoredChallenge>();
   const inFlightCredentials = new Map<string, InFlightCredential>();
+  let connectAttemptEpoch = 0;
   let connectionEpoch = 0;
   const now = options.now ?? (() => Date.now());
   const exchangeClient =
@@ -144,6 +145,7 @@ export function createTuttiManagedCredentialService(options: {
 
   async function clearConnection() {
     const connection = options.store.getTuttiManagedConnection();
+    supersedeConnectAttempts();
     invalidateCredentialState();
     options.store.clearTuttiManagedConnection();
     if (connection.grantRef && isTuttiManagedRuntimeConfigured(options.env)) {
@@ -158,7 +160,7 @@ export function createTuttiManagedCredentialService(options: {
   async function connect(input: TuttiManagedGrantRequest) {
     consumeConnectChallenge(input.state, input.nonce);
     verifyContextToken(options.env, input.contextToken);
-    const connectEpoch = invalidateCredentialState();
+    const connectEpoch = supersedeConnectAttempts();
     const exchange = await exchangeClient({
       contextToken: input.contextToken,
       env: options.env,
@@ -166,7 +168,7 @@ export function createTuttiManagedCredentialService(options: {
       nonce: input.nonce,
       state: input.state,
     });
-    if (connectEpoch !== connectionEpoch) {
+    if (connectEpoch !== connectAttemptEpoch) {
       throw new Error("Tutti Managed connection request became stale.");
     }
     const expiresAt = normalizeCredentialExpiry(exchange.expiresAt, now());
@@ -352,6 +354,11 @@ export function createTuttiManagedCredentialService(options: {
     cache.clear();
     inFlightCredentials.clear();
     return connectionEpoch;
+  }
+
+  function supersedeConnectAttempts() {
+    connectAttemptEpoch += 1;
+    return connectAttemptEpoch;
   }
 
   function pruneCredentialCache() {
