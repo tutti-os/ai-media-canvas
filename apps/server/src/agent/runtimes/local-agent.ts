@@ -378,6 +378,9 @@ export function createLocalAgentRuntimeProvider(
         const tuttiSkillContext = shouldUseTuttiSkillContext(enrichedPrompt)
           ? await loadTuttiAgentSkillContextForRun({
               cwd: runDir,
+              ...(run.detectContext
+                ? { detectContext: run.detectContext }
+                : {}),
               provider: runtimeProvider,
               runId: run.runId,
               signal: run.controller.signal,

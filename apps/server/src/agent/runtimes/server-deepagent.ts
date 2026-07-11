@@ -198,6 +198,7 @@ export function createServerDeepAgentRuntimeProvider(
       if (shouldUseTuttiSkillContext(enrichedPrompt)) {
         const tuttiSkillContext = await loadTuttiAgentSkillContextForRun({
           cwd: backendResult.sandboxDir ?? process.cwd(),
+          ...(run.detectContext ? { detectContext: run.detectContext } : {}),
           provider: SERVER_DEEPAGENT_TUTTI_PROVIDER,
           runId: run.runId,
           signal: run.controller.signal,

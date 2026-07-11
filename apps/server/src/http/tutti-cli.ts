@@ -1,8 +1,18 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+
+import {
+  type DetectContext,
+  type ManagedAgentInvocationCredentialHeaders,
+  createManagedAgentDetectContextFromHeaders,
+} from "@tutti-os/agent-acp-kit";
+import {
+  projectTuttiCliChildProcess,
+  redactTuttiCliChildProcessText,
+} from "@tutti-os/agent-acp-kit/tutti";
 
 import {
   type RunCreateRequest,
@@ -49,7 +59,10 @@ type AgentCliOperations = {
     decision: "allow-once" | "always" | "deny";
     runId: string;
   }) => Promise<unknown>;
-  startRun: (payload: RunCreateRequest) => Promise<RunCreateResponse>;
+  startRun: (
+    payload: RunCreateRequest,
+    managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders,
+  ) => Promise<RunCreateResponse>;
 };
 
 type AssetCliOperations = {
@@ -64,6 +77,7 @@ type AssetCliOperations = {
 type CanvasWriterClient = Parameters<typeof insertImageGenerationNode>[0];
 type AppOpenRequester = (input: {
   appId: string;
+  detectContext?: DetectContext;
   params?: Record<string, string>;
   route: string;
   tuttiCliPath?: string;
@@ -201,13 +215,13 @@ export async function registerTuttiCliRoutes(
 ) {
   const route = (
     path: string,
-    handler: (body: unknown) => Promise<unknown>,
+    handler: (body: unknown, request: FastifyRequest) => Promise<unknown>,
     statusCode = 200,
   ) => {
     const register = (routePath: string) =>
       app.post(routePath, async (request, reply) => {
         try {
-          const result = await handler(readCliInputBody(request.body));
+          const result = await handler(readCliInputBody(request.body), request);
           return sendCliJson(reply, result, statusCode);
         } catch (error) {
           return sendCliRouteError(error, reply);
@@ -229,7 +243,7 @@ export async function registerTuttiCliRoutes(
     };
   });
 
-  route("/tutti/cli/open", async (body) => {
+  route("/tutti/cli/open", async (body, request) => {
     const payload = openCliBodySchema.parse(body ?? {});
     const target = payload["project-id"]
       ? await resolveProjectOpenTarget(
@@ -239,7 +253,21 @@ export async function registerTuttiCliRoutes(
       : {
           route: "/home",
         };
-    await requestTuttiAppOpen(options.env, target, options.appOpenRequester);
+    const detectContext = createManagedAgentDetectContextFromHeaders(
+      request.headers,
+      {
+        ...(options.env.appDataDir
+          ? { appDataDir: options.env.appDataDir }
+          : {}),
+        env: process.env,
+      },
+    );
+    await requestTuttiAppOpen(
+      options.env,
+      target,
+      detectContext,
+      options.appOpenRequester,
+    );
     return {
       openRequested: true,
       ...target,
@@ -382,7 +410,7 @@ export async function registerTuttiCliRoutes(
 
   route(
     "/tutti/cli/agent/run",
-    async (body) => {
+    async (body, request) => {
       const payload = agentRunCliBodySchema.parse(body);
       return options.agentOperations.startRun(
         runCreateRequestSchema.parse({
@@ -405,6 +433,7 @@ export async function registerTuttiCliRoutes(
               }
             : {}),
         }),
+        request.headers,
       );
     },
     202,
@@ -678,6 +707,7 @@ async function requestTuttiAppOpen(
     params?: Record<string, string>;
     route: string;
   },
+  detectContext?: DetectContext,
   appOpenRequester: AppOpenRequester = invokeTuttiAppOpen,
 ) {
   const { route } = target;
@@ -697,6 +727,7 @@ async function requestTuttiAppOpen(
   }
   await appOpenRequester({
     appId: env.tuttiAppId,
+    ...(detectContext ? { detectContext } : {}),
     route,
     ...(target.params ? { params: target.params } : {}),
     ...(env.tuttiCliPath ? { tuttiCliPath: env.tuttiCliPath } : {}),
@@ -705,6 +736,7 @@ async function requestTuttiAppOpen(
 
 async function invokeTuttiAppOpen(input: {
   appId: string;
+  detectContext?: DetectContext;
   params?: Record<string, string>;
   route: string;
   tuttiCliPath?: string;
@@ -718,6 +750,10 @@ async function invokeTuttiAppOpen(input: {
     };
   }
 
+  const child = projectTuttiCliChildProcess({
+    baseEnv: process.env,
+    ...(input.detectContext ? { detectContext: input.detectContext } : {}),
+  });
   try {
     const args = [
       "app",
@@ -731,32 +767,43 @@ async function invokeTuttiAppOpen(input: {
       args.push("--param", `${key}=${value}`);
     }
     await execFileAsync(tuttiCliPath, args, {
+      env: child.env,
       timeout: 30_000,
     });
   } catch (error) {
     throw {
       code: "open_failed",
-      message: readProcessErrorMessage(error),
+      message: readProcessErrorMessage(error, child.redactionSecrets),
       statusCode: 502,
     };
   }
 }
 
-function readProcessErrorMessage(error: unknown) {
+function readProcessErrorMessage(
+  error: unknown,
+  redactionSecrets: readonly string[],
+) {
+  let message = "Unable to request app open.";
   if (isRecord(error)) {
-    const stderr = error.stderr;
-    if (typeof stderr === "string" && stderr.trim().length > 0) {
-      return stderr.trim();
-    }
-    if (Buffer.isBuffer(stderr) && stderr.length > 0) {
-      return stderr.toString("utf8").trim();
-    }
-    const message = error.message;
-    if (typeof message === "string" && message.length > 0) {
-      return message;
+    const processOutput =
+      readProcessOutput(error.stderr) ?? readProcessOutput(error.stdout);
+    if (processOutput) {
+      message = processOutput;
+    } else if (typeof error.message === "string" && error.message.length > 0) {
+      message = error.message;
     }
   }
-  return "Unable to request app open.";
+  return redactTuttiCliChildProcessText(message, redactionSecrets);
+}
+
+function readProcessOutput(value: unknown) {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+  if (Buffer.isBuffer(value) && value.length > 0) {
+    return value.toString("utf8").trim();
+  }
+  return undefined;
 }
 
 async function insertCliImageGenerationNode(input: {

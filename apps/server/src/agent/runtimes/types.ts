@@ -45,6 +45,7 @@ export type RuntimeRunRecord = {
   controller: AbortController;
   conversationId: string;
   delegationConsent?: RunCreateRequest["delegationConsent"];
+  detectContext?: DetectContext | undefined;
   envOverride?: ServerEnv | undefined;
   imageGenerationPreference?: ImageGenerationPreference | undefined;
   loadManagedAgentRunContext?:

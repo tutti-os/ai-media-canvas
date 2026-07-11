@@ -2,6 +2,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -117,6 +118,9 @@ describe("registerTuttiCliRoutes", () => {
     const app = buildTestApp({ agentOperations });
 
     const response = await app.inject({
+      headers: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-agent-run",
+      },
       method: "POST",
       url: "/tutti/cli/agent/run",
       payload: {
@@ -129,13 +133,19 @@ describe("registerTuttiCliRoutes", () => {
     });
 
     expect(response.statusCode).toBe(202);
-    expect(agentOperations.startRun).toHaveBeenCalledWith({
-      sessionId: "session-1",
-      conversationId: "canvas-1",
-      prompt: "Create a product poster",
-      runtimeKind: "local-agent",
-      runtimeProvider: "codex",
-    });
+    expect(agentOperations.startRun).toHaveBeenCalledWith(
+      {
+        sessionId: "session-1",
+        conversationId: "canvas-1",
+        prompt: "Create a product poster",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+      expect.objectContaining({
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER.toLowerCase()]:
+          "credential-agent-run",
+      }),
+    );
     expect(response.json()).toEqual({
       kind: "json",
       value: {
@@ -172,14 +182,17 @@ describe("registerTuttiCliRoutes", () => {
     });
 
     expect(response.statusCode).toBe(202);
-    expect(agentOperations.startRun).toHaveBeenCalledWith({
-      sessionId: "session-1",
-      conversationId: "canvas-1",
-      prompt: "Continue the image task",
-      delegationConsent: {
-        codexImagegen: "allow-once",
+    expect(agentOperations.startRun).toHaveBeenCalledWith(
+      {
+        sessionId: "session-1",
+        conversationId: "canvas-1",
+        prompt: "Continue the image task",
+        delegationConsent: {
+          codexImagegen: "allow-once",
+        },
       },
-    });
+      expect.any(Object),
+    );
   });
 
   it("requests opening the app home page when no project id is provided", async () => {
@@ -206,6 +219,38 @@ describe("registerTuttiCliRoutes", () => {
         openRequested: true,
         route: "/home",
       },
+    });
+  });
+
+  it("passes a request-scoped DetectContext to app open", async () => {
+    const appOpenRequester = vi.fn(
+      async (_input: { detectContext?: unknown }) => undefined,
+    );
+    const app = buildTestApp({
+      appOpenRequester,
+      env: {
+        appDataDir: "/tmp/aimc-app-data",
+        tuttiAppId: "ai-media-canvas",
+      },
+    });
+
+    const response = await app.inject({
+      headers: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-open-1",
+      },
+      method: "POST",
+      url: "/tutti/cli/open",
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(200);
+    const input = appOpenRequester.mock.calls[0]?.[0];
+    expect(input?.detectContext).toMatchObject({
+      managedAgentInvocation: {
+        credential: "credential-open-1",
+        cwd: "/tmp/aimc-app-data",
+      },
+      redactionSecrets: ["credential-open-1"],
     });
   });
 
@@ -282,6 +327,55 @@ describe("registerTuttiCliRoutes", () => {
       "--param",
       "id=canvas-1",
     ]);
+  });
+
+  it("redacts request credentials from app open process errors", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "aimc-cli-redaction-test-"));
+    tempRoots.push(tempRoot);
+    const credentialPath = join(tempRoot, "credential.txt");
+    const tuttiCliPath = join(tempRoot, "tutti");
+    await writeFile(
+      tuttiCliPath,
+      [
+        "#!/bin/sh",
+        `printf '%s' "$TSH_MANAGED_AGENT_INVOCATION_CREDENTIAL" > ${JSON.stringify(credentialPath)}`,
+        "printf 'open failed with %s\\n' \"$TSH_MANAGED_AGENT_INVOCATION_CREDENTIAL\" >&2",
+        "exit 1",
+      ].join("\n"),
+    );
+    await chmod(tuttiCliPath, 0o755);
+    const app = buildTestApp({
+      env: {
+        appDataDir: tempRoot,
+        tuttiAppId: "ai-media-canvas",
+        tuttiCliPath,
+      },
+    });
+
+    const response = await app.inject({
+      headers: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-open-secret",
+      },
+      method: "POST",
+      url: "/tutti/cli/open",
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(await readFile(credentialPath, "utf8")).toBe(
+      "credential-open-secret",
+    );
+    expect(JSON.stringify(response.json())).not.toContain(
+      "credential-open-secret",
+    );
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "open_failed",
+        message: "open failed with [REDACTED]",
+      },
+    });
+    expect(process.env.TSH_MANAGED_AGENT_INVOCATION_CREDENTIAL).toBeUndefined();
   });
 
   it("returns a CLI error when open is unavailable outside Tutti runtime", async () => {
