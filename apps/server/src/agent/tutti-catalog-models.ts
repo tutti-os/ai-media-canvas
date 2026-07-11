@@ -1,4 +1,4 @@
-import type { ModelInfo } from "@aimc/shared";
+import type { LocalAgentProviderInfo, ModelInfo } from "@aimc/shared";
 import type { TuttiResolvedAgentProviderCatalogEntry } from "@tutti-os/agent-acp-kit/tutti";
 
 import { localAgentModelId } from "./local-agent-models.js";
@@ -26,4 +26,33 @@ export function buildLocalAgentModelsFromCatalog(
   }
 
   return models;
+}
+
+export function buildLocalAgentProviderInfoFromCatalog(
+  providers: readonly TuttiResolvedAgentProviderCatalogEntry[],
+): LocalAgentProviderInfo[] {
+  return providers.map((provider) => ({
+    provider: provider.provider,
+    displayName: provider.displayName,
+    available: provider.available,
+    authState: provider.authState,
+    ...(provider.reason ? { reason: provider.reason } : {}),
+    ...(provider.defaultModelId
+      ? { defaultModelId: provider.defaultModelId }
+      : {}),
+    models: provider.models.flatMap((model) => {
+      const id = localAgentModelId(provider.provider, model.id);
+      return id
+        ? [
+            {
+              id,
+              name: model.label || model.id,
+              provider: provider.provider,
+              source: "local-agent" as const,
+              ...(model.description ? { description: model.description } : {}),
+            },
+          ]
+        : [];
+    }),
+  }));
 }

@@ -421,6 +421,47 @@ describe("registerModelRoutes", () => {
     });
   });
 
+  it("returns enabled but unauthenticated providers as disabled metadata", async () => {
+    const localAgentModelDiscovery = {
+      detect: vi.fn(async () => [
+        {
+          provider: "tutti-agent" as const,
+          displayName: "Tutti Agent",
+          result: {
+            authState: "missing" as const,
+            executablePath: "tutti-agent",
+            models: [{ id: "default", label: "Default" }],
+            supported: true,
+            version: "0.0.1",
+          },
+        },
+      ]),
+    };
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv({ agentModel: "openai:gpt-4.1" }, {}),
+      undefined,
+      { localAgentModelDiscovery },
+    );
+
+    const response = await app.inject({ method: "GET", url: "/api/models" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().models).not.toContainEqual(
+      expect.objectContaining({ provider: "tutti-agent" }),
+    );
+    expect(response.json().localAgentProviders).toContainEqual(
+      expect.objectContaining({
+        provider: "tutti-agent",
+        displayName: "Tutti Agent",
+        available: false,
+        authState: "missing",
+      }),
+    );
+  });
+
   it("passes a managed agent invocation to local-agent model discovery for POST model requests", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
     vi.stubEnv("CODEX_HOME", "/tmp/user-codex-home");
@@ -428,12 +469,12 @@ describe("registerModelRoutes", () => {
     const localAgentModelDiscovery = {
       detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
         {
-          provider: "nexight" as const,
-          displayName: "Nexight",
+          provider: "tutti-agent" as const,
+          displayName: "Tutti Agent",
           result: {
             authState: "ok" as const,
-            executablePath: "nexight",
-            models: [{ id: "default", label: "Default (Nexight)" }],
+            executablePath: "tutti-agent",
+            models: [{ id: "default", label: "Default (Tutti Agent)" }],
             supported: true,
             version: "1.0.0",
           },
@@ -466,9 +507,9 @@ describe("registerModelRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().models).toContainEqual({
-      id: "nexight:default",
-      name: "Default (Nexight)",
-      provider: "nexight",
+      id: "tutti-agent:default",
+      name: "Default (Tutti Agent)",
+      provider: "tutti-agent",
       source: "local-agent",
     });
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({

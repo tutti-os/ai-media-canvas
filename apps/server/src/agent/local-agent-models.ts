@@ -3,12 +3,8 @@ import {
   type AgentDetection,
   type DetectContext,
   type LocalAgentRuntime,
-  createLocalAgentRuntime,
+  createDefaultLocalAgentRuntime,
 } from "@tutti-os/agent-acp-kit";
-
-import {
-  createAimcLocalAgentProviderPlugins,
-} from "./local-agent-providers.js";
 
 type LocalAgentRuntimeDetect = LocalAgentRuntime<
   "local-agent",
@@ -25,30 +21,15 @@ export type LocalAgentModelDiscovery = {
   ) => ReturnType<LocalAgentRuntimeDetect>;
 };
 
-function createAimcLocalAgentRuntime() {
-  return createLocalAgentRuntime({
-    providers: createAimcLocalAgentProviderPlugins(),
-  });
-}
-
-function stripRefreshFromDetectContext(
-  context?: LocalAgentModelDetectContext,
-): DetectContext | undefined {
-  if (!context?.refresh) return context;
-
-  const { refresh: _refresh, ...detectContext } = context;
-  return Object.keys(detectContext).length > 0 ? detectContext : undefined;
-}
-
 export function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
-  let runtime = createAimcLocalAgentRuntime();
+  const runtime = createDefaultLocalAgentRuntime() as LocalAgentRuntime<
+    "local-agent",
+    AgentRuntimeProvider
+  >;
 
   return {
     detect(context) {
-      if (context?.refresh) {
-        runtime = createAimcLocalAgentRuntime();
-      }
-      return runtime.detect(stripRefreshFromDetectContext(context));
+      return runtime.detect(context);
     },
   };
 }

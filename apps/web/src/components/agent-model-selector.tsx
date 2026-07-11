@@ -7,10 +7,11 @@ import {
   getAgentModelSourceTab,
   getModelSourceTab,
   isLocalCliProvider,
-  isSupportedLocalCliProvider,
+  localAgentProvidersFromModelResponse,
 } from "@/lib/agent-model-groups";
 import { fetchModels, fetchWorkspaceSettings } from "@/lib/server-api";
 import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "@/lib/workspace-settings-events";
+import type { LocalAgentProviderInfo } from "@aimc/shared";
 import { Cloud, Settings2, Terminal } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useAppTranslation } from "../i18n";
@@ -48,7 +49,7 @@ const PROVIDER_PRIORITY = [
 const TRIGGER_PROVIDER_ACCENT_CLASSES: Record<string, string> = {
   agnes: "border-[#111827] text-[#111827]",
   anthropic: "border-[#D97757] text-[#C75F3B]",
-  claude: "border-[#D97757] text-[#C75F3B]",
+  "claude-code": "border-[#D97757] text-[#C75F3B]",
   codex: "border-[#6F7CFF] text-[#4F5DFF]",
   google: "border-[#4285F4] text-[#2563EB]",
   openai: "border-[#111827] text-[#111827]",
@@ -160,6 +161,9 @@ export function AgentModelSelector({
     AgentModelSourceTab | undefined
   >();
   const [models, setModels] = useState<ModelOption[]>([]);
+  const [localAgentProviders, setLocalAgentProviders] = useState<
+    LocalAgentProviderInfo[]
+  >([]);
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
     string | null
   >(null);
@@ -170,7 +174,10 @@ export function AgentModelSelector({
 
   const loadModels = useCallback(() => {
     fetchModels()
-      .then((data) => setModels(data.models))
+      .then((data) => {
+        setModels(data.models);
+        setLocalAgentProviders(localAgentProvidersFromModelResponse(data));
+      })
       .catch(() => {});
 
     fetchWorkspaceSettings()
@@ -234,33 +241,38 @@ export function AgentModelSelector({
     workspaceDefaultModelSource ??
     getAgentModelSourceTab(workspaceDefaultModel);
   const workspaceDefaultProvider = getModelProvider(workspaceDefaultModel);
+  const visibleLocalProviderIds = new Set(
+    localAgentProviders.map((provider) => provider.provider),
+  );
   const selectedProviderIsSupportedLocal =
     selectedModelSource === "local-agent" &&
     selectedProvider &&
     isLocalCliProvider(selectedProvider) &&
-    isSupportedLocalCliProvider(selectedProvider);
+    visibleLocalProviderIds.has(selectedProvider);
   const selectedProviderIsUnsupportedLocal =
     selectedModelSource === "local-agent" &&
     selectedProvider &&
     isLocalCliProvider(selectedProvider) &&
-    !isSupportedLocalCliProvider(selectedProvider);
+    !visibleLocalProviderIds.has(selectedProvider);
   const workspaceDefaultProviderIsSupportedLocal =
     resolvedWorkspaceDefaultModelSource === "local-agent" &&
     workspaceDefaultProvider &&
     isLocalCliProvider(workspaceDefaultProvider) &&
-    isSupportedLocalCliProvider(workspaceDefaultProvider);
+    visibleLocalProviderIds.has(workspaceDefaultProvider);
   const workspaceDefaultProviderIsUnsupportedLocal =
     resolvedWorkspaceDefaultModelSource === "local-agent" &&
     workspaceDefaultProvider &&
     isLocalCliProvider(workspaceDefaultProvider) &&
-    !isSupportedLocalCliProvider(workspaceDefaultProvider);
+    !visibleLocalProviderIds.has(workspaceDefaultProvider);
   const triggerLocalProvider = selectedProviderIsSupportedLocal
     ? selectedProvider
     : !model && workspaceDefaultProviderIsSupportedLocal
       ? workspaceDefaultProvider
       : "";
   const triggerLocalProviderLabel = triggerLocalProvider
-    ? formatLocalCliProviderLabel(triggerLocalProvider)
+    ? (localAgentProviders.find(
+        (provider) => provider.provider === triggerLocalProvider,
+      )?.displayName ?? null)
     : null;
   const isActive = model !== null;
   const isTriggerActive = isActive || Boolean(triggerLocalProvider);
@@ -280,25 +292,27 @@ export function AgentModelSelector({
     (item) => getModelSourceTab(item) === activeModelTab,
   );
 
-  // Deduplicate provider list from actual models
-  const providers = [...new Set(visibleModels.map((m) => m.provider))].sort(
-    (left, right) => {
-      const leftIndex = PROVIDER_PRIORITY.indexOf(left);
-      const rightIndex = PROVIDER_PRIORITY.indexOf(right);
-      const normalizedLeft =
-        leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
-      const normalizedRight =
-        rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
+  const providers =
+    activeModelTab === "local-agent"
+      ? localAgentProviders.map((provider) => provider.provider)
+      : [...new Set(visibleModels.map((item) => item.provider))].sort(
+          (left, right) => {
+            const leftIndex = PROVIDER_PRIORITY.indexOf(left);
+            const rightIndex = PROVIDER_PRIORITY.indexOf(right);
+            const normalizedLeft =
+              leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
+            const normalizedRight =
+              rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
 
-      if (normalizedLeft !== normalizedRight) {
-        return normalizedLeft - normalizedRight;
-      }
+            if (normalizedLeft !== normalizedRight) {
+              return normalizedLeft - normalizedRight;
+            }
 
-      return formatProviderLabel(left).localeCompare(
-        formatProviderLabel(right),
-      );
-    },
-  );
+            return formatProviderLabel(left).localeCompare(
+              formatProviderLabel(right),
+            );
+          },
+        );
 
   return (
     <>
@@ -456,15 +470,25 @@ export function AgentModelSelector({
             const providerModels = visibleModels.filter(
               (m) => m.provider === provider,
             );
-            if (providerModels.length === 0) return null;
+            const localProvider = localAgentProviders.find(
+              (entry) => entry.provider === provider,
+            );
+            if (providerModels.length === 0 && !localProvider) return null;
             return (
               <div key={provider} className="mt-2">
                 <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
                   <ProviderLogo provider={provider} />
                   {isLocalCliProvider(provider)
-                    ? formatLocalCliProviderLabel(provider)
+                    ? (localProvider?.displayName ??
+                      formatLocalCliProviderLabel(provider))
                     : formatProviderLabel(provider)}
                 </div>
+                {localProvider && !localProvider.available ? (
+                  <div className="rounded-lg px-2 py-2 text-xs text-muted-foreground">
+                    {localProvider.reason ??
+                      t("agentModelSelector.providerUnavailable")}
+                  </div>
+                ) : null}
                 {providerModels.map((m) => (
                   <button
                     key={m.id}

@@ -15,6 +15,7 @@
     "noLocalCliModels": "未检测到本地 CLI 模型。",
     "noTuttiManagedModels": "未连接 Tutti Managed 模型。",
     "openSettings": "打开 Agent 设置",
+    "providerUnavailable": "此 Provider 当前不可用。",
     "settings": "设置",
     "tooltip": "选择 Agent 模型",
     "tuttiManaged": "Tutti Managed",

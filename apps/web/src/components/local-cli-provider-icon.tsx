@@ -22,21 +22,22 @@ type LocalCliProviderIconComponent = ComponentType<{
   size?: number;
 }>;
 
-const LOCAL_CLI_PROVIDER_ICONS: Record<string, LocalCliProviderIconComponent> = {
-  claude: ClaudeIcon,
-  codex: CodexIcon,
-  cursor: CursorIcon,
-  devin: DevinIcon,
-  gemini: GeminiCliIcon,
-  hermes: HermesAgentIcon,
-  kilo: KiloCodeIcon,
-  kimi: KimiIcon,
-  kiro: KiroIcon,
-  opencode: OpenCodeIcon,
-  qoder: QoderIcon,
-  qwen: QwenIcon,
-  vibe: MistralIcon,
-};
+const LOCAL_CLI_PROVIDER_ICONS: Record<string, LocalCliProviderIconComponent> =
+  {
+    "claude-code": ClaudeIcon,
+    codex: CodexIcon,
+    cursor: CursorIcon,
+    devin: DevinIcon,
+    gemini: GeminiCliIcon,
+    hermes: HermesAgentIcon,
+    kilo: KiloCodeIcon,
+    kimi: KimiIcon,
+    kiro: KiroIcon,
+    opencode: OpenCodeIcon,
+    qoder: QoderIcon,
+    qwen: QwenIcon,
+    vibe: MistralIcon,
+  };
 
 interface LocalCliProviderIconProps {
   className?: string;

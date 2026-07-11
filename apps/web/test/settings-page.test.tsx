@@ -1197,7 +1197,11 @@ describe("SettingsPage", () => {
       models: [
         { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
         { id: "codex:gpt-5.5", name: "Codex", provider: "codex" },
-        { id: "claude:sonnet", name: "Sonnet", provider: "claude" },
+        {
+          id: "claude-code:sonnet",
+          name: "Sonnet",
+          provider: "claude-code",
+        },
         { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
       ],
     });
@@ -1229,9 +1233,10 @@ describe("SettingsPage", () => {
       "aria-selected",
       "false",
     );
-    expect(
-      screen.getByRole("tab", { name: "API provider" }),
-    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "API provider" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(await screen.findByLabelText("OpenAI API Key")).toHaveValue(
       "sk-local-openai",
     );
@@ -1581,7 +1586,27 @@ describe("SettingsPage", () => {
     ).tuttiExternal = {
       workspace: { openFeature },
     };
-    fetchModelsMock.mockResolvedValue({ models: [] });
+    fetchModelsMock.mockResolvedValue({
+      models: [],
+      localAgentProviders: [
+        {
+          provider: "codex",
+          displayName: "Codex",
+          available: false,
+          authState: "missing",
+          reason: "Sign in with Tutti Agent Manager.",
+          models: [],
+        },
+        {
+          provider: "claude-code",
+          displayName: "Claude Code",
+          available: false,
+          authState: "missing",
+          reason: "Sign in with Tutti Agent Manager.",
+          models: [],
+        },
+      ],
+    });
 
     render(<SettingsPage />);
 
@@ -1590,10 +1615,9 @@ describe("SettingsPage", () => {
 
     expect(codexButton).toBeEnabled();
     expect(claudeButton).toBeEnabled();
-    expect(screen.getAllByText("Manage in Tutti")).toHaveLength(2);
     expect(
-      screen.getByText(/Use Tutti to install or sign in/i),
-    ).toBeInTheDocument();
+      screen.getAllByText("Sign in with Tutti Agent Manager."),
+    ).toHaveLength(2);
     expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
 
     await userEvent.click(codexButton);
@@ -1644,11 +1668,25 @@ describe("SettingsPage", () => {
         volcesBaseUrl: "",
       },
     });
-    fetchModelsMock.mockResolvedValue({ models: [] });
+    fetchModelsMock.mockResolvedValue({
+      models: [],
+      localAgentProviders: [
+        {
+          provider: "codex",
+          displayName: "Codex",
+          available: false,
+          authState: "missing",
+          reason: "Sign in with Tutti Agent Manager.",
+          models: [],
+        },
+      ],
+    });
 
     render(<SettingsPage />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /Codex/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Codex/i }),
+    );
 
     expect(
       await screen.findByText(
@@ -1683,7 +1721,11 @@ describe("SettingsPage", () => {
     });
     fetchModelsMock.mockResolvedValue({
       models: [
-        { id: "claude:sonnet", name: "Sonnet", provider: "claude" },
+        {
+          id: "claude-code:sonnet",
+          name: "Sonnet",
+          provider: "claude-code",
+        },
         { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
       ],
     });
@@ -1698,7 +1740,7 @@ describe("SettingsPage", () => {
     expect(claudeButton).toHaveAttribute("aria-pressed", "false");
     expect(codexButton).toHaveAttribute("aria-pressed", "false");
     expect(
-      codexButton.compareDocumentPosition(claudeButton) &
+      claudeButton.compareDocumentPosition(codexButton) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();

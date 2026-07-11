@@ -13,7 +13,31 @@ const { fetchModelsMock, fetchWorkspaceSettingsMock, setModelMock } =
   }));
 
 vi.mock("../src/lib/server-api", () => ({
-  fetchModels: fetchModelsMock,
+  fetchModels: async (...args: unknown[]) => {
+    const response = await fetchModelsMock(...args);
+    if (Array.isArray(response?.localAgentProviders)) return response;
+    const localModels = Array.isArray(response?.models)
+      ? response.models.filter((model: { provider?: string }) =>
+          model.provider === "codex" || model.provider === "claude-code"
+        )
+      : [];
+    const providers = new Map<string, typeof localModels>();
+    for (const model of localModels) {
+      const models = providers.get(model.provider) ?? [];
+      models.push(model);
+      providers.set(model.provider, models);
+    }
+    return {
+      ...response,
+      localAgentProviders: Array.from(providers, ([provider, models]) => ({
+        provider,
+        displayName: provider === "claude-code" ? "Claude Code" : "Codex",
+        available: true,
+        authState: "ok",
+        models,
+      })),
+    };
+  },
   fetchWorkspaceSettings: fetchWorkspaceSettingsMock,
 }));
 
@@ -286,9 +310,9 @@ describe("AgentModelSelector", () => {
       models: [
         { id: "codex:gpt-5.5", name: "GPT-5.5", provider: "codex" },
         {
-          id: "claude:default",
+          id: "claude-code:default",
           name: "Default (CLI config)",
-          provider: "claude",
+          provider: "claude-code",
         },
       ],
     });
@@ -310,6 +334,31 @@ describe("AgentModelSelector", () => {
     expect(claudeHeading.firstElementChild?.tagName).toBe("SPAN");
     expect(codexHeading.firstElementChild).toHaveClass("size-4");
     expect(claudeHeading.firstElementChild).toHaveClass("size-4");
+  });
+
+  it("keeps an enabled but unauthenticated Tutti Agent visible and disabled", async () => {
+    fetchModelsMock.mockResolvedValue({
+      models: [],
+      localAgentProviders: [
+        {
+          provider: "tutti-agent",
+          displayName: "Tutti Agent",
+          available: false,
+          authState: "missing",
+          reason: "Tutti Agent is not logged in.",
+          models: [],
+        },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
+    expect(await screen.findByText("Tutti Agent")).toBeInTheDocument();
+    expect(
+      screen.getByText("Tutti Agent is not logged in."),
+    ).toBeInTheDocument();
+    expect(setModelMock).not.toHaveBeenCalled();
   });
 
   it("shows the default local CLI provider in the trigger", async () => {
@@ -407,7 +456,7 @@ describe("AgentModelSelector", () => {
       })
       .mockResolvedValueOnce({
         settings: {
-          defaultModel: "claude:default",
+          defaultModel: "claude-code:default",
         },
       });
     fetchModelsMock.mockResolvedValue({
@@ -418,9 +467,9 @@ describe("AgentModelSelector", () => {
           provider: "codex",
         },
         {
-          id: "claude:default",
+          id: "claude-code:default",
           name: "Default (CLI config)",
-          provider: "claude",
+          provider: "claude-code",
         },
       ],
     });

@@ -22,7 +22,6 @@ import {
   formatTuttiSkillGuidance,
   loadTuttiAgentSkillContextForRun,
   shouldUseTuttiSkillContext,
-  tuttiCliEnv,
 } from "../tutti-skill-context.js";
 import { loadNormalizedSessionHistory } from "./history.js";
 import {
@@ -308,6 +307,17 @@ export function createLocalAgentRuntimeProvider(
         throw new Error("Local agent run directory is required.");
       }
       const managedAgentInvocation = managedRunContext?.managedAgentInvocation;
+      if (!deps.assertLocalAgentProviderAvailable) {
+        throw new Error("Local agent provider authorization is not configured.");
+      }
+      await deps.assertLocalAgentProviderAvailable({
+        provider: runtimeProvider,
+        detectContext: {
+          cwd: runDir,
+          refresh: true,
+          ...(managedAgentInvocation ? { managedAgentInvocation } : {}),
+        },
+      });
       await materializeWorkspaceSkillsForLocalAgent({
         runDir,
         workspaceSkills,
@@ -371,11 +381,9 @@ export function createLocalAgentRuntimeProvider(
               cwd: runDir,
               provider: runtimeProvider,
               runId: run.runId,
-              ...(runtimeEnv.tuttiCliPath
-                ? { tuttiCliPath: runtimeEnv.tuttiCliPath }
-                : {}),
+              signal: run.controller.signal,
             })
-          : { skillManifest: [] };
+          : { source: "standalone" as const, skillManifest: [], skills: [] };
         const skillManifest = [
           ...mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills),
           ...tuttiSkillContext.skillManifest,
@@ -423,9 +431,6 @@ export function createLocalAgentRuntimeProvider(
           ...(resume ? { resume } : {}),
           signal: run.controller.signal,
           skillManifest,
-          ...(runtimeEnv.tuttiCliPath
-            ? { env: tuttiCliEnv(runtimeEnv.tuttiCliPath) }
-            : {}),
           timeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
         })) {
           if (event.type === "error") {

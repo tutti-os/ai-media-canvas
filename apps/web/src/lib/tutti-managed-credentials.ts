@@ -14,9 +14,7 @@ type TuttiManagedGrantResult = {
   models?: TuttiManagedModel[];
 };
 
-export type TuttiLocalAgentManagerProvider = "codex" | "claude";
-
-type TuttiWorkspaceAgentManagerProvider = "codex" | "claude-code";
+export type TuttiLocalAgentManagerProvider = "codex" | "claude-code";
 
 type TuttiAppContext = {
   appId?: string;
@@ -49,7 +47,7 @@ type TuttiBridge = {
   workspace?: {
     openFeature?: (input: {
       feature: "agent-manage";
-      provider?: TuttiWorkspaceAgentManagerProvider;
+      provider?: TuttiLocalAgentManagerProvider;
     }) => Promise<void>;
   };
 };
@@ -78,12 +76,6 @@ export function hasTuttiAgentManagerBridge() {
   return typeof bridge?.workspace?.openFeature === "function";
 }
 
-function mapLocalAgentProviderForTuttiManager(
-  provider: TuttiLocalAgentManagerProvider,
-): TuttiWorkspaceAgentManagerProvider {
-  return provider === "claude" ? "claude-code" : provider;
-}
-
 export async function openTuttiAgentManager(
   provider?: TuttiLocalAgentManagerProvider,
 ) {
@@ -94,9 +86,7 @@ export async function openTuttiAgentManager(
 
   await openFeature({
     feature: "agent-manage",
-    ...(provider
-      ? { provider: mapLocalAgentProviderForTuttiManager(provider) }
-      : {}),
+    ...(provider ? { provider } : {}),
   });
 }
 

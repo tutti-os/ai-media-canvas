@@ -1295,9 +1295,9 @@ describe("createAgentRunService", () => {
       {
         accessToken: "local-token",
         codexImagegenDelegation: "ask",
-        model: "claude:default",
+        model: "claude-code:default",
         runtimeKind: "local-agent",
-        runtimeProvider: "claude",
+        runtimeProvider: "claude-code",
         userId: "user-1",
       },
     );
@@ -1752,6 +1752,7 @@ describe("createAgentRunService", () => {
     });
 
     const runs = createAgentRunService({
+      assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
       env: {
         agentBackendMode: "state",
         agentModel: "agnes:agnes-2.0-flash",
@@ -1764,7 +1765,7 @@ describe("createAgentRunService", () => {
       },
       localAgentProviderPlugins: [
         {
-          id: "claude",
+          id: "claude-code",
           displayName: "Claude Code",
           kind: "local-agent",
           async detect() {
@@ -1806,7 +1807,7 @@ describe("createAgentRunService", () => {
       {
         model: "sonnet",
         runtimeKind: "local-agent",
-        runtimeProvider: "claude",
+        runtimeProvider: "claude-code",
       },
     );
 
@@ -1817,8 +1818,8 @@ describe("createAgentRunService", () => {
 
     expect(localRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        provider: "claude",
-        runtimeProvider: "claude",
+        provider: "claude-code",
+        runtimeProvider: "claude-code",
         model: "sonnet",
       }),
     );
@@ -1826,13 +1827,13 @@ describe("createAgentRunService", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "message.delta",
-          delta: "claude:claude",
+          delta: "claude-code:claude-code",
         }),
       ]),
     );
   });
 
-  it("strips the local provider prefix before invoking Nexight", async () => {
+  it("strips the local provider prefix before invoking Tutti Agent", async () => {
     const localRun = vi.fn(async function* () {
       yield {
         type: "done" as const,
@@ -1842,6 +1843,7 @@ describe("createAgentRunService", () => {
     });
 
     const runs = createAgentRunService({
+      assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
       env: {
         agentBackendMode: "state",
         agentModel: "agnes:agnes-2.0-flash",
@@ -1854,8 +1856,8 @@ describe("createAgentRunService", () => {
       },
       localAgentProviderPlugins: [
         {
-          id: "nexight",
-          displayName: "Nexight",
+          id: "tutti-agent",
+          displayName: "Tutti Agent",
           kind: "local-agent",
           async detect() {
             return null;
@@ -1894,9 +1896,9 @@ describe("createAgentRunService", () => {
         sessionId: "session-1",
       },
       {
-        model: "nexight:openai-codex:gpt-5.4",
+        model: "tutti-agent:openai-codex:gpt-5.4",
         runtimeKind: "local-agent",
-        runtimeProvider: "nexight",
+        runtimeProvider: "tutti-agent",
       },
     );
 
@@ -1906,8 +1908,8 @@ describe("createAgentRunService", () => {
 
     expect(localRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        provider: "nexight",
-        runtimeProvider: "nexight",
+        provider: "tutti-agent",
+        runtimeProvider: "tutti-agent",
         model: "openai-codex:gpt-5.4",
       }),
     );

@@ -3,11 +3,21 @@ import { describe, expect, it } from "vitest";
 import {
   formatLocalCliProviderLabel,
   getLocalCliProviderFallbackMark,
+  localAgentProvidersFromModelResponse,
 } from "../src/lib/agent-model-groups";
 
 describe("agent model groups", () => {
-  it("presents the nexight runtime alias as Tutti Agent", () => {
-    expect(formatLocalCliProviderLabel("nexight")).toBe("Tutti Agent");
-    expect(getLocalCliProviderFallbackMark("nexight")).toBe("TA");
+  it("formats the canonical Tutti Agent provider id", () => {
+    expect(formatLocalCliProviderLabel("tutti-agent")).toBe("Tutti Agent");
+    expect(getLocalCliProviderFallbackMark("tutti-agent")).toBe("TA");
+  });
+
+  it("does not add providers back when the current server returns an explicit empty catalog", () => {
+    expect(
+      localAgentProvidersFromModelResponse({
+        models: [{ id: "codex:default", name: "Codex", provider: "codex" }],
+        localAgentProviders: [],
+      }),
+    ).toEqual([]);
   });
 });

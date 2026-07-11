@@ -422,7 +422,7 @@ describe("agent run orchestrator", () => {
         availableRuntimeTargets: [
           { kind: "server-deepagent" },
           { kind: "local-agent", provider: "codex" },
-          { kind: "local-agent", provider: "claude" },
+          { kind: "local-agent", provider: "claude-code" },
         ],
         model: "codex:gpt-5.4",
         requestedRuntimeKind: undefined,
@@ -434,9 +434,9 @@ describe("agent run orchestrator", () => {
     expect(isLocalAgentRuntimeRequested({ runtimeKind: "local-agent" })).toBe(
       true,
     );
-    expect(isLocalAgentRuntimeRequested({ runtimeProvider: "claude" })).toBe(
-      true,
-    );
+    expect(
+      isLocalAgentRuntimeRequested({ runtimeProvider: "claude-code" }),
+    ).toBe(true);
     for (const provider of createDefaultLocalAgentProviderPlugins().map((item) => item.id)) {
       expect(
         isLocalAgentRuntimeRequested({ model: `${provider}:default` }),

@@ -20,13 +20,19 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { InMemoryStore } from "@langchain/langgraph";
 import {
+  type DetectContext,
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
   type ManagedAgentInvocationCredentialHeaders,
   type ManagedAgentRunContext,
+  createDefaultLocalAgentProviderPlugins,
   createLocalAgentRuntime,
   createManagedAgentRunContextFromHeaders,
 } from "@tutti-os/agent-acp-kit";
+import {
+  findTuttiAgentCatalogProvider,
+  resolveTuttiAgentProviderCatalog,
+} from "@tutti-os/agent-acp-kit/tutti";
 
 import type { AuthenticatedUser, UserDataClient } from "../auth/request.js";
 import type { ServerEnv } from "../config/env.js";
@@ -71,7 +77,6 @@ import {
 } from "./job-payloads.js";
 import { resolveAimcWorkspaceSkills } from "./local-agent-host/skills.js";
 import type { createLocalToolGatewayService } from "./local-agent-host/tool-gateway.js";
-import { createAimcLocalAgentProviderPlugins } from "./local-agent-providers.js";
 import {
   type RuntimeTarget,
   createRuntimeControlPlane,
@@ -342,6 +347,10 @@ type PatchWorkspaceSettings = (input: {
 }) => Promise<WorkspaceSettings>;
 
 type CreateAgentRuntimeOptions = {
+  assertLocalAgentProviderAvailable?: (input: {
+    detectContext: DetectContext;
+    provider: AgentRuntimeProvider;
+  }) => Promise<void>;
   agentFactory?: AimcAgentFactory;
   agentRunStore?: {
     createRun(input: {
@@ -513,13 +522,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
   const localAgentTrusted = options.env.trustedLocalAgentMode !== false;
   const localAgentProviderPlugins =
-    options.localAgentProviderPlugins ?? createAimcLocalAgentProviderPlugins();
+    options.localAgentProviderPlugins ??
+    (createDefaultLocalAgentProviderPlugins() as LocalAgentProviderPlugin<
+      "local-agent",
+      AgentRuntimeProvider
+    >[]);
+  const defaultLocalAgentRuntime = createLocalAgentRuntime({
+    providers: localAgentProviderPlugins,
+  });
   const localAgentRuntime =
     localAgentTrusted && options.toolGateway && options.toolGatewayBaseUrl
-      ? (options.localAgentRuntime ??
-        createLocalAgentRuntime({
-          providers: localAgentProviderPlugins,
-        }))
+      ? (options.localAgentRuntime ?? defaultLocalAgentRuntime)
       : null;
   const localAgentGatewayDeps =
     localAgentRuntime && options.toolGateway && options.toolGatewayBaseUrl
@@ -533,6 +546,37 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       ? localAgentProviderPlugins.map((providerPlugin) =>
           createLocalAgentRuntimeProvider(
             {
+              async assertLocalAgentProviderAvailable({
+                detectContext,
+                provider,
+              }: {
+                detectContext: DetectContext;
+                provider: AgentRuntimeProvider;
+              }) {
+                if (options.assertLocalAgentProviderAvailable) {
+                  await options.assertLocalAgentProviderAvailable({
+                    detectContext,
+                    provider,
+                  });
+                  return;
+                }
+                const catalog = await resolveTuttiAgentProviderCatalog({
+                  runtime: defaultLocalAgentRuntime,
+                  detectContext,
+                  includeComposerModels: false,
+                });
+                const entry = findTuttiAgentCatalogProvider(
+                  catalog.providers,
+                  provider,
+                );
+                if (!entry?.available) {
+                  throw new Error(
+                    entry?.reason
+                      ? `Agent provider ${provider} is unavailable: ${entry.reason}`
+                      : `Agent provider ${provider} is not available from Tutti.`,
+                  );
+                }
+              },
               buildAttachmentDataMap,
               buildUserMessage,
               loadCanvasSummaryForRuntime,

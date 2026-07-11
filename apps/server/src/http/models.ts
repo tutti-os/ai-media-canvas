@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
+  type LocalAgentProviderInfo,
   type ModelInfo,
   type WorkspaceSettings,
   modelListResponseSchema,
@@ -8,7 +9,7 @@ import {
 import {
   type DetectContext,
   type ManagedAgentInvocationCredentialHeaders,
-  createLocalAgentRuntime,
+  createDefaultLocalAgentRuntime,
   createManagedAgentDetectContextFromHeaders,
 } from "@tutti-os/agent-acp-kit";
 import { resolveTuttiAgentProviderCatalog } from "@tutti-os/agent-acp-kit/tutti";
@@ -17,8 +18,10 @@ import type {
   LocalAgentModelDetectContext,
   LocalAgentModelDiscovery,
 } from "../agent/local-agent-models.js";
-import { createAimcLocalAgentProviderPlugins } from "../agent/local-agent-providers.js";
-import { buildLocalAgentModelsFromCatalog } from "../agent/tutti-catalog-models.js";
+import {
+  buildLocalAgentModelsFromCatalog,
+  buildLocalAgentProviderInfoFromCatalog,
+} from "../agent/tutti-catalog-models.js";
 import type { ServerEnv } from "../config/env.js";
 import {
   LOCAL_WORKSPACE_ID,
@@ -260,7 +263,7 @@ export async function registerModelRoutes(
       refreshLocalAgentModels?: boolean;
     } = {},
   ) => {
-    const models = await listAgentModels({
+    const result = await listAgentModelCatalog({
       env,
       logger: app.log,
       ...(options?.localAgentModelDiscovery
@@ -275,7 +278,7 @@ export async function registerModelRoutes(
         : {}),
       ...(settingsService ? { settingsService } : {}),
     });
-    return reply.code(200).send(modelListResponseSchema.parse({ models }));
+    return reply.code(200).send(modelListResponseSchema.parse(result));
   };
 
   app.get("/api/models", async (request, reply) => {
@@ -305,6 +308,19 @@ export async function listAgentModels(options: {
   tuttiManagedCredentials?: TuttiManagedCredentialService;
   settingsService?: SettingsService;
 }) {
+  return (await listAgentModelCatalog(options)).models;
+}
+
+export async function listAgentModelCatalog(options: {
+  env: ServerEnv;
+  localAgentModelDiscovery?: LocalAgentModelDiscovery;
+  logger?: ModelDiscoveryLogger;
+  managedAgentDetectContext?: DetectContext;
+  managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders;
+  refreshLocalAgentModels?: boolean;
+  tuttiManagedCredentials?: TuttiManagedCredentialService;
+  settingsService?: SettingsService;
+}) {
   const workspaceSettings = options.settingsService
     ? await options.settingsService.getWorkspaceSettings(
         null,
@@ -315,6 +331,7 @@ export async function listAgentModels(options: {
     ? await options.settingsService.getEffectiveServerEnv(LOCAL_WORKSPACE_ID)
     : options.env;
   const models: ModelInfo[] = [];
+  const localAgentProviders: LocalAgentProviderInfo[] = [];
   if (effectiveEnv.openAIApiKey) {
     let openAIModels = workspaceSettings?.providerModels.openai.length
       ? buildConfiguredModels("openai", workspaceSettings.providerModels.openai)
@@ -397,9 +414,7 @@ export async function listAgentModels(options: {
       localAgentDetectContext?.cwd?.trim();
     try {
       const localAgentModelDiscovery = options.localAgentModelDiscovery;
-      const localAgentRuntime = createLocalAgentRuntime({
-        providers: createAimcLocalAgentProviderPlugins(),
-      });
+      const localAgentRuntime = createDefaultLocalAgentRuntime();
       const runtime = localAgentModelDiscovery
         ? {
             detect: (context?: LocalAgentModelDetectContext) =>
@@ -416,6 +431,9 @@ export async function listAgentModels(options: {
         ...(workspaceCwd ? { cwd: workspaceCwd } : {}),
       });
       models.push(...buildLocalAgentModelsFromCatalog(catalog.providers));
+      localAgentProviders.push(
+        ...buildLocalAgentProviderInfoFromCatalog(catalog.providers),
+      );
     } catch (error) {
       options.logger?.warn(
         managedAgentDetectContext ? {} : { err: error },
@@ -426,5 +444,5 @@ export async function listAgentModels(options: {
   if (options.tuttiManagedCredentials) {
     models.push(...(await options.tuttiManagedCredentials.listModels()));
   }
-  return models;
+  return { models, localAgentProviders };
 }

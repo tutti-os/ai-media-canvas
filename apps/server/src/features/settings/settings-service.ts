@@ -90,10 +90,19 @@ export type SettingsService = {
   getEffectiveServerEnv(workspaceId?: string): Promise<ServerEnv>;
 };
 
+function normalizeLegacyLocalAgentModelId(modelId: string) {
+  if (modelId.startsWith("claude:")) {
+    return `claude-code:${modelId.slice("claude:".length)}`;
+  }
+  return modelId;
+}
+
 export function normalizeWorkspaceSettings(
   input: Partial<WorkspaceSettings>,
 ): WorkspaceSettings {
-  const defaultModel = input.defaultModel?.trim() ?? "";
+  const defaultModel = normalizeLegacyLocalAgentModelId(
+    input.defaultModel?.trim() ?? "",
+  );
   const defaultModelSource =
     defaultModel &&
     (input.defaultModelSource === "local-agent" ||

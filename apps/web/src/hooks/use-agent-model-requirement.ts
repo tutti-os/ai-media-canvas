@@ -3,12 +3,30 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AgentModelSource } from "@aimc/shared";
 
-import { fetchWorkspaceSettings } from "@/lib/server-api";
+import {
+  getAgentModelSourceTab,
+  localAgentProvidersFromModelResponse,
+} from "@/lib/agent-model-groups";
+import { fetchModels, fetchWorkspaceSettings } from "@/lib/server-api";
 import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "@/lib/workspace-settings-events";
 
 import { useAgentModel } from "./use-agent-model";
 
 export const AGENT_MODEL_REQUIRED_MESSAGE = "请先配置或选择一个 Agent 模型。";
+
+async function isConfiguredModelAvailable(
+  configuredModel: string,
+  configuredSource: AgentModelSource | null,
+) {
+  const source = configuredSource ?? getAgentModelSourceTab(configuredModel);
+  if (source !== "local-agent") return true;
+  const provider = configuredModel.split(":")[0] ?? "";
+  if (!provider) return false;
+  const response = await fetchModels();
+  return localAgentProvidersFromModelResponse(response).some(
+    (entry) => entry.provider === provider && entry.available,
+  );
+}
 
 export function useAgentModelRequirement() {
   const { model, modelSource } = useAgentModel();
@@ -75,15 +93,26 @@ export function useAgentModelRequirement() {
   }, [refreshWorkspaceDefaultModel]);
 
   const ensureAgentModelConfigured = useCallback(async () => {
-    if (model?.trim()) return true;
+    if (model?.trim()) {
+      return isConfiguredModelAvailable(model.trim(), modelSource);
+    }
 
     try {
-      const defaultModel = await refreshWorkspaceDefaultModel();
-      return defaultModel.length > 0;
+      const response = await fetchWorkspaceSettings();
+      const defaultModel = response.settings.defaultModel.trim();
+      const defaultModelSource = response.settings.defaultModelSource ?? null;
+      setWorkspaceDefaultModel(defaultModel || null);
+      setWorkspaceDefaultModelSource(defaultModel ? defaultModelSource : null);
+      return defaultModel.length > 0
+        ? isConfiguredModelAvailable(
+            defaultModel,
+            defaultModelSource,
+          )
+        : false;
     } catch {
-      return Boolean(workspaceDefaultModel?.trim());
+      return false;
     }
-  }, [model, refreshWorkspaceDefaultModel, workspaceDefaultModel]);
+  }, [model, modelSource]);
 
   return {
     model,

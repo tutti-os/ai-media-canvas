@@ -1,3 +1,8 @@
+import type {
+  LocalAgentProviderInfo,
+  ModelListResponse,
+} from "@aimc/shared";
+
 export type AgentModelSourceTab =
   | "local-agent"
   | "tutti-managed"
@@ -11,37 +16,6 @@ const API_PROVIDER_IDS = new Set([
   "vertex",
 ]);
 const MANAGED_MODEL_PREFIXES = ["tutti"];
-
-export const PREFERRED_LOCAL_CLI_PROVIDER_ORDER = ["codex", "claude", "cursor", "nexight"];
-
-/** @deprecated Use PREFERRED_LOCAL_CLI_PROVIDER_ORDER for ordering only. */
-export const SUPPORTED_LOCAL_CLI_PROVIDERS = PREFERRED_LOCAL_CLI_PROVIDER_ORDER;
-
-export const LOCAL_CLI_PROVIDER_LABELS: Record<string, string> = {
-  codex: "Codex",
-  claude: "Claude Code",
-  cursor: "Cursor Agent",
-  devin: "Devin for Terminal",
-  gemini: "Gemini CLI",
-  hermes: "Hermes",
-  kilo: "Kilo",
-  kimi: "Kimi CLI",
-  kiro: "Kiro CLI",
-  nexight: "Tutti Agent",
-  opencode: "OpenCode",
-  qoder: "Qoder CLI",
-  qwen: "Qwen Code",
-  vibe: "Mistral Vibe CLI",
-};
-
-export const LOCAL_CLI_PROVIDER_FALLBACK_MARKS: Record<string, string> = {
-  claude: "C",
-  codex: ">_",
-  devin: "D",
-  hermes: "H",
-  kiro: "K",
-  nexight: "TA",
-};
 
 export function isApiProvider(provider: string) {
   return API_PROVIDER_IDS.has(provider);
@@ -72,15 +46,25 @@ export function getModelSourceTab(model: {
 }
 
 export function formatLocalCliProviderLabel(provider: string) {
-  return (
-    LOCAL_CLI_PROVIDER_LABELS[provider] ??
-    `${provider.charAt(0).toUpperCase()}${provider.slice(1)} CLI`
-  );
+  return provider
+    .split(/[-_.]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 export function getLocalCliProviderFallbackMark(provider: string) {
-  return (
-    LOCAL_CLI_PROVIDER_FALLBACK_MARKS[provider] ??
-    provider.slice(0, 2).toUpperCase()
-  );
+  return provider
+    .split(/[-_.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
+export function localAgentProvidersFromModelResponse(
+  response: ModelListResponse,
+): LocalAgentProviderInfo[] {
+  const current = (response as Partial<ModelListResponse>).localAgentProviders;
+  return Array.isArray(current) ? current : [];
 }
