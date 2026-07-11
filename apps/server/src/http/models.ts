@@ -14,9 +14,10 @@ import {
 } from "@tutti-os/agent-acp-kit";
 import { resolveTuttiAgentProviderCatalog } from "@tutti-os/agent-acp-kit/tutti";
 
-import type {
-  LocalAgentModelDetectContext,
-  LocalAgentModelDiscovery,
+import {
+  type LocalAgentModelDetectContext,
+  type LocalAgentModelDiscovery,
+  createDefaultLocalAgentModelDiscovery,
 } from "../agent/local-agent-models.js";
 import {
   buildLocalAgentModelsFromCatalog,
@@ -256,6 +257,12 @@ export async function registerModelRoutes(
     tuttiManagedCredentials?: TuttiManagedCredentialService;
   },
 ) {
+  // Keep one discovery instance for the lifetime of the model routes. Its
+  // refresh path swaps runtimes, so a slower pre-refresh probe cannot replace
+  // the cache observed by later requests.
+  const localAgentModelDiscovery =
+    options?.localAgentModelDiscovery ??
+    createDefaultLocalAgentModelDiscovery();
   const sendModels = async (
     reply: FastifyReply,
     input: {
@@ -266,9 +273,7 @@ export async function registerModelRoutes(
     const result = await listAgentModelCatalog({
       env,
       logger: app.log,
-      ...(options?.localAgentModelDiscovery
-        ? { localAgentModelDiscovery: options.localAgentModelDiscovery }
-        : {}),
+      localAgentModelDiscovery,
       ...(input.refreshLocalAgentModels
         ? { refreshLocalAgentModels: true }
         : {}),
