@@ -27,7 +27,9 @@ describe("persist_sandbox_file path validation", () => {
     const sandboxAlias = join(root, "sandbox-alias");
     mkdirSync(realSandbox);
     symlinkSync(realSandbox, sandboxAlias);
-    writeFileSync(join(realSandbox, "asset.svg"), "<svg />");
+    const dotCacheDir = join(realSandbox, "..cache");
+    mkdirSync(dotCacheDir);
+    writeFileSync(join(dotCacheDir, "asset.svg"), "<svg />");
     const createUserClient = vi.fn(() => {
       throw new Error("client-called");
     });
@@ -38,7 +40,7 @@ describe("persist_sandbox_file path validation", () => {
 
     await expect(
       persist.invoke(
-        { filePath: join(realSandbox, "asset.svg") },
+        { filePath: join(dotCacheDir, "asset.svg") },
         { configurable: { access_token: "token" } },
       ),
     ).resolves.toBe("Error reading or uploading file: client-called");

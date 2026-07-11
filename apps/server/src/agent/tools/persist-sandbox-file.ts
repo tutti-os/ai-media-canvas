@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { basename, extname, isAbsolute, relative } from "node:path";
+import { basename, extname, isAbsolute, relative, sep } from "node:path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 
@@ -54,7 +54,11 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
           const realSandboxDir = realpathSync(deps.sandboxDir);
           const realFilePath = realpathSync(input.filePath);
           const relativePath = relative(realSandboxDir, realFilePath);
-          if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+          if (
+            relativePath === ".." ||
+            relativePath.startsWith(`..${sep}`) ||
+            isAbsolute(relativePath)
+          ) {
             return "Error: filePath must be inside the sandbox directory.";
           }
         } catch {
