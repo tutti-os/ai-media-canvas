@@ -1197,8 +1197,37 @@ describe("SettingsPage", () => {
       models: [
         { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
         { id: "codex:gpt-5.5", name: "Codex", provider: "codex" },
-        { id: "claude:sonnet", name: "Sonnet", provider: "claude" },
+        {
+          id: "claude-code:sonnet",
+          name: "Sonnet",
+          provider: "claude-code",
+        },
         { id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" },
+      ],
+      localAgentProviders: [
+        {
+          provider: "codex",
+          displayName: "Codex",
+          available: true,
+          authState: "ok",
+          models: [
+            { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
+            { id: "codex:gpt-5.5", name: "Codex", provider: "codex" },
+          ],
+        },
+        {
+          provider: "claude-code",
+          displayName: "Claude Code",
+          available: true,
+          authState: "ok",
+          models: [
+            {
+              id: "claude-code:sonnet",
+              name: "Sonnet",
+              provider: "claude-code",
+            },
+          ],
+        },
       ],
     });
 
@@ -1229,9 +1258,10 @@ describe("SettingsPage", () => {
       "aria-selected",
       "false",
     );
-    expect(
-      screen.getByRole("tab", { name: "API provider" }),
-    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "API provider" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(await screen.findByLabelText("OpenAI API Key")).toHaveValue(
       "sk-local-openai",
     );
@@ -1286,7 +1316,7 @@ describe("SettingsPage", () => {
     expect(await screen.findByText("Default LLM Model")).toBeInTheDocument();
   });
 
-  it("uses the local CLI default option when a Local agent provider is selected", async () => {
+  it("uses the provider-declared default when a Local agent provider is selected", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "",
@@ -1319,10 +1349,28 @@ describe("SettingsPage", () => {
         { id: "codex:gpt-5.5", name: "gpt-5.5", provider: "codex" },
         { id: "codex:gpt-5.4", name: "gpt-5.4", provider: "codex" },
       ],
+      localAgentProviders: [
+        {
+          provider: "codex",
+          displayName: "Codex",
+          available: true,
+          authState: "ok",
+          defaultModelId: "codex:gpt-5.4",
+          models: [
+            {
+              id: "codex:default",
+              name: "Default (CLI config)",
+              provider: "codex",
+            },
+            { id: "codex:gpt-5.5", name: "gpt-5.5", provider: "codex" },
+            { id: "codex:gpt-5.4", name: "gpt-5.4", provider: "codex" },
+          ],
+        },
+      ],
     });
     updateWorkspaceSettingsMock.mockResolvedValue({
       settings: {
-        defaultModel: "codex:default",
+        defaultModel: "codex:gpt-5.4",
         providerModels: EMPTY_PROVIDER_MODELS,
         openAIApiKey: "",
         openAIApiBase: "",
@@ -1355,10 +1403,53 @@ describe("SettingsPage", () => {
     await waitFor(() =>
       expect(updateWorkspaceSettingsMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          defaultModel: "codex:default",
+          defaultModel: "codex:gpt-5.4",
         }),
       ),
     );
+  });
+
+  it("disables available Local agent providers that expose no models", async () => {
+    fetchWorkspaceSettingsMock.mockResolvedValue({
+      settings: {
+        defaultModel: "",
+        providerModels: EMPTY_PROVIDER_MODELS,
+        openAIApiKey: "",
+        openAIApiBase: "",
+        anthropicApiKey: "",
+        anthropicBaseUrl: "",
+        agnesApiKey: "",
+        agnesBaseUrl: "",
+        agnesDefaultModel: "",
+        googleApiKey: "",
+        googleVertexProject: "",
+        googleVertexLocation: "",
+        googleVertexVideoLocation: "",
+        replicateApiToken: "",
+        kieApiKey: "",
+        kieBaseUrl: "",
+        volcesApiKey: "",
+        volcesBaseUrl: "",
+      },
+    });
+    fetchModelsMock.mockResolvedValue({
+      models: [],
+      localAgentProviders: [
+        {
+          provider: "vendor-agent",
+          displayName: "Vendor Agent",
+          available: true,
+          authState: "ok",
+          models: [],
+        },
+      ],
+    });
+
+    render(<SettingsPage />);
+
+    expect(
+      await screen.findByRole("button", { name: /Vendor Agent/i }),
+    ).toBeDisabled();
   });
 
   it("keeps the Agent save action in a fixed bottom footer", async () => {
@@ -1581,7 +1672,27 @@ describe("SettingsPage", () => {
     ).tuttiExternal = {
       workspace: { openFeature },
     };
-    fetchModelsMock.mockResolvedValue({ models: [] });
+    fetchModelsMock.mockResolvedValue({
+      models: [],
+      localAgentProviders: [
+        {
+          provider: "codex",
+          displayName: "Codex",
+          available: false,
+          authState: "missing",
+          reason: "Sign in with Tutti Agent Manager.",
+          models: [],
+        },
+        {
+          provider: "claude-code",
+          displayName: "Claude Code",
+          available: false,
+          authState: "missing",
+          reason: "Sign in with Tutti Agent Manager.",
+          models: [],
+        },
+      ],
+    });
 
     render(<SettingsPage />);
 
@@ -1590,10 +1701,9 @@ describe("SettingsPage", () => {
 
     expect(codexButton).toBeEnabled();
     expect(claudeButton).toBeEnabled();
-    expect(screen.getAllByText("Manage in Tutti")).toHaveLength(2);
     expect(
-      screen.getByText(/Use Tutti to install or sign in/i),
-    ).toBeInTheDocument();
+      screen.getAllByText("Sign in with Tutti Agent Manager."),
+    ).toHaveLength(2);
     expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
 
     await userEvent.click(codexButton);
@@ -1644,11 +1754,25 @@ describe("SettingsPage", () => {
         volcesBaseUrl: "",
       },
     });
-    fetchModelsMock.mockResolvedValue({ models: [] });
+    fetchModelsMock.mockResolvedValue({
+      models: [],
+      localAgentProviders: [
+        {
+          provider: "codex",
+          displayName: "Codex",
+          available: false,
+          authState: "missing",
+          reason: "Sign in with Tutti Agent Manager.",
+          models: [],
+        },
+      ],
+    });
 
     render(<SettingsPage />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /Codex/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Codex/i }),
+    );
 
     expect(
       await screen.findByText(
@@ -1683,8 +1807,36 @@ describe("SettingsPage", () => {
     });
     fetchModelsMock.mockResolvedValue({
       models: [
-        { id: "claude:sonnet", name: "Sonnet", provider: "claude" },
+        {
+          id: "claude-code:sonnet",
+          name: "Sonnet",
+          provider: "claude-code",
+        },
         { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
+      ],
+      localAgentProviders: [
+        {
+          provider: "claude-code",
+          displayName: "Claude Code",
+          available: true,
+          authState: "ok",
+          models: [
+            {
+              id: "claude-code:sonnet",
+              name: "Sonnet",
+              provider: "claude-code",
+            },
+          ],
+        },
+        {
+          provider: "codex",
+          displayName: "Codex",
+          available: true,
+          authState: "ok",
+          models: [
+            { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
+          ],
+        },
       ],
     });
 
@@ -1698,7 +1850,7 @@ describe("SettingsPage", () => {
     expect(claudeButton).toHaveAttribute("aria-pressed", "false");
     expect(codexButton).toHaveAttribute("aria-pressed", "false");
     expect(
-      codexButton.compareDocumentPosition(claudeButton) &
+      claudeButton.compareDocumentPosition(codexButton) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();

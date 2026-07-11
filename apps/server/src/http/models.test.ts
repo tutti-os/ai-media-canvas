@@ -421,6 +421,47 @@ describe("registerModelRoutes", () => {
     });
   });
 
+  it("returns enabled but unauthenticated providers as disabled metadata", async () => {
+    const localAgentModelDiscovery = {
+      detect: vi.fn(async () => [
+        {
+          provider: "tutti-agent" as const,
+          displayName: "Tutti Agent",
+          result: {
+            authState: "missing" as const,
+            executablePath: "tutti-agent",
+            models: [{ id: "default", label: "Default" }],
+            supported: true,
+            version: "0.0.1",
+          },
+        },
+      ]),
+    };
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv({ agentModel: "openai:gpt-4.1" }, {}),
+      undefined,
+      { localAgentModelDiscovery },
+    );
+
+    const response = await app.inject({ method: "GET", url: "/api/models" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().models).not.toContainEqual(
+      expect.objectContaining({ provider: "tutti-agent" }),
+    );
+    expect(response.json().localAgentProviders).toContainEqual(
+      expect.objectContaining({
+        provider: "tutti-agent",
+        displayName: "Tutti Agent",
+        available: false,
+        authState: "missing",
+      }),
+    );
+  });
+
   it("passes a managed agent invocation to local-agent model discovery for POST model requests", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
     vi.stubEnv("CODEX_HOME", "/tmp/user-codex-home");
@@ -428,12 +469,12 @@ describe("registerModelRoutes", () => {
     const localAgentModelDiscovery = {
       detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
         {
-          provider: "nexight" as const,
-          displayName: "Nexight",
+          provider: "tutti-agent" as const,
+          displayName: "Tutti Agent",
           result: {
             authState: "ok" as const,
-            executablePath: "nexight",
-            models: [{ id: "default", label: "Default (Nexight)" }],
+            executablePath: "tutti-agent",
+            models: [{ id: "default", label: "Default (Tutti Agent)" }],
             supported: true,
             version: "1.0.0",
           },
@@ -452,7 +493,9 @@ describe("registerModelRoutes", () => {
         {},
       ),
       undefined,
-      { localAgentModelDiscovery },
+      {
+        createManagedLocalAgentModelDiscovery: () => localAgentModelDiscovery,
+      },
     );
 
     const response = await app.inject({
@@ -466,9 +509,9 @@ describe("registerModelRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().models).toContainEqual({
-      id: "nexight:default",
-      name: "Default (Nexight)",
-      provider: "nexight",
+      id: "tutti-agent:default",
+      name: "Default (Tutti Agent)",
+      provider: "tutti-agent",
       source: "local-agent",
     });
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({
@@ -493,6 +536,148 @@ describe("registerModelRoutes", () => {
         PATH: expect.any(String),
       }),
     );
+  });
+
+  it("isolates managed model discovery runtimes between credentials", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    const uncredentialedDiscovery = {
+      detect: vi.fn(async () => []),
+    };
+    const managedDiscoveries: Array<{
+      detect: ReturnType<typeof vi.fn>;
+    }> = [];
+    const createManagedLocalAgentModelDiscovery = vi.fn(() => {
+      const discovery = {
+        detect: vi.fn(async (context?: LocalAgentModelDetectContext) => {
+          const credential =
+            context?.managedAgentInvocation?.credential ?? "missing";
+          return [
+            {
+              provider: "tutti-agent" as const,
+              displayName: "Tutti Agent",
+              result: {
+                authState: "ok" as const,
+                executablePath: "tutti-agent",
+                models: [
+                  {
+                    id:
+                      credential === "credential-model-a"
+                        ? "managed-a"
+                        : "managed-b",
+                    label:
+                      credential === "credential-model-a"
+                        ? "Managed A"
+                        : "Managed B",
+                  },
+                ],
+                supported: true,
+                version: "1.0.0",
+              },
+            },
+          ];
+        }),
+      };
+      managedDiscoveries.push(discovery);
+      return discovery;
+    });
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
+        },
+        {},
+      ),
+      undefined,
+      {
+        createManagedLocalAgentModelDiscovery,
+        localAgentModelDiscovery: uncredentialedDiscovery,
+      },
+    );
+
+    const responseA = await app.inject({
+      method: "POST",
+      url: "/api/models",
+      headers: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-model-a",
+      },
+      payload: {},
+    });
+    const responseB = await app.inject({
+      method: "POST",
+      url: "/api/models",
+      headers: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-model-b",
+      },
+      payload: {},
+    });
+
+    expect(responseA.statusCode, responseA.body).toBe(200);
+    expect(responseB.statusCode, responseB.body).toBe(200);
+    expect(responseA.json().models).toContainEqual(
+      expect.objectContaining({ id: "tutti-agent:managed-a" }),
+    );
+    expect(responseA.json().models).not.toContainEqual(
+      expect.objectContaining({ id: "tutti-agent:managed-b" }),
+    );
+    expect(responseB.json().models).toContainEqual(
+      expect.objectContaining({ id: "tutti-agent:managed-b" }),
+    );
+    expect(responseB.json().models).not.toContainEqual(
+      expect.objectContaining({ id: "tutti-agent:managed-a" }),
+    );
+    expect(createManagedLocalAgentModelDiscovery).toHaveBeenCalledTimes(2);
+    expect(managedDiscoveries).toHaveLength(2);
+    expect(managedDiscoveries[0]?.detect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        managedAgentInvocation: expect.objectContaining({
+          credential: "credential-model-a",
+        }),
+      }),
+    );
+    expect(managedDiscoveries[1]?.detect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        managedAgentInvocation: expect.objectContaining({
+          credential: "credential-model-b",
+        }),
+      }),
+    );
+    expect(uncredentialedDiscovery.detect).not.toHaveBeenCalled();
+  });
+
+  it("uses an isolated discovery when managed credentials are supplied as headers", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    const uncredentialedDiscovery = { detect: vi.fn(async () => []) };
+    const managedDiscovery = { detect: vi.fn(async () => []) };
+    const createManagedLocalAgentModelDiscovery = vi.fn(() => managedDiscovery);
+
+    await listAgentModels({
+      env: loadServerEnv(
+        {
+          agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
+        },
+        {},
+      ),
+      localAgentModelDiscovery: uncredentialedDiscovery,
+      createManagedLocalAgentModelDiscovery,
+      managedAgentHeaders: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-from-header",
+      },
+    });
+
+    expect(createManagedLocalAgentModelDiscovery).toHaveBeenCalledOnce();
+    expect(managedDiscovery.detect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        managedAgentInvocation: expect.objectContaining({
+          credential: "credential-from-header",
+        }),
+      }),
+    );
+    expect(uncredentialedDiscovery.detect).not.toHaveBeenCalled();
   });
 
   it("keeps managed model discovery credentials out of logs", async () => {
@@ -530,6 +715,7 @@ describe("registerModelRoutes", () => {
   });
 
   it("omits local-agent models when trusted local mode is disabled", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
     const localAgentModelDiscovery = {
       detect: vi.fn(async () => [
         {
@@ -545,6 +731,9 @@ describe("registerModelRoutes", () => {
         },
       ]),
     };
+    const createManagedLocalAgentModelDiscovery = vi.fn(
+      () => localAgentModelDiscovery,
+    );
     const app = Fastify();
     apps.push(app);
     await registerModelRoutes(
@@ -552,23 +741,31 @@ describe("registerModelRoutes", () => {
       loadServerEnv(
         {
           agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
           trustedLocalAgentMode: false,
         },
         {},
       ),
       undefined,
-      { localAgentModelDiscovery },
+      {
+        createManagedLocalAgentModelDiscovery,
+        localAgentModelDiscovery,
+      },
     );
 
     const response = await app.inject({
       method: "GET",
       url: "/api/models",
+      headers: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "unused-credential",
+      },
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode, response.body).toBe(200);
     expect(response.json().models).not.toContainEqual(
       expect.objectContaining({ provider: "codex" }),
     );
     expect(localAgentModelDiscovery.detect).not.toHaveBeenCalled();
+    expect(createManagedLocalAgentModelDiscovery).not.toHaveBeenCalled();
   });
 });

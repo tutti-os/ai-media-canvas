@@ -6,6 +6,7 @@ import {
   canvasDetailSchema,
   chatMessageSchema,
   chatSessionSummarySchema,
+  localAgentProviderInfoSchema,
   modelInfoSchema,
   projectIdSchema,
   projectSummarySchema,
@@ -157,6 +158,7 @@ export const workspaceSettingsUpdateRequestSchema = workspaceSettingsSchema;
 
 export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),
+  localAgentProviders: z.array(localAgentProviderInfoSchema),
 });
 
 export const modelListRequestSchema = z.object({});

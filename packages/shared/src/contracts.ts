@@ -209,6 +209,16 @@ export const modelInfoSchema = z.object({
   source: agentModelSourceSchema.optional(),
 });
 
+export const localAgentProviderInfoSchema = z.object({
+  provider: agentRuntimeProviderSchema,
+  displayName: z.string().trim().min(1),
+  available: z.boolean(),
+  authState: z.enum(["ok", "missing", "expired", "unknown"]),
+  reason: z.string().trim().min(1).optional(),
+  defaultModelId: z.string().trim().min(1).optional(),
+  models: z.array(modelInfoSchema),
+});
+
 export const tuttiManagedProviderIdSchema = z.enum([
   "agnes",
   "openai",
@@ -372,6 +382,9 @@ export type ChatMessageCreateRequest = z.infer<
 export type ChatToolActivity = z.infer<typeof chatToolActivitySchema>;
 export type ProfileUpdateRequest = z.infer<typeof profileUpdateRequestSchema>;
 export type ModelInfo = z.infer<typeof modelInfoSchema>;
+export type LocalAgentProviderInfo = z.infer<
+  typeof localAgentProviderInfoSchema
+>;
 export type TuttiManagedProviderId = z.infer<
   typeof tuttiManagedProviderIdSchema
 >;

@@ -195,15 +195,12 @@ export function createServerDeepAgentRuntimeProvider(
       }
 
       let extraSystemPrompt: string | undefined;
-      if (
-        shouldUseTuttiSkillContext(enrichedPrompt) &&
-        runtimeEnv.tuttiCliPath
-      ) {
+      if (shouldUseTuttiSkillContext(enrichedPrompt)) {
         const tuttiSkillContext = await loadTuttiAgentSkillContextForRun({
           cwd: backendResult.sandboxDir ?? process.cwd(),
           provider: SERVER_DEEPAGENT_TUTTI_PROVIDER,
           runId: run.runId,
-          tuttiCliPath: runtimeEnv.tuttiCliPath,
+          signal: run.controller.signal,
         });
         extraSystemPrompt = formatTuttiSkillGuidance(
           tuttiSkillContext.recommendedSystemPrompt?.content,

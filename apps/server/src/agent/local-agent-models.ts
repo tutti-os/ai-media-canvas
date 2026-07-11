@@ -3,12 +3,8 @@ import {
   type AgentDetection,
   type DetectContext,
   type LocalAgentRuntime,
-  createLocalAgentRuntime,
+  createDefaultLocalAgentRuntime,
 } from "@tutti-os/agent-acp-kit";
-
-import {
-  createAimcLocalAgentProviderPlugins,
-} from "./local-agent-providers.js";
 
 type LocalAgentRuntimeDetect = LocalAgentRuntime<
   "local-agent",
@@ -25,30 +21,26 @@ export type LocalAgentModelDiscovery = {
   ) => ReturnType<LocalAgentRuntimeDetect>;
 };
 
-function createAimcLocalAgentRuntime() {
-  return createLocalAgentRuntime({
-    providers: createAimcLocalAgentProviderPlugins(),
-  });
-}
+type CreateLocalAgentRuntime = () => LocalAgentRuntime<
+  "local-agent",
+  AgentRuntimeProvider
+>;
 
-function stripRefreshFromDetectContext(
-  context?: LocalAgentModelDetectContext,
-): DetectContext | undefined {
-  if (!context?.refresh) return context;
-
-  const { refresh: _refresh, ...detectContext } = context;
-  return Object.keys(detectContext).length > 0 ? detectContext : undefined;
-}
-
-export function createDefaultLocalAgentModelDiscovery(): LocalAgentModelDiscovery {
-  let runtime = createAimcLocalAgentRuntime();
+export function createDefaultLocalAgentModelDiscovery(
+  createRuntime: CreateLocalAgentRuntime = () =>
+    createDefaultLocalAgentRuntime() as LocalAgentRuntime<
+      "local-agent",
+      AgentRuntimeProvider
+    >,
+): LocalAgentModelDiscovery {
+  let runtime = createRuntime();
 
   return {
     detect(context) {
       if (context?.refresh) {
-        runtime = createAimcLocalAgentRuntime();
+        runtime = createRuntime();
       }
-      return runtime.detect(stripRefreshFromDetectContext(context));
+      return runtime.detect(context);
     },
   };
 }
@@ -59,6 +51,26 @@ export function localAgentModelId(provider: string, modelId: string) {
   return trimmed.startsWith(`${provider}:`)
     ? trimmed
     : `${provider}:${trimmed}`;
+}
+
+export function buildLocalAgentCatalogModel(
+  provider: string,
+  model: {
+    id: string;
+    label?: string | undefined;
+    description?: string | undefined;
+  },
+): ModelInfo | null {
+  const id = localAgentModelId(provider, model.id);
+  if (!id) return null;
+
+  return {
+    id,
+    name: model.label || model.id,
+    provider,
+    source: "local-agent",
+    ...(model.description ? { description: model.description } : {}),
+  };
 }
 
 export function buildLocalAgentModels(
@@ -72,16 +84,13 @@ export function buildLocalAgentModels(
     if (!result || result.supported === false) continue;
 
     for (const model of result.models ?? []) {
-      const id = localAgentModelId(String(detection.provider), model.id);
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      models.push({
-        id,
-        name: model.label || model.id,
-        ...(model.description ? { description: model.description } : {}),
-        provider: String(detection.provider),
-        source: "local-agent",
-      });
+      const catalogModel = buildLocalAgentCatalogModel(
+        String(detection.provider),
+        model,
+      );
+      if (!catalogModel || seen.has(catalogModel.id)) continue;
+      seen.add(catalogModel.id);
+      models.push(catalogModel);
     }
   }
 

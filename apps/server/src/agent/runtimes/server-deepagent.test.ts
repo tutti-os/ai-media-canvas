@@ -19,6 +19,7 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
+  vi.unstubAllEnvs();
 });
 
 function createTempRoot() {
@@ -34,6 +35,7 @@ function writeFakeTuttiSkillCli(path: string) {
       "#!/bin/sh",
       "cat <<'JSON'",
       JSON.stringify({
+        schemaVersion: 1,
         provider: "codex",
         agentSessionId: "run-1",
         recommendedSystemPrompt: {
@@ -146,6 +148,7 @@ describe("createServerDeepAgentRuntimeProvider", () => {
     const tempRoot = createTempRoot();
     const tuttiCliPath = join(tempRoot, "tutti");
     writeFakeTuttiSkillCli(tuttiCliPath);
+    vi.stubEnv("TUTTI_CLI", tuttiCliPath);
     const { deps, resolvedAgentFactory } = createProviderDeps();
     const provider = createServerDeepAgentRuntimeProvider(deps);
 
@@ -171,6 +174,7 @@ describe("createServerDeepAgentRuntimeProvider", () => {
   });
 
   it("does not inject Tutti CLI skill guidance without TUTTI_CLI", async () => {
+    vi.stubEnv("TUTTI_CLI", "");
     const { deps, resolvedAgentFactory } = createProviderDeps();
     const provider = createServerDeepAgentRuntimeProvider(deps);
 

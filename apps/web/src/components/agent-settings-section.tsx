@@ -10,6 +10,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
+  LocalAgentProviderInfo,
   ModelInfo,
   TuttiManagedConnection,
   WorkspaceSettings,
@@ -18,12 +19,11 @@ import type {
 import { useAppTranslation } from "@/i18n";
 import {
   type AgentModelSourceTab,
-  PREFERRED_LOCAL_CLI_PROVIDER_ORDER,
-  formatLocalCliProviderLabel,
   getAgentModelSourceTab,
   getModelSourceTab,
   isApiProvider,
   isLocalCliProvider,
+  localAgentProvidersFromModelResponse,
 } from "@/lib/agent-model-groups";
 import {
   connectTuttiManagedModels,
@@ -32,11 +32,11 @@ import {
   fetchTuttiManagedConnection,
 } from "@/lib/server-api";
 import {
+  type TuttiLocalAgentManagerProvider,
   hasTuttiManagedCredentialBridge,
   openTuttiAgentManager,
   openTuttiManagedModelSettings,
   requestTuttiManagedGrant,
-  type TuttiLocalAgentManagerProvider,
 } from "@/lib/tutti-managed-credentials";
 import { AgnesQuickstartHint } from "./agnes-quickstart-hint";
 import { LocalCliProviderIcon } from "./local-cli-provider-icon";
@@ -75,12 +75,12 @@ type AgentProtocolId = "agnes" | "openai" | "google" | "vertex" | "anthropic";
 
 type ProviderModels = WorkspaceSettings["providerModels"];
 type LocalCliProviderGroup = {
+  available: boolean;
+  defaultModelId?: string | undefined;
   provider: string;
   label: string;
   models: ModelInfo[];
-};
-type LocalCliProviderDisplayGroup = LocalCliProviderGroup & {
-  installed: boolean;
+  reason?: string | undefined;
 };
 type ApiProviderPreset = {
   provider: AgentProtocolId;
@@ -91,8 +91,6 @@ type ApiProviderPreset = {
   models: string[];
 };
 
-const LOCAL_CLI_PROVIDER_ORDER = [...PREFERRED_LOCAL_CLI_PROVIDER_ORDER];
-const INSTALLABLE_LOCAL_CLI_PROVIDER_PLACEHOLDERS = ["codex", "claude"];
 const AGNES_API_KEYS_URL = "https://platform.agnes-ai.com/settings/apiKeys";
 const ANTHROPIC_API_KEYS_URL = "https://console.anthropic.com/settings/keys";
 const DEEPSEEK_API_KEYS_URL = "https://platform.deepseek.com/api_keys";
@@ -290,7 +288,7 @@ function getModelProvider(modelId: string) {
 function isTuttiManageableLocalProvider(
   provider: string,
 ): provider is TuttiLocalAgentManagerProvider {
-  return provider === "codex" || provider === "claude";
+  return provider === "codex" || provider === "claude-code";
 }
 
 function normalizeAgentSettings(
@@ -319,37 +317,24 @@ function normalizeAgentSettings(
   };
 }
 
-function groupLocalCliModels(models: ModelInfo[]): LocalCliProviderGroup[] {
-  const groups = new Map<string, LocalCliProviderGroup>();
-
-  for (const model of models) {
-    const existing = groups.get(model.provider);
-    if (existing) {
-      existing.models.push(model);
-    } else {
-      groups.set(model.provider, {
-        provider: model.provider,
-        label: formatLocalCliProviderLabel(model.provider),
-        models: [model],
-      });
-    }
-  }
-
-  return Array.from(groups.values()).sort((first, second) => {
-    const firstIndex = LOCAL_CLI_PROVIDER_ORDER.indexOf(first.provider);
-    const secondIndex = LOCAL_CLI_PROVIDER_ORDER.indexOf(second.provider);
-    const firstRank =
-      firstIndex === -1 ? LOCAL_CLI_PROVIDER_ORDER.length : firstIndex;
-    const secondRank =
-      secondIndex === -1 ? LOCAL_CLI_PROVIDER_ORDER.length : secondIndex;
-
-    if (firstRank !== secondRank) return firstRank - secondRank;
-    return first.label.localeCompare(second.label);
-  });
+function groupLocalCliProviders(
+  providers: LocalAgentProviderInfo[],
+): LocalCliProviderGroup[] {
+  return providers.map((provider) => ({
+    available: provider.available,
+    ...(provider.defaultModelId
+      ? { defaultModelId: provider.defaultModelId }
+      : {}),
+    provider: provider.provider,
+    label: provider.displayName,
+    models: provider.models,
+    ...(provider.reason ? { reason: provider.reason } : {}),
+  }));
 }
 
 function getLocalCliProviderDefaultModel(group: LocalCliProviderGroup) {
   return (
+    group.models.find((model) => model.id === group.defaultModelId) ??
     group.models.find((model) => model.id === `${group.provider}:default`) ??
     group.models.find((model) => model.id !== `${group.provider}:default`) ??
     group.models[0] ??
@@ -734,34 +719,7 @@ function LocalCliProviderModelPicker({
   const { t } = useAppTranslation("settings");
   const activeGroup =
     providerGroups.find((group) => group.provider === activeProvider) ?? null;
-  const displayGroups = useMemo<LocalCliProviderDisplayGroup[]>(() => {
-    const groups = new Map<string, LocalCliProviderDisplayGroup>();
-
-    for (const provider of INSTALLABLE_LOCAL_CLI_PROVIDER_PLACEHOLDERS) {
-      groups.set(provider, {
-        provider,
-        label: formatLocalCliProviderLabel(provider),
-        models: [],
-        installed: false,
-      });
-    }
-
-    for (const group of providerGroups) {
-      groups.set(group.provider, { ...group, installed: true });
-    }
-
-    return Array.from(groups.values()).sort((first, second) => {
-      const firstIndex = LOCAL_CLI_PROVIDER_ORDER.indexOf(first.provider);
-      const secondIndex = LOCAL_CLI_PROVIDER_ORDER.indexOf(second.provider);
-      const firstRank =
-        firstIndex === -1 ? LOCAL_CLI_PROVIDER_ORDER.length : firstIndex;
-      const secondRank =
-        secondIndex === -1 ? LOCAL_CLI_PROVIDER_ORDER.length : secondIndex;
-
-      if (firstRank !== secondRank) return firstRank - secondRank;
-      return first.label.localeCompare(second.label);
-    });
-  }, [providerGroups]);
+  const displayGroups = providerGroups;
 
   return (
     <section className="space-y-4">
@@ -792,7 +750,7 @@ function LocalCliProviderModelPicker({
                 const openingManager =
                   openingManagerProvider === group.provider;
                 const canManage =
-                  !group.installed &&
+                  !group.available &&
                   isTuttiManageableLocalProvider(group.provider);
 
                 return (
@@ -802,10 +760,13 @@ function LocalCliProviderModelPicker({
                     aria-pressed={selected}
                     aria-busy={openingManager}
                     disabled={
-                      openingManager || (!group.installed && !canManage)
+                      openingManager ||
+                      (group.available
+                        ? group.models.length === 0
+                        : !canManage)
                     }
                     onClick={() => {
-                      if (!group.installed) {
+                      if (!group.available) {
                         if (isTuttiManageableLocalProvider(group.provider)) {
                           onManageProvider(group.provider);
                         }
@@ -819,7 +780,7 @@ function LocalCliProviderModelPicker({
                       }
                     }}
                     className={`flex min-h-20 w-full items-center gap-3 rounded-xl border bg-background p-3 text-left transition-colors ${
-                      !group.installed
+                      !group.available
                         ? "border-border hover:border-accent/40 hover:bg-background/70"
                         : selected
                           ? "border-accent bg-accent/10 shadow-sm"
@@ -839,7 +800,7 @@ function LocalCliProviderModelPicker({
                       <span className="mt-1 block truncate text-xs text-muted-foreground">
                         {openingManager
                           ? t("agentSettings.local.openingManager")
-                          : group.installed
+                          : group.available
                             ? group.models.length === 1
                               ? t("agentSettings.local.modelCountOne", {
                                   modelCount: group.models.length,
@@ -847,7 +808,8 @@ function LocalCliProviderModelPicker({
                               : t("agentSettings.local.modelCountOther", {
                                   modelCount: group.models.length,
                                 })
-                            : t("agentSettings.local.manageInTutti")}
+                            : (group.reason ??
+                              t("agentSettings.local.manageInTutti"))}
                       </span>
                     </span>
                     {openingManager ? (
@@ -891,6 +853,9 @@ export function AgentSettingsSection({
     normalizeAgentSettings(initialSettings),
   );
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [localAgentProviders, setLocalAgentProviders] = useState<
+    LocalAgentProviderInfo[]
+  >([]);
   const [tuttiManagedConnection, setTuttiManagedConnection] =
     useState<TuttiManagedConnection>({
       connected: false,
@@ -930,23 +895,28 @@ export function AgentSettingsSection({
     setActiveSourceTab(initialSourceTab);
   }, [initialSourceTab]);
 
-  const refreshAvailableModels = useCallback(async (options?: {
-    refreshLocalAgents?: boolean;
-  }) => {
-    try {
-      const modelRequest = options?.refreshLocalAgents
-        ? fetchModels({ refresh: true })
-        : fetchModels();
-      const [response, connectionResponse] = await Promise.all([
-        modelRequest,
-        fetchTuttiManagedConnection(),
-      ]);
-      setAvailableModels(response.models);
-      setTuttiManagedConnection(connectionResponse.connection);
-    } catch {
-      setAvailableModels([]);
-    }
-  }, []);
+  const refreshAvailableModels = useCallback(
+    async (options?: {
+      refreshLocalAgents?: boolean;
+    }) => {
+      try {
+        const modelRequest = options?.refreshLocalAgents
+          ? fetchModels({ refresh: true })
+          : fetchModels();
+        const [response, connectionResponse] = await Promise.all([
+          modelRequest,
+          fetchTuttiManagedConnection(),
+        ]);
+        setAvailableModels(response.models);
+        setLocalAgentProviders(localAgentProvidersFromModelResponse(response));
+        setTuttiManagedConnection(connectionResponse.connection);
+      } catch {
+        setAvailableModels([]);
+        setLocalAgentProviders([]);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     void refreshAvailableModels();
@@ -969,13 +939,6 @@ export function AgentSettingsSection({
   );
   const normalizedCurrent = JSON.stringify(settings);
   const hasChanges = normalizedInitial !== normalizedCurrent;
-  const localCliModels = useMemo(
-    () =>
-      availableModels.filter(
-        (model) => getModelSourceTab(model) === "local-agent",
-      ),
-    [availableModels],
-  );
   const tuttiManagedModels = useMemo(
     () =>
       availableModels.filter(
@@ -984,8 +947,8 @@ export function AgentSettingsSection({
     [availableModels],
   );
   const localCliProviderGroups = useMemo(
-    () => groupLocalCliModels(localCliModels),
-    [localCliModels],
+    () => groupLocalCliProviders(localAgentProviders),
+    [localAgentProviders],
   );
   const localCliProviderCount = localCliProviderGroups.length;
   const selectedLocalProvider = getModelProvider(settings.defaultModel);

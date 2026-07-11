@@ -8,9 +8,9 @@ describe("isLocalAgentRuntimeRequested", () => {
     expect(isLocalAgentRuntimeRequested({ runtimeKind: "local-agent" })).toBe(
       true,
     );
-    expect(isLocalAgentRuntimeRequested({ runtimeProvider: "claude" })).toBe(
-      true,
-    );
+    expect(
+      isLocalAgentRuntimeRequested({ runtimeProvider: "claude-code" }),
+    ).toBe(true);
   });
 
   it("detects registered local agent model prefixes", () => {

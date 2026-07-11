@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthenticatedUser } from "../../auth/types.js";
 import { loadServerEnv } from "../../config/env.js";
 import { createLocalStore } from "../../local/store.js";
-import { createSettingsService } from "./settings-service.js";
+import {
+  createSettingsService,
+  normalizeWorkspaceSettings,
+} from "./settings-service.js";
 
 const tempDirs: string[] = [];
 
@@ -23,6 +26,17 @@ const LOCAL_USER: AuthenticatedUser = {
 };
 
 describe("createSettingsService", () => {
+  it("migrates only the historical Claude input alias", () => {
+    expect(
+      normalizeWorkspaceSettings({ defaultModel: "claude:sonnet" })
+        .defaultModel,
+    ).toBe("claude-code:sonnet");
+    expect(
+      normalizeWorkspaceSettings({ defaultModel: "nexight:default" })
+        .defaultModel,
+    ).toBe("nexight:default");
+  });
+
   it("uses Agnes built-in defaults when only Agnes API key is configured", async () => {
     const env = loadServerEnv(
       {},

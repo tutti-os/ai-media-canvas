@@ -13,6 +13,7 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type {
   AgentEvent,
+  DetectContext,
   LocalAgentProviderPlugin,
   LocalAgentRuntime,
   ManagedAgentRunContext,
@@ -119,6 +120,10 @@ export type LoadCanvasSummaryForRuntime = (
 ) => Promise<string | null>;
 
 export type LocalAgentRuntimeProviderDeps = {
+  assertLocalAgentProviderAvailable: (input: {
+    detectContext: DetectContext;
+    provider: AgentRuntimeProvider;
+  }) => Promise<void>;
   buildAttachmentDataMap: BuildAttachmentDataMap;
   buildUserMessage: BuildUserMessage;
   createRunDirectory?: (input: {

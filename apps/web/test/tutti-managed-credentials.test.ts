@@ -161,13 +161,13 @@ describe("Tutti managed credential bridge", () => {
     });
   });
 
-  it("maps the local Claude provider to the Tutti bridge provider id", async () => {
+  it("passes the canonical Claude Code provider to the Tutti bridge", async () => {
     const openFeature = vi.fn().mockResolvedValue(undefined);
     setHostBridge({
       workspace: { openFeature },
     });
 
-    await openTuttiAgentManager("claude");
+    await openTuttiAgentManager("claude-code");
 
     expect(openFeature).toHaveBeenCalledWith({
       feature: "agent-manage",

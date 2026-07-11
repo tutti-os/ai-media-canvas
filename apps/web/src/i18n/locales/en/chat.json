@@ -15,6 +15,7 @@
     "noLocalCliModels": "No local CLI models detected.",
     "noTuttiManagedModels": "No Tutti Managed models connected.",
     "openSettings": "Open agent settings",
+    "providerUnavailable": "This provider is unavailable.",
     "settings": "Settings",
     "tooltip": "Select agent model",
     "tuttiManaged": "Tutti Managed",
