@@ -47,6 +47,16 @@ function createEnv(): ServerEnv {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
 function createContextToken(env: ServerEnv) {
   const payload = {
     appId: env.tuttiAppId,
@@ -284,6 +294,338 @@ describe("createTuttiManagedCredentialService", () => {
     expect(modelBEnv.agnesApiKey).toBe("key-for-model-b");
     expect(modelAEnvAgain.agnesApiKey).toBe("key-for-model-a");
     expect(requestedModels).toEqual(["model-a", "model-b"]);
+  });
+
+  it("caps exported credentials at five minutes and refreshes before the lease expires", async () => {
+    const env = createEnv();
+    let nowMs = Date.now();
+    let requestCount = 0;
+    const store = createStore();
+    const service = createTuttiManagedCredentialService({
+      env,
+      exchangeClient: async () => ({
+        grantRef: "grant-ref",
+        models: [
+          {
+            id: "gpt-5.1",
+            name: "GPT-5.1",
+            provider: "openai",
+          },
+        ],
+        providers: ["openai"],
+      }),
+      now: () => nowMs,
+      providerCredentialClient: async () => {
+        requestCount += 1;
+        return {
+          credential: {
+            provider: "openai",
+            apiKey: `managed-key-${requestCount}`,
+          },
+          expiresAt: new Date(nowMs + 5 * 60 * 60 * 1000).toISOString(),
+        };
+      },
+      store,
+    });
+    await connectService(service, env);
+
+    const first = await service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+    const leaseExpiryMs = Date.parse(
+      store.getTuttiManagedConnection().expiresAt ?? "",
+    );
+    expect(leaseExpiryMs).toBe(nowMs + 5 * 60 * 1000);
+
+    nowMs += 4 * 60 * 1000 + 29 * 1000;
+    const cached = await service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+    expect(cached.openAIApiKey).toBe("managed-key-1");
+
+    nowMs += 2 * 1000;
+    const refreshed = await service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+    expect(refreshed.openAIApiKey).toBe("managed-key-2");
+    expect(requestCount).toBe(2);
+  });
+
+  it("preserves a shorter upstream lease and rejects invalid or expired leases", async () => {
+    const env = createEnv();
+    const nowMs = Date.now();
+    const store = createStore();
+    const expiries = [
+      new Date(nowMs + 2 * 60 * 1000).toISOString(),
+      "not-an-expiry",
+      new Date(nowMs - 1).toISOString(),
+    ];
+    const service = createTuttiManagedCredentialService({
+      env,
+      exchangeClient: async () => ({
+        grantRef: "grant-ref",
+        models: [{ id: "gpt-5.1", name: "GPT-5.1", provider: "openai" }],
+        providers: ["openai"],
+      }),
+      now: () => nowMs,
+      providerCredentialClient: async () => {
+        const expiresAt = expiries.shift();
+        if (!expiresAt) throw new Error("missing test expiry");
+        return {
+          credential: { provider: "openai", apiKey: "managed-key" },
+          expiresAt,
+        };
+      },
+      store,
+    });
+    await connectService(service, env);
+
+    await service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+    expect(Date.parse(store.getTuttiManagedConnection().expiresAt ?? "")).toBe(
+      nowMs + 2 * 60 * 1000,
+    );
+
+    await service.clearConnection();
+    await connectService(service, env);
+    await expect(
+      service.resolveEnvForModel(
+        createEnv(),
+        "tutti:openai:gpt-5.1",
+        "tutti-managed",
+      ),
+    ).rejects.toThrow("expiry is invalid or expired");
+
+    await service.clearConnection();
+    await connectService(service, env);
+    await expect(
+      service.resolveEnvForModel(
+        createEnv(),
+        "tutti:openai:gpt-5.1",
+        "tutti-managed",
+      ),
+    ).rejects.toThrow("expiry is invalid or expired");
+  });
+
+  it("deduplicates concurrent credential requests for the same grant and model", async () => {
+    const env = createEnv();
+    const deferred = createDeferred<{
+      credential: { provider: "openai"; apiKey: string };
+      expiresAt: string;
+    }>();
+    let requestCount = 0;
+    const service = createTuttiManagedCredentialService({
+      env,
+      exchangeClient: async () => ({
+        grantRef: "grant-ref",
+        models: [{ id: "gpt-5.1", name: "GPT-5.1", provider: "openai" }],
+        providers: ["openai"],
+      }),
+      providerCredentialClient: async () => {
+        requestCount += 1;
+        return deferred.promise;
+      },
+      store: createStore(),
+    });
+    await connectService(service, env);
+
+    const first = service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+    const second = service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+    expect(requestCount).toBe(1);
+    deferred.resolve({
+      credential: { provider: "openai", apiKey: "managed-key" },
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    await expect(Promise.all([first, second])).resolves.toMatchObject([
+      { openAIApiKey: "managed-key" },
+      { openAIApiKey: "managed-key" },
+    ]);
+  });
+
+  it("does not invalidate active credentials for rejected connect attempts", async () => {
+    const env = createEnv();
+    let requestCount = 0;
+    const service = createTuttiManagedCredentialService({
+      env,
+      exchangeClient: async () => ({
+        grantRef: "grant-ref",
+        models: [{ id: "gpt-5.1", name: "GPT-5.1", provider: "openai" }],
+        providers: ["openai"],
+      }),
+      providerCredentialClient: async () => {
+        requestCount += 1;
+        return {
+          credential: { provider: "openai", apiKey: "managed-key" },
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        };
+      },
+      store: createStore(),
+    });
+    await connectService(service, env);
+    await service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+
+    await expect(
+      service.connect({
+        contextToken: createContextToken(env),
+        grantCode: "invalid-challenge-code",
+        nonce: "invalid-challenge-nonce",
+        state: "invalid-challenge-state",
+      }),
+    ).rejects.toThrow("Invalid Tutti Managed connect challenge");
+
+    const challenge = service.createConnectChallenge();
+    await expect(
+      service.connect({
+        contextToken: "invalid-context-token",
+        grantCode: "invalid-token-code",
+        nonce: challenge.nonce,
+        state: challenge.state,
+      }),
+    ).rejects.toThrow("Invalid Tutti context token");
+
+    await service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+    expect(requestCount).toBe(1);
+  });
+
+  it("does not overwrite a shorter credential lease with a stale model catalog snapshot", async () => {
+    const env = createEnv();
+    const nowMs = Date.now();
+    const catalog = createDeferred<{
+      models: [{ id: string; name: string; provider: "openai" }];
+    }>();
+    const store = createStore();
+    const service = createTuttiManagedCredentialService({
+      env,
+      exchangeClient: async () => ({
+        grantRef: "grant-ref",
+        models: [{ id: "gpt-5.1", name: "GPT-5.1", provider: "openai" }],
+        providers: ["openai"],
+      }),
+      modelCatalogClient: async () => catalog.promise,
+      now: () => nowMs,
+      providerCredentialClient: async () => ({
+        credential: { provider: "openai", apiKey: "managed-key" },
+        expiresAt: new Date(nowMs + 2 * 60 * 1000).toISOString(),
+      }),
+      store,
+    });
+    await connectService(service, env);
+
+    const pendingCatalog = service.listModels();
+    await service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+    catalog.resolve({
+      models: [{ id: "gpt-5.1", name: "GPT-5.1", provider: "openai" }],
+    });
+    await pendingCatalog;
+
+    expect(Date.parse(store.getTuttiManagedConnection().expiresAt ?? "")).toBe(
+      nowMs + 2 * 60 * 1000,
+    );
+  });
+
+  it("does not restore a cleared connection from an in-flight credential request", async () => {
+    const env = createEnv();
+    const deferred = createDeferred<{
+      credential: { provider: "openai"; apiKey: string };
+      expiresAt: string;
+    }>();
+    const store = createStore();
+    const service = createTuttiManagedCredentialService({
+      env,
+      exchangeClient: async () => ({
+        grantRef: "grant-ref",
+        models: [{ id: "gpt-5.1", name: "GPT-5.1", provider: "openai" }],
+        providers: ["openai"],
+      }),
+      providerCredentialClient: async () => deferred.promise,
+      store,
+    });
+    await connectService(service, env);
+
+    const pending = service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+    await service.clearConnection();
+    deferred.resolve({
+      credential: { provider: "openai", apiKey: "stale-key" },
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    await expect(pending).rejects.toThrow("request became stale");
+    expect(store.getTuttiManagedConnection().connected).toBe(false);
+  });
+
+  it("does not overwrite a reconnected grant from an older credential request", async () => {
+    const env = createEnv();
+    const deferred = createDeferred<{
+      credential: { provider: "openai"; apiKey: string };
+      expiresAt: string;
+    }>();
+    const store = createStore();
+    let exchangeCount = 0;
+    const service = createTuttiManagedCredentialService({
+      env,
+      exchangeClient: async () => {
+        exchangeCount += 1;
+        return {
+          grantRef: `grant-ref-${exchangeCount}`,
+          models: [{ id: "gpt-5.1", name: "GPT-5.1", provider: "openai" }],
+          providers: ["openai" as const],
+        };
+      },
+      providerCredentialClient: async () => deferred.promise,
+      store,
+    });
+    await connectService(service, env);
+    const pending = service.resolveEnvForModel(
+      createEnv(),
+      "tutti:openai:gpt-5.1",
+      "tutti-managed",
+    );
+
+    await connectService(service, env);
+    deferred.resolve({
+      credential: { provider: "openai", apiKey: "stale-key" },
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    await expect(pending).rejects.toThrow("request became stale");
+    expect(store.getTuttiManagedConnection()).toMatchObject({
+      connected: true,
+      grantRef: "grant-ref-2",
+    });
   });
 
   it("treats stored grants as disconnected when Tutti runtime env is not configured", async () => {
