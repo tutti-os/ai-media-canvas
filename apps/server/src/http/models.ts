@@ -278,14 +278,15 @@ export async function registerModelRoutes(
     const managedAgentDetectContext = input.headers
       ? createManagedAgentDetectContextFromHeaders(input.headers)
       : undefined;
-    const localAgentModelDiscovery = managedAgentDetectContext
-      ? createManagedLocalAgentModelDiscovery()
-      : uncredentialedLocalAgentModelDiscovery;
     const result = await listAgentModelCatalog({
       env,
       logger: app.log,
-      localAgentModelDiscovery,
-      ...(managedAgentDetectContext ? { managedAgentDetectContext } : {}),
+      ...(managedAgentDetectContext
+        ? {
+            createManagedLocalAgentModelDiscovery,
+            managedAgentDetectContext,
+          }
+        : { localAgentModelDiscovery: uncredentialedLocalAgentModelDiscovery }),
       ...(input.refreshLocalAgentModels
         ? { refreshLocalAgentModels: true }
         : {}),
@@ -315,6 +316,7 @@ export async function registerModelRoutes(
 }
 
 export type ListAgentModelsOptions = {
+  createManagedLocalAgentModelDiscovery?: () => LocalAgentModelDiscovery;
   env: ServerEnv;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
@@ -422,7 +424,11 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
       process.env.TUTTI_WORKSPACE_ROOT?.trim() ||
       localAgentDetectContext?.cwd?.trim();
     try {
-      const localAgentModelDiscovery = options.localAgentModelDiscovery;
+      const localAgentModelDiscovery =
+        options.managedAgentDetectContext &&
+        options.createManagedLocalAgentModelDiscovery
+          ? options.createManagedLocalAgentModelDiscovery()
+          : options.localAgentModelDiscovery;
       const localAgentRuntime = createDefaultLocalAgentRuntime();
       const runtime = localAgentModelDiscovery
         ? {

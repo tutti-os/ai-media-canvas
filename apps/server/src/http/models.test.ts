@@ -683,6 +683,7 @@ describe("registerModelRoutes", () => {
   });
 
   it("omits local-agent models when trusted local mode is disabled", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
     const localAgentModelDiscovery = {
       detect: vi.fn(async () => [
         {
@@ -698,6 +699,9 @@ describe("registerModelRoutes", () => {
         },
       ]),
     };
+    const createManagedLocalAgentModelDiscovery = vi.fn(
+      () => localAgentModelDiscovery,
+    );
     const app = Fastify();
     apps.push(app);
     await registerModelRoutes(
@@ -705,23 +709,31 @@ describe("registerModelRoutes", () => {
       loadServerEnv(
         {
           agentModel: "openai:gpt-4.1",
+          appDataDir: "/tmp/aimc-app-data",
           trustedLocalAgentMode: false,
         },
         {},
       ),
       undefined,
-      { localAgentModelDiscovery },
+      {
+        createManagedLocalAgentModelDiscovery,
+        localAgentModelDiscovery,
+      },
     );
 
     const response = await app.inject({
       method: "GET",
       url: "/api/models",
+      headers: {
+        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "unused-credential",
+      },
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode, response.body).toBe(200);
     expect(response.json().models).not.toContainEqual(
       expect.objectContaining({ provider: "codex" }),
     );
     expect(localAgentModelDiscovery.detect).not.toHaveBeenCalled();
+    expect(createManagedLocalAgentModelDiscovery).not.toHaveBeenCalled();
   });
 });
