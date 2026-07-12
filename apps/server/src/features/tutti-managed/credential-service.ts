@@ -1,9 +1,4 @@
-import {
-  createHmac,
-  randomBytes,
-  randomUUID,
-  timingSafeEqual,
-} from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import type {
   AgentModelSource,
@@ -16,12 +11,12 @@ import type {
 
 import type { ServerEnv } from "../../config/env.js";
 import type { LocalStore } from "../../local/store.js";
+import { invokeTuttiManagedModelCli } from "./tutti-cli-client.js";
 
-const PROVIDER_CREDENTIAL_TTL_MS = 5 * 60 * 1000;
-const PROVIDER_CREDENTIAL_REFRESH_WINDOW_MS = 30 * 1000;
+const PROVIDER_CREDENTIAL_TTL_MS = 5 * 60 * 60 * 1000;
+const PROVIDER_CREDENTIAL_REFRESH_WINDOW_MS = 10 * 60 * 1000;
 const CONNECT_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const MANAGED_MODEL_ID_PREFIX = "tutti";
-const MANAGED_RESPONSE_MAX_BYTES = 512 * 1024 + 4 * 1024;
 
 export type TuttiManagedProviderCredential = {
   provider: TuttiManagedProviderId;
@@ -79,11 +74,6 @@ type CachedCredential = {
   expiresAtMs: number;
 };
 
-type InFlightCredential = {
-  epoch: number;
-  promise: Promise<TuttiManagedProviderCredential>;
-};
-
 type StoredChallenge = {
   expiresAtMs: number;
   nonce: string;
@@ -111,9 +101,6 @@ export function createTuttiManagedCredentialService(options: {
 }) {
   const cache = new Map<string, CachedCredential>();
   const challenges = new Map<string, StoredChallenge>();
-  const inFlightCredentials = new Map<string, InFlightCredential>();
-  let connectAttemptEpoch = 0;
-  let connectionEpoch = 0;
   const now = options.now ?? (() => Date.now());
   const exchangeClient =
     options.exchangeClient ?? createDefaultTuttiManagedExchangeClient();
@@ -151,26 +138,19 @@ export function createTuttiManagedCredentialService(options: {
 
   async function clearConnection() {
     const connection = options.store.getTuttiManagedConnection();
-    supersedeConnectAttempts();
-    invalidateCredentialState();
-    options.store.clearTuttiManagedConnection();
-    if (
-      connection.grantRef &&
-      isTuttiManagedBaseRuntimeConfigured(options.env)
-    ) {
+    if (connection.grantRef && isTuttiManagedRuntimeConfigured(options.env)) {
+      clearGrantCache(connection.grantRef);
       await revokeClient({
         env: options.env,
         grantRef: connection.grantRef,
       }).catch(() => undefined);
     }
+    options.store.clearTuttiManagedConnection();
     return options.store.getTuttiManagedConnection();
   }
 
   async function connect(input: TuttiManagedGrantRequest) {
-    requireTuttiManagedRuntimeConfigured(options.env);
     consumeConnectChallenge(input.state, input.nonce);
-    verifyContextToken(options.env, input.contextToken);
-    const connectEpoch = supersedeConnectAttempts();
     const exchange = await exchangeClient({
       contextToken: input.contextToken,
       env: options.env,
@@ -178,9 +158,6 @@ export function createTuttiManagedCredentialService(options: {
       nonce: input.nonce,
       state: input.state,
     });
-    if (connectEpoch !== connectAttemptEpoch) {
-      throw new Error("Tutti Managed connection request became stale.");
-    }
     const expiresAt = normalizeCredentialExpiry(exchange.expiresAt, now());
     const models = normalizeModels(
       exchange.models?.length ? exchange.models : (input.models ?? []),
@@ -189,7 +166,6 @@ export function createTuttiManagedCredentialService(options: {
       input.providers?.length ? input.providers : exchange.providers,
     );
 
-    invalidateCredentialState();
     return options.store.updateTuttiManagedConnection({
       connected: true,
       grantRef: exchange.grantRef,
@@ -202,22 +178,17 @@ export function createTuttiManagedCredentialService(options: {
   async function listModels() {
     const connection = getConnection();
     if (!connection.connected || !connection.grantRef) return [];
-    const requestEpoch = connectionEpoch;
     try {
       const catalog = await modelCatalogClient({
         env: options.env,
         grantRef: connection.grantRef,
       });
       const models = normalizeModels(catalog.models);
-      const currentConnection = requireCurrentConnection(
-        requestEpoch,
-        connection.grantRef,
-      );
       options.store.updateTuttiManagedConnection({
-        ...currentConnection,
+        ...connection,
         expiresAt: catalog.expiresAt
           ? normalizeCredentialExpiry(catalog.expiresAt, now())
-          : currentConnection.expiresAt,
+          : connection.expiresAt,
         models,
       });
       return models.map((model) => ({
@@ -225,13 +196,7 @@ export function createTuttiManagedCredentialService(options: {
         source: "tutti-managed" as const,
       }));
     } catch {
-      const currentConnection = getConnection();
-      const models =
-        currentConnection.connected &&
-        currentConnection.grantRef === connection.grantRef
-          ? currentConnection.models
-          : [];
-      return models.map((model) => ({
+      return connection.models.map((model) => ({
         ...model,
         source: "tutti-managed" as const,
       }));
@@ -289,12 +254,9 @@ export function createTuttiManagedCredentialService(options: {
     if (!connection.grantRef) {
       throw new Error("Tutti Managed connection is missing grantRef.");
     }
-    pruneCredentialCache();
-    const requestEpoch = connectionEpoch;
-    const grantRef = connection.grantRef;
     const cacheKey = credentialCacheKey({
       capability,
-      grantRef,
+      grantRef: connection.grantRef,
       model,
       provider,
     });
@@ -306,47 +268,27 @@ export function createTuttiManagedCredentialService(options: {
       return cached.credential;
     }
 
-    const existing = inFlightCredentials.get(cacheKey);
-    if (existing?.epoch === requestEpoch) {
-      return existing.promise;
-    }
-
-    const promise = (async () => {
-      const result = await providerCredentialClient({
-        capability,
-        env: options.env,
-        grantRef,
-        model,
-        provider,
-      });
-      const expiresAt = normalizeCredentialExpiry(result.expiresAt, now());
-      const credential = normalizeCredential(result.credential);
-      const currentConnection = requireCurrentConnection(
-        requestEpoch,
-        grantRef,
-      );
-      cache.set(cacheKey, {
-        credential,
-        expiresAtMs: Date.parse(expiresAt),
-      });
-      options.store.updateTuttiManagedConnection({
-        ...currentConnection,
-        expiresAt,
-        ...(result.models?.length
-          ? { models: normalizeModels(result.models) }
-          : {}),
-      });
-      return credential;
-    })();
-    const inFlight = { epoch: requestEpoch, promise };
-    inFlightCredentials.set(cacheKey, inFlight);
-    try {
-      return await promise;
-    } finally {
-      if (inFlightCredentials.get(cacheKey) === inFlight) {
-        inFlightCredentials.delete(cacheKey);
-      }
-    }
+    const result = await providerCredentialClient({
+      capability,
+      env: options.env,
+      grantRef: connection.grantRef,
+      model,
+      provider,
+    });
+    const expiresAt = normalizeCredentialExpiry(result.expiresAt, now());
+    const credential = normalizeCredential(result.credential);
+    cache.set(cacheKey, {
+      credential,
+      expiresAtMs: Date.parse(expiresAt),
+    });
+    options.store.updateTuttiManagedConnection({
+      ...connection,
+      expiresAt,
+      ...(result.models?.length
+        ? { models: normalizeModels(result.models) }
+        : {}),
+    });
+    return credential;
   }
 
   return {
@@ -359,37 +301,12 @@ export function createTuttiManagedCredentialService(options: {
     resolveEnvForModel,
   };
 
-  function invalidateCredentialState() {
-    connectionEpoch += 1;
-    cache.clear();
-    inFlightCredentials.clear();
-    return connectionEpoch;
-  }
-
-  function supersedeConnectAttempts() {
-    connectAttemptEpoch += 1;
-    return connectAttemptEpoch;
-  }
-
-  function pruneCredentialCache() {
-    const current = now();
-    for (const [key, cached] of cache.entries()) {
-      if (cached.expiresAtMs <= current) {
+  function clearGrantCache(grantRef: string) {
+    for (const key of cache.keys()) {
+      if (key.startsWith(`${grantRef}\u0000`)) {
         cache.delete(key);
       }
     }
-  }
-
-  function requireCurrentConnection(epoch: number, grantRef: string) {
-    const currentConnection = getConnection();
-    if (
-      epoch !== connectionEpoch ||
-      !currentConnection.connected ||
-      currentConnection.grantRef !== grantRef
-    ) {
-      throw new Error("Tutti Managed credential request became stale.");
-    }
-    return currentConnection;
   }
 
   function consumeConnectChallenge(state: string, nonce: string) {
@@ -417,285 +334,54 @@ export function createTuttiManagedCredentialService(options: {
 
 function createDefaultTuttiManagedExchangeClient(): TuttiManagedExchangeClient {
   return async ({ contextToken, env, grantCode, nonce, state }) => {
-    requireTuttiManagedRuntimeConfigured(env);
-    const { token, url } = createTuttiManagedGrantCollectionUrl(env);
-    url.pathname = `${url.pathname}/exchange`;
-    const body = JSON.stringify({
-      contextToken,
-      grantCode,
-      installationId: env.tuttiAppInstallationId,
-      nonce,
-      state,
-    });
-    const payload = await fetchManagedGrantJson(
-      url,
-      {
-        body,
-        headers: {
-          authorization: `Bearer ${token}`,
-          "content-type": "application/json",
-        },
-        method: "POST",
-      },
-      "Tutti Managed exchange failed",
+    return normalizeExchangePayload(
+      await invokeTuttiManagedModelCli(
+        env,
+        ["managed-model", "grant", "exchange"],
+        { contextToken, grantCode, nonce, state },
+      ),
     );
-
-    return normalizeExchangePayload(payload);
   };
 }
 
 function createDefaultTuttiManagedModelCatalogClient(): TuttiManagedModelCatalogClient {
   return async ({ env, grantRef }) => {
-    const { token, url } = createTuttiManagedGrantUrl(env, grantRef);
-    url.pathname = `${url.pathname}/models`;
-    const payload = await fetchManagedGrantJson(
-      url,
-      {
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-        method: "GET",
-      },
-      "Tutti Managed models failed",
+    return normalizeModelCatalogPayload(
+      await invokeTuttiManagedModelCli(env, ["managed-model", "models"], {
+        grantRef,
+      }),
     );
-
-    return normalizeModelCatalogPayload(payload);
   };
 }
 
 function createDefaultTuttiManagedProviderCredentialClient(): TuttiManagedProviderCredentialClient {
   return async ({ capability, env, grantRef, model, provider }) => {
-    const { token, url } = createTuttiManagedGrantUrl(env, grantRef);
-    url.pathname = `${url.pathname}/credentials`;
-    const body = JSON.stringify({ capability, model, provider });
-    const payload = await fetchManagedGrantJson(
-      url,
-      {
-        body,
-        headers: {
-          authorization: `Bearer ${token}`,
-          "content-type": "application/json",
-        },
-        method: "POST",
-      },
-      "Tutti Managed credential failed",
+    return normalizeCredentialPayload(
+      await invokeTuttiManagedModelCli(env, ["managed-model", "credential"], {
+        capability,
+        grantRef,
+        model,
+        provider,
+      }),
     );
-
-    return normalizeCredentialPayload(payload);
   };
 }
 
 function createDefaultTuttiManagedRevokeClient(): TuttiManagedRevokeClient {
   return async ({ env, grantRef }) => {
-    const { token, url } = createTuttiManagedGrantUrl(env, grantRef);
-    await fetchManagedGrant(
-      url,
-      {
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-        method: "DELETE",
-      },
-      async (response) => {
-        await discardResponseBody(response);
-        if (!response.ok && response.status !== 404) {
-          throw new Error(`Tutti Managed revoke failed: ${response.status}`);
-        }
-      },
-    );
+    await invokeTuttiManagedModelCli(env, ["managed-model", "revoke"], {
+      grantRef,
+    });
   };
-}
-
-function createTuttiManagedGrantCollectionUrl(env: ServerEnv) {
-  requireTuttiManagedBaseRuntimeConfigured(env);
-
-  return {
-    token: env.tuttiAppServerToken,
-    url: new URL(
-      `/v1/workspaces/${encodeURIComponent(
-        env.tuttiWorkspaceId,
-      )}/apps/${encodeURIComponent(env.tuttiAppId)}/managed-model-grants`,
-      env.tuttiApiBaseUrl,
-    ),
-  };
-}
-
-function isTuttiManagedBaseRuntimeConfigured(
-  env: ServerEnv,
-): env is ServerEnv &
-  Required<
-    Pick<
-      ServerEnv,
-      | "tuttiApiBaseUrl"
-      | "tuttiAppId"
-      | "tuttiAppServerToken"
-      | "tuttiWorkspaceId"
-    >
-  > {
-  return Boolean(
-    env.tuttiApiBaseUrl &&
-      env.tuttiWorkspaceId &&
-      env.tuttiAppId &&
-      env.tuttiAppServerToken,
-  );
 }
 
 function isTuttiManagedRuntimeConfigured(
   env: ServerEnv,
 ): env is ServerEnv &
   Required<
-    Pick<
-      ServerEnv,
-      | "tuttiApiBaseUrl"
-      | "tuttiAppId"
-      | "tuttiAppInstallationId"
-      | "tuttiAppServerToken"
-      | "tuttiWorkspaceId"
-    >
+    Pick<ServerEnv, "tuttiCliPath" | "tuttiAppId" | "tuttiWorkspaceId">
   > {
-  return Boolean(
-    env.tuttiApiBaseUrl &&
-      env.tuttiWorkspaceId &&
-      env.tuttiAppId &&
-      env.tuttiAppInstallationId &&
-      env.tuttiAppServerToken,
-  );
-}
-
-function requireTuttiManagedRuntimeConfigured(
-  env: ServerEnv,
-): asserts env is ServerEnv &
-  Required<
-    Pick<
-      ServerEnv,
-      | "tuttiApiBaseUrl"
-      | "tuttiAppId"
-      | "tuttiAppInstallationId"
-      | "tuttiAppServerToken"
-      | "tuttiWorkspaceId"
-    >
-  > {
-  if (!isTuttiManagedRuntimeConfigured(env)) {
-    throw new Error("Tutti Managed runtime environment is not configured.");
-  }
-}
-
-function requireTuttiManagedBaseRuntimeConfigured(
-  env: ServerEnv,
-): asserts env is ServerEnv &
-  Required<
-    Pick<
-      ServerEnv,
-      | "tuttiApiBaseUrl"
-      | "tuttiAppId"
-      | "tuttiAppServerToken"
-      | "tuttiWorkspaceId"
-    >
-  > {
-  if (!isTuttiManagedBaseRuntimeConfigured(env)) {
-    throw new Error("Tutti Managed runtime environment is not configured.");
-  }
-}
-
-async function fetchManagedGrantJson(
-  url: URL,
-  init: RequestInit,
-  errorPrefix: string,
-) {
-  return fetchManagedGrant(url, init, async (response) => {
-    if (!response.ok) {
-      await discardResponseBody(response);
-      throw new Error(`${errorPrefix}: ${response.status}`);
-    }
-    return readBoundedJsonResponse(response);
-  });
-}
-
-async function fetchManagedGrant<T>(
-  url: URL,
-  init: RequestInit,
-  handleResponse: (response: Response) => Promise<T>,
-) {
-  const headers = new Headers(init.headers);
-  headers.set("Idempotency-Key", randomUUID());
-  const stableInit: RequestInit = { ...init, headers };
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const response = await fetch(url, stableInit);
-      if (
-        attempt === 0 &&
-        (response.status === 502 || response.status === 503)
-      ) {
-        await discardResponseBody(response);
-        continue;
-      }
-      return await handleResponse(response);
-    } catch (error) {
-      if (
-        stableInit.signal?.aborted ||
-        (error instanceof Error && error.name === "AbortError")
-      ) {
-        throw error;
-      }
-      if (attempt === 0 && error instanceof TypeError) continue;
-      throw error;
-    }
-  }
-
-  throw new Error("Tutti Managed request failed.");
-}
-
-async function discardResponseBody(response: Response) {
-  if (!response.body) return;
-  try {
-    await response.body.cancel();
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw error;
-    }
-  }
-}
-
-async function readBoundedJsonResponse(response: Response): Promise<unknown> {
-  if (!response.body) {
-    return JSON.parse("") as unknown;
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let byteLength = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    byteLength += value.byteLength;
-    if (byteLength > MANAGED_RESPONSE_MAX_BYTES) {
-      await reader.cancel().catch(() => undefined);
-      throw new Error("Tutti Managed response exceeds size limit.");
-    }
-    chunks.push(value);
-  }
-
-  const bytes = new Uint8Array(byteLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  let json: string;
-  try {
-    json = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    throw new Error("Tutti Managed response is not valid UTF-8.");
-  }
-  return JSON.parse(json) as unknown;
-}
-
-function createTuttiManagedGrantUrl(env: ServerEnv, grantRef: string) {
-  const { token, url } = createTuttiManagedGrantCollectionUrl(env);
-  url.pathname = `${url.pathname}/${encodeURIComponent(grantRef)}`;
-  return { token, url };
+  return Boolean(env.tuttiCliPath && env.tuttiWorkspaceId && env.tuttiAppId);
 }
 
 function normalizeExchangePayload(
@@ -791,14 +477,12 @@ function normalizeCredentialExpiry(
   nowMs: number,
 ) {
   const maxExpiresAtMs = nowMs + PROVIDER_CREDENTIAL_TTL_MS;
-  if (expiresAt === undefined) {
-    return new Date(maxExpiresAtMs).toISOString();
-  }
   const parsed = expiresAt ? Date.parse(expiresAt) : Number.NaN;
-  if (!Number.isFinite(parsed) || parsed <= nowMs) {
-    throw new Error("Tutti Managed credential expiry is invalid or expired.");
-  }
-  return new Date(Math.min(parsed, maxExpiresAtMs)).toISOString();
+  const expiresAtMs =
+    Number.isFinite(parsed) && parsed > nowMs
+      ? Math.min(parsed, maxExpiresAtMs)
+      : maxExpiresAtMs;
+  return new Date(expiresAtMs).toISOString();
 }
 
 function normalizeProviderIds(
@@ -940,56 +624,6 @@ function credentialCacheKey(input: {
 }) {
   return [input.grantRef, input.provider, input.model, input.capability].join(
     "\u0000",
-  );
-}
-
-function verifyContextToken(env: ServerEnv, token: string) {
-  if (!env.tuttiAppServerToken) {
-    throw new Error("Tutti Managed app server token is not configured.");
-  }
-  const [encodedPayload, signature] = token.split(".");
-  if (!encodedPayload || !signature) {
-    throw new Error("Invalid Tutti context token.");
-  }
-  const expectedSignature = createHmac("sha256", env.tuttiAppServerToken)
-    .update(encodedPayload)
-    .digest("base64url");
-  if (!timingSafeEqualString(signature, expectedSignature)) {
-    throw new Error("Invalid Tutti context token signature.");
-  }
-  const payload = JSON.parse(
-    Buffer.from(encodedPayload, "base64url").toString("utf8"),
-  ) as Record<string, unknown>;
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  if (typeof payload.exp !== "number" || payload.exp <= nowSeconds) {
-    throw new Error("Tutti context token is expired.");
-  }
-  if (payload.appId !== env.tuttiAppId || payload.aud !== env.tuttiAppId) {
-    throw new Error("Tutti context token app mismatch.");
-  }
-  if (payload.workspaceId !== env.tuttiWorkspaceId) {
-    throw new Error("Tutti context token workspace mismatch.");
-  }
-  if (
-    !env.tuttiAppInstallationId ||
-    payload.installationId !== env.tuttiAppInstallationId
-  ) {
-    throw new Error("Tutti context token installation mismatch.");
-  }
-  if (env.tuttiApiBaseUrl && typeof payload.iss === "string") {
-    const expectedIssuer = new URL(env.tuttiApiBaseUrl).origin;
-    if (payload.iss !== expectedIssuer) {
-      throw new Error("Tutti context token issuer mismatch.");
-    }
-  }
-}
-
-function timingSafeEqualString(left: string, right: string) {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-  return (
-    leftBuffer.length === rightBuffer.length &&
-    timingSafeEqual(leftBuffer, rightBuffer)
   );
 }
 
