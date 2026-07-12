@@ -1,5 +1,3 @@
-import { createHmac } from "node:crypto";
-
 import { describe, expect, it } from "vitest";
 
 import type { TuttiManagedConnection } from "@aimc/shared";
@@ -40,6 +38,7 @@ function createEnv(): ServerEnv {
     tuttiAppId: "ai-media-canvas",
     tuttiAppInstallationId: "workspace-1:ai-media-canvas",
     tuttiAppServerToken: "tutti-app-token",
+    tuttiCliPath: "/tmp/tutti-cli",
     tuttiWorkspaceId: "workspace-1",
     port: 3001,
     version: "test",
@@ -47,23 +46,8 @@ function createEnv(): ServerEnv {
   };
 }
 
-function createContextToken(env: ServerEnv) {
-  const payload = {
-    appId: env.tuttiAppId,
-    aud: env.tuttiAppId,
-    exp: Math.floor(Date.now() / 1000) + 300,
-    iat: Math.floor(Date.now() / 1000),
-    installationId: env.tuttiAppInstallationId,
-    iss: new URL(env.tuttiApiBaseUrl ?? "").origin,
-    workspaceId: env.tuttiWorkspaceId,
-  };
-  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString(
-    "base64url",
-  );
-  const signature = createHmac("sha256", env.tuttiAppServerToken ?? "")
-    .update(encodedPayload)
-    .digest("base64url");
-  return `${encodedPayload}.${signature}`;
+function createContextToken() {
+  return "public-context-token";
 }
 
 async function connectService(
@@ -72,7 +56,7 @@ async function connectService(
 ) {
   const challenge = service.createConnectChallenge();
   return service.connect({
-    contextToken: createContextToken(env),
+    contextToken: createContextToken(),
     grantCode: "grant-code",
     nonce: challenge.nonce,
     state: challenge.state,
@@ -221,7 +205,7 @@ describe("createTuttiManagedCredentialService", () => {
 
     await expect(
       service.connect({
-        contextToken: createContextToken(env),
+        contextToken: createContextToken(),
         grantCode: "grant-code",
         nonce: "missing-nonce-value",
         state: "missing-state-value",
