@@ -1,11 +1,13 @@
 import { createHmac } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { TuttiManagedConnection } from "@aimc/shared";
 
 import type { ServerEnv } from "../../config/env.js";
 import { createTuttiManagedCredentialService } from "./credential-service.js";
+
+const MANAGED_RESPONSE_LIMIT_BYTES = 512 * 1024 + 4 * 1024;
 
 function createStore() {
   let connection: TuttiManagedConnection = {
@@ -76,6 +78,20 @@ function createContextToken(env: ServerEnv) {
   return `${encodedPayload}.${signature}`;
 }
 
+function requestSnapshot(fetchMock: ReturnType<typeof vi.fn>, index: number) {
+  const [, init] = fetchMock.mock.calls[index] as [URL, RequestInit];
+  const headers = new Headers(init.headers);
+  return {
+    body: init.body,
+    idempotencyKey: headers.get("idempotency-key"),
+    method: init.method,
+  };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 async function connectService(
   service: ReturnType<typeof createTuttiManagedCredentialService>,
   env: ServerEnv,
@@ -90,6 +106,430 @@ async function connectService(
 }
 
 describe("createTuttiManagedCredentialService", () => {
+  it("retries a lost exchange response once with the same idempotency key and body", async () => {
+    const env = createEnv();
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("connection reset"))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            grantRef: "grant-ref",
+            models: [],
+            providers: ["openai"],
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await connectService(service, env);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const first = requestSnapshot(fetchMock, 0);
+    const second = requestSnapshot(fetchMock, 1);
+    expect(first).toEqual(second);
+    expect(first.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+    expect(first.body).toContain('"installationId"');
+  });
+
+  it("retries when a successful exchange response stream fails during body read", async () => {
+    const env = createEnv();
+    const encoder = new TextEncoder();
+    let pullCount = 0;
+    const interruptedResponse = new Response(
+      new ReadableStream({
+        pull(controller) {
+          pullCount += 1;
+          if (pullCount === 1) {
+            controller.enqueue(encoder.encode('{"grantRef":"lost'));
+            return;
+          }
+          controller.error(new TypeError("response stream interrupted"));
+        },
+      }),
+      { headers: { "content-type": "application/json" }, status: 200 },
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(interruptedResponse)
+      .mockResolvedValueOnce(
+        Response.json({
+          grantRef: "grant-ref",
+          models: [],
+          providers: ["openai"],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await connectService(service, env);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(requestSnapshot(fetchMock, 0)).toEqual(
+      requestSnapshot(fetchMock, 1),
+    );
+  });
+
+  it("does not retry malformed successful JSON responses", async () => {
+    const env = createEnv();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response("{malformed", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await expect(connectService(service, env)).rejects.toBeInstanceOf(
+      SyntaxError,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry invalid UTF-8 JSON responses", async () => {
+    const env = createEnv();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(Uint8Array.of(0xff), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await expect(connectService(service, env)).rejects.toThrow(
+      "response is not valid UTF-8",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a successful JSON response exactly at the size limit", async () => {
+    const env = createEnv();
+    const basePayload = {
+      grantRef: "grant-ref",
+      models: [],
+      padding: "",
+      providers: ["openai"],
+    };
+    const baseJson = JSON.stringify(basePayload);
+    const json = JSON.stringify({
+      ...basePayload,
+      padding: "x".repeat(MANAGED_RESPONSE_LIMIT_BYTES - baseJson.length),
+    });
+    expect(Buffer.byteLength(json)).toBe(MANAGED_RESPONSE_LIMIT_BYTES);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(json));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await expect(connectService(service, env)).resolves.toMatchObject({
+      connected: true,
+      grantRef: "grant-ref",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a chunked successful response as soon as it exceeds the size limit", async () => {
+    const env = createEnv();
+    let canceled = false;
+    let emitted = 0;
+    const oversizedResponse = new Response(
+      new ReadableStream({
+        cancel() {
+          canceled = true;
+        },
+        pull(controller) {
+          emitted += 1;
+          controller.enqueue(new Uint8Array(256 * 1024));
+        },
+      }),
+      { status: 200 },
+    );
+    const fetchMock = vi.fn().mockResolvedValue(oversizedResponse);
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await expect(connectService(service, env)).rejects.toThrow(
+      "response exceeds size limit",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(emitted).toBeGreaterThanOrEqual(3);
+    expect(emitted).toBeLessThanOrEqual(4);
+    expect(canceled).toBe(true);
+  });
+
+  it("does not retry abort errors", async () => {
+    const env = createEnv();
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValue(new DOMException("request aborted", "AbortError"));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await expect(connectService(service, env)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry when the response body is aborted", async () => {
+    const env = createEnv();
+    const abortedResponse = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.error(new DOMException("body aborted", "AbortError"));
+        },
+      }),
+      { status: 200 },
+    );
+    const fetchMock = vi.fn().mockResolvedValue(abortedResponse);
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await expect(connectService(service, env)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a new idempotency key for each logical call and never retries 4xx", async () => {
+    const env = createEnv();
+    const firstFailure = new Response("first bad grant", { status: 400 });
+    const secondFailure = new Response("second bad grant", { status: 400 });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(firstFailure)
+      .mockResolvedValueOnce(secondFailure);
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await expect(connectService(service, env)).rejects.toThrow(
+      "Tutti Managed exchange failed: 400",
+    );
+    await expect(connectService(service, env)).rejects.toThrow(
+      "Tutti Managed exchange failed: 400",
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(requestSnapshot(fetchMock, 0).idempotencyKey).not.toBe(
+      requestSnapshot(fetchMock, 1).idempotencyKey,
+    );
+    expect(firstFailure.bodyUsed).toBe(true);
+    expect(secondFailure.bodyUsed).toBe(true);
+  });
+
+  it("consumes both retryable error responses before returning the final failure", async () => {
+    const env = createEnv();
+    const firstFailure = new Response("temporarily unavailable", {
+      status: 503,
+    });
+    const secondFailure = new Response("still unavailable", { status: 503 });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(firstFailure)
+      .mockResolvedValueOnce(secondFailure);
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await expect(connectService(service, env)).rejects.toThrow(
+      "Tutti Managed exchange failed: 503",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(firstFailure.bodyUsed).toBe(true);
+    expect(secondFailure.bodyUsed).toBe(true);
+  });
+
+  it("cancels an infinite 503 body without reading it before retrying", async () => {
+    const env = createEnv();
+    let canceled = false;
+    let pullCount = 0;
+    const infiniteFailure = new Response(
+      new ReadableStream({
+        cancel() {
+          canceled = true;
+        },
+        pull(controller) {
+          pullCount += 1;
+          controller.enqueue(new Uint8Array(64 * 1024));
+        },
+      }),
+      { status: 503 },
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(infiniteFailure)
+      .mockResolvedValueOnce(
+        Response.json({
+          grantRef: "grant-ref",
+          models: [],
+          providers: ["openai"],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await connectService(service, env);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(canceled).toBe(true);
+    expect(pullCount).toBeLessThanOrEqual(1);
+  });
+
+  it("cancels a giant 4xx body without buffering it", async () => {
+    const env = createEnv();
+    let canceled = false;
+    const giantFailure = new Response(
+      new ReadableStream({
+        cancel() {
+          canceled = true;
+        },
+        start(controller) {
+          controller.enqueue(new Uint8Array(MANAGED_RESPONSE_LIMIT_BYTES * 2));
+        },
+      }),
+      { status: 400 },
+    );
+    const fetchMock = vi.fn().mockResolvedValue(giantFailure);
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await expect(connectService(service, env)).rejects.toThrow(
+      "Tutti Managed exchange failed: 400",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(canceled).toBe(true);
+  });
+
+  it("retries each managed grant operation once on 502 or 503", async () => {
+    const env = createEnv();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          grantRef: "grant-ref",
+          models: [{ id: "gpt", name: "GPT", provider: "openai" }],
+          providers: ["openai"],
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 502 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          models: [{ id: "gpt", name: "GPT", provider: "openai" }],
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          credential: { apiKey: "managed-secret", provider: "openai" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 502 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({
+      env,
+      store: createStore(),
+    });
+
+    await connectService(service, env);
+    await expect(service.listModels()).resolves.toHaveLength(1);
+    await expect(
+      service.resolveEnvForModel(env, "tutti:openai:gpt", "tutti-managed"),
+    ).resolves.toMatchObject({ openAIApiKey: "managed-secret" });
+    await service.clearConnection();
+
+    expect(fetchMock).toHaveBeenCalledTimes(8);
+    for (let index = 0; index < 8; index += 2) {
+      expect(requestSnapshot(fetchMock, index)).toEqual(
+        requestSnapshot(fetchMock, index + 1),
+      );
+    }
+    expect(
+      new Set(
+        [0, 2, 4, 6].map(
+          (index) => requestSnapshot(fetchMock, index).idempotencyKey,
+        ),
+      ).size,
+    ).toBe(4);
+  });
+
+  it("fails closed before exchange when the installation id is missing", async () => {
+    const { tuttiAppInstallationId: _installationId, ...env } = createEnv();
+    const exchangeClient = vi.fn();
+    const service = createTuttiManagedCredentialService({
+      env,
+      exchangeClient,
+      store: createStore(),
+    });
+    const challenge = service.createConnectChallenge();
+
+    await expect(
+      service.connect({
+        contextToken: createContextToken(env),
+        grantCode: "must-not-leave-process",
+        nonce: challenge.nonce,
+        state: challenge.state,
+      }),
+    ).rejects.toThrow("runtime environment is not configured");
+    expect(exchangeClient).not.toHaveBeenCalled();
+    expect(service.getConnection().connected).toBe(false);
+  });
+
+  it("best-effort revokes a stored grant when the installation id is missing", async () => {
+    const { tuttiAppInstallationId: _installationId, ...env } = createEnv();
+    const store = createStore();
+    store.updateTuttiManagedConnection({
+      connected: true,
+      grantRef: "grant-to-revoke",
+      models: [],
+      providers: ["openai"],
+    });
+    const notFound = new Response("already revoked", { status: 404 });
+    const fetchMock = vi.fn().mockResolvedValue(notFound);
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createTuttiManagedCredentialService({ env, store });
+
+    await service.clearConnection();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(requestSnapshot(fetchMock, 0).method).toBe("DELETE");
+    expect(notFound.bodyUsed).toBe(true);
+    expect(store.getTuttiManagedConnection().connected).toBe(false);
+  });
+
   it("does not resolve API Provider selections through Tutti Managed credentials", async () => {
     const env = createEnv();
     const service = createTuttiManagedCredentialService({

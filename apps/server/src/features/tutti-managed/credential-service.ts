@@ -1,4 +1,9 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  createHmac,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 
 import type {
   AgentModelSource,
@@ -16,6 +21,7 @@ const PROVIDER_CREDENTIAL_TTL_MS = 5 * 60 * 1000;
 const PROVIDER_CREDENTIAL_REFRESH_WINDOW_MS = 30 * 1000;
 const CONNECT_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const MANAGED_MODEL_ID_PREFIX = "tutti";
+const MANAGED_RESPONSE_MAX_BYTES = 512 * 1024 + 4 * 1024;
 
 export type TuttiManagedProviderCredential = {
   provider: TuttiManagedProviderId;
@@ -148,7 +154,10 @@ export function createTuttiManagedCredentialService(options: {
     supersedeConnectAttempts();
     invalidateCredentialState();
     options.store.clearTuttiManagedConnection();
-    if (connection.grantRef && isTuttiManagedRuntimeConfigured(options.env)) {
+    if (
+      connection.grantRef &&
+      isTuttiManagedBaseRuntimeConfigured(options.env)
+    ) {
       await revokeClient({
         env: options.env,
         grantRef: connection.grantRef,
@@ -158,6 +167,7 @@ export function createTuttiManagedCredentialService(options: {
   }
 
   async function connect(input: TuttiManagedGrantRequest) {
+    requireTuttiManagedRuntimeConfigured(options.env);
     consumeConnectChallenge(input.state, input.nonce);
     verifyContextToken(options.env, input.contextToken);
     const connectEpoch = supersedeConnectAttempts();
@@ -407,30 +417,30 @@ export function createTuttiManagedCredentialService(options: {
 
 function createDefaultTuttiManagedExchangeClient(): TuttiManagedExchangeClient {
   return async ({ contextToken, env, grantCode, nonce, state }) => {
+    requireTuttiManagedRuntimeConfigured(env);
     const { token, url } = createTuttiManagedGrantCollectionUrl(env);
     url.pathname = `${url.pathname}/exchange`;
-    const response = await fetch(url, {
-      body: JSON.stringify({
-        contextToken,
-        grantCode,
-        ...(env.tuttiAppInstallationId
-          ? { installationId: env.tuttiAppInstallationId }
-          : {}),
-        nonce,
-        state,
-      }),
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      method: "POST",
+    const body = JSON.stringify({
+      contextToken,
+      grantCode,
+      installationId: env.tuttiAppInstallationId,
+      nonce,
+      state,
     });
+    const payload = await fetchManagedGrantJson(
+      url,
+      {
+        body,
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        method: "POST",
+      },
+      "Tutti Managed exchange failed",
+    );
 
-    if (!response.ok) {
-      throw new Error(`Tutti Managed exchange failed: ${response.status}`);
-    }
-
-    return normalizeExchangePayload(await response.json());
+    return normalizeExchangePayload(payload);
   };
 }
 
@@ -438,18 +448,18 @@ function createDefaultTuttiManagedModelCatalogClient(): TuttiManagedModelCatalog
   return async ({ env, grantRef }) => {
     const { token, url } = createTuttiManagedGrantUrl(env, grantRef);
     url.pathname = `${url.pathname}/models`;
-    const response = await fetch(url, {
-      headers: {
-        authorization: `Bearer ${token}`,
+    const payload = await fetchManagedGrantJson(
+      url,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+        method: "GET",
       },
-      method: "GET",
-    });
+      "Tutti Managed models failed",
+    );
 
-    if (!response.ok) {
-      throw new Error(`Tutti Managed models failed: ${response.status}`);
-    }
-
-    return normalizeModelCatalogPayload(await response.json());
+    return normalizeModelCatalogPayload(payload);
   };
 }
 
@@ -457,47 +467,47 @@ function createDefaultTuttiManagedProviderCredentialClient(): TuttiManagedProvid
   return async ({ capability, env, grantRef, model, provider }) => {
     const { token, url } = createTuttiManagedGrantUrl(env, grantRef);
     url.pathname = `${url.pathname}/credentials`;
-    const response = await fetch(url, {
-      body: JSON.stringify({
-        capability,
-        model,
-        provider,
-      }),
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
+    const body = JSON.stringify({ capability, model, provider });
+    const payload = await fetchManagedGrantJson(
+      url,
+      {
+        body,
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        method: "POST",
       },
-      method: "POST",
-    });
+      "Tutti Managed credential failed",
+    );
 
-    if (!response.ok) {
-      throw new Error(`Tutti Managed credential failed: ${response.status}`);
-    }
-
-    return normalizeCredentialPayload(await response.json());
+    return normalizeCredentialPayload(payload);
   };
 }
 
 function createDefaultTuttiManagedRevokeClient(): TuttiManagedRevokeClient {
   return async ({ env, grantRef }) => {
     const { token, url } = createTuttiManagedGrantUrl(env, grantRef);
-    const response = await fetch(url, {
-      headers: {
-        authorization: `Bearer ${token}`,
+    await fetchManagedGrant(
+      url,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+        method: "DELETE",
       },
-      method: "DELETE",
-    });
-
-    if (!response.ok && response.status !== 404) {
-      throw new Error(`Tutti Managed revoke failed: ${response.status}`);
-    }
+      async (response) => {
+        await discardResponseBody(response);
+        if (!response.ok && response.status !== 404) {
+          throw new Error(`Tutti Managed revoke failed: ${response.status}`);
+        }
+      },
+    );
   };
 }
 
 function createTuttiManagedGrantCollectionUrl(env: ServerEnv) {
-  if (!isTuttiManagedRuntimeConfigured(env)) {
-    throw new Error("Tutti Managed runtime environment is not configured.");
-  }
+  requireTuttiManagedBaseRuntimeConfigured(env);
 
   return {
     token: env.tuttiAppServerToken,
@@ -510,7 +520,7 @@ function createTuttiManagedGrantCollectionUrl(env: ServerEnv) {
   };
 }
 
-function isTuttiManagedRuntimeConfigured(
+function isTuttiManagedBaseRuntimeConfigured(
   env: ServerEnv,
 ): env is ServerEnv &
   Required<
@@ -528,6 +538,158 @@ function isTuttiManagedRuntimeConfigured(
       env.tuttiAppId &&
       env.tuttiAppServerToken,
   );
+}
+
+function isTuttiManagedRuntimeConfigured(
+  env: ServerEnv,
+): env is ServerEnv &
+  Required<
+    Pick<
+      ServerEnv,
+      | "tuttiApiBaseUrl"
+      | "tuttiAppId"
+      | "tuttiAppInstallationId"
+      | "tuttiAppServerToken"
+      | "tuttiWorkspaceId"
+    >
+  > {
+  return Boolean(
+    env.tuttiApiBaseUrl &&
+      env.tuttiWorkspaceId &&
+      env.tuttiAppId &&
+      env.tuttiAppInstallationId &&
+      env.tuttiAppServerToken,
+  );
+}
+
+function requireTuttiManagedRuntimeConfigured(
+  env: ServerEnv,
+): asserts env is ServerEnv &
+  Required<
+    Pick<
+      ServerEnv,
+      | "tuttiApiBaseUrl"
+      | "tuttiAppId"
+      | "tuttiAppInstallationId"
+      | "tuttiAppServerToken"
+      | "tuttiWorkspaceId"
+    >
+  > {
+  if (!isTuttiManagedRuntimeConfigured(env)) {
+    throw new Error("Tutti Managed runtime environment is not configured.");
+  }
+}
+
+function requireTuttiManagedBaseRuntimeConfigured(
+  env: ServerEnv,
+): asserts env is ServerEnv &
+  Required<
+    Pick<
+      ServerEnv,
+      | "tuttiApiBaseUrl"
+      | "tuttiAppId"
+      | "tuttiAppServerToken"
+      | "tuttiWorkspaceId"
+    >
+  > {
+  if (!isTuttiManagedBaseRuntimeConfigured(env)) {
+    throw new Error("Tutti Managed runtime environment is not configured.");
+  }
+}
+
+async function fetchManagedGrantJson(
+  url: URL,
+  init: RequestInit,
+  errorPrefix: string,
+) {
+  return fetchManagedGrant(url, init, async (response) => {
+    if (!response.ok) {
+      await discardResponseBody(response);
+      throw new Error(`${errorPrefix}: ${response.status}`);
+    }
+    return readBoundedJsonResponse(response);
+  });
+}
+
+async function fetchManagedGrant<T>(
+  url: URL,
+  init: RequestInit,
+  handleResponse: (response: Response) => Promise<T>,
+) {
+  const headers = new Headers(init.headers);
+  headers.set("Idempotency-Key", randomUUID());
+  const stableInit: RequestInit = { ...init, headers };
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(url, stableInit);
+      if (
+        attempt === 0 &&
+        (response.status === 502 || response.status === 503)
+      ) {
+        await discardResponseBody(response);
+        continue;
+      }
+      return await handleResponse(response);
+    } catch (error) {
+      if (
+        stableInit.signal?.aborted ||
+        (error instanceof Error && error.name === "AbortError")
+      ) {
+        throw error;
+      }
+      if (attempt === 0 && error instanceof TypeError) continue;
+      throw error;
+    }
+  }
+
+  throw new Error("Tutti Managed request failed.");
+}
+
+async function discardResponseBody(response: Response) {
+  if (!response.body) return;
+  try {
+    await response.body.cancel();
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw error;
+    }
+  }
+}
+
+async function readBoundedJsonResponse(response: Response): Promise<unknown> {
+  if (!response.body) {
+    return JSON.parse("") as unknown;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    byteLength += value.byteLength;
+    if (byteLength > MANAGED_RESPONSE_MAX_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error("Tutti Managed response exceeds size limit.");
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  let json: string;
+  try {
+    json = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error("Tutti Managed response is not valid UTF-8.");
+  }
+  return JSON.parse(json) as unknown;
 }
 
 function createTuttiManagedGrantUrl(env: ServerEnv, grantRef: string) {
@@ -809,7 +971,7 @@ function verifyContextToken(env: ServerEnv, token: string) {
     throw new Error("Tutti context token workspace mismatch.");
   }
   if (
-    env.tuttiAppInstallationId &&
+    !env.tuttiAppInstallationId ||
     payload.installationId !== env.tuttiAppInstallationId
   ) {
     throw new Error("Tutti context token installation mismatch.");

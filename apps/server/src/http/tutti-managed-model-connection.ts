@@ -55,7 +55,10 @@ export async function registerTuttiManagedModelConnectionRoutes(
           }),
         );
       } catch (error) {
-        app.log.warn({ err: error }, "Tutti Managed grant exchange failed.");
+        app.log.warn(
+          { errorType: error instanceof Error ? error.name : "UnknownError" },
+          "Tutti Managed grant exchange failed.",
+        );
         return reply.code(502).send(
           applicationErrorResponseSchema.parse({
             error: {
@@ -68,7 +71,8 @@ export async function registerTuttiManagedModelConnectionRoutes(
     });
 
     app.delete(route, async (_request, reply) => {
-      const connection = await options.tuttiManagedCredentials.clearConnection();
+      const connection =
+        await options.tuttiManagedCredentials.clearConnection();
       return reply.code(200).send(
         tuttiManagedConnectionResponseSchema.parse({
           connection: publicConnection(connection),
