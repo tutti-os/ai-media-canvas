@@ -13,9 +13,7 @@
     "healthcheckPath": "/api/health"
   },
   "hostCompatibility": {
-    "requiredTuttiCapabilities": [
-      "managed-model-cli-v1"
-    ]
+    "requiredTuttiCapabilities": ["managed-model-cli-v1"]
   },
   "cli": {
     "manifest": "tutti.cli.json"
@@ -39,9 +37,5 @@
   "author": {
     "name": "Tutti"
   },
-  "tags": [
-    "generated",
-    "local-first",
-    "media-canvas"
-  ]
+  "tags": ["generated", "local-first", "media-canvas"]
 }

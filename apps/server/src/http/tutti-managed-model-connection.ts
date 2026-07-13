@@ -61,7 +61,7 @@ export async function registerTuttiManagedModelConnectionRoutes(
           "Tutti Managed grant exchange failed.",
         );
         if (error instanceof TuttiManagedModelCliUnsupportedError) {
-          return reply.code(426).send(
+          return reply.code(503).send(
             applicationErrorResponseSchema.parse({
               error: {
                 code: "service_unavailable",

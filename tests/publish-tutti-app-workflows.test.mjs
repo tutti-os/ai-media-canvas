@@ -55,10 +55,7 @@ test("production Tutti app workflow publishes ai-media-canvas from a release bum
   assert.equal(publish.with.release_tag_prefix, "ai-media-canvas-v");
   assert.equal(publish.with.release_bump, "${{ inputs.release_bump }}");
   assert.equal(publish.with.create_release_tag, "${{ !inputs.catalog_only }}");
-  assert.equal(
-    publish.with.publish_catalog,
-    "${{ inputs.publish_catalog }}",
-  );
+  assert.equal(publish.with.publish_catalog, "${{ inputs.publish_catalog }}");
   assert.equal(publish.with.catalog_only, "${{ inputs.catalog_only }}");
   assert.doesNotMatch(source, /release_version/);
   assert.doesNotMatch(source, /TUTTI_APP_RELEASES_PRODUCTION_PUBLISH_CATALOG/);
@@ -68,7 +65,7 @@ test("production Tutti app workflow publishes ai-media-canvas from a release bum
   assert.doesNotMatch(source, new RegExp("NEXT" + "OP"));
 });
 
-test("staging Tutti app workflow publishes ai-media-canvas manually", async () => {
+test("staging Tutti app workflow publishes ai-media-canvas on main and manually", async () => {
   const workflowPath = ".github/workflows/publish-tutti-app-staging.yml";
   const source = await readFile(workflowPath, "utf8");
   const workflow = parseWorkflow(workflowPath);
@@ -77,7 +74,7 @@ test("staging Tutti app workflow publishes ai-media-canvas manually", async () =
 
   assert.equal(workflow.name, "Publish Tutti App Staging");
   assert.equal(workflow.permissions.contents, "read");
-  assert.equal(on.push, undefined);
+  assert.deepEqual(on.push, { branches: ["main"] });
   assert.equal(on.workflow_dispatch.inputs.publish_catalog.type, "boolean");
   assert.equal(on.workflow_dispatch.inputs.publish_catalog.default, false);
   assert.equal(on.workflow_dispatch.inputs.catalog_only.type, "boolean");
@@ -90,8 +87,14 @@ test("staging Tutti app workflow publishes ai-media-canvas manually", async () =
   assert.equal(publish.with.package_command, "pnpm package:tutti");
   assert.equal(publish.with.package_dir, "build/tutti-app/package");
   assert.equal(publish.with.icon_path, "build/tutti-app/package/icon.png");
-  assert.equal(publish.with.publish_catalog, "${{ inputs.publish_catalog }}");
-  assert.equal(publish.with.catalog_only, "${{ inputs.catalog_only }}");
+  assert.equal(
+    publish.with.publish_catalog,
+    "${{ github.event_name == 'push' || inputs.publish_catalog }}",
+  );
+  assert.equal(
+    publish.with.catalog_only,
+    "${{ github.event_name == 'workflow_dispatch' && inputs.catalog_only }}",
+  );
   assert.equal(publish.with.release_version, undefined);
   assert.equal(on.workflow_dispatch.inputs.release_version, undefined);
   assert.match(source, /catalog_cloudfront_distribution_id/);

@@ -1,8 +1,9 @@
-import { spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 
 import type { ServerEnv } from "../../config/env.js";
 
 const COMMAND_TIMEOUT_MS = 15_000;
+const TERMINATION_GRACE_MS = 1_000;
 const MAX_STDOUT_BYTES = 1024 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
 const unsupportedHostMessage = "当前 Tutti 不支持托管模型 CLI，请升级 Tutti";
@@ -27,14 +28,37 @@ export async function invokeTuttiManagedModelCli(
   }
 
   return await new Promise<unknown>((resolve, reject) => {
-    const child = spawn(executable, [...command, "--input-json", "-"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    let stdout = "";
-    let stderr = "";
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(executable, [...command, "--input-json", "-"], {
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      });
+    } catch (error) {
+      reject(cliError("Tutti CLI failed to start", error));
+      return;
+    }
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let stdoutBytes = 0;
     let stderrBytes = 0;
     let settled = false;
+    let terminationTimer: NodeJS.Timeout | undefined;
+
+    const terminateChild = () => {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        return;
+      }
+      terminationTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGKILL");
+        }
+      }, TERMINATION_GRACE_MS);
+      terminationTimer.unref();
+    };
     const finish = (error?: Error, result?: unknown) => {
       if (settled) return;
       settled = true;
@@ -46,7 +70,7 @@ export async function invokeTuttiManagedModelCli(
       }
     };
     const timeout = setTimeout(() => {
-      child.kill();
+      terminateChild();
       finish(new Error("Tutti CLI timed out."));
     }, COMMAND_TIMEOUT_MS);
 
@@ -55,33 +79,39 @@ export async function invokeTuttiManagedModelCli(
         finish(new TuttiManagedModelCliUnsupportedError());
         return;
       }
-      finish(new Error("Tutti CLI failed to start."));
+      finish(cliError("Tutti CLI failed to start", error));
     });
     child.stdout.on("data", (chunk: Buffer) => {
-      if (Buffer.byteLength(stdout) + chunk.byteLength > MAX_STDOUT_BYTES) {
-        child.kill();
+      stdoutBytes += chunk.byteLength;
+      if (stdoutBytes > MAX_STDOUT_BYTES) {
+        terminateChild();
         finish(new Error("Tutti CLI response is too large."));
         return;
       }
-      stdout += chunk.toString("utf8");
+      stdoutChunks.push(chunk);
     });
     child.stderr.on("data", (chunk: Buffer) => {
       stderrBytes += chunk.byteLength;
       if (stderrBytes > MAX_STDERR_BYTES) {
-        child.kill();
+        terminateChild();
         finish(new Error("Tutti CLI diagnostics are too large."));
         return;
       }
-      stderr += chunk.toString("utf8");
+      stderrChunks.push(chunk);
     });
     child.once("close", (code) => {
+      if (terminationTimer) clearTimeout(terminationTimer);
       if (settled) return;
+      const stdout = Buffer.concat(stdoutChunks).toString("utf8");
+      const stderr = Buffer.concat(stderrChunks).toString("utf8");
       if (code !== 0) {
         if (isUnsupportedManagedModelCommand(stderr)) {
           finish(new TuttiManagedModelCliUnsupportedError());
           return;
         }
-        finish(new Error("Tutti CLI command failed."));
+        finish(
+          new Error(`Tutti CLI command failed: ${formatDiagnostic(stderr)}`),
+        );
         return;
       }
       try {
@@ -94,15 +124,29 @@ export async function invokeTuttiManagedModelCli(
         finish(new Error("Tutti CLI returned invalid JSON."));
       }
     });
-    child.stdin.once("error", () =>
-      finish(new Error("Tutti CLI input failed.")),
-    );
+    child.stdin.once("error", (error) => {
+      terminateChild();
+      finish(cliError("Tutti CLI input failed", error));
+    });
     child.stdin.end(JSON.stringify(input));
   });
 }
 
 function isUnsupportedManagedModelCommand(stderr: string) {
-  return /unknown command|unknown shorthand flag|not a valid command/iu.test(
-    stderr,
-  );
+  return [
+    /(?:^|\n)unknown command:\s+managed-model(?:\s|$)/u,
+    /(?:^|\n)Error:\s+unknown command\s+"managed-model"(?:\s|"|$)/u,
+    /(?:^|\n)Error:\s+unknown shorthand flag:.*for ".*managed-model.*"/u,
+    /(?:^|\n)managed-model(?:\s+[\w.-]+)*\s+is not a valid command\.?$/u,
+  ].some((pattern) => pattern.test(stderr));
+}
+
+function cliError(prefix: string, error: unknown) {
+  const detail = error instanceof Error ? formatDiagnostic(error.message) : "";
+  return new Error(detail ? `${prefix}: ${detail}` : `${prefix}.`);
+}
+
+function formatDiagnostic(value: string) {
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  return normalized ? normalized.slice(0, 512) : "unknown error";
 }

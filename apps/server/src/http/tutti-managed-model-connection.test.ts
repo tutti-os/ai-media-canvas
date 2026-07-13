@@ -72,7 +72,7 @@ describe("registerTuttiManagedModelConnectionRoutes", () => {
       url: "/api/tutti/managed-model-connection/grant",
     });
 
-    expect(response.statusCode).toBe(426);
+    expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({
       error: {
         code: "service_unavailable",

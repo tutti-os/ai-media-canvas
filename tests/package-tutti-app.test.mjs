@@ -149,6 +149,9 @@ test("createManifest returns the Tutti package manifest contract", () => {
     cli: {
       manifest: "tutti.cli.json",
     },
+    hostCompatibility: {
+      requiredTuttiCapabilities: ["managed-model-cli-v1"],
+    },
     references: {
       listEndpoint: "/tutti/references/list",
       searchEndpoint: "/tutti/references/search",
@@ -176,7 +179,10 @@ test("package script does not mutate installed agent-acp-kit files", async () =>
   const manifest = JSON.parse(
     await readFile(new URL("../package.json", import.meta.url), "utf8"),
   );
-  assert.equal(manifest.scripts["package:tutti"], "node scripts/package-tutti-app.mjs");
+  assert.equal(
+    manifest.scripts["package:tutti"],
+    "node scripts/package-tutti-app.mjs",
+  );
   assert.doesNotMatch(manifest.scripts["package:tutti"], /patch-agent-acp-kit/);
 });
 
