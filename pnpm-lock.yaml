@@ -64,8 +64,8 @@ importers:
         specifier: ^1.4.7
         version: 1.4.7(@langchain/core@1.1.48(openai@6.41.0(ws@8.20.0)(zod@4.3.6))(ws@8.20.0))(ws@8.20.0)
       '@tutti-os/agent-acp-kit':
-        specifier: 0.3.7
-        version: 0.3.7(@cfworker/json-schema@4.1.1)
+        specifier: 0.4.0
+        version: 0.4.0(@cfworker/json-schema@4.1.1)
       agnes-ai-cli:
         specifier: ^0.1.4
         version: 0.1.4
@@ -3532,8 +3532,8 @@ packages:
     cpu: [arm64]
     os: [win32]
 
-  '@tutti-os/agent-acp-kit@0.3.7':
-    resolution: {integrity: sha512-884lg3Pkia+g/DEBn8cfizmdJtx2RV3Pv+QEhX/TSvyS3YwzC5N58dmivKkvxCZ2F8K1nB6p9mSTbP4cm3ErrQ==}
+  '@tutti-os/agent-acp-kit@0.4.0':
+    resolution: {integrity: sha512-AtjQf6ixRBgFauZtsliMd3eOEP96xKflB9ztXBjjT8MczUDHBR7QoF91yKJ4UENf117QZaYEKsVIGDaFLOS+bQ==}
     engines: {node: '>=22'}
 
   '@tutti-os/ui-i18n-runtime@0.0.54':
@@ -11077,7 +11077,7 @@ snapshots:
   '@turbo/windows-arm64@2.8.20':
     optional: true
 
-  '@tutti-os/agent-acp-kit@0.3.7(@cfworker/json-schema@4.1.1)':
+  '@tutti-os/agent-acp-kit@0.4.0(@cfworker/json-schema@4.1.1)':
     dependencies:
       '@anthropic-ai/claude-agent-sdk': 0.2.141(@cfworker/json-schema@4.1.1)(zod@4.3.6)
       zod: 4.3.6
