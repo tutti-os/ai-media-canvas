@@ -594,6 +594,9 @@ export function createManifest({ version }) {
     cli: {
       manifest: "tutti.cli.json",
     },
+    hostCompatibility: {
+      requiredTuttiCapabilities: ["managed-model-cli-v1"],
+    },
     references: {
       listEndpoint: "/tutti/references/list",
       searchEndpoint: "/tutti/references/search",

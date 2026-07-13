@@ -8,6 +8,7 @@ import {
 } from "@aimc/shared";
 
 import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
+import { TuttiManagedModelCliUnsupportedError } from "../features/tutti-managed/tutti-cli-client.js";
 
 export async function registerTuttiManagedModelConnectionRoutes(
   app: FastifyInstance,
@@ -55,7 +56,20 @@ export async function registerTuttiManagedModelConnectionRoutes(
           }),
         );
       } catch (error) {
-        app.log.warn({ err: error }, "Tutti Managed grant exchange failed.");
+        app.log.warn(
+          { errorType: error instanceof Error ? error.name : "UnknownError" },
+          "Tutti Managed grant exchange failed.",
+        );
+        if (error instanceof TuttiManagedModelCliUnsupportedError) {
+          return reply.code(503).send(
+            applicationErrorResponseSchema.parse({
+              error: {
+                code: "service_unavailable",
+                message: error.message,
+              },
+            }),
+          );
+        }
         return reply.code(502).send(
           applicationErrorResponseSchema.parse({
             error: {
@@ -68,7 +82,8 @@ export async function registerTuttiManagedModelConnectionRoutes(
     });
 
     app.delete(route, async (_request, reply) => {
-      const connection = await options.tuttiManagedCredentials.clearConnection();
+      const connection =
+        await options.tuttiManagedCredentials.clearConnection();
       return reply.code(200).send(
         tuttiManagedConnectionResponseSchema.parse({
           connection: publicConnection(connection),
