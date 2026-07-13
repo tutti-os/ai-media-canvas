@@ -51,7 +51,7 @@ export async function invokeTuttiManagedModelCli(
     }, COMMAND_TIMEOUT_MS);
 
     child.once("error", (error) => {
-      if (error.code === "ENOENT") {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         finish(new TuttiManagedModelCliUnsupportedError());
         return;
       }

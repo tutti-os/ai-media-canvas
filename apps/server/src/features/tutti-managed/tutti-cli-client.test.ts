@@ -23,8 +23,9 @@ function envFor(path: string): ServerEnv {
 
 describe("invokeTuttiManagedModelCli", () => {
   it("reports a missing host CLI as an upgrade-required capability error", async () => {
+    const { tuttiCliPath: _tuttiCliPath, ...envWithoutCli } = envFor("");
     await expect(
-      invokeTuttiManagedModelCli({ ...envFor(""), tuttiCliPath: undefined }, [
+      invokeTuttiManagedModelCli(envWithoutCli, [
         "managed-model",
         "models",
       ], {}),

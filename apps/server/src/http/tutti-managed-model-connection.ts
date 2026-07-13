@@ -8,6 +8,7 @@ import {
 } from "@aimc/shared";
 
 import type { TuttiManagedCredentialService } from "../features/tutti-managed/credential-service.js";
+import { TuttiManagedModelCliUnsupportedError } from "../features/tutti-managed/tutti-cli-client.js";
 
 export async function registerTuttiManagedModelConnectionRoutes(
   app: FastifyInstance,
@@ -59,6 +60,16 @@ export async function registerTuttiManagedModelConnectionRoutes(
           { errorType: error instanceof Error ? error.name : "UnknownError" },
           "Tutti Managed grant exchange failed.",
         );
+        if (error instanceof TuttiManagedModelCliUnsupportedError) {
+          return reply.code(426).send(
+            applicationErrorResponseSchema.parse({
+              error: {
+                code: "service_unavailable",
+                message: error.message,
+              },
+            }),
+          );
+        }
         return reply.code(502).send(
           applicationErrorResponseSchema.parse({
             error: {
