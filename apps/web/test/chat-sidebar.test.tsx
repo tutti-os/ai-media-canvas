@@ -678,6 +678,8 @@ describe("ChatSidebar", () => {
 
     await waitFor(() => expect(mockWs.startRun).not.toHaveBeenCalled());
     expect(await screen.findByText("Mock Settings Dialog")).toBeInTheDocument();
+    expect(input).toHaveValue("hello without model");
+    expect(fetchModelsMock).toHaveBeenCalledTimes(1);
     expect(
       screen.queryByText("请先配置或选择一个 Agent 模型。"),
     ).not.toBeInTheDocument();

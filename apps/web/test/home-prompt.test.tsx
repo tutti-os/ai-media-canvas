@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   type ReactElement,
@@ -243,6 +243,46 @@ describe("HomePrompt", () => {
     expect(
       screen.queryByText("请先配置或选择一个 Agent 模型。"),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows a loading state immediately while agent validation is pending", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    let resolveValidation: ((configured: boolean) => void) | undefined;
+    agentModelRequirementMock.mockReturnValue({
+      model: "local:assistant",
+      isAgentModelConfigured: true,
+      ensureAgentModelConfigured: vi.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolveValidation = resolve;
+          }),
+      ),
+    });
+
+    render(<HomePrompt onSubmit={onSubmit} />);
+
+    await user.type(await findPromptInput(), "立即显示发送状态");
+    await user.click(screen.getByRole("button", { name: "提交 prompt" }));
+
+    const submitButton = screen.getByRole("button", { name: "提交 prompt" });
+    expect(submitButton).toHaveAttribute("aria-busy", "true");
+    expect(submitButton).toBeDisabled();
+    expect(await findPromptInput()).toBeDisabled();
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveValidation?.(true);
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      "立即显示发送状态",
+      undefined,
+      undefined,
+      undefined,
+      "local:assistant",
+      undefined,
+    );
   });
 
   it("does not render a persistent configuration banner when agent and media models are missing", async () => {

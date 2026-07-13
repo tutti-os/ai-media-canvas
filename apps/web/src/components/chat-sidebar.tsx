@@ -790,10 +790,20 @@ export function ChatSidebar({
           setStreaming(true);
         }
 
-        if (!(await ensureAgentModelConfigured())) {
+        let agentModelConfigured = false;
+        try {
+          agentModelConfigured = await ensureAgentModelConfigured();
+        } catch (error) {
+          console.warn("[chat] Failed to validate the selected agent model", {
+            error: summarizeClientError(error),
+          });
+        }
+
+        if (!agentModelConfigured) {
           inFlightSessionIdsRef.current.delete(currentSessionId);
           if (activeSessionIdRef.current === currentSessionId) {
             setStreaming(false);
+            chatInputRef.current?.setDraft(text);
           }
           openSettings("agent");
           return;
@@ -1129,10 +1139,12 @@ export function ChatSidebar({
       buildAutoTitleSource,
       activeSessionIdRef,
       ensureAgentModelConfigured,
+      i18n.resolvedLanguage,
       openSettings,
       availableImageModelIds,
       setStreaming,
       showToast,
+      t,
     ],
   );
 

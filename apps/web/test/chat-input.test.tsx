@@ -143,6 +143,34 @@ describe("ChatInput", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it("shows an immediate pending indicator before a run can be canceled", () => {
+    render(<ChatInput onSend={vi.fn()} isRunning />);
+
+    const pendingButton = screen.getByRole("button", { name: "思考中" });
+    expect(pendingButton).toHaveAttribute("aria-busy", "true");
+    expect(pendingButton).toBeDisabled();
+  });
+
+  it("delegates agent model validation to the chat session owner", async () => {
+    const ensureAgentModelConfigured = vi.fn().mockResolvedValue(false);
+    const onSend = vi.fn().mockReturnValue(true);
+    agentModelRequirementMock.mockReturnValue({
+      model: null,
+      isAgentModelConfigured: false,
+      ensureAgentModelConfigured,
+    });
+
+    render(<ChatInput onSend={onSend} />);
+
+    fireEvent.change(await screen.findByRole("textbox", { name: "输入消息" }), {
+      target: { value: "保留单一校验责任" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    expect(onSend).toHaveBeenCalledWith("保留单一校验责任");
+    expect(ensureAgentModelConfigured).not.toHaveBeenCalled();
+  });
+
   it("does not render a persistent configuration banner when agent and media models are missing", () => {
     agentModelRequirementMock.mockReturnValue({
       model: null,
