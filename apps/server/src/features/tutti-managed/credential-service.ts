@@ -106,6 +106,7 @@ export function createTuttiManagedCredentialService(options: {
   >();
   const challenges = new Map<string, StoredChallenge>();
   let connectionGeneration = 0;
+  let connectAttemptGeneration = 0;
   const now = options.now ?? (() => Date.now());
   const exchangeClient =
     options.exchangeClient ?? createDefaultTuttiManagedExchangeClient();
@@ -143,6 +144,7 @@ export function createTuttiManagedCredentialService(options: {
 
   async function clearConnection() {
     const connection = options.store.getTuttiManagedConnection();
+    connectAttemptGeneration += 1;
     connectionGeneration += 1;
     if (connection.grantRef) {
       clearGrantCache(connection.grantRef);
@@ -161,7 +163,7 @@ export function createTuttiManagedCredentialService(options: {
 
   async function connect(input: TuttiManagedGrantRequest) {
     consumeConnectChallenge(input.state, input.nonce);
-    const generation = ++connectionGeneration;
+    const attemptGeneration = ++connectAttemptGeneration;
     const previousConnection = options.store.getTuttiManagedConnection();
     const exchange = await exchangeClient({
       contextToken: input.contextToken,
@@ -170,14 +172,23 @@ export function createTuttiManagedCredentialService(options: {
       nonce: input.nonce,
       state: input.state,
     });
-    if (generation !== connectionGeneration) {
+    if (attemptGeneration !== connectAttemptGeneration) {
       await revokeClient({
         env: options.env,
         grantRef: exchange.grantRef,
       }).catch(() => undefined);
       throw new Error("Tutti Managed connection was superseded.");
     }
-    const expiresAt = normalizeCredentialExpiry(exchange.expiresAt, now());
+    let expiresAt: string;
+    try {
+      expiresAt = normalizeCredentialExpiry(exchange.expiresAt, now());
+    } catch (error) {
+      await revokeClient({
+        env: options.env,
+        grantRef: exchange.grantRef,
+      }).catch(() => undefined);
+      throw error;
+    }
     const models = normalizeModels(
       exchange.models?.length ? exchange.models : (input.models ?? []),
     );
@@ -189,6 +200,7 @@ export function createTuttiManagedCredentialService(options: {
       clearGrantCache(previousConnection.grantRef);
     }
 
+    connectionGeneration += 1;
     return options.store.updateTuttiManagedConnection({
       connected: true,
       grantRef: exchange.grantRef,
@@ -323,12 +335,18 @@ export function createTuttiManagedCredentialService(options: {
       }
       const expiresAt = normalizeCredentialExpiry(result.expiresAt, now());
       const credential = normalizeCredential(result.credential);
+      if (credential.provider !== provider) {
+        throw new Error(
+          "Tutti Managed provider credential does not match request.",
+        );
+      }
       cache.set(cacheKey, {
         credential,
         expiresAtMs: Date.parse(expiresAt),
       });
+      const currentConnection = options.store.getTuttiManagedConnection();
       options.store.updateTuttiManagedConnection({
-        ...connection,
+        ...currentConnection,
         expiresAt,
         ...(result.models?.length
           ? { models: normalizeModels(result.models) }
@@ -553,11 +571,14 @@ function normalizeCredentialExpiry(
   nowMs: number,
 ) {
   const maxExpiresAtMs = nowMs + PROVIDER_CREDENTIAL_TTL_MS;
-  const parsed = expiresAt ? Date.parse(expiresAt) : Number.NaN;
-  const expiresAtMs =
-    Number.isFinite(parsed) && parsed > nowMs
-      ? Math.min(parsed, maxExpiresAtMs)
-      : maxExpiresAtMs;
+  if (expiresAt === undefined) {
+    return new Date(maxExpiresAtMs).toISOString();
+  }
+  const parsed = Date.parse(expiresAt);
+  if (!Number.isFinite(parsed) || parsed <= nowMs) {
+    throw new Error("Tutti Managed credential expiry is invalid.");
+  }
+  const expiresAtMs = Math.min(parsed, maxExpiresAtMs);
   return new Date(expiresAtMs).toISOString();
 }
 

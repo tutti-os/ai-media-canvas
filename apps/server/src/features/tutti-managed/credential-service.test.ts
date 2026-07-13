@@ -387,6 +387,98 @@ describe("createTuttiManagedCredentialService", () => {
     expect(Date.parse(credentialExpiry ?? "")).toBe(current + 20_000);
   });
 
+  it("rejects an expired exchange lease and revokes the returned grant", async () => {
+    const current = Date.parse("2026-01-01T00:00:00.000Z");
+    const store = createStore();
+    const revokedGrantRefs: string[] = [];
+    const service = createTuttiManagedCredentialService({
+      env: createEnv(),
+      exchangeClient: async () => ({
+        expiresAt: new Date(current - 1).toISOString(),
+        grantRef: "expired-grant-ref",
+        models: [],
+        providers: ["agnes"],
+      }),
+      now: () => current,
+      revokeClient: async ({ grantRef }) => {
+        revokedGrantRefs.push(grantRef);
+      },
+      store,
+    });
+
+    await expect(connectService(service, createEnv())).rejects.toThrow(
+      "credential expiry is invalid",
+    );
+    expect(revokedGrantRefs).toEqual(["expired-grant-ref"]);
+    expect(store.getTuttiManagedConnection().connected).toBe(false);
+  });
+
+  it("rejects an expired provider credential instead of extending its lease", async () => {
+    const current = Date.parse("2026-01-01T00:00:00.000Z");
+    let requestCount = 0;
+    const service = createTuttiManagedCredentialService({
+      env: createEnv(),
+      exchangeClient: async () => ({
+        grantRef: "grant-ref",
+        models: [{ id: "model-a", name: "Model A", provider: "agnes" }],
+        providers: ["agnes"],
+      }),
+      now: () => current,
+      providerCredentialClient: async () => {
+        requestCount += 1;
+        return {
+          credential: { provider: "agnes", apiKey: "managed-key" },
+          expiresAt: new Date(
+            current + (requestCount === 1 ? -1 : 60_000),
+          ).toISOString(),
+        };
+      },
+      store: createStore(),
+    });
+    await connectService(service, createEnv());
+
+    await expect(
+      service.resolveEnvForModel(
+        createEnv(),
+        "tutti:agnes:model-a",
+        "tutti-managed",
+      ),
+    ).rejects.toThrow("credential expiry is invalid");
+
+    await expect(
+      service.resolveEnvForModel(
+        createEnv(),
+        "tutti:agnes:model-a",
+        "tutti-managed",
+      ),
+    ).resolves.toMatchObject({ agnesApiKey: "managed-key" });
+    expect(requestCount).toBe(2);
+  });
+
+  it("rejects a provider credential that does not match the requested provider", async () => {
+    const service = createTuttiManagedCredentialService({
+      env: createEnv(),
+      exchangeClient: async () => ({
+        grantRef: "grant-ref",
+        models: [{ id: "model-a", name: "Model A", provider: "agnes" }],
+        providers: ["agnes"],
+      }),
+      providerCredentialClient: async () => ({
+        credential: { provider: "openai", apiKey: "wrong-provider-key" },
+      }),
+      store: createStore(),
+    });
+    await connectService(service, createEnv());
+
+    await expect(
+      service.resolveEnvForModel(
+        createEnv(),
+        "tutti:agnes:model-a",
+        "tutti-managed",
+      ),
+    ).rejects.toThrow("provider credential does not match request");
+  });
+
   it("shares one in-flight credential request for concurrent model resolution", async () => {
     const pendingCredential = deferred<{
       credential: { apiKey: string; provider: "agnes" };
@@ -428,6 +520,105 @@ describe("createTuttiManagedCredentialService", () => {
 
     await expect(first).resolves.toMatchObject({ agnesApiKey: "managed-key" });
     await expect(second).resolves.toMatchObject({ agnesApiKey: "managed-key" });
+  });
+
+  it("keeps an active credential request valid when a replacement connect fails", async () => {
+    const pendingCredential = deferred<{
+      credential: { apiKey: string; provider: "agnes" };
+    }>();
+    const pendingReconnect = deferred<never>();
+    let exchangeCount = 0;
+    const service = createTuttiManagedCredentialService({
+      env: createEnv(),
+      exchangeClient: async () => {
+        exchangeCount += 1;
+        if (exchangeCount === 1) {
+          return {
+            grantRef: "grant-ref",
+            models: [{ id: "model-a", name: "Model A", provider: "agnes" }],
+            providers: ["agnes"],
+          };
+        }
+        return await pendingReconnect.promise;
+      },
+      providerCredentialClient: async () => await pendingCredential.promise,
+      store: createStore(),
+    });
+    await connectService(service, createEnv());
+
+    const resolving = service.resolveEnvForModel(
+      createEnv(),
+      "tutti:agnes:model-a",
+      "tutti-managed",
+    );
+    await Promise.resolve();
+    const challenge = service.createConnectChallenge();
+    const reconnecting = service.connect({
+      contextToken: createContextToken(),
+      grantCode: "replacement-grant-code",
+      nonce: challenge.nonce,
+      state: challenge.state,
+    });
+    await Promise.resolve();
+
+    pendingCredential.resolve({
+      credential: { provider: "agnes", apiKey: "managed-key" },
+    });
+    await expect(resolving).resolves.toMatchObject({
+      agnesApiKey: "managed-key",
+    });
+
+    pendingReconnect.reject(new Error("replacement exchange failed"));
+    await expect(reconnecting).rejects.toThrow("replacement exchange failed");
+  });
+
+  it("preserves newer connection metadata after a credential request completes", async () => {
+    const pendingCredential = deferred<{
+      credential: { apiKey: string; provider: "agnes" };
+    }>();
+    const store = createStore();
+    const service = createTuttiManagedCredentialService({
+      env: createEnv(),
+      exchangeClient: async () => ({
+        grantRef: "grant-ref",
+        models: [{ id: "old-model", name: "Old model", provider: "agnes" }],
+        providers: ["agnes"],
+      }),
+      providerCredentialClient: async () => await pendingCredential.promise,
+      store,
+    });
+    await connectService(service, createEnv());
+
+    const resolving = service.resolveEnvForModel(
+      createEnv(),
+      "tutti:agnes:old-model",
+      "tutti-managed",
+    );
+    await Promise.resolve();
+    store.updateTuttiManagedConnection({
+      ...store.getTuttiManagedConnection(),
+      models: [
+        {
+          id: "tutti:agnes:new-model",
+          name: "New model",
+          provider: "agnes",
+        },
+      ],
+    });
+    pendingCredential.resolve({
+      credential: { provider: "agnes", apiKey: "managed-key" },
+    });
+
+    await expect(resolving).resolves.toMatchObject({
+      agnesApiKey: "managed-key",
+    });
+    expect(store.getTuttiManagedConnection().models).toEqual([
+      {
+        id: "tutti:agnes:new-model",
+        name: "New model",
+        provider: "agnes",
+      },
+    ]);
   });
 
   it("rejects a stale credential response after disconnect without restoring local state", async () => {
