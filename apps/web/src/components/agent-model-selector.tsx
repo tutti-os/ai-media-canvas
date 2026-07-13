@@ -161,6 +161,9 @@ export function AgentModelSelector({
     AgentModelSourceTab | undefined
   >();
   const [models, setModels] = useState<ModelOption[]>([]);
+  const [modelLoadState, setModelLoadState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
   const [localAgentProviders, setLocalAgentProviders] = useState<
     LocalAgentProviderInfo[]
   >([]);
@@ -173,12 +176,14 @@ export function AgentModelSelector({
     useState<AgentModelSourceTab>("local-agent");
 
   const loadModels = useCallback(() => {
+    setModelLoadState("loading");
     fetchModels()
       .then((data) => {
         setModels(data.models);
         setLocalAgentProviders(localAgentProvidersFromModelResponse(data));
+        setModelLoadState("ready");
       })
-      .catch(() => {});
+      .catch(() => setModelLoadState("error"));
 
     fetchWorkspaceSettings()
       .then((data) => {
@@ -243,7 +248,7 @@ export function AgentModelSelector({
   const workspaceDefaultProvider = getModelProvider(workspaceDefaultModel);
   const availableLocalProviderIds = new Set(
     localAgentProviders
-      .filter((provider) => provider.available)
+      .filter((provider) => provider.supported)
       .map((provider) => provider.provider),
   );
   const selectedProviderIsSupportedLocal =
@@ -485,7 +490,7 @@ export function AgentModelSelector({
                       formatLocalCliProviderLabel(provider))
                     : formatProviderLabel(provider)}
                 </div>
-                {localProvider && !localProvider.available ? (
+                {localProvider && !localProvider.supported ? (
                   <div className="rounded-lg px-2 py-2 text-xs text-muted-foreground">
                     {localProvider.reason ??
                       t("agentModelSelector.providerUnavailable")}
@@ -531,7 +536,17 @@ export function AgentModelSelector({
               </div>
             );
           })}
-          {providers.length === 0 ? (
+          {providers.length === 0 && modelLoadState === "loading" ? (
+            <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+              {t("agentModelSelector.loadingModels")}
+            </div>
+          ) : null}
+          {providers.length === 0 && modelLoadState === "error" ? (
+            <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+              {t("agentModelSelector.loadModelsError")}
+            </div>
+          ) : null}
+          {providers.length === 0 && modelLoadState === "ready" ? (
             <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
               <p>
                 {activeModelTab === "local-agent"

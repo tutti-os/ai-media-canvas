@@ -423,6 +423,7 @@ describe("createAgentRunService", () => {
     const updateRun = vi.fn();
 
     const runs = createAgentRunService({
+      assertLocalAgentProviderAvailable: async () => {},
       agentRunStore: {
         createRun: vi.fn(),
         updateRun,
@@ -485,13 +486,12 @@ describe("createAgentRunService", () => {
       {
         provider: "codex" as const,
         displayName: "Codex",
-        result: {
-          supported: true as const,
-          models: [
-            { id: "default", label: "Default (CLI config)" },
-            { id: "gpt-5.5", label: "gpt-5.5" },
-          ],
-        },
+        supported: true as const,
+        authState: "ok" as const,
+        models: [
+          { id: "default", label: "Default (CLI config)" },
+          { id: "gpt-5.5", label: "gpt-5.5" },
+        ],
       },
     ]);
 
@@ -533,7 +533,7 @@ describe("createAgentRunService", () => {
       // Exhaust the stream so runtime reaches the provider invocation.
     }
 
-    expect(localAgentRuntimeDetectMock).not.toHaveBeenCalled();
+    expect(localAgentRuntimeDetectMock).toHaveBeenCalledOnce();
     expect(localAgentRuntimeRunMock).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "default",
@@ -1194,6 +1194,7 @@ describe("createAgentRunService", () => {
     const createJob = vi.fn(async () => ({ id: "job-1" }));
 
     const runs = createAgentRunService({
+      assertLocalAgentProviderAvailable: async () => {},
       createUserClient: () => ({
         from(table: string) {
           let isUpdate = false;
@@ -2906,6 +2907,97 @@ describe("createAgentRunService", () => {
     expect(JSON.stringify(capturedStreamConfig)).not.toContain(
       "credential-run-1",
     );
+  });
+
+  it("gates managed runs through runtime.detect without probing provider plugins", async () => {
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    vi.stubEnv("AIMC_TOOLS_MCP_PATH", "/tmp/aimc-tools-mcp");
+    localAgentRuntimeRunMock.mockClear();
+    const pluginDetect = vi.fn(async () => {
+      throw new Error("managed gating must not probe the app runtime");
+    });
+    const runtimeDetect = vi.fn(async () => [
+      {
+        provider: "codex" as const,
+        displayName: "Codex",
+        supported: true,
+        authState: "ok" as const,
+        models: [{ id: "default", label: "Default" }],
+        defaultModelId: "default",
+      },
+    ]);
+    const runs = createAgentRunService({
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        appDataDir: "/tmp/aimc-app-data",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentDetectionRuntime: { detect: runtimeDetect },
+      localAgentProviderPlugins: [
+        {
+          id: "codex",
+          displayName: "Codex",
+          kind: "local-agent",
+          detect: pluginDetect,
+          capabilities() {
+            return {
+              cancel: true,
+              nativeResume: true,
+              streaming: true,
+              toolGateway: false,
+              maxConcurrentRuns: 1,
+            };
+          },
+          async buildLaunchPlan() {
+            throw new Error("not used");
+          },
+          async *run() {
+            yield* [];
+            throw new Error("not used");
+          },
+        },
+      ],
+      localAgentRuntime: { run: localAgentRuntimeRunMock },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "hi",
+        sessionId: "session-1",
+      },
+      {
+        managedAgentHeaders: {
+          [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
+        },
+        model: "codex:default",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+    );
+    for await (const _event of runs.streamRun(run.runId)) {
+      // Exhaust the stream so provider gating and execution both run.
+    }
+
+    expect(runtimeDetect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        managedAgentInvocation: expect.objectContaining({
+          credential: "credential-run-1",
+        }),
+      }),
+    );
+    expect(pluginDetect).not.toHaveBeenCalled();
+    expect(localAgentRuntimeRunMock).toHaveBeenCalled();
   });
 
   it("clears transient invocation when the initial run-store update fails", async () => {

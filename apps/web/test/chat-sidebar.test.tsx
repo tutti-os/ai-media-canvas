@@ -214,6 +214,36 @@ describe("ChatSidebar", () => {
       models: [
         { id: "local:assistant", name: "Local Assistant", provider: "local" },
       ],
+      localAgentProviders: [
+        {
+          provider: "local",
+          displayName: "Local Assistant",
+          supported: true,
+          authState: "ok",
+          models: [
+            {
+              id: "local:assistant",
+              name: "Local Assistant",
+              provider: "local",
+              source: "local-agent",
+            },
+          ],
+        },
+        {
+          provider: "claude",
+          displayName: "Claude",
+          supported: true,
+          authState: "ok",
+          models: [
+            {
+              id: "claude:sonnet",
+              name: "Sonnet",
+              provider: "claude",
+              source: "local-agent",
+            },
+          ],
+        },
+      ],
     });
     fetchRunEventsMock.mockReset();
     fetchRunEventsMock.mockResolvedValue({

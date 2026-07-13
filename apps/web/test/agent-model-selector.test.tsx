@@ -10,28 +10,28 @@ const {
   fetchModelsMock,
   fetchWorkspaceSettingsMock,
   setModelMock,
-} =
-  vi.hoisted(() => ({
-    agentModelState: {
-      model: null as string | null,
-      modelSource: undefined as
-        | "api-provider"
-        | "local-agent"
-        | "tutti-managed"
-        | undefined,
-    },
-    fetchModelsMock: vi.fn(),
-    fetchWorkspaceSettingsMock: vi.fn(),
-    setModelMock: vi.fn(),
-  }));
+} = vi.hoisted(() => ({
+  agentModelState: {
+    model: null as string | null,
+    modelSource: undefined as
+      | "api-provider"
+      | "local-agent"
+      | "tutti-managed"
+      | undefined,
+  },
+  fetchModelsMock: vi.fn(),
+  fetchWorkspaceSettingsMock: vi.fn(),
+  setModelMock: vi.fn(),
+}));
 
 vi.mock("../src/lib/server-api", () => ({
   fetchModels: async (...args: unknown[]) => {
     const response = await fetchModelsMock(...args);
     if (Array.isArray(response?.localAgentProviders)) return response;
     const localModels = Array.isArray(response?.models)
-      ? response.models.filter((model: { provider?: string }) =>
-          model.provider === "codex" || model.provider === "claude-code"
+      ? response.models.filter(
+          (model: { provider?: string }) =>
+            model.provider === "codex" || model.provider === "claude-code",
         )
       : [];
     const providers = new Map<string, typeof localModels>();
@@ -45,7 +45,7 @@ vi.mock("../src/lib/server-api", () => ({
       localAgentProviders: Array.from(providers, ([provider, models]) => ({
         provider,
         displayName: provider === "claude-code" ? "Claude Code" : "Codex",
-        available: true,
+        supported: true,
         authState: "ok",
         models,
       })),
@@ -359,7 +359,7 @@ describe("AgentModelSelector", () => {
         {
           provider: "tutti-agent",
           displayName: "Tutti Agent",
-          available: false,
+          supported: false,
           authState: "missing",
           reason: "Tutti Agent is not logged in.",
           models: [],
@@ -398,7 +398,7 @@ describe("AgentModelSelector", () => {
         {
           provider: "tutti-agent",
           displayName: "Tutti Agent",
-          available: false,
+          supported: false,
           authState: "missing",
           reason: "Tutti Agent is not logged in.",
           models: [],

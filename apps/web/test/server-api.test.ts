@@ -23,6 +23,14 @@ async function flushPromises() {
   await Promise.resolve();
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 describe("local server API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -265,6 +273,60 @@ describe("local server API", () => {
         cache: "no-store",
       },
     );
+  });
+
+  it("fetchModels coalesces concurrent requests within each mode", async () => {
+    const response = {
+      ok: true,
+      status: 200,
+      json: async () => ({ models: [] }),
+    };
+    mockFetch.mockResolvedValue(response);
+
+    await Promise.all([fetchModels(), fetchModels()]);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    mockFetch.mockClear();
+    await Promise.all([
+      fetchModels({ refresh: true }),
+      fetchModels({ refresh: true }),
+    ]);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps refresh separate and prevents a late normal result from winning", async () => {
+    const normalResponse = deferred<Response>();
+    const refreshResponse = deferred<Response>();
+    mockFetch.mockImplementation((url: string) =>
+      url.includes("refresh=1")
+        ? refreshResponse.promise
+        : normalResponse.promise,
+    );
+
+    const normal = fetchModels();
+    const refresh = fetchModels({ refresh: true });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    const refreshPayload = {
+      models: [{ id: "codex:new", name: "New", provider: "codex" }],
+    };
+    refreshResponse.resolve(
+      new Response(JSON.stringify(refreshPayload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    await expect(refresh).resolves.toEqual(refreshPayload);
+
+    normalResponse.resolve(
+      new Response(
+        JSON.stringify({
+          models: [{ id: "codex:old", name: "Old", provider: "codex" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    await expect(normal).resolves.toEqual(refreshPayload);
   });
 
   it("uploadFile uses the local multipart endpoint outside Tutti", async () => {

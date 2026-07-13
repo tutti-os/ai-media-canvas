@@ -11,6 +11,8 @@
     "customModelId": "Custom model ID",
     "localAgent": "Local agent",
     "localAssistant": "Local Assistant",
+    "loadingModels": "Loading models…",
+    "loadModelsError": "Models could not be loaded. Try again.",
     "noApiProviderModels": "No API provider models configured.",
     "noLocalCliModels": "No local CLI models detected.",
     "noTuttiManagedModels": "No Tutti Managed models connected.",
