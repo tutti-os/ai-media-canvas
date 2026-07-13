@@ -408,7 +408,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
               {submitting ? (
                 <span
                   aria-hidden="true"
-                  className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-background/35 border-t-background"
+                  className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-background/35 border-t-background motion-reduce:animate-none"
                 />
               ) : (
                 <svg

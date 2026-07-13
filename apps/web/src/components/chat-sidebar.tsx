@@ -803,7 +803,7 @@ export function ChatSidebar({
           inFlightSessionIdsRef.current.delete(currentSessionId);
           if (activeSessionIdRef.current === currentSessionId) {
             setStreaming(false);
-            chatInputRef.current?.setDraft(text);
+            chatInputRef.current?.restoreDraftIfEmpty(text);
           }
           openSettings("agent");
           return;

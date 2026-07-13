@@ -294,6 +294,30 @@ describe("local server API", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
+  it("lets a normal load join an active authoritative refresh", async () => {
+    const refreshResponse = deferred<Response>();
+    mockFetch.mockReturnValue(refreshResponse.promise);
+
+    const refresh = fetchModels({ refresh: true });
+    const normal = fetchModels();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const payload = {
+      models: [{ id: "codex:fresh", name: "Fresh", provider: "codex" }],
+    };
+    refreshResponse.resolve(
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(Promise.all([refresh, normal])).resolves.toEqual([
+      payload,
+      payload,
+    ]);
+  });
+
   it("keeps refresh separate and prevents a late normal result from winning", async () => {
     const normalResponse = deferred<Response>();
     const refreshResponse = deferred<Response>();
@@ -327,6 +351,32 @@ describe("local server API", () => {
       ),
     );
     await expect(normal).resolves.toEqual(refreshPayload);
+  });
+
+  it("preserves a successful normal result when a newer refresh fails", async () => {
+    const normalResponse = deferred<Response>();
+    const refreshResponse = deferred<Response>();
+    mockFetch.mockImplementation((url: string) =>
+      url.includes("refresh=1")
+        ? refreshResponse.promise
+        : normalResponse.promise,
+    );
+
+    const normal = fetchModels();
+    const refresh = fetchModels({ refresh: true });
+    const normalPayload = {
+      models: [{ id: "codex:cached", name: "Cached", provider: "codex" }],
+    };
+    normalResponse.resolve(
+      new Response(JSON.stringify(normalPayload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    refreshResponse.resolve(new Response("unavailable", { status: 503 }));
+
+    await expect(refresh).rejects.toThrow("Failed to fetch models: 503");
+    await expect(normal).resolves.toEqual(normalPayload);
   });
 
   it("uploadFile uses the local multipart endpoint outside Tutti", async () => {

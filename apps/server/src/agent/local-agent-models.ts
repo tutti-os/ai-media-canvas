@@ -102,23 +102,26 @@ export function buildLocalAgentModels(
 export function buildLocalAgentProviderInfo(
   detections: Awaited<ReturnType<LocalAgentModelDiscovery["detect"]>>,
 ): LocalAgentProviderInfo[] {
-  return detections.map((detection) => ({
-    provider: detection.provider,
-    displayName: detection.displayName,
-    supported: detection.supported,
-    authState: detection.authState,
-    ...(detection.reason ? { reason: detection.reason } : {}),
-    ...(detection.defaultModelId
-      ? { defaultModelId: detection.defaultModelId }
-      : {}),
-    models: detection.models.flatMap((model) => {
-      const catalogModel = buildLocalAgentCatalogModel(
-        detection.provider,
-        model,
-      );
-      return catalogModel ? [catalogModel] : [];
-    }),
-  }));
+  return detections.map((detection) => {
+    const defaultModelId = detection.defaultModelId
+      ? localAgentModelId(detection.provider, detection.defaultModelId)
+      : null;
+    return {
+      provider: detection.provider,
+      displayName: detection.displayName,
+      supported: detection.supported,
+      authState: detection.authState,
+      ...(detection.reason ? { reason: detection.reason } : {}),
+      ...(defaultModelId ? { defaultModelId } : {}),
+      models: detection.models.flatMap((model) => {
+        const catalogModel = buildLocalAgentCatalogModel(
+          detection.provider,
+          model,
+        );
+        return catalogModel ? [catalogModel] : [];
+      }),
+    };
+  });
 }
 
 export async function resolveCodexImagegenAgentModel(

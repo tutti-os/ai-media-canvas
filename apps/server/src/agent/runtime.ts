@@ -562,11 +562,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       "local-agent",
       AgentRuntimeProvider
     >[]);
-  const defaultLocalAgentRuntime =
-    createDefaultLocalAgentRuntime() as LocalAgentRuntime<
-      "local-agent",
-      AgentRuntimeProvider
-    >;
+  const defaultLocalAgentRuntime = createDefaultLocalAgentRuntime({
+    providers: localAgentProviderPlugins,
+  }) as LocalAgentRuntime<"local-agent", AgentRuntimeProvider>;
   const localAgentDetectionRuntime =
     options.localAgentDetectionRuntime ??
     (options.localAgentRuntime?.detect

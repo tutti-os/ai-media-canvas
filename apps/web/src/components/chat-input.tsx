@@ -40,6 +40,7 @@ type ChatInputProps = {
 export type ChatInputHandle = {
   focus: () => void;
   setDraft: (value: string) => void;
+  restoreDraftIfEmpty: (value: string) => void;
 };
 
 function PromptToolbarTooltip({ label }: { label: string }) {
@@ -88,6 +89,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       },
       setDraft(nextValue) {
         setValue(nextValue);
+        window.requestAnimationFrame(() => {
+          inputRef.current?.focus();
+        });
+      },
+      restoreDraftIfEmpty(nextValue) {
+        setValue((currentValue) =>
+          currentValue.trim() ? currentValue : nextValue,
+        );
         window.requestAnimationFrame(() => {
           inputRef.current?.focus();
         });

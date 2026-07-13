@@ -96,7 +96,7 @@ describe("local agent model helpers", () => {
         provider: "codex",
         supported: true,
         authState: "expired",
-        defaultModelId: "fast",
+        defaultModelId: "codex:fast",
         models: [{ id: "codex:fast" }],
       },
     ]);

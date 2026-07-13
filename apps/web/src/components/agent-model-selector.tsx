@@ -490,7 +490,8 @@ export function AgentModelSelector({
                       formatLocalCliProviderLabel(provider))
                     : formatProviderLabel(provider)}
                 </div>
-                {localProvider && !localProvider.supported ? (
+                {localProvider &&
+                (localProvider.reason || !localProvider.supported) ? (
                   <div className="rounded-lg px-2 py-2 text-xs text-muted-foreground">
                     {localProvider.reason ??
                       t("agentModelSelector.providerUnavailable")}
@@ -541,7 +542,7 @@ export function AgentModelSelector({
               {t("agentModelSelector.loadingModels")}
             </div>
           ) : null}
-          {providers.length === 0 && modelLoadState === "error" ? (
+          {modelLoadState === "error" ? (
             <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
               {t("agentModelSelector.loadModelsError")}
             </div>

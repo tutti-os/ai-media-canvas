@@ -377,6 +377,52 @@ describe("AgentModelSelector", () => {
     expect(setModelMock).not.toHaveBeenCalled();
   });
 
+  it("shows a degraded discovery reason for a supported local provider", async () => {
+    fetchModelsMock.mockResolvedValue({
+      models: [{ id: "codex:default", name: "Default", provider: "codex" }],
+      localAgentProviders: [
+        {
+          provider: "codex",
+          displayName: "Codex",
+          supported: true,
+          authState: "ok",
+          reason: "Model discovery timed out; using the configured default.",
+          models: [{ id: "codex:default", name: "Default", provider: "codex" }],
+        },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Agent/i }),
+    );
+    expect(
+      await screen.findByText(
+        "Model discovery timed out; using the configured default.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps stale providers visible while reporting a refresh failure", async () => {
+    fetchModelsMock
+      .mockResolvedValueOnce({
+        models: [{ id: "codex:default", name: "Default", provider: "codex" }],
+      })
+      .mockRejectedValueOnce(new Error("refresh failed"));
+
+    render(<AgentModelSelector compact />);
+    await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
+
+    expect(await screen.findByText("Default")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        i18n.t("agentModelSelector.loadModelsError", { ns: "chat" }),
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("does not present an unavailable local provider as the active selection", async () => {
     agentModelState.model = "tutti-agent:default";
     agentModelState.modelSource = "local-agent";

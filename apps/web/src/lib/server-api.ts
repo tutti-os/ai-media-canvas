@@ -215,7 +215,10 @@ export async function fetchModels(
   options: FetchModelsOptions = {},
 ): Promise<ModelListResponse> {
   const mode = options.refresh ? "refresh" : "normal";
-  const existing = modelFlights.get(mode);
+  const existing =
+    mode === "normal"
+      ? (modelFlights.get("refresh") ?? modelFlights.get(mode))
+      : modelFlights.get(mode);
   if (existing) return existing.promise;
   const generation = ++modelRequestGeneration;
   activeModelGenerations.add(generation);
@@ -230,7 +233,7 @@ export async function fetchModels(
     const result = (await response.json()) as ModelListResponse;
     const newer = latestModelFlight;
     if (newer && generation < newer.generation) {
-      return await newer.promise;
+      return await newer.promise.catch(() => result);
     }
     return result;
   })();
