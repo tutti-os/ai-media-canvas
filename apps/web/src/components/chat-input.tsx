@@ -97,9 +97,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         setValue((currentValue) =>
           currentValue.trim() ? currentValue : nextValue,
         );
-        window.requestAnimationFrame(() => {
-          inputRef.current?.focus();
-        });
       },
     }));
 
