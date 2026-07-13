@@ -26,14 +26,10 @@ import {
   type ManagedAgentInvocationCredentialHeaders,
   type ManagedAgentRunContext,
   createDefaultLocalAgentProviderPlugins,
-  createLocalAgentRuntime,
+  createDefaultLocalAgentRuntime,
   createManagedAgentDetectContextFromHeaders,
   createManagedAgentRunContextFromHeaders,
 } from "@tutti-os/agent-acp-kit";
-import {
-  findTuttiAgentCatalogProvider,
-  resolveTuttiAgentProviderCatalog,
-} from "@tutti-os/agent-acp-kit/tutti";
 
 import type { AuthenticatedUser, UserDataClient } from "../auth/request.js";
 import type { ServerEnv } from "../config/env.js";
@@ -432,10 +428,17 @@ type CreateAgentRuntimeOptions = {
     "local-agent",
     AgentRuntimeProvider
   >[];
+  localAgentDetectionRuntime?: Pick<
+    LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
+    "detect"
+  >;
   localAgentRuntime?: Pick<
     LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
     "run"
-  >;
+  > &
+    Partial<
+      Pick<LocalAgentRuntime<"local-agent", AgentRuntimeProvider>, "detect">
+    >;
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
   model?: BaseLanguageModel | string;
   now?: () => string;
@@ -559,9 +562,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       "local-agent",
       AgentRuntimeProvider
     >[]);
-  const defaultLocalAgentRuntime = createLocalAgentRuntime({
+  const defaultLocalAgentRuntime = createDefaultLocalAgentRuntime({
     providers: localAgentProviderPlugins,
-  });
+  }) as LocalAgentRuntime<"local-agent", AgentRuntimeProvider>;
+  const localAgentDetectionRuntime =
+    options.localAgentDetectionRuntime ??
+    (options.localAgentRuntime?.detect
+      ? { detect: options.localAgentRuntime.detect }
+      : defaultLocalAgentRuntime);
   const localAgentRuntime =
     localAgentTrusted && options.toolGateway && options.toolGatewayBaseUrl
       ? (options.localAgentRuntime ?? defaultLocalAgentRuntime)
@@ -592,16 +600,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   });
                   return;
                 }
-                const catalog = await resolveTuttiAgentProviderCatalog({
-                  runtime: defaultLocalAgentRuntime,
-                  detectContext,
-                  includeComposerModels: false,
-                });
-                const entry = findTuttiAgentCatalogProvider(
-                  catalog.providers,
-                  provider,
+                const providers =
+                  await localAgentDetectionRuntime.detect(detectContext);
+                const entry = providers.find(
+                  (candidate) => candidate.provider === provider,
                 );
-                if (!entry?.available) {
+                if (!entry?.supported) {
                   throw new Error(
                     entry?.reason
                       ? `Agent provider ${provider} is unavailable: ${entry.reason}`

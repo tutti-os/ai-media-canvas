@@ -212,7 +212,7 @@ export const modelInfoSchema = z.object({
 export const localAgentProviderInfoSchema = z.object({
   provider: agentRuntimeProviderSchema,
   displayName: z.string().trim().min(1),
-  available: z.boolean(),
+  supported: z.boolean(),
   authState: z.enum(["ok", "missing", "expired", "unknown"]),
   reason: z.string().trim().min(1).optional(),
   defaultModelId: z.string().trim().min(1).optional(),

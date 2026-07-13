@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildLocalAgentCatalogModel,
   buildLocalAgentModels,
+  buildLocalAgentProviderInfo,
   createDefaultLocalAgentModelDiscovery,
   resolveCodexImagegenAgentModel,
 } from "./local-agent-models.js";
@@ -32,13 +33,13 @@ describe("local agent model helpers", () => {
       buildLocalAgentModels([
         {
           provider: "codex",
-          result: {
-            supported: true,
-            models: [
-              { id: "default", label: "Default (CLI config)" },
-              { id: "gpt-5.5", label: "GPT-5.5" },
-            ],
-          },
+          displayName: "Codex",
+          supported: true,
+          authState: "ok",
+          models: [
+            { id: "default", label: "Default (CLI config)" },
+            { id: "gpt-5.5", label: "GPT-5.5" },
+          ],
         },
       ]),
     ).toEqual([
@@ -61,13 +62,13 @@ describe("local agent model helpers", () => {
     const detect = vi.fn(async () => [
       {
         provider: "codex",
-        result: {
-          supported: true,
-          models: [
-            { id: "default", label: "Default (CLI config)" },
-            { id: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
-          ],
-        },
+        displayName: "Codex",
+        supported: true,
+        authState: "ok",
+        models: [
+          { id: "default", label: "Default (CLI config)" },
+          { id: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
+        ],
       },
     ]);
 
@@ -77,6 +78,28 @@ describe("local agent model helpers", () => {
       }),
     ).resolves.toBe("gpt-5.4-mini");
     expect(detect).toHaveBeenCalledWith();
+  });
+
+  it("uses one flat detection projection for models and provider info", () => {
+    const detections = [
+      {
+        provider: "codex" as const,
+        displayName: "Codex",
+        supported: true,
+        authState: "expired" as const,
+        models: [{ id: "fast", label: "Fast" }],
+        defaultModelId: "fast",
+      },
+    ];
+    expect(buildLocalAgentProviderInfo(detections)).toMatchObject([
+      {
+        provider: "codex",
+        supported: true,
+        authState: "expired",
+        defaultModelId: "codex:fast",
+        models: [{ id: "codex:fast" }],
+      },
+    ]);
   });
 
   it("uses configured Codex Imagegen model before detection", async () => {

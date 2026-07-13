@@ -201,19 +201,55 @@ export type FetchModelsOptions = {
   refresh?: boolean;
 };
 
+type ModelFlight = {
+  generation: number;
+  promise: Promise<ModelListResponse>;
+};
+
+const modelFlights = new Map<"normal" | "refresh", ModelFlight>();
+const activeModelGenerations = new Set<number>();
+let modelRequestGeneration = 0;
+let latestModelFlight: ModelFlight | undefined;
+
 export async function fetchModels(
   options: FetchModelsOptions = {},
 ): Promise<ModelListResponse> {
+  const mode = options.refresh ? "refresh" : "normal";
+  const existing =
+    mode === "normal"
+      ? (modelFlights.get("refresh") ?? modelFlights.get(mode))
+      : modelFlights.get(mode);
+  if (existing) return existing.promise;
+  const generation = ++modelRequestGeneration;
+  activeModelGenerations.add(generation);
   const url = `${getServerBaseUrl()}/api/models${
     options.refresh ? "?refresh=1" : ""
   }`;
-  const response = await fetch(url, {
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch models: ${response.status}`);
-  }
-  return (await response.json()) as ModelListResponse;
+  const promise = (async () => {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch models: ${response.status}`);
+    }
+    const result = (await response.json()) as ModelListResponse;
+    const newer = latestModelFlight;
+    if (newer && generation < newer.generation) {
+      return await newer.promise.catch(() => result);
+    }
+    return result;
+  })();
+  const flight = { generation, promise };
+  latestModelFlight = flight;
+  modelFlights.set(mode, flight);
+  void promise
+    .finally(() => {
+      if (modelFlights.get(mode) === flight) modelFlights.delete(mode);
+      activeModelGenerations.delete(generation);
+      if (activeModelGenerations.size === 0) {
+        latestModelFlight = undefined;
+      }
+    })
+    .catch(() => {});
+  return promise;
 }
 
 export async function fetchTuttiManagedConnection(): Promise<TuttiManagedConnectionResponse> {

@@ -128,6 +128,8 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     ref,
   ) {
     const [value, setValue] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+    const submittingRef = useRef(false);
     const inputRef = useRef<TuttiRichTextInputHandle>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
@@ -174,40 +176,57 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
           (!attachments || attachments.length === 0) &&
           !selectedSeed) ||
         disabled ||
-        isUploading
+        isUploading ||
+        submittingRef.current
       ) {
         return;
       }
 
-      if (!(await ensureAgentModelConfigured())) {
-        setSettingsInitialTab("agent");
-        setSettingsOpen(true);
-        return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        let agentModelConfigured = false;
+        try {
+          agentModelConfigured = await ensureAgentModelConfigured();
+        } catch (error) {
+          console.warn("[home] Failed to validate the selected agent model", {
+            error,
+          });
+        }
+
+        if (!agentModelConfigured) {
+          setSettingsInitialTab("agent");
+          setSettingsOpen(true);
+          return;
+        }
+
+        const seedAttachments = buildSeedImageAttachments(selectedSeed);
+        const mergedAttachments = [
+          ...(readyAttachments ?? []),
+          ...seedAttachments,
+        ];
+
+        onSubmit(
+          trimmed,
+          mergedAttachments.length > 0 ? mergedAttachments : undefined,
+          !missingImageModel &&
+            preference.mode === "manual" &&
+            preference.models.length > 0
+            ? preference
+            : undefined,
+          !missingVideoModel &&
+            videoPreference.mode === "manual" &&
+            videoPreference.models.length > 0
+            ? videoPreference
+            : undefined,
+          agentModel ?? undefined,
+          agentModel ? (agentModelSource ?? undefined) : undefined,
+        );
+        setValue("");
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
       }
-
-      const seedAttachments = buildSeedImageAttachments(selectedSeed);
-      const mergedAttachments = [
-        ...(readyAttachments ?? []),
-        ...seedAttachments,
-      ];
-
-      onSubmit(
-        trimmed,
-        mergedAttachments.length > 0 ? mergedAttachments : undefined,
-        !missingImageModel &&
-          preference.mode === "manual" &&
-          preference.models.length > 0
-          ? preference
-          : undefined,
-        !missingVideoModel &&
-          videoPreference.mode === "manual" &&
-          videoPreference.models.length > 0
-          ? videoPreference
-          : undefined,
-        agentModel ?? undefined,
-        agentModel ? (agentModelSource ?? undefined) : undefined,
-      );
-      setValue("");
     }, [
       agentModel,
       agentModelSource,
@@ -302,7 +321,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             ref={inputRef}
             ariaLabel={t("prompt.ariaLabel")}
             className="aimc-rich-text-field px-3 pt-3 pb-2 sm:px-4 sm:pt-4"
-            disabled={disabled}
+            disabled={disabled || submitting}
             editorClassName="aimc-rich-text-editor aimc-home-rich-text-editor min-h-[52px] bg-transparent text-sm leading-relaxed text-foreground focus:outline-none"
             menuAnchor="cursor"
             menuPlacement="bottom-start"
@@ -381,17 +400,25 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={disabled || isUploading || !hasContent}
+              disabled={disabled || isUploading || submitting || !hasContent}
               aria-label={t("prompt.submit")}
+              aria-busy={submitting}
               className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:bg-foreground/25"
             >
-              <svg
-                aria-hidden="true"
-                viewBox={submitIcon.viewBox}
-                className="h-4 w-4 fill-current"
-              >
-                <path d={submitIcon.path} />
-              </svg>
+              {submitting ? (
+                <span
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-background/35 border-t-background motion-reduce:animate-none"
+                />
+              ) : (
+                <svg
+                  aria-hidden="true"
+                  viewBox={submitIcon.viewBox}
+                  className="h-4 w-4 fill-current"
+                >
+                  <path d={submitIcon.path} />
+                </svg>
+              )}
             </button>
           </div>
 

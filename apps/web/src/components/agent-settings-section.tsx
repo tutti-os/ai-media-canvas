@@ -321,7 +321,7 @@ function groupLocalCliProviders(
   providers: LocalAgentProviderInfo[],
 ): LocalCliProviderGroup[] {
   return providers.map((provider) => ({
-    available: provider.available,
+    available: provider.supported,
     ...(provider.defaultModelId
       ? { defaultModelId: provider.defaultModelId }
       : {}),
@@ -761,9 +761,7 @@ function LocalCliProviderModelPicker({
                     aria-busy={openingManager}
                     disabled={
                       openingManager ||
-                      (group.available
-                        ? group.models.length === 0
-                        : !canManage)
+                      (group.available ? group.models.length === 0 : !canManage)
                     }
                     onClick={() => {
                       if (!group.available) {
@@ -899,21 +897,20 @@ export function AgentSettingsSection({
     async (options?: {
       refreshLocalAgents?: boolean;
     }) => {
-      try {
-        const modelRequest = options?.refreshLocalAgents
-          ? fetchModels({ refresh: true })
-          : fetchModels();
-        const [response, connectionResponse] = await Promise.all([
-          modelRequest,
-          fetchTuttiManagedConnection(),
-        ]);
-        setAvailableModels(response.models);
-        setLocalAgentProviders(localAgentProvidersFromModelResponse(response));
-        setTuttiManagedConnection(connectionResponse.connection);
-      } catch {
-        setAvailableModels([]);
-        setLocalAgentProviders([]);
-      }
+      const modelRequest = options?.refreshLocalAgents
+        ? fetchModels({ refresh: true })
+        : fetchModels();
+      await Promise.allSettled([
+        modelRequest.then((response) => {
+          setAvailableModels(response.models);
+          setLocalAgentProviders(
+            localAgentProvidersFromModelResponse(response),
+          );
+        }),
+        fetchTuttiManagedConnection().then((connectionResponse) => {
+          setTuttiManagedConnection(connectionResponse.connection);
+        }),
+      ]);
     },
     [],
   );

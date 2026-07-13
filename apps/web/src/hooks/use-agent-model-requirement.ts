@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import type { AgentModelSource } from "@aimc/shared";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   getAgentModelSourceTab,
@@ -24,7 +24,7 @@ async function isConfiguredModelAvailable(
   if (!provider) return false;
   const response = await fetchModels();
   return localAgentProvidersFromModelResponse(response).some(
-    (entry) => entry.provider === provider && entry.available,
+    (entry) => entry.provider === provider && entry.supported,
   );
 }
 
@@ -104,10 +104,7 @@ export function useAgentModelRequirement() {
       setWorkspaceDefaultModel(defaultModel || null);
       setWorkspaceDefaultModelSource(defaultModel ? defaultModelSource : null);
       return defaultModel.length > 0
-        ? isConfiguredModelAvailable(
-            defaultModel,
-            defaultModelSource,
-          )
+        ? isConfiguredModelAvailable(defaultModel, defaultModelSource)
         : false;
     } catch {
       return false;

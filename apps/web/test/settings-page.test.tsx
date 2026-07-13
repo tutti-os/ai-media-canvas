@@ -1208,7 +1208,7 @@ describe("SettingsPage", () => {
         {
           provider: "codex",
           displayName: "Codex",
-          available: true,
+          supported: true,
           authState: "ok",
           models: [
             { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
@@ -1218,7 +1218,7 @@ describe("SettingsPage", () => {
         {
           provider: "claude-code",
           displayName: "Claude Code",
-          available: true,
+          supported: true,
           authState: "ok",
           models: [
             {
@@ -1353,7 +1353,7 @@ describe("SettingsPage", () => {
         {
           provider: "codex",
           displayName: "Codex",
-          available: true,
+          supported: true,
           authState: "ok",
           defaultModelId: "codex:gpt-5.4",
           models: [
@@ -1438,7 +1438,7 @@ describe("SettingsPage", () => {
         {
           provider: "vendor-agent",
           displayName: "Vendor Agent",
-          available: true,
+          supported: true,
           authState: "ok",
           models: [],
         },
@@ -1678,7 +1678,7 @@ describe("SettingsPage", () => {
         {
           provider: "codex",
           displayName: "Codex",
-          available: false,
+          supported: false,
           authState: "missing",
           reason: "Sign in with Tutti Agent Manager.",
           models: [],
@@ -1686,7 +1686,7 @@ describe("SettingsPage", () => {
         {
           provider: "claude-code",
           displayName: "Claude Code",
-          available: false,
+          supported: false,
           authState: "missing",
           reason: "Sign in with Tutti Agent Manager.",
           models: [],
@@ -1760,7 +1760,7 @@ describe("SettingsPage", () => {
         {
           provider: "codex",
           displayName: "Codex",
-          available: false,
+          supported: false,
           authState: "missing",
           reason: "Sign in with Tutti Agent Manager.",
           models: [],
@@ -1818,7 +1818,7 @@ describe("SettingsPage", () => {
         {
           provider: "claude-code",
           displayName: "Claude Code",
-          available: true,
+          supported: true,
           authState: "ok",
           models: [
             {
@@ -1831,11 +1831,9 @@ describe("SettingsPage", () => {
         {
           provider: "codex",
           displayName: "Codex",
-          available: true,
+          supported: true,
           authState: "ok",
-          models: [
-            { id: "codex:gpt-5.4", name: "Codex", provider: "codex" },
-          ],
+          models: [{ id: "codex:gpt-5.4", name: "Codex", provider: "codex" }],
         },
       ],
     });

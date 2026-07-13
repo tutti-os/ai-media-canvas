@@ -10,7 +10,6 @@ import {
 } from "react";
 
 import { useAppTranslation } from "@/i18n";
-import { useAgentModelRequirement } from "../hooks/use-agent-model-requirement";
 import type { ImageAttachmentState } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { AgentModelSelector } from "./agent-model-selector";
@@ -41,6 +40,7 @@ type ChatInputProps = {
 export type ChatInputHandle = {
   focus: () => void;
   setDraft: (value: string) => void;
+  restoreDraftIfEmpty: (value: string) => void;
 };
 
 function PromptToolbarTooltip({ label }: { label: string }) {
@@ -76,7 +76,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const inputRef = useRef<TuttiRichTextInputHandle>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { preference } = useImageModelPreference();
-    const agentRequirement = useAgentModelRequirement();
     const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsInitialTab, setSettingsInitialTab] = useState<
@@ -94,9 +93,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           inputRef.current?.focus();
         });
       },
+      restoreDraftIfEmpty(nextValue) {
+        setValue((currentValue) =>
+          currentValue.trim() ? currentValue : nextValue,
+        );
+      },
     }));
 
-    const handleSubmit = useCallback(async () => {
+    const handleSubmit = useCallback(() => {
       const trimmed = value.trim();
       const hasReadyAttachments = canSendAttachments ?? !!attachments?.length;
       if (
@@ -108,17 +112,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         return;
       }
 
-      if (!(await agentRequirement.ensureAgentModelConfigured())) {
-        setSettingsInitialTab("agent");
-        setSettingsOpen(true);
-        return;
-      }
-
       const sent = onSend(trimmed);
       if (sent === false) return;
       setValue("");
     }, [
-      agentRequirement,
       attachments,
       canSendAttachments,
       disabled,
@@ -358,6 +355,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 >
                   <rect x="3.5" y="3.5" width="7" height="7" rx="1.4" />
                 </svg>
+              </button>
+            ) : isRunning ? (
+              <button
+                type="button"
+                aria-label={t("thinking")}
+                aria-busy="true"
+                disabled
+                className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:cursor-wait"
+              >
+                <span
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-foreground/35 border-t-primary-foreground"
+                />
               </button>
             ) : (
               <button

@@ -6,6 +6,14 @@ import type { LocalAgentModelDetectContext } from "../agent/local-agent-models.j
 import { loadServerEnv } from "../config/env.js";
 import { listAgentModels, registerModelRoutes } from "./models.js";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 describe("registerModelRoutes", () => {
   const apps: Array<ReturnType<typeof Fastify>> = [];
   const fetchMock = vi.fn();
@@ -270,45 +278,33 @@ describe("registerModelRoutes", () => {
         {
           provider: "codex" as const,
           displayName: "Codex CLI",
-          result: {
-            authState: "ok" as const,
-            executablePath: "codex",
-            models: [
-              { id: "default", label: "Default (CLI config)" },
-              { id: "gpt-live", label: "gpt-live" },
-            ],
-            supported: true,
-            version: "1.0.0",
-          },
+          authState: "ok" as const,
+          models: [
+            { id: "default", label: "Default (CLI config)" },
+            { id: "gpt-live", label: "gpt-live" },
+          ],
+          supported: true,
         },
         {
           provider: "claude-code" as const,
           displayName: "Claude Code",
-          result: {
-            authState: "ok" as const,
-            executablePath: "claude",
-            models: [
-              {
-                id: "sonnet",
-                label: "Sonnet (alias)",
-                description: "Custom Sonnet model",
-              },
-              { id: "claude:opus", label: "Scoped Opus" },
-            ],
-            supported: true,
-            version: "1.0.0",
-          },
+          authState: "ok" as const,
+          models: [
+            {
+              id: "sonnet",
+              label: "Sonnet (alias)",
+              description: "Custom Sonnet model",
+            },
+            { id: "claude:opus", label: "Scoped Opus" },
+          ],
+          supported: true,
         },
         {
           provider: "hermes" as const,
           displayName: "Hermes",
-          result: {
-            authState: "ok" as const,
-            executablePath: "hermes",
-            models: [{ id: "openai-codex:gpt-5.4", label: "Hermes GPT" }],
-            supported: true,
-            version: "1.0.0",
-          },
+          authState: "ok" as const,
+          models: [{ id: "openai-codex:gpt-5.4", label: "Hermes GPT" }],
+          supported: true,
         },
       ]),
     };
@@ -370,7 +366,83 @@ describe("registerModelRoutes", () => {
       ]),
     );
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(1);
-    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith(undefined);
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({});
+  });
+
+  it("coalesces normal and refresh model detection independently", async () => {
+    const normal = deferred<[]>();
+    const refresh = deferred<[]>();
+    const localAgentModelDiscovery = {
+      detect: vi.fn((context?: LocalAgentModelDetectContext) =>
+        context?.refresh ? refresh.promise : normal.promise,
+      ),
+    };
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv({ agentModel: "openai:gpt-4.1" }, {}),
+      undefined,
+      { localAgentModelDiscovery },
+    );
+
+    const normalRequests = [
+      app.inject({ method: "GET", url: "/api/models" }),
+      app.inject({ method: "GET", url: "/api/models" }),
+    ];
+    await vi.waitFor(() =>
+      expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(1),
+    );
+    normal.resolve([]);
+    await Promise.all(normalRequests);
+
+    const refreshRequests = [
+      app.inject({ method: "GET", url: "/api/models?refresh=1" }),
+      app.inject({
+        method: "POST",
+        url: "/api/models",
+        payload: { refresh: true },
+      }),
+    ];
+    await vi.waitFor(() =>
+      expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(2),
+    );
+    refresh.resolve([]);
+    await Promise.all(refreshRequests);
+    expect(localAgentModelDiscovery.detect).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ refresh: true }),
+    );
+  });
+
+  it("does not join a refresh to an in-flight normal detection", async () => {
+    const normal = deferred<[]>();
+    const refresh = deferred<[]>();
+    const localAgentModelDiscovery = {
+      detect: vi.fn((context?: LocalAgentModelDetectContext) =>
+        context?.refresh ? refresh.promise : normal.promise,
+      ),
+    };
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv({ agentModel: "openai:gpt-4.1" }, {}),
+      undefined,
+      { localAgentModelDiscovery },
+    );
+
+    const normalRequest = app.inject({ method: "GET", url: "/api/models" });
+    const refreshRequest = app.inject({
+      method: "GET",
+      url: "/api/models?refresh=1",
+    });
+    await vi.waitFor(() =>
+      expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(2),
+    );
+    normal.resolve([]);
+    refresh.resolve([]);
+    await Promise.all([normalRequest, refreshRequest]);
   });
 
   it("bypasses cached local-agent detection when model refresh is requested", async () => {
@@ -379,13 +451,9 @@ describe("registerModelRoutes", () => {
         {
           provider: "claude-code" as const,
           displayName: "Claude Code",
-          result: {
-            authState: "ok" as const,
-            executablePath: "claude",
-            models: [{ id: "sonnet", label: "Sonnet" }],
-            supported: true,
-            version: "1.0.0",
-          },
+          authState: "ok" as const,
+          models: [{ id: "sonnet", label: "Sonnet" }],
+          supported: true,
         },
       ]),
     };
@@ -421,19 +489,32 @@ describe("registerModelRoutes", () => {
     });
   });
 
-  it("returns enabled but unauthenticated providers as disabled metadata", async () => {
+  it("preserves auth states and keeps a supported default fallback visible", async () => {
     const localAgentModelDiscovery = {
       detect: vi.fn(async () => [
         {
           provider: "tutti-agent" as const,
           displayName: "Tutti Agent",
-          result: {
-            authState: "missing" as const,
-            executablePath: "tutti-agent",
-            models: [{ id: "default", label: "Default" }],
-            supported: true,
-            version: "0.0.1",
-          },
+          authState: "missing" as const,
+          models: [{ id: "default", label: "Default" }],
+          supported: false,
+        },
+        {
+          provider: "claude-code" as const,
+          displayName: "Claude Code",
+          authState: "expired" as const,
+          reason: "Provider session expired.",
+          models: [],
+          supported: false,
+        },
+        {
+          provider: "codex" as const,
+          displayName: "Codex",
+          authState: "ok" as const,
+          reason: "Model discovery timed out; using the configured default.",
+          models: [{ id: "default", label: "Default" }],
+          defaultModelId: "default",
+          supported: true,
         },
       ]),
     };
@@ -456,8 +537,26 @@ describe("registerModelRoutes", () => {
       expect.objectContaining({
         provider: "tutti-agent",
         displayName: "Tutti Agent",
-        available: false,
+        supported: false,
         authState: "missing",
+      }),
+    );
+    expect(response.json().localAgentProviders).toContainEqual(
+      expect.objectContaining({
+        provider: "claude-code",
+        supported: false,
+        authState: "expired",
+      }),
+    );
+    expect(response.json().models).toContainEqual(
+      expect.objectContaining({ id: "codex:default", provider: "codex" }),
+    );
+    expect(response.json().localAgentProviders).toContainEqual(
+      expect.objectContaining({
+        provider: "codex",
+        supported: true,
+        authState: "ok",
+        defaultModelId: "default",
       }),
     );
   });
@@ -471,13 +570,9 @@ describe("registerModelRoutes", () => {
         {
           provider: "tutti-agent" as const,
           displayName: "Tutti Agent",
-          result: {
-            authState: "ok" as const,
-            executablePath: "tutti-agent",
-            models: [{ id: "default", label: "Default (Tutti Agent)" }],
-            supported: true,
-            version: "1.0.0",
-          },
+          authState: "ok" as const,
+          models: [{ id: "default", label: "Default (Tutti Agent)" }],
+          supported: true,
         },
       ]),
     };
@@ -494,7 +589,7 @@ describe("registerModelRoutes", () => {
       ),
       undefined,
       {
-        createManagedLocalAgentModelDiscovery: () => localAgentModelDiscovery,
+        localAgentModelDiscovery,
       },
     );
 
@@ -538,48 +633,34 @@ describe("registerModelRoutes", () => {
     );
   });
 
-  it("isolates managed model discovery runtimes between credentials", async () => {
+  it("reuses one route runtime while keeping managed credential contexts distinct", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
-    const uncredentialedDiscovery = {
-      detect: vi.fn(async () => []),
-    };
-    const managedDiscoveries: Array<{
-      detect: ReturnType<typeof vi.fn>;
-    }> = [];
-    const createManagedLocalAgentModelDiscovery = vi.fn(() => {
-      const discovery = {
-        detect: vi.fn(async (context?: LocalAgentModelDetectContext) => {
-          const credential =
-            context?.managedAgentInvocation?.credential ?? "missing";
-          return [
-            {
-              provider: "tutti-agent" as const,
-              displayName: "Tutti Agent",
-              result: {
-                authState: "ok" as const,
-                executablePath: "tutti-agent",
-                models: [
-                  {
-                    id:
-                      credential === "credential-model-a"
-                        ? "managed-a"
-                        : "managed-b",
-                    label:
-                      credential === "credential-model-a"
-                        ? "Managed A"
-                        : "Managed B",
-                  },
-                ],
-                supported: true,
-                version: "1.0.0",
+    const localAgentModelDiscovery = {
+      detect: vi.fn(async (context?: LocalAgentModelDetectContext) => {
+        const credential =
+          context?.managedAgentInvocation?.credential ?? "missing";
+        return [
+          {
+            provider: "tutti-agent" as const,
+            displayName: "Tutti Agent",
+            authState: "ok" as const,
+            models: [
+              {
+                id:
+                  credential === "credential-model-a"
+                    ? "managed-a"
+                    : "managed-b",
+                label:
+                  credential === "credential-model-a"
+                    ? "Managed A"
+                    : "Managed B",
               },
-            },
-          ];
-        }),
-      };
-      managedDiscoveries.push(discovery);
-      return discovery;
-    });
+            ],
+            supported: true,
+          },
+        ];
+      }),
+    };
     const app = Fastify();
     apps.push(app);
     await registerModelRoutes(
@@ -593,8 +674,7 @@ describe("registerModelRoutes", () => {
       ),
       undefined,
       {
-        createManagedLocalAgentModelDiscovery,
-        localAgentModelDiscovery: uncredentialedDiscovery,
+        localAgentModelDiscovery,
       },
     );
 
@@ -629,30 +709,27 @@ describe("registerModelRoutes", () => {
     expect(responseB.json().models).not.toContainEqual(
       expect.objectContaining({ id: "tutti-agent:managed-a" }),
     );
-    expect(createManagedLocalAgentModelDiscovery).toHaveBeenCalledTimes(2);
-    expect(managedDiscoveries).toHaveLength(2);
-    expect(managedDiscoveries[0]?.detect).toHaveBeenCalledWith(
+    expect(localAgentModelDiscovery.detect).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
         managedAgentInvocation: expect.objectContaining({
           credential: "credential-model-a",
         }),
       }),
     );
-    expect(managedDiscoveries[1]?.detect).toHaveBeenCalledWith(
+    expect(localAgentModelDiscovery.detect).toHaveBeenNthCalledWith(
+      2,
       expect.objectContaining({
         managedAgentInvocation: expect.objectContaining({
           credential: "credential-model-b",
         }),
       }),
     );
-    expect(uncredentialedDiscovery.detect).not.toHaveBeenCalled();
   });
 
-  it("uses an isolated discovery when managed credentials are supplied as headers", async () => {
+  it("passes managed headers to the supplied reusable discovery", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
-    const uncredentialedDiscovery = { detect: vi.fn(async () => []) };
-    const managedDiscovery = { detect: vi.fn(async () => []) };
-    const createManagedLocalAgentModelDiscovery = vi.fn(() => managedDiscovery);
+    const localAgentModelDiscovery = { detect: vi.fn(async () => []) };
 
     await listAgentModels({
       env: loadServerEnv(
@@ -662,22 +739,19 @@ describe("registerModelRoutes", () => {
         },
         {},
       ),
-      localAgentModelDiscovery: uncredentialedDiscovery,
-      createManagedLocalAgentModelDiscovery,
+      localAgentModelDiscovery,
       managedAgentHeaders: {
         [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-from-header",
       },
     });
 
-    expect(createManagedLocalAgentModelDiscovery).toHaveBeenCalledOnce();
-    expect(managedDiscovery.detect).toHaveBeenCalledWith(
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith(
       expect.objectContaining({
         managedAgentInvocation: expect.objectContaining({
           credential: "credential-from-header",
         }),
       }),
     );
-    expect(uncredentialedDiscovery.detect).not.toHaveBeenCalled();
   });
 
   it("keeps managed model discovery credentials out of logs", async () => {
@@ -721,19 +795,12 @@ describe("registerModelRoutes", () => {
         {
           provider: "codex" as const,
           displayName: "Codex CLI",
-          result: {
-            authState: "unknown" as const,
-            executablePath: "codex",
-            models: [{ id: "gpt-live", label: "gpt-live" }],
-            supported: true,
-            version: "1.0.0",
-          },
+          authState: "unknown" as const,
+          models: [{ id: "gpt-live", label: "gpt-live" }],
+          supported: true,
         },
       ]),
     };
-    const createManagedLocalAgentModelDiscovery = vi.fn(
-      () => localAgentModelDiscovery,
-    );
     const app = Fastify();
     apps.push(app);
     await registerModelRoutes(
@@ -748,7 +815,6 @@ describe("registerModelRoutes", () => {
       ),
       undefined,
       {
-        createManagedLocalAgentModelDiscovery,
         localAgentModelDiscovery,
       },
     );
@@ -766,6 +832,5 @@ describe("registerModelRoutes", () => {
       expect.objectContaining({ provider: "codex" }),
     );
     expect(localAgentModelDiscovery.detect).not.toHaveBeenCalled();
-    expect(createManagedLocalAgentModelDiscovery).not.toHaveBeenCalled();
   });
 });

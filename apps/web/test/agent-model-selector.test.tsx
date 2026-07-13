@@ -10,28 +10,28 @@ const {
   fetchModelsMock,
   fetchWorkspaceSettingsMock,
   setModelMock,
-} =
-  vi.hoisted(() => ({
-    agentModelState: {
-      model: null as string | null,
-      modelSource: undefined as
-        | "api-provider"
-        | "local-agent"
-        | "tutti-managed"
-        | undefined,
-    },
-    fetchModelsMock: vi.fn(),
-    fetchWorkspaceSettingsMock: vi.fn(),
-    setModelMock: vi.fn(),
-  }));
+} = vi.hoisted(() => ({
+  agentModelState: {
+    model: null as string | null,
+    modelSource: undefined as
+      | "api-provider"
+      | "local-agent"
+      | "tutti-managed"
+      | undefined,
+  },
+  fetchModelsMock: vi.fn(),
+  fetchWorkspaceSettingsMock: vi.fn(),
+  setModelMock: vi.fn(),
+}));
 
 vi.mock("../src/lib/server-api", () => ({
   fetchModels: async (...args: unknown[]) => {
     const response = await fetchModelsMock(...args);
     if (Array.isArray(response?.localAgentProviders)) return response;
     const localModels = Array.isArray(response?.models)
-      ? response.models.filter((model: { provider?: string }) =>
-          model.provider === "codex" || model.provider === "claude-code"
+      ? response.models.filter(
+          (model: { provider?: string }) =>
+            model.provider === "codex" || model.provider === "claude-code",
         )
       : [];
     const providers = new Map<string, typeof localModels>();
@@ -45,7 +45,7 @@ vi.mock("../src/lib/server-api", () => ({
       localAgentProviders: Array.from(providers, ([provider, models]) => ({
         provider,
         displayName: provider === "claude-code" ? "Claude Code" : "Codex",
-        available: true,
+        supported: true,
         authState: "ok",
         models,
       })),
@@ -359,7 +359,7 @@ describe("AgentModelSelector", () => {
         {
           provider: "tutti-agent",
           displayName: "Tutti Agent",
-          available: false,
+          supported: false,
           authState: "missing",
           reason: "Tutti Agent is not logged in.",
           models: [],
@@ -375,6 +375,52 @@ describe("AgentModelSelector", () => {
       screen.getByText("Tutti Agent is not logged in."),
     ).toBeInTheDocument();
     expect(setModelMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a degraded discovery reason for a supported local provider", async () => {
+    fetchModelsMock.mockResolvedValue({
+      models: [{ id: "codex:default", name: "Default", provider: "codex" }],
+      localAgentProviders: [
+        {
+          provider: "codex",
+          displayName: "Codex",
+          supported: true,
+          authState: "ok",
+          reason: "Model discovery timed out; using the configured default.",
+          models: [{ id: "codex:default", name: "Default", provider: "codex" }],
+        },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Agent/i }),
+    );
+    expect(
+      await screen.findByText(
+        "Model discovery timed out; using the configured default.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps stale providers visible while reporting a refresh failure", async () => {
+    fetchModelsMock
+      .mockResolvedValueOnce({
+        models: [{ id: "codex:default", name: "Default", provider: "codex" }],
+      })
+      .mockRejectedValueOnce(new Error("refresh failed"));
+
+    render(<AgentModelSelector compact />);
+    await waitFor(() => expect(fetchModelsMock).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
+
+    expect(await screen.findByText("Default")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        i18n.t("agentModelSelector.loadModelsError", { ns: "chat" }),
+      ),
+    ).toBeInTheDocument();
   });
 
   it("does not present an unavailable local provider as the active selection", async () => {
@@ -398,7 +444,7 @@ describe("AgentModelSelector", () => {
         {
           provider: "tutti-agent",
           displayName: "Tutti Agent",
-          available: false,
+          supported: false,
           authState: "missing",
           reason: "Tutti Agent is not logged in.",
           models: [],

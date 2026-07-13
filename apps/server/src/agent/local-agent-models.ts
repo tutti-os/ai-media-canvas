@@ -1,6 +1,9 @@
-import type { AgentRuntimeProvider, ModelInfo } from "@aimc/shared";
+import type {
+  AgentRuntimeProvider,
+  LocalAgentProviderInfo,
+  ModelInfo,
+} from "@aimc/shared";
 import {
-  type AgentDetection,
   type DetectContext,
   type LocalAgentRuntime,
   createDefaultLocalAgentRuntime,
@@ -80,10 +83,9 @@ export function buildLocalAgentModels(
   const seen = new Set<string>();
 
   for (const detection of detections) {
-    const result = detection.result as AgentDetection | null;
-    if (!result || result.supported === false) continue;
+    if (!detection.supported) continue;
 
-    for (const model of result.models ?? []) {
+    for (const model of detection.models) {
       const catalogModel = buildLocalAgentCatalogModel(
         String(detection.provider),
         model,
@@ -95,6 +97,31 @@ export function buildLocalAgentModels(
   }
 
   return models;
+}
+
+export function buildLocalAgentProviderInfo(
+  detections: Awaited<ReturnType<LocalAgentModelDiscovery["detect"]>>,
+): LocalAgentProviderInfo[] {
+  return detections.map((detection) => {
+    const defaultModelId = detection.defaultModelId
+      ? localAgentModelId(detection.provider, detection.defaultModelId)
+      : null;
+    return {
+      provider: detection.provider,
+      displayName: detection.displayName,
+      supported: detection.supported,
+      authState: detection.authState,
+      ...(detection.reason ? { reason: detection.reason } : {}),
+      ...(defaultModelId ? { defaultModelId } : {}),
+      models: detection.models.flatMap((model) => {
+        const catalogModel = buildLocalAgentCatalogModel(
+          detection.provider,
+          model,
+        );
+        return catalogModel ? [catalogModel] : [];
+      }),
+    };
+  });
 }
 
 export async function resolveCodexImagegenAgentModel(

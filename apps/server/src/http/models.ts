@@ -9,20 +9,20 @@ import {
 import {
   type DetectContext,
   type ManagedAgentInvocationCredentialHeaders,
-  createDefaultLocalAgentRuntime,
   createManagedAgentDetectContextFromHeaders,
 } from "@tutti-os/agent-acp-kit";
-import { resolveTuttiAgentProviderCatalog } from "@tutti-os/agent-acp-kit/tutti";
 
 import {
   type LocalAgentModelDetectContext,
   type LocalAgentModelDiscovery,
+  buildLocalAgentModels,
+  buildLocalAgentProviderInfo,
   createDefaultLocalAgentModelDiscovery,
 } from "../agent/local-agent-models.js";
 import {
-  buildLocalAgentModelsFromCatalog,
-  buildLocalAgentProviderInfoFromCatalog,
-} from "../agent/tutti-catalog-models.js";
+  type ModelDiscoverySingleFlight,
+  createModelDiscoverySingleFlight,
+} from "../agent/model-discovery-single-flight.js";
 import type { ServerEnv } from "../config/env.js";
 import {
   LOCAL_WORKSPACE_ID,
@@ -253,21 +253,17 @@ export async function registerModelRoutes(
   env: ServerEnv,
   settingsService?: SettingsService,
   options?: {
-    createManagedLocalAgentModelDiscovery?: () => LocalAgentModelDiscovery;
     localAgentModelDiscovery?: LocalAgentModelDiscovery;
     tuttiManagedCredentials?: TuttiManagedCredentialService;
   },
 ) {
-  // Credentialless requests share one discovery instance. Its refresh path
-  // swaps runtimes, so a slower pre-refresh probe cannot replace the cache
-  // observed by later requests. Managed invocations must never share this
-  // cache because the SDK cache key intentionally does not contain secrets.
-  const uncredentialedLocalAgentModelDiscovery =
+  const modelDiscoverySingleFlight = createModelDiscoverySingleFlight();
+  // One route-scoped runtime handles both standalone and managed detection.
+  // Managed calls do not use the standalone plugin cache; the kit selects the
+  // Tutti strategy from each request context.
+  const localAgentModelDiscovery =
     options?.localAgentModelDiscovery ??
     createDefaultLocalAgentModelDiscovery();
-  const createManagedLocalAgentModelDiscovery =
-    options?.createManagedLocalAgentModelDiscovery ??
-    createDefaultLocalAgentModelDiscovery;
   const sendModels = async (
     reply: FastifyReply,
     input: {
@@ -281,12 +277,8 @@ export async function registerModelRoutes(
     const result = await listAgentModelCatalog({
       env,
       logger: app.log,
-      ...(managedAgentDetectContext
-        ? {
-            createManagedLocalAgentModelDiscovery,
-            managedAgentDetectContext,
-          }
-        : { localAgentModelDiscovery: uncredentialedLocalAgentModelDiscovery }),
+      localAgentModelDiscovery,
+      ...(managedAgentDetectContext ? { managedAgentDetectContext } : {}),
       ...(input.refreshLocalAgentModels
         ? { refreshLocalAgentModels: true }
         : {}),
@@ -294,6 +286,7 @@ export async function registerModelRoutes(
         ? { tuttiManagedCredentials: options.tuttiManagedCredentials }
         : {}),
       ...(settingsService ? { settingsService } : {}),
+      modelDiscoverySingleFlight,
     });
     return reply.code(200).send(modelListResponseSchema.parse(result));
   };
@@ -316,13 +309,13 @@ export async function registerModelRoutes(
 }
 
 export type ListAgentModelsOptions = {
-  createManagedLocalAgentModelDiscovery?: () => LocalAgentModelDiscovery;
   env: ServerEnv;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
   managedAgentDetectContext?: DetectContext;
   managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders;
   refreshLocalAgentModels?: boolean;
+  modelDiscoverySingleFlight?: ModelDiscoverySingleFlight;
   tuttiManagedCredentials?: TuttiManagedCredentialService;
   settingsService?: SettingsService;
 };
@@ -424,31 +417,33 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
       process.env.TUTTI_WORKSPACE_ROOT?.trim() ||
       localAgentDetectContext?.cwd?.trim();
     try {
-      const localAgentModelDiscovery =
-        managedAgentDetectContext &&
-        options.createManagedLocalAgentModelDiscovery
-          ? options.createManagedLocalAgentModelDiscovery()
-          : options.localAgentModelDiscovery;
-      const localAgentRuntime = createDefaultLocalAgentRuntime();
-      const runtime = localAgentModelDiscovery
-        ? {
-            detect: (context?: LocalAgentModelDetectContext) =>
-              localAgentModelDiscovery.detect(context),
-            listProviders: () => localAgentRuntime.listProviders(),
-          }
-        : localAgentRuntime;
-      const catalog = await resolveTuttiAgentProviderCatalog({
-        runtime,
-        includeComposerModels: false,
-        ...(localAgentDetectContext
-          ? { detectContext: localAgentDetectContext }
-          : {}),
-        ...(workspaceCwd ? { cwd: workspaceCwd } : {}),
-      });
-      models.push(...buildLocalAgentModelsFromCatalog(catalog.providers));
-      localAgentProviders.push(
-        ...buildLocalAgentProviderInfoFromCatalog(catalog.providers),
-      );
+      const runtime =
+        options.localAgentModelDiscovery ??
+        createDefaultLocalAgentModelDiscovery();
+      const detect = () =>
+        runtime.detect({
+          ...(localAgentDetectContext ?? {}),
+          ...(workspaceCwd ? { cwd: workspaceCwd } : {}),
+        });
+      const detections = options.modelDiscoverySingleFlight
+        ? await options.modelDiscoverySingleFlight.run(
+            {
+              workspaceId:
+                process.env.TSH_WORKSPACE_ID?.trim() || LOCAL_WORKSPACE_ID,
+              refresh: options.refreshLocalAgentModels === true,
+              ...(managedAgentDetectContext?.managedAgentInvocation?.credential
+                ? {
+                    credential:
+                      managedAgentDetectContext.managedAgentInvocation
+                        .credential,
+                  }
+                : {}),
+            },
+            detect,
+          )
+        : await detect();
+      models.push(...buildLocalAgentModels(detections));
+      localAgentProviders.push(...buildLocalAgentProviderInfo(detections));
     } catch (error) {
       options.logger?.warn(
         managedAgentDetectContext ? {} : { err: error },

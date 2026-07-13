@@ -214,6 +214,36 @@ describe("ChatSidebar", () => {
       models: [
         { id: "local:assistant", name: "Local Assistant", provider: "local" },
       ],
+      localAgentProviders: [
+        {
+          provider: "local",
+          displayName: "Local Assistant",
+          supported: true,
+          authState: "ok",
+          models: [
+            {
+              id: "local:assistant",
+              name: "Local Assistant",
+              provider: "local",
+              source: "local-agent",
+            },
+          ],
+        },
+        {
+          provider: "claude",
+          displayName: "Claude",
+          supported: true,
+          authState: "ok",
+          models: [
+            {
+              id: "claude:sonnet",
+              name: "Sonnet",
+              provider: "claude",
+              source: "local-agent",
+            },
+          ],
+        },
+      ],
     });
     fetchRunEventsMock.mockReset();
     fetchRunEventsMock.mockResolvedValue({
@@ -648,9 +678,57 @@ describe("ChatSidebar", () => {
 
     await waitFor(() => expect(mockWs.startRun).not.toHaveBeenCalled());
     expect(await screen.findByText("Mock Settings Dialog")).toBeInTheDocument();
+    expect(input).toHaveValue("hello without model");
     expect(
       screen.queryByText("请先配置或选择一个 Agent 模型。"),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not overwrite a newer draft when model validation fails", async () => {
+    let resolveSettings!: (value: {
+      settings: { defaultModel: string };
+    }) => void;
+    fetchWorkspaceSettingsMock
+      .mockResolvedValueOnce({
+        settings: {
+          defaultModel: "local:assistant",
+        },
+      })
+      .mockResolvedValueOnce({
+        settings: {
+          defaultModel: "local:assistant",
+        },
+      })
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSettings = resolve;
+        }),
+      );
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await findChatInput();
+    await waitFor(() =>
+      expect(fetchWorkspaceSettingsMock).toHaveBeenCalledTimes(2),
+    );
+    await userEvent.type(input, "submitted draft{Enter}");
+    await userEvent.type(input, "newer draft");
+
+    resolveSettings({ settings: { defaultModel: "" } });
+
+    expect(await screen.findByText("Mock Settings Dialog")).toBeInTheDocument();
+    expect(input).toHaveValue("newer draft");
+    expect(mockWs.startRun).not.toHaveBeenCalled();
   });
 
   it("ignores a rapid duplicate Enter press while a send is already starting", async () => {
