@@ -49,6 +49,7 @@ test("production Tutti app workflow publishes ai-media-canvas from a release bum
     "tutti-os/tutti/.github/workflows/publish-tutti-app-release.yml@main",
   );
   assert.equal(publish.with.app_id, "ai-media-canvas");
+  assert.equal(publish.with.min_tutti_version, undefined);
   assert.equal(publish.with.package_command, "pnpm package:tutti");
   assert.equal(publish.with.package_dir, "build/tutti-app/package");
   assert.equal(publish.with.icon_path, "build/tutti-app/package/icon.png");
@@ -84,6 +85,7 @@ test("staging Tutti app workflow publishes ai-media-canvas on main and manually"
     "tutti-os/tutti/.github/workflows/publish-tutti-app-release.yml@main",
   );
   assert.equal(publish.with.app_id, "ai-media-canvas");
+  assert.equal(publish.with.min_tutti_version, undefined);
   assert.equal(publish.with.package_command, "pnpm package:tutti");
   assert.equal(publish.with.package_dir, "build/tutti-app/package");
   assert.equal(publish.with.icon_path, "build/tutti-app/package/icon.png");
