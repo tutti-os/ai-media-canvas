@@ -442,8 +442,15 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
             detect,
           )
         : await detect();
-      models.push(...buildLocalAgentModels(detections));
-      localAgentProviders.push(...buildLocalAgentProviderInfo(detections));
+      // Keep the runtime's complete detection result available here for
+      // diagnostics, but only expose runnable providers to API consumers.
+      const supportedDetections = detections.filter(
+        (detection) => detection.supported,
+      );
+      models.push(...buildLocalAgentModels(supportedDetections));
+      localAgentProviders.push(
+        ...buildLocalAgentProviderInfo(supportedDetections),
+      );
     } catch (error) {
       options.logger?.warn(
         managedAgentDetectContext ? {} : { err: error },
