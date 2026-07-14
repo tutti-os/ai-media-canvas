@@ -267,9 +267,15 @@ export async function registerModelRoutes(
   // One route-scoped runtime handles both standalone and managed detection.
   // Managed calls do not use the standalone plugin cache; the kit selects the
   // Tutti strategy from each request context.
+  const localAgentCatalogRuntime = options?.localAgentCatalogRuntime;
   const localAgentModelDiscovery =
     options?.localAgentModelDiscovery ??
-    createDefaultLocalAgentModelDiscovery();
+    (localAgentCatalogRuntime
+      ? {
+          detect: (context?: LocalAgentModelDetectContext) =>
+            localAgentCatalogRuntime.detect(context),
+        }
+      : createDefaultLocalAgentModelDiscovery());
   const sendModels = async (
     reply: FastifyReply,
     input: {
@@ -437,9 +443,15 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
       process.env.TUTTI_WORKSPACE_ROOT?.trim() ||
       localAgentDetectContext?.cwd?.trim();
     try {
+      const localAgentCatalogRuntime = options.localAgentCatalogRuntime;
       const runtime =
         options.localAgentModelDiscovery ??
-        createDefaultLocalAgentModelDiscovery();
+        (localAgentCatalogRuntime
+          ? {
+              detect: (context?: LocalAgentModelDetectContext) =>
+                localAgentCatalogRuntime.detect(context),
+            }
+          : createDefaultLocalAgentModelDiscovery());
       const detect = () =>
         runtime.detect({
           ...(localAgentDetectContext ?? {}),

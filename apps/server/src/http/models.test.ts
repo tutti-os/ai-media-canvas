@@ -698,9 +698,9 @@ describe("registerModelRoutes", () => {
     const result = await listAgentModelCatalog({
       env: loadServerEnv({}, {}),
       localAgentCatalogRuntime,
-      localAgentModelDiscovery: { detect: vi.fn(async () => detections) },
     });
 
+    expect(localAgentCatalogRuntime.detect).toHaveBeenCalled();
     expect(result.localAgentTargets).toContainEqual(
       expect.objectContaining({
         agentTargetId: "local:future-runtime",

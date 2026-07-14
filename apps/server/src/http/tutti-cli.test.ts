@@ -222,6 +222,73 @@ describe("registerTuttiCliRoutes", () => {
     );
   });
 
+  it("does not expose operational agent target discovery errors", async () => {
+    const agentOperations = {
+      cancelRun: vi.fn(),
+      listRunEvents: vi.fn(),
+      startRun: vi.fn(async () => {
+        throw new Error("catalog transport exposed secret-value");
+      }),
+    };
+    const app = buildTestApp({ agentOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/agent/run",
+      payload: {
+        "session-id": "session-1",
+        "conversation-id": "canvas-1",
+        prompt: "Continue",
+        "agent-id": "team:designer",
+      },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "application_error",
+        message: "Unable to start local agent run.",
+      },
+    });
+    expect(response.body).not.toContain("secret-value");
+  });
+
+  it("preserves expected agent target availability errors", async () => {
+    const agentOperations = {
+      cancelRun: vi.fn(),
+      listRunEvents: vi.fn(),
+      startRun: vi.fn(async () => {
+        throw {
+          code: "agent_target_unavailable",
+          message: "Agent target team:designer is unavailable.",
+          statusCode: 400,
+        };
+      }),
+    };
+    const app = buildTestApp({ agentOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/agent/run",
+      payload: {
+        "session-id": "session-1",
+        "conversation-id": "canvas-1",
+        prompt: "Continue",
+        "agent-id": "team:designer",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "agent_target_unavailable",
+        message: "Agent target team:designer is unavailable.",
+      },
+    });
+  });
+
   it("requests opening the app home page when no project id is provided", async () => {
     const appOpenRequester = vi.fn(async () => undefined);
     const app = buildTestApp({

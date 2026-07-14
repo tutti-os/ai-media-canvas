@@ -483,6 +483,7 @@ describe("createAgentRunService", () => {
   });
 
   it("preserves the local CLI default model for the host adapter", async () => {
+    vi.stubEnv("TUTTI_CLI", "");
     localAgentRuntimeRunMock.mockClear();
     const localAgentRuntimeDetectMock = vi.fn(async () => [
       {
@@ -536,7 +537,9 @@ describe("createAgentRunService", () => {
       // Exhaust the stream so runtime reaches the provider invocation.
     }
 
-    expect(localAgentRuntimeDetectMock).toHaveBeenCalled();
+    // One call checks provider availability; the standalone composer performs
+    // additional detection for its catalog and model options.
+    expect(localAgentRuntimeDetectMock.mock.calls.length).toBeGreaterThan(1);
     expect(localAgentRuntimeRunMock).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "default",

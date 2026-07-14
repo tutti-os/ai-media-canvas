@@ -68,7 +68,7 @@ describe("useAgentModelRequirement", () => {
     );
   });
 
-  it("does not overwrite a newer selection after legacy migration validation", async () => {
+  it("revalidates a newer selection after legacy migration validation", async () => {
     let resolveModels!: (value: unknown) => void;
     fetchModelsMock.mockReturnValue(
       new Promise((resolve) => {
@@ -88,6 +88,7 @@ describe("useAgentModelRequirement", () => {
       await Promise.resolve();
     });
     selection.model = "codex:gpt-newer";
+    selection.agentTargetId = "team:reviewer";
     rerender();
     resolveModels({
       models: [],
@@ -100,8 +101,20 @@ describe("useAgentModelRequirement", () => {
         },
       ],
     });
+    fetchModelsMock.mockResolvedValueOnce({
+      models: [],
+      localAgentProviders: [],
+      localAgentTargets: [
+        {
+          agentTargetId: "team:reviewer",
+          providerId: "codex",
+          available: true,
+        },
+      ],
+    });
 
-    await expect(configured!).resolves.toBe(false);
+    await expect(configured!).resolves.toBe(true);
+    expect(fetchModelsMock).toHaveBeenCalledTimes(2);
     expect(setModelMock).not.toHaveBeenCalled();
   });
 

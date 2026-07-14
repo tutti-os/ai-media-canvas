@@ -16,6 +16,10 @@ logging, and media delegation policy.
 - Deprecated `runtimeProvider` input remains accepted during the compatibility
   window only when exactly one target in the complete catalog uses that
   provider. Ambiguous or stale provider-only state fails closed.
+- Exact target selection and availability failures surface as
+  `agent_target_unavailable`. Catalog discovery or transport failures remain
+  internal and return generic errors across the HTTP, CLI, and WebSocket
+  boundaries.
 - Composer options and Tutti skill context are loaded for the exact target.
   Server-deepagent mention handling first discovers the current catalog and
   scopes guidance to its available default exact target; it has no provider

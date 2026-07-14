@@ -122,36 +122,38 @@ export function useAgentModelRequirement() {
   }, [refreshWorkspaceDefaultModel]);
 
   const ensureAgentModelConfigured = useCallback(async () => {
-    if (model?.trim()) {
-      const validatedSelection = {
-        agentTargetId,
-        model,
-        modelSource,
-      };
-      const availability = await isConfiguredModelAvailable(
-        model.trim(),
-        modelSource,
-        agentTargetId,
-      );
-      const currentSelection = selectionRef.current;
-      const selectionUnchanged =
-        currentSelection.agentTargetId === validatedSelection.agentTargetId &&
-        currentSelection.model === validatedSelection.model &&
-        currentSelection.modelSource === validatedSelection.modelSource;
-      // The catalog response only validates the selection captured before the
-      // request. A newer selection must be checked by its own request.
-      if (!selectionUnchanged) return false;
-      if (
-        availability.migratedAgentTargetId &&
-        !validatedSelection.agentTargetId
-      ) {
-        setModel(
-          model.trim(),
-          "local-agent",
-          availability.migratedAgentTargetId,
+    if (selectionRef.current.model?.trim()) {
+      // A catalog request validates one immutable selection snapshot. If the
+      // user changes selection while it is pending, validate the newer choice
+      // instead of authorizing it with stale data or treating it as invalid.
+      while (true) {
+        const validatedSelection = selectionRef.current;
+        const configuredModel = validatedSelection.model?.trim();
+        if (!configuredModel) return false;
+        const availability = await isConfiguredModelAvailable(
+          configuredModel,
+          validatedSelection.modelSource,
+          validatedSelection.agentTargetId,
         );
+        const currentSelection = selectionRef.current;
+        const selectionUnchanged =
+          currentSelection.agentTargetId ===
+            validatedSelection.agentTargetId &&
+          currentSelection.model === validatedSelection.model &&
+          currentSelection.modelSource === validatedSelection.modelSource;
+        if (!selectionUnchanged) continue;
+        if (
+          availability.migratedAgentTargetId &&
+          !validatedSelection.agentTargetId
+        ) {
+          setModel(
+            configuredModel,
+            "local-agent",
+            availability.migratedAgentTargetId,
+          );
+        }
+        return availability.available;
       }
-      return availability.available;
     }
 
     try {

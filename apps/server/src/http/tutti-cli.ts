@@ -412,32 +412,40 @@ export async function registerTuttiCliRoutes(
     "/tutti/cli/agent/run",
     async (body, request) => {
       const payload = agentRunCliBodySchema.parse(body);
-      return options.agentOperations.startRun(
-        runCreateRequestSchema.parse({
-          sessionId: payload["session-id"],
-          conversationId: payload["conversation-id"],
-          prompt: payload.prompt,
-          ...(payload["canvas-id"] ? { canvasId: payload["canvas-id"] } : {}),
-          ...(payload.model ? { model: payload.model } : {}),
-          ...(payload["agent-id"]
-            ? { agentTargetId: payload["agent-id"] }
-            : {}),
-          ...(payload["runtime-kind"]
-            ? { runtimeKind: payload["runtime-kind"] }
-            : {}),
-          ...(payload["runtime-provider"]
-            ? { runtimeProvider: payload["runtime-provider"] }
-            : {}),
-          ...(payload["codex-imagegen-consent"]
-            ? {
-                delegationConsent: {
-                  codexImagegen: payload["codex-imagegen-consent"],
-                },
-              }
-            : {}),
-        }),
-        request.headers,
-      );
+      const runInput = runCreateRequestSchema.parse({
+        sessionId: payload["session-id"],
+        conversationId: payload["conversation-id"],
+        prompt: payload.prompt,
+        ...(payload["canvas-id"] ? { canvasId: payload["canvas-id"] } : {}),
+        ...(payload.model ? { model: payload.model } : {}),
+        ...(payload["agent-id"] ? { agentTargetId: payload["agent-id"] } : {}),
+        ...(payload["runtime-kind"]
+          ? { runtimeKind: payload["runtime-kind"] }
+          : {}),
+        ...(payload["runtime-provider"]
+          ? { runtimeProvider: payload["runtime-provider"] }
+          : {}),
+        ...(payload["codex-imagegen-consent"]
+          ? {
+              delegationConsent: {
+                codexImagegen: payload["codex-imagegen-consent"],
+              },
+            }
+          : {}),
+      });
+      try {
+        return await options.agentOperations.startRun(
+          runInput,
+          request.headers,
+        );
+      } catch (error) {
+        if (isCliStatusError(error)) throw error;
+        throw {
+          code: "application_error",
+          message: "Unable to start local agent run.",
+          statusCode: 500,
+        };
+      }
     },
     202,
   );
@@ -998,6 +1006,23 @@ function splitCsv(value: string) {
     .filter(Boolean);
 }
 
+function isCliStatusError(error: unknown): error is {
+  code: string;
+  message: string;
+  statusCode: number;
+} {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    "message" in error &&
+    "statusCode" in error &&
+    typeof (error as { code?: unknown }).code === "string" &&
+    typeof (error as { message?: unknown }).message === "string" &&
+    typeof (error as { statusCode?: unknown }).statusCode === "number"
+  );
+}
+
 function sendCliRouteError(error: unknown, reply: FastifyReply) {
   if (
     error instanceof CanvasServiceError ||
@@ -1029,25 +1054,11 @@ function sendCliRouteError(error: unknown, reply: FastifyReply) {
     );
   }
 
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    "message" in error &&
-    "statusCode" in error &&
-    typeof (error as { code?: unknown }).code === "string" &&
-    typeof (error as { message?: unknown }).message === "string" &&
-    typeof (error as { statusCode?: unknown }).statusCode === "number"
-  ) {
-    const typedError = error as {
-      code: string;
-      message: string;
-      statusCode: number;
-    };
+  if (isCliStatusError(error)) {
     return sendCliError(
       reply,
-      { code: typedError.code, message: typedError.message },
-      typedError.statusCode,
+      { code: error.code, message: error.message },
+      error.statusCode,
     );
   }
 
