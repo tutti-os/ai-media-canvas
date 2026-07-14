@@ -145,7 +145,7 @@ describe("Tutti managed credential bridge", () => {
     });
   });
 
-  it("opens the Tutti agent manager for Codex", async () => {
+  it("opens the provider-neutral Tutti agent manager", async () => {
     const openFeature = vi.fn().mockResolvedValue(undefined);
     setHostBridge({
       workspace: { openFeature },
@@ -153,25 +153,10 @@ describe("Tutti managed credential bridge", () => {
 
     expect(hasTuttiAgentManagerBridge()).toBe(true);
 
-    await openTuttiAgentManager("codex");
+    await openTuttiAgentManager();
 
     expect(openFeature).toHaveBeenCalledWith({
       feature: "agent-manage",
-      provider: "codex",
-    });
-  });
-
-  it("passes the canonical Claude Code provider to the Tutti bridge", async () => {
-    const openFeature = vi.fn().mockResolvedValue(undefined);
-    setHostBridge({
-      workspace: { openFeature },
-    });
-
-    await openTuttiAgentManager("claude-code");
-
-    expect(openFeature).toHaveBeenCalledWith({
-      feature: "agent-manage",
-      provider: "claude-code",
     });
   });
 
@@ -180,7 +165,7 @@ describe("Tutti managed credential bridge", () => {
 
     expect(hasTuttiAgentManagerBridge()).toBe(false);
 
-    await expect(openTuttiAgentManager("codex")).rejects.toThrow(
+    await expect(openTuttiAgentManager()).rejects.toThrow(
       "Tutti agent manager bridge is unavailable.",
     );
   });

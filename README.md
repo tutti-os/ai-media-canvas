@@ -25,7 +25,7 @@
 <p align="center">
   <a href="./LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue" /></a>
   <img alt="Local-first SQLite" src="https://img.shields.io/badge/local--first-SQLite-111827" />
-  <img alt="Local agent routes" src="https://img.shields.io/badge/local--agent-Codex%20%7C%20Claude%20Code-7c3aed" />
+  <img alt="Local agent routes" src="https://img.shields.io/badge/local--agent-Tutti%20Agent%20Targets-7c3aed" />
   <img alt="BYOK providers" src="https://img.shields.io/badge/BYOK-OpenAI--compatible%20%7C%20Anthropic-0f766e" />
   <img alt="i18n zh-CN and en" src="https://img.shields.io/badge/i18n-zh--CN%20%7C%20en-16a34a" />
   <img alt="Next.js" src="https://img.shields.io/badge/web-Next.js-000000" />
@@ -41,7 +41,7 @@ It combines an Excalidraw-powered canvas, an AI design assistant, local project 
 
 - Visual canvas workflow: compose, inspect, and refine creative work on an Excalidraw-based canvas.
 - AI design assistant: chat inside a project and let the assistant inspect or update canvas content.
-- Flexible agent routes: use authenticated local Codex or Claude Code CLIs, or bring your own API keys.
+- Flexible agent routes: select any Agent Target exposed by the connected Tutti workspace, or bring your own API keys.
 - Image and video generation: connect providers such as OpenAI, Google, Replicate, Volces, and Agnes.
 - Local-first storage: persist projects, chats, settings, skills, and generated assets locally with SQLite and disk files.
 - Skills workspace: import, create, enable, and reuse local AI skills for more specialized creative workflows.
@@ -87,7 +87,7 @@ You can configure providers from the in-app Settings page, or through `.env.loca
 
 AI Canvas supports two agent execution paths:
 
-- Local CLI routes: use an installed and authenticated Codex or Claude Code CLI, including accounts that are already covered by your local subscription.
+- Local Agent routes: AI Canvas discovers the current Tutti Agent Target catalog, so multiple agents backed by the same runtime provider remain separate selectable identities.
 - BYOK API routes: bring your own API key and base URL for OpenAI-compatible gateways, Anthropic-compatible Claude routes, Google Gemini, Vertex AI, Agnes, and other configured providers.
 
 Common variables:

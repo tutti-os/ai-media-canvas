@@ -28,14 +28,35 @@ describe("Tutti skill child projection", () => {
       [
         "#!/bin/sh",
         `printf '%s' "$TSH_MANAGED_AGENT_INVOCATION_CREDENTIAL" > ${JSON.stringify(credentialPath)}`,
+        'case "$*" in',
+        '  *"agent list"*)',
         "cat <<'JSON'",
         JSON.stringify({
           schemaVersion: 1,
+          defaultAgentTargetId: "local:codex",
+          agents: [
+            {
+              id: "local:codex",
+              provider: "codex",
+              name: "Local Agent",
+              availability: { status: "available" },
+            },
+          ],
+        }),
+        "JSON",
+        "    ;;",
+        "  *)",
+        "cat <<'JSON'",
+        JSON.stringify({
+          schemaVersion: 2,
+          agentTargetId: "local:codex",
           provider: "codex",
           agentSessionId: "run-1",
           skills: [],
         }),
         "JSON",
+        "    ;;",
+        "esac",
       ].join("\n"),
     );
     await chmod(tuttiCliPath, 0o755);
@@ -43,6 +64,7 @@ describe("Tutti skill child projection", () => {
     expect(process.env.TSH_MANAGED_AGENT_INVOCATION_CREDENTIAL).toBeUndefined();
 
     await loadTuttiAgentSkillContextForRun({
+      agentTargetId: "local:codex",
       cwd: root,
       detectContext: {
         managedAgentInvocation: {
@@ -51,7 +73,6 @@ describe("Tutti skill child projection", () => {
         },
         redactionSecrets: ["credential-child-1"],
       },
-      provider: "codex",
       runId: "run-1",
     });
 

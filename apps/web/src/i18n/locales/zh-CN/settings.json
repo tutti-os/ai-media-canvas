@@ -53,7 +53,7 @@
       "rescan": "重新扫描",
       "selectCliFirst": "请先选择 CLI...",
       "selectModel": "选择模型...",
-      "setupHint": "请在 Tutti 中安装或登录 Codex / Claude Code，然后重新扫描以启用本地 Agent 路由。"
+      "setupHint": "请在 Tutti 中安装或登录所选 Agent Target，然后重新扫描以启用本地 Agent 路由。"
     },
     "source": {
       "apiProvider": "API provider",

@@ -565,12 +565,15 @@ export function ChatSidebar({
   activeVideoGenerationPreferenceRef.current = activeVideoGenerationPreference;
 
   const {
+    agentTargetId,
     model: agentModel,
     modelSource: agentModelSource,
     ensureAgentModelConfigured,
   } = useAgentModelRequirement();
   const agentModelRef = useRef(agentModel);
   agentModelRef.current = agentModel;
+  const agentTargetIdRef = useRef(agentTargetId);
+  agentTargetIdRef.current = agentTargetId;
   const agentModelSourceRef = useRef(agentModelSource);
   agentModelSourceRef.current = agentModelSource;
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1033,6 +1036,9 @@ export function ChatSidebar({
                 }
               : {}),
             ...(agentModelRef.current ? { model: agentModelRef.current } : {}),
+            ...(agentTargetIdRef.current
+              ? { agentTargetId: agentTargetIdRef.current }
+              : {}),
             ...(agentModelRef.current && agentModelSourceRef.current
               ? { modelSource: agentModelSourceRef.current }
               : {}),

@@ -140,6 +140,7 @@ const agentRunCliBodySchema = z.object({
   prompt: z.string(),
   "canvas-id": z.string().min(1).optional(),
   model: z.string().min(1).optional(),
+  "agent-id": z.string().min(1).optional(),
   "runtime-kind": z.enum(["server-deepagent", "local-agent"]).optional(),
   "runtime-provider": z.string().min(1).optional(),
   "codex-imagegen-consent": z.enum(["allow-once"]).optional(),
@@ -418,6 +419,9 @@ export async function registerTuttiCliRoutes(
           prompt: payload.prompt,
           ...(payload["canvas-id"] ? { canvasId: payload["canvas-id"] } : {}),
           ...(payload.model ? { model: payload.model } : {}),
+          ...(payload["agent-id"]
+            ? { agentTargetId: payload["agent-id"] }
+            : {}),
           ...(payload["runtime-kind"]
             ? { runtimeKind: payload["runtime-kind"] }
             : {}),

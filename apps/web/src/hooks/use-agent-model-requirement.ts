@@ -17,19 +17,33 @@ export const AGENT_MODEL_REQUIRED_MESSAGE = "请先配置或选择一个 Agent �
 async function isConfiguredModelAvailable(
   configuredModel: string,
   configuredSource: AgentModelSource | null,
+  agentTargetId?: string | null,
 ) {
   const source = configuredSource ?? getAgentModelSourceTab(configuredModel);
   if (source !== "local-agent") return true;
   const provider = configuredModel.split(":")[0] ?? "";
   if (!provider) return false;
   const response = await fetchModels();
+  if (agentTargetId && Array.isArray(response.localAgentTargets)) {
+    return response.localAgentTargets.some(
+      (entry) => entry.agentTargetId === agentTargetId && entry.available,
+    );
+  }
+  // A provider-only browser selection predates Agent Target IDs. Do not guess
+  // when the provider now has multiple exposed agent identities.
+  if (Array.isArray(response.localAgentTargets)) {
+    const targets = response.localAgentTargets.filter(
+      (entry) => entry.providerId === provider,
+    );
+    if (targets.length !== 1) return false;
+  }
   return localAgentProvidersFromModelResponse(response).some(
     (entry) => entry.provider === provider && entry.supported,
   );
 }
 
 export function useAgentModelRequirement() {
-  const { model, modelSource } = useAgentModel();
+  const { agentTargetId, model, modelSource } = useAgentModel();
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
     string | null
   >(null);
@@ -94,7 +108,11 @@ export function useAgentModelRequirement() {
 
   const ensureAgentModelConfigured = useCallback(async () => {
     if (model?.trim()) {
-      return isConfiguredModelAvailable(model.trim(), modelSource);
+      return isConfiguredModelAvailable(
+        model.trim(),
+        modelSource,
+        agentTargetId,
+      );
     }
 
     try {
@@ -109,11 +127,12 @@ export function useAgentModelRequirement() {
     } catch {
       return false;
     }
-  }, [model, modelSource]);
+  }, [agentTargetId, model, modelSource]);
 
   return {
     model,
     modelSource,
+    agentTargetId,
     workspaceDefaultModel,
     workspaceDefaultModelSource,
     isAgentModelConfigured: Boolean(model?.trim() || workspaceDefaultModel),

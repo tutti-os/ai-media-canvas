@@ -6,8 +6,10 @@ import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 import type {
   AgentEvent,
   LocalAgentProviderPlugin,
+  LocalAgentRuntime,
   ManagedAgentRunContext,
 } from "@tutti-os/agent-acp-kit";
+import { loadTuttiAgentComposerOptions } from "@tutti-os/agent-acp-kit/tutti";
 
 import {
   type ImageAttachmentMetadata,
@@ -190,6 +192,12 @@ export function createLocalAgentRuntimeProvider(
         workspaceSkills,
         rlog,
       } = readyContext;
+      const effectiveAgentTargetId = run.agentTargetId;
+      if (!effectiveAgentTargetId) {
+        throw new Error(
+          "Local agent runs require an exact Agent Target identity.",
+        );
+      }
 
       const canvasSummary =
         await deps.loadCanvasSummaryForRuntime(readyContext);
@@ -387,17 +395,47 @@ export function createLocalAgentRuntimeProvider(
             : {}),
           sessionId: run.sessionId,
         });
-        const tuttiSkillContext = shouldUseTuttiSkillContext(enrichedPrompt)
-          ? await loadTuttiAgentSkillContextForRun({
-              cwd: runDir,
-              ...(run.detectContext
-                ? { detectContext: run.detectContext }
-                : {}),
-              provider: runtimeProvider,
-              runId: run.runId,
-              signal: run.controller.signal,
-            })
-          : { source: "standalone" as const, skillManifest: [], skills: [] };
+        const canLoadComposer =
+          typeof (deps.localAgentRuntime as { listProviders?: unknown })
+            .listProviders === "function";
+        const [tuttiSkillContext, composerOptions] = await Promise.all([
+          shouldUseTuttiSkillContext(enrichedPrompt)
+            ? loadTuttiAgentSkillContextForRun({
+                agentTargetId: effectiveAgentTargetId,
+                cwd: runDir,
+                ...(run.detectContext
+                  ? { detectContext: run.detectContext }
+                  : {}),
+                runId: run.runId,
+                signal: run.controller.signal,
+              })
+            : Promise.resolve({
+                source: "standalone" as const,
+                skillManifest: [],
+                skills: [],
+                recommendedSystemPrompt: undefined,
+              }),
+          canLoadComposer
+            ? loadTuttiAgentComposerOptions({
+                runtime: deps.localAgentRuntime as unknown as LocalAgentRuntime<
+                  string,
+                  string
+                >,
+                agentTargetId: effectiveAgentTargetId,
+                cwd: runDir,
+                env: process.env,
+                model: resolvedModel,
+                signal: run.controller.signal,
+              })
+            : Promise.resolve({
+                modelConfig: {
+                  currentValue: resolvedModel,
+                  defaultValue: resolvedModel,
+                },
+                permissionConfig: { defaultValue: "", modes: [] },
+                reasoningConfig: { currentValue: "", defaultValue: "" },
+              }),
+        ]);
         const skillManifest = [
           ...mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills),
           ...tuttiSkillContext.skillManifest,
@@ -412,6 +450,13 @@ export function createLocalAgentRuntimeProvider(
           ),
         );
         const resume = mapResumeContext(run.resumeContext);
+        const permissionMode = composerOptions.permissionConfig.modes.find(
+          (mode) => mode.id === composerOptions.permissionConfig.defaultValue,
+        );
+        const composerModel =
+          composerOptions.modelConfig.currentValue ||
+          composerOptions.modelConfig.defaultValue ||
+          resolvedModel;
         const mcpServers = [
           createAimcToolsMcpServerConfig({
             gatewayBaseUrl: deps.toolGatewayBaseUrl,
@@ -438,7 +483,21 @@ export function createLocalAgentRuntimeProvider(
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
           ...(managedAgentInvocation ? { managedAgentInvocation } : {}),
-          model: localAgentModelIdForAcp(resolvedModel, runtimeProvider),
+          model: localAgentModelIdForAcp(composerModel, runtimeProvider),
+          ...((composerOptions.reasoningConfig.currentValue ||
+            composerOptions.reasoningConfig.defaultValue) && {
+            reasoning:
+              composerOptions.reasoningConfig.currentValue ||
+              composerOptions.reasoningConfig.defaultValue,
+          }),
+          ...(permissionMode
+            ? {
+                permission: {
+                  modeId: permissionMode.id,
+                  semantic: permissionMode.semantic,
+                },
+              }
+            : {}),
           runtimeKind: "local-agent",
           runtimeProvider,
           mcpServers,

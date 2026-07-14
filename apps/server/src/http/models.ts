@@ -12,6 +12,8 @@ import {
   createManagedAgentDetectContextFromHeaders,
 } from "@tutti-os/agent-acp-kit";
 
+import { loadAgentTargetCatalog } from "../agent/agent-targets.js";
+
 import {
   type LocalAgentModelDetectContext,
   type LocalAgentModelDiscovery,
@@ -336,6 +338,10 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
     : options.env;
   const models: ModelInfo[] = [];
   const localAgentProviders: LocalAgentProviderInfo[] = [];
+  let localAgentTargets: Awaited<
+    ReturnType<typeof loadAgentTargetCatalog>
+  >["targets"] = [];
+  let defaultAgentTargetId: string | null = null;
   if (effectiveEnv.openAIApiKey) {
     let openAIModels = workspaceSettings?.providerModels.openai.length
       ? buildConfiguredModels("openai", workspaceSettings.providerModels.openai)
@@ -425,8 +431,8 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
           ...(localAgentDetectContext ?? {}),
           ...(workspaceCwd ? { cwd: workspaceCwd } : {}),
         });
-      const detections = options.modelDiscoverySingleFlight
-        ? await options.modelDiscoverySingleFlight.run(
+      const detectionsPromise = options.modelDiscoverySingleFlight
+        ? options.modelDiscoverySingleFlight.run(
             {
               workspaceId:
                 process.env.TSH_WORKSPACE_ID?.trim() || LOCAL_WORKSPACE_ID,
@@ -441,16 +447,44 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
             },
             detect,
           )
-        : await detect();
+        : detect();
+      const agentCatalogPromise = loadAgentTargetCatalog({
+        ...(localAgentDetectContext
+          ? { detectContext: localAgentDetectContext }
+          : {}),
+        refresh: options.refreshLocalAgentModels === true,
+      });
+      const [detections, agentCatalog] = await Promise.all([
+        detectionsPromise,
+        agentCatalogPromise,
+      ]);
       // Keep the runtime's complete detection result available here for
       // diagnostics, but only expose runnable providers to API consumers.
       const supportedDetections = detections.filter(
         (detection) => detection.supported,
       );
-      models.push(...buildLocalAgentModels(supportedDetections));
-      localAgentProviders.push(
-        ...buildLocalAgentProviderInfo(supportedDetections),
+      const ambiguousProviderIds = new Set(agentCatalog.ambiguousProviderIds);
+      models.push(
+        ...buildLocalAgentModels(supportedDetections).filter(
+          (model) => !ambiguousProviderIds.has(model.provider),
+        ),
       );
+      localAgentProviders.push(
+        ...buildLocalAgentProviderInfo(supportedDetections).map((provider) => {
+          if (!ambiguousProviderIds.has(provider.provider)) return provider;
+          const targetReason = agentCatalog.targets.find(
+            (target) => target.providerId === provider.provider,
+          )?.reason;
+          return {
+            ...provider,
+            supported: false,
+            ...(targetReason ? { reason: targetReason } : {}),
+            models: [],
+          };
+        }),
+      );
+      localAgentTargets = agentCatalog.targets;
+      defaultAgentTargetId = agentCatalog.defaultAgentTargetId;
     } catch (error) {
       options.logger?.warn(
         managedAgentDetectContext ? {} : { err: error },
@@ -461,5 +495,10 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
   if (options.tuttiManagedCredentials) {
     models.push(...(await options.tuttiManagedCredentials.listModels()));
   }
-  return { models, localAgentProviders };
+  return {
+    models,
+    localAgentProviders,
+    localAgentTargets,
+    defaultAgentTargetId,
+  };
 }

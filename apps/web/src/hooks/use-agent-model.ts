@@ -1,18 +1,24 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
 import type { AgentModelSource } from "@aimc/shared";
+import { useCallback, useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "aimc:agent-model";
 const SOURCE_STORAGE_KEY = "aimc:agent-model-source";
+const AGENT_TARGET_STORAGE_KEY = "aimc:agent-target-id";
 
 type AgentModel = string | null; // null = let AI Canvas pick a sensible local default
 type AgentModelSelection = {
   model: AgentModel;
   source: AgentModelSource | null;
+  agentTargetId: string | null;
 };
 
-const EMPTY_SELECTION: AgentModelSelection = { model: null, source: null };
+const EMPTY_SELECTION: AgentModelSelection = {
+  model: null,
+  source: null,
+  agentTargetId: null,
+};
 
 // Listeners for cross-component reactivity
 const listeners = new Set<() => void>();
@@ -23,6 +29,7 @@ function emitChange() {
 // Cache parsed result -- useSyncExternalStore requires stable references
 let cachedRaw: string | null | undefined;
 let cachedSourceRaw: string | null | undefined;
+let cachedAgentTargetRaw: string | null | undefined;
 let cachedSelection: AgentModelSelection = EMPTY_SELECTION;
 
 function normalizeSource(value: string | null): AgentModelSource | null {
@@ -37,12 +44,22 @@ function getSnapshot(): AgentModelSelection {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const sourceRaw = localStorage.getItem(SOURCE_STORAGE_KEY);
-    if (raw !== cachedRaw || sourceRaw !== cachedSourceRaw) {
+    const agentTargetRaw = localStorage.getItem(AGENT_TARGET_STORAGE_KEY);
+    if (
+      raw !== cachedRaw ||
+      sourceRaw !== cachedSourceRaw ||
+      agentTargetRaw !== cachedAgentTargetRaw
+    ) {
       cachedRaw = raw;
       cachedSourceRaw = sourceRaw;
+      cachedAgentTargetRaw = agentTargetRaw;
       cachedSelection = {
         model: raw || null,
         source: raw ? normalizeSource(sourceRaw) : null,
+        agentTargetId:
+          raw && normalizeSource(sourceRaw) === "local-agent"
+            ? agentTargetRaw || null
+            : null,
       };
     }
     return cachedSelection;
@@ -67,20 +84,34 @@ export function useAgentModel() {
     getServerSnapshot,
   );
 
-  const setModel = useCallback((next: AgentModel, source?: AgentModelSource) => {
-    if (next) {
-      localStorage.setItem(STORAGE_KEY, next);
-      if (source) {
-        localStorage.setItem(SOURCE_STORAGE_KEY, source);
+  const setModel = useCallback(
+    (next: AgentModel, source?: AgentModelSource, agentTargetId?: string) => {
+      if (next) {
+        localStorage.setItem(STORAGE_KEY, next);
+        if (source) {
+          localStorage.setItem(SOURCE_STORAGE_KEY, source);
+        } else {
+          localStorage.removeItem(SOURCE_STORAGE_KEY);
+        }
+        if (source === "local-agent" && agentTargetId) {
+          localStorage.setItem(AGENT_TARGET_STORAGE_KEY, agentTargetId);
+        } else {
+          localStorage.removeItem(AGENT_TARGET_STORAGE_KEY);
+        }
       } else {
+        localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(SOURCE_STORAGE_KEY);
+        localStorage.removeItem(AGENT_TARGET_STORAGE_KEY);
       }
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(SOURCE_STORAGE_KEY);
-    }
-    emitChange();
-  }, []);
+      emitChange();
+    },
+    [],
+  );
 
-  return { model: selection.model, modelSource: selection.source, setModel };
+  return {
+    agentTargetId: selection.agentTargetId,
+    model: selection.model,
+    modelSource: selection.source,
+    setModel,
+  };
 }

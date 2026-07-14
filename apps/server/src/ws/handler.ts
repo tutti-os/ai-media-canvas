@@ -11,12 +11,15 @@ import {
   wsCommandSchema,
   wsRpcResponseSchema,
 } from "@aimc/shared";
+import { createManagedAgentDetectContextFromHeaders } from "@tutti-os/agent-acp-kit";
+import { resolveAgentTarget } from "../agent/agent-targets.js";
 import {
   AgentRunModelResolutionError,
   type AgentRunOrchestrator,
   createAgentRunOrchestrator,
   isLocalAgentRuntimeRequested,
   resolveAgentRunModel,
+  shouldResolveLocalAgentTarget,
 } from "../agent/run-orchestrator.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type {
@@ -58,6 +61,7 @@ type RegisterWsOptions = {
       runId: string;
       runtimeKind: RuntimeKind | null;
       runtimeProvider: AgentRuntimeProvider | null;
+      agentTargetId: string | null;
       sessionId: string;
       status: "accepted" | "running" | "completed" | "failed" | "canceled";
     } | null;
@@ -243,6 +247,9 @@ async function authenticateAndBind(
             ...(p.runtimeKind !== undefined
               ? { runtimeKind: p.runtimeKind }
               : {}),
+            ...(p.agentTargetId !== undefined
+              ? { agentTargetId: p.agentTargetId }
+              : {}),
             ...(p.runtimeProvider !== undefined
               ? { runtimeProvider: p.runtimeProvider }
               : {}),
@@ -307,6 +314,7 @@ async function authenticateAndBind(
             assistantMessageId: activeRun?.assistantMessageId ?? null,
             runtimeKind: activeRun?.runtimeKind ?? null,
             runtimeProvider: activeRun?.runtimeProvider ?? null,
+            agentTargetId: activeRun?.agentTargetId ?? null,
             skipReplay: p.skipReplay ?? false,
             replayed: missed.length,
           },
@@ -410,15 +418,61 @@ async function handleRunCommand(
   ]);
   const effectiveEnv = runtimeSettings?.env;
   const model = effectiveEnv?.agentModel;
+  const requestsLocalAgent = shouldResolveLocalAgentTarget({
+    ...(payload.agentTargetId ? { agentTargetId: payload.agentTargetId } : {}),
+    ...((payload.model ?? model) ? { model: payload.model ?? model } : {}),
+    modelSource:
+      payload.modelSource ??
+      (!payload.model
+        ? runtimeSettings?.settings.defaultModelSource
+        : undefined),
+    ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
+    ...(payload.runtimeProvider
+      ? { runtimeProvider: payload.runtimeProvider }
+      : {}),
+  });
+  let resolvedAgentTarget:
+    | { agentTargetId: string; providerId: AgentRuntimeProvider }
+    | undefined;
+  if (requestsLocalAgent) {
+    try {
+      const managedDetectContext =
+        createManagedAgentDetectContextFromHeaders(managedAgentHeaders);
+      resolvedAgentTarget = await resolveAgentTarget({
+        ...(payload.agentTargetId
+          ? { agentTargetId: payload.agentTargetId }
+          : {}),
+        ...(!payload.agentTargetId && payload.runtimeProvider
+          ? { providerId: payload.runtimeProvider }
+          : {}),
+        ...(managedDetectContext
+          ? { detectContext: managedDetectContext }
+          : {}),
+      });
+    } catch (error) {
+      connectionManager.sendTo(connectionId, {
+        type: "error",
+        code: "agent_target_unavailable",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+  }
   let resolvedModel: string | undefined;
   try {
     resolvedModel = resolveAgentRunModel({
       defaultModel: model,
       ...(payload.model ? { requestedModel: payload.model } : {}),
-      ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
-      ...(payload.runtimeProvider
-        ? { runtimeProvider: payload.runtimeProvider }
-        : {}),
+      ...(requestsLocalAgent
+        ? { runtimeKind: "local-agent" as const }
+        : payload.runtimeKind
+          ? { runtimeKind: payload.runtimeKind }
+          : {}),
+      ...(resolvedAgentTarget
+        ? { runtimeProvider: resolvedAgentTarget.providerId }
+        : payload.runtimeProvider
+          ? { runtimeProvider: payload.runtimeProvider }
+          : {}),
     });
   } catch (error) {
     if (error instanceof AgentRunModelResolutionError) {
@@ -450,10 +504,16 @@ async function handleRunCommand(
     runtimeEnv?.trustedLocalAgentMode === false &&
     isLocalAgentRuntimeRequested({
       model: runtimeModel,
-      ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
-      ...(payload.runtimeProvider
-        ? { runtimeProvider: payload.runtimeProvider }
-        : {}),
+      ...(requestsLocalAgent
+        ? { runtimeKind: "local-agent" as const }
+        : payload.runtimeKind
+          ? { runtimeKind: payload.runtimeKind }
+          : {}),
+      ...(resolvedAgentTarget
+        ? { runtimeProvider: resolvedAgentTarget.providerId }
+        : payload.runtimeProvider
+          ? { runtimeProvider: payload.runtimeProvider }
+          : {}),
     })
   ) {
     connectionManager.sendTo(connectionId, {
@@ -485,6 +545,9 @@ async function handleRunCommand(
   }
 
   const response = agentRuns.createRun(payload, {
+    ...(resolvedAgentTarget
+      ? { agentTargetId: resolvedAgentTarget.agentTargetId }
+      : {}),
     accessToken: authenticatedUser.accessToken,
     ...(assistantMessageId ? { assistantMessageId } : {}),
     connectionId,
@@ -492,10 +555,16 @@ async function handleRunCommand(
     managedAgentHeaders,
     userId: authenticatedUser.id,
     ...(runtimeModel ? { model: runtimeModel } : {}),
-    ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
-    ...(payload.runtimeProvider
-      ? { runtimeProvider: payload.runtimeProvider }
-      : {}),
+    ...(requestsLocalAgent
+      ? { runtimeKind: "local-agent" as const }
+      : payload.runtimeKind
+        ? { runtimeKind: payload.runtimeKind }
+        : {}),
+    ...(resolvedAgentTarget
+      ? { runtimeProvider: resolvedAgentTarget.providerId }
+      : payload.runtimeProvider
+        ? { runtimeProvider: payload.runtimeProvider }
+        : {}),
     ...(runtimeSettings?.settings.codexImagegenDelegation
       ? {
           codexImagegenDelegation:
@@ -541,6 +610,7 @@ async function handleRunCommand(
     assistantMessageId,
     response.runtimeKind,
     response.runtimeProvider,
+    response.agentTargetId,
   );
 
   const keepAlive = setInterval(() => {

@@ -56,6 +56,14 @@ export const agentRuntimeProviderSchema = z
       "runtimeProvider must be a provider id using letters, numbers, '.', '_', ':', or '-'.",
   });
 
+export const agentTargetIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .regex(/^[a-z0-9][a-z0-9._:-]*$/i, {
+    message: "agentTargetId must use letters, numbers, '.', '_', ':', or '-'.",
+  });
+
 export const agentRunResumeModeSchema = z.enum([
   "auto",
   "provider-local",
@@ -80,6 +88,8 @@ export const runCreateRequestSchema = z
     resumeFromRunId: runIdSchema.optional(),
     resumeMode: agentRunResumeModeSchema.optional(),
     runtimeKind: runtimeKindSchema.optional(),
+    agentTargetId: agentTargetIdSchema.optional(),
+    /** @deprecated Use agentTargetId. */
     runtimeProvider: agentRuntimeProviderSchema.optional(),
     delegationConsent: codexImagegenDelegationConsentSchema.optional(),
   })
@@ -91,11 +101,15 @@ export const runCreateRequestSchema = z
         path: ["runtimeProvider"],
       });
     }
-    if (value.runtimeKind === "local-agent" && !value.runtimeProvider) {
+    if (
+      value.runtimeKind === "local-agent" &&
+      !value.agentTargetId &&
+      !value.runtimeProvider
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "runtimeKind=local-agent requires runtimeProvider.",
-        path: ["runtimeProvider"],
+        message: "runtimeKind=local-agent requires agentTargetId.",
+        path: ["agentTargetId"],
       });
     }
     if (
@@ -118,6 +132,7 @@ export const runCreateResponseSchema = z.object({
   status: z.literal("accepted"),
   assistantMessageId: identifierSchema.optional(),
   runtimeKind: runtimeKindSchema.optional(),
+  agentTargetId: agentTargetIdSchema.optional(),
   runtimeProvider: agentRuntimeProviderSchema.optional(),
   resumeMode: agentRunResumeModeSchema.exclude(["auto"]).optional(),
 });
@@ -216,6 +231,17 @@ export const localAgentProviderInfoSchema = z.object({
   authState: z.enum(["ok", "missing", "expired", "unknown"]),
   reason: z.string().trim().min(1).optional(),
   defaultModelId: z.string().trim().min(1).optional(),
+  models: z.array(modelInfoSchema),
+});
+
+export const localAgentTargetInfoSchema = z.object({
+  agentTargetId: agentTargetIdSchema,
+  providerId: agentRuntimeProviderSchema,
+  displayName: z.string().trim().min(1),
+  available: z.boolean(),
+  runtimeSupported: z.boolean(),
+  isDefault: z.boolean(),
+  reason: z.string().trim().min(1).optional(),
   models: z.array(modelInfoSchema),
 });
 
@@ -372,6 +398,7 @@ export type VideoGenerationPreference = z.infer<
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 export type RuntimeKind = z.infer<typeof runtimeKindSchema>;
 export type AgentRuntimeProvider = z.infer<typeof agentRuntimeProviderSchema>;
+export type AgentTargetId = z.infer<typeof agentTargetIdSchema>;
 export type AgentModelSource = z.infer<typeof agentModelSourceSchema>;
 export type AgentRunResumeMode = z.infer<typeof agentRunResumeModeSchema>;
 export type ChatSessionSummary = z.infer<typeof chatSessionSummarySchema>;
@@ -385,6 +412,7 @@ export type ModelInfo = z.infer<typeof modelInfoSchema>;
 export type LocalAgentProviderInfo = z.infer<
   typeof localAgentProviderInfoSchema
 >;
+export type LocalAgentTargetInfo = z.infer<typeof localAgentTargetInfoSchema>;
 export type TuttiManagedProviderId = z.infer<
   typeof tuttiManagedProviderIdSchema
 >;

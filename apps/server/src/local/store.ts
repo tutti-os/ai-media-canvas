@@ -324,10 +324,7 @@ function normalizeAssetDisplayName(
   const normalized = displayName
     ?.trim()
     .replace(/[\\/:*?"<>|]/g, "_")
-    .replaceAll(
-      /./g,
-      (char) => ((char.codePointAt(0) ?? 0) < 32 ? "_" : char),
-    )
+    .replaceAll(/./g, (char) => ((char.codePointAt(0) ?? 0) < 32 ? "_" : char))
     .replace(/\s+/g, " ")
     .replace(/^\.+|\.+$/g, "")
     .slice(0, 120)
@@ -545,6 +542,7 @@ export function createLocalStore(options: {
       model TEXT,
       runtime_kind TEXT,
       runtime_provider TEXT,
+      agent_target_id TEXT,
       previous_run_id TEXT,
       resume_mode TEXT,
       provider_session_id TEXT,
@@ -687,8 +685,9 @@ export function createLocalStore(options: {
 
     for (const [columnName, columnSql] of missingColumns) {
       if (columnNames.has(columnName)) continue;
-      db.prepare(`ALTER TABLE assets ADD COLUMN ${columnName} ${columnSql}`)
-        .run();
+      db.prepare(
+        `ALTER TABLE assets ADD COLUMN ${columnName} ${columnSql}`,
+      ).run();
     }
   }
 
@@ -736,6 +735,10 @@ export function createLocalStore(options: {
 
     if (!columnNames.has("runtime_provider")) {
       db.exec(`ALTER TABLE agent_runs ADD COLUMN runtime_provider TEXT`);
+    }
+
+    if (!columnNames.has("agent_target_id")) {
+      db.exec(`ALTER TABLE agent_runs ADD COLUMN agent_target_id TEXT`);
     }
 
     if (!columnNames.has("assistant_message_id")) {
@@ -2949,6 +2952,7 @@ export function createLocalStore(options: {
   }
 
   function createAgentRun(input: {
+    agentTargetId?: string;
     assistantMessageId?: string;
     canvasId?: string;
     model?: string;
@@ -2965,9 +2969,9 @@ export function createLocalStore(options: {
       `
         INSERT INTO agent_runs (
           id, workspace_id, canvas_id, session_id, thread_id, model,
-          runtime_kind, runtime_provider, previous_run_id, resume_mode,
+          runtime_kind, runtime_provider, agent_target_id, previous_run_id, resume_mode,
           assistant_message_id, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     ).run(
       input.runId,
@@ -2978,6 +2982,7 @@ export function createLocalStore(options: {
       input.model ?? null,
       input.runtimeKind ?? null,
       input.runtimeProvider ?? null,
+      input.agentTargetId ?? null,
       input.previousRunId ?? null,
       input.resumeMode ?? null,
       input.assistantMessageId ?? null,
@@ -2998,6 +3003,7 @@ export function createLocalStore(options: {
   }
 
   function updateAgentRun(input: {
+    agentTargetId?: string;
     assistantMessageId?: string;
     errorCode?: string;
     errorMessage?: string;
@@ -3016,6 +3022,7 @@ export function createLocalStore(options: {
             updated_at = ?,
             runtime_kind = COALESCE(?, runtime_kind),
             runtime_provider = COALESCE(?, runtime_provider),
+            agent_target_id = COALESCE(?, agent_target_id),
             provider_session_id = COALESCE(?, provider_session_id),
             resume_token = COALESCE(?, resume_token),
             assistant_message_id = COALESCE(?, assistant_message_id),
@@ -3031,6 +3038,7 @@ export function createLocalStore(options: {
       timestamp,
       input.runtimeKind ?? null,
       input.runtimeProvider ?? null,
+      input.agentTargetId ?? null,
       input.providerSessionId ?? null,
       input.resumeToken ?? null,
       input.assistantMessageId ?? null,
@@ -3065,7 +3073,7 @@ export function createLocalStore(options: {
     return db
       .prepare(
         `
-          SELECT id, session_id, status, runtime_kind, runtime_provider,
+          SELECT id, session_id, status, runtime_kind, runtime_provider, agent_target_id,
                  previous_run_id, resume_mode, assistant_message_id,
                  provider_session_id, resume_token, error_code, error_message
           FROM agent_runs
@@ -3076,6 +3084,7 @@ export function createLocalStore(options: {
       .get(runId) as
       | {
           assistant_message_id: string | null;
+          agent_target_id: string | null;
           error_code: string | null;
           error_message: string | null;
           id: string;
@@ -3095,7 +3104,7 @@ export function createLocalStore(options: {
     return db
       .prepare(
         `
-          SELECT id, session_id, status, runtime_kind, runtime_provider,
+          SELECT id, session_id, status, runtime_kind, runtime_provider, agent_target_id,
                  previous_run_id, resume_mode, assistant_message_id,
                  provider_session_id, resume_token, error_code, error_message
           FROM agent_runs
@@ -3109,6 +3118,7 @@ export function createLocalStore(options: {
       .get(canvasId, sessionId) as
       | {
           assistant_message_id: string | null;
+          agent_target_id: string | null;
           error_code: string | null;
           error_message: string | null;
           id: string;
@@ -4086,7 +4096,9 @@ export function createLocalStore(options: {
       unassignedParams.push(toIso);
     }
     if (input.filterText) {
-      conditions.push("(p.id LIKE ? COLLATE NOCASE OR p.name LIKE ? COLLATE NOCASE)");
+      conditions.push(
+        "(p.id LIKE ? COLLATE NOCASE OR p.name LIKE ? COLLATE NOCASE)",
+      );
       params.push(`%${input.filterText}%`, `%${input.filterText}%`);
       unassignedConditions.push("? LIKE ? COLLATE NOCASE");
       unassignedParams.push(
@@ -4263,7 +4275,8 @@ export function createLocalStore(options: {
         const mtime = Date.parse(row.created_at);
         return {
           id: row.id,
-          displayName: row.display_name ?? row.object_path.split("/").at(-1) ?? row.id,
+          displayName:
+            row.display_name ?? row.object_path.split("/").at(-1) ?? row.id,
           relativePath: assetReferencePath(row),
           mimeType: row.mime_type,
           sizeBytes: row.byte_size,
@@ -4355,7 +4368,8 @@ export function createLocalStore(options: {
         const mtime = Date.parse(row.created_at);
         return {
           id: row.id,
-          displayName: row.display_name ?? row.object_path.split("/").at(-1) ?? row.id,
+          displayName:
+            row.display_name ?? row.object_path.split("/").at(-1) ?? row.id,
           relativePath: assetReferencePath(row),
           mimeType: row.mime_type,
           sizeBytes: row.byte_size,
@@ -4487,7 +4501,8 @@ export function createLocalStore(options: {
         const mtime = Date.parse(row.created_at);
         return {
           id: row.id,
-          displayName: row.display_name ?? row.object_path.split("/").at(-1) ?? row.id,
+          displayName:
+            row.display_name ?? row.object_path.split("/").at(-1) ?? row.id,
           relativePath: assetReferencePath(row),
           mimeType: row.mime_type,
           sizeBytes: row.byte_size,

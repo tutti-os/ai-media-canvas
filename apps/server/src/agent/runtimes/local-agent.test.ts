@@ -68,6 +68,9 @@ function createRuntimeContext(
       warn: vi.fn(),
     },
     run: {
+      agentTargetId:
+        overrides.agentTargetId ??
+        `local:${overrides.runtimeProvider ?? "codex"}`,
       consumed: false,
       controller: new AbortController(),
       conversationId: "canvas-1",
@@ -101,9 +104,35 @@ function writeFakeTuttiSkillCli(path: string) {
     path,
     [
       "#!/bin/sh",
+      'case "$*" in',
+      '  *"agent list"*)',
       "cat <<'JSON'",
       JSON.stringify({
         schemaVersion: 1,
+        defaultAgentTargetId: "local:codex",
+        agents: [
+          {
+            id: "local:codex",
+            provider: "codex",
+            name: "Canvas Agent",
+            availability: {
+              status: "available",
+              reasonCode: "ready",
+              detail: "Ready",
+            },
+            runtimeSupported: true,
+          },
+        ],
+      }),
+      "JSON",
+      "exit 0",
+      ";;",
+      "esac",
+      "cat <<'JSON'",
+      JSON.stringify({
+        schemaVersion: 1,
+        agentTargetId: "local:codex",
+        providerId: "codex",
         provider: "codex",
         agentSessionId: "run-1",
         recommendedSystemPrompt: {
@@ -571,6 +600,7 @@ describe("createLocalAgentRuntimeProvider", () => {
       const context = createRuntimeContext({
         prompt: "Open mention://workspace-app/aimc",
       });
+      context.run.agentTargetId = "local:codex";
       context.runtimeEnv = {
         ...context.runtimeEnv,
         tuttiCliPath,

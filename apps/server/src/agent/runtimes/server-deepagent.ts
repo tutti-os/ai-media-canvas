@@ -1,4 +1,4 @@
-import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
+import type { StreamEvent } from "@aimc/shared";
 import { HumanMessage } from "@langchain/core/messages";
 
 import type { UserDataClient } from "../../auth/request.js";
@@ -8,15 +8,13 @@ import {
 } from "../image-attachment-metadata.js";
 import {
   formatTuttiSkillGuidance,
-  loadTuttiAgentSkillContextForRun,
+  loadDefaultTuttiAgentSkillContextForRun,
   shouldUseTuttiSkillContext,
 } from "../tutti-skill-context.js";
 import type {
   RuntimeExecutionContext,
   ServerDeepAgentRuntimeProviderDeps,
 } from "./types.js";
-
-const SERVER_DEEPAGENT_TUTTI_PROVIDER: AgentRuntimeProvider = "codex";
 
 export function createServerDeepAgentRuntimeProvider(
   deps: ServerDeepAgentRuntimeProviderDeps,
@@ -196,23 +194,22 @@ export function createServerDeepAgentRuntimeProvider(
 
       let extraSystemPrompt: string | undefined;
       if (shouldUseTuttiSkillContext(enrichedPrompt)) {
-        const tuttiSkillContext = await loadTuttiAgentSkillContextForRun({
+        const tuttiSkillBundle = await loadDefaultTuttiAgentSkillContextForRun({
           cwd: backendResult.sandboxDir ?? process.cwd(),
           ...(run.detectContext ? { detectContext: run.detectContext } : {}),
-          provider: SERVER_DEEPAGENT_TUTTI_PROVIDER,
           runId: run.runId,
           signal: run.controller.signal,
         });
         extraSystemPrompt = formatTuttiSkillGuidance(
-          tuttiSkillContext.recommendedSystemPrompt?.content,
+          tuttiSkillBundle.context.recommendedSystemPrompt?.content,
         );
         if (extraSystemPrompt) {
           // Server-deepagent v1 consumes only the Tutti bundle's recommended
           // prompt guidance. skillManifest remains a local-agent delivery
           // mechanism until deepagents has an explicit materialization path.
           rlog.lap("tutti_skill_context_loaded", {
-            provider: SERVER_DEEPAGENT_TUTTI_PROVIDER,
-            skillCount: tuttiSkillContext.skillManifest.length,
+            agentTargetId: tuttiSkillBundle.agentTargetId,
+            skillCount: tuttiSkillBundle.context.skillManifest.length,
           });
         }
       }

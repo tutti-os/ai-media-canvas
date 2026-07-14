@@ -1637,7 +1637,7 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
-  it("opens Tutti manager for missing pinned Local agent providers without rescanning", async () => {
+  it("opens the generic Tutti manager for unavailable local Agent runtimes without rescanning", async () => {
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "",
@@ -1684,8 +1684,8 @@ describe("SettingsPage", () => {
           models: [],
         },
         {
-          provider: "claude-code",
-          displayName: "Claude Code",
+          provider: "future-runtime",
+          displayName: "Future Runtime",
           supported: false,
           authState: "missing",
           reason: "Sign in with Tutti Agent Manager.",
@@ -1697,10 +1697,12 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     const codexButton = await screen.findByRole("button", { name: /Codex/i });
-    const claudeButton = screen.getByRole("button", { name: /Claude Code/i });
+    const futureButton = screen.getByRole("button", {
+      name: /Future Runtime/i,
+    });
 
     expect(codexButton).toBeEnabled();
-    expect(claudeButton).toBeEnabled();
+    expect(futureButton).toBeEnabled();
     expect(
       screen.getAllByText("Sign in with Tutti Agent Manager."),
     ).toHaveLength(2);
@@ -1710,18 +1712,16 @@ describe("SettingsPage", () => {
 
     expect(openFeature).toHaveBeenCalledWith({
       feature: "agent-manage",
-      provider: "codex",
     });
     expect(fetchModelsMock).toHaveBeenCalledTimes(1);
     expect(
       await screen.findByText(/Tutti agent manager opened/i),
     ).toBeInTheDocument();
 
-    await userEvent.click(claudeButton);
+    await userEvent.click(futureButton);
 
     expect(openFeature).toHaveBeenLastCalledWith({
       feature: "agent-manage",
-      provider: "claude-code",
     });
     expect(fetchModelsMock).toHaveBeenCalledTimes(1);
 

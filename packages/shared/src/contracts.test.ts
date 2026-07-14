@@ -16,7 +16,7 @@ const baseRunCreateRequest = {
 };
 
 describe("runCreateRequestSchema", () => {
-  it("requires a provider when local-agent runtime is requested", () => {
+  it("requires an exact target or compatibility provider for local-agent runtime", () => {
     const result = runCreateRequestSchema.safeParse({
       ...baseRunCreateRequest,
       runtimeKind: "local-agent",
@@ -26,11 +26,23 @@ describe("runCreateRequestSchema", () => {
     expect(result.error?.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          message: "runtimeKind=local-agent requires runtimeProvider.",
-          path: ["runtimeProvider"],
+          message: "runtimeKind=local-agent requires agentTargetId.",
+          path: ["agentTargetId"],
         }),
       ]),
     );
+  });
+
+  it("accepts exact Agent Target IDs", () => {
+    expect(
+      runCreateRequestSchema.safeParse({
+        sessionId: "s1",
+        conversationId: "c1",
+        prompt: "hello",
+        runtimeKind: "local-agent",
+        agentTargetId: "team:canvas-reviewer",
+      }).success,
+    ).toBe(true);
   });
 
   it("accepts explicit local provider ids", () => {
