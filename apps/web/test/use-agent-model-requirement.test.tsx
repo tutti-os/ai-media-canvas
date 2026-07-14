@@ -101,7 +101,7 @@ describe("useAgentModelRequirement", () => {
       ],
     });
 
-    await expect(configured!).resolves.toBe(true);
+    await expect(configured!).resolves.toBe(false);
     expect(setModelMock).not.toHaveBeenCalled();
   });
 

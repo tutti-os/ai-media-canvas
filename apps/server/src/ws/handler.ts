@@ -464,6 +464,11 @@ async function handleRunCommand(
       });
     } catch (error) {
       const expected = error instanceof AgentTargetResolutionError;
+      if (!expected) {
+        log.error("agent_target_resolve_failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       connectionManager.sendTo(connectionId, {
         type: "error",
         code: expected ? "agent_target_unavailable" : "internal_error",

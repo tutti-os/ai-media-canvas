@@ -134,12 +134,16 @@ export function useAgentModelRequirement() {
         agentTargetId,
       );
       const currentSelection = selectionRef.current;
-      if (
-        availability.migratedAgentTargetId &&
-        !validatedSelection.agentTargetId &&
+      const selectionUnchanged =
         currentSelection.agentTargetId === validatedSelection.agentTargetId &&
         currentSelection.model === validatedSelection.model &&
-        currentSelection.modelSource === validatedSelection.modelSource
+        currentSelection.modelSource === validatedSelection.modelSource;
+      // The catalog response only validates the selection captured before the
+      // request. A newer selection must be checked by its own request.
+      if (!selectionUnchanged) return false;
+      if (
+        availability.migratedAgentTargetId &&
+        !validatedSelection.agentTargetId
       ) {
         setModel(
           model.trim(),
