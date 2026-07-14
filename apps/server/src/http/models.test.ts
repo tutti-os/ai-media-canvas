@@ -489,7 +489,7 @@ describe("registerModelRoutes", () => {
     });
   });
 
-  it("preserves auth states and keeps a supported default fallback visible", async () => {
+  it("omits unavailable providers and keeps a supported default fallback visible", async () => {
     const localAgentModelDiscovery = {
       detect: vi.fn(async () => [
         {
@@ -533,20 +533,11 @@ describe("registerModelRoutes", () => {
     expect(response.json().models).not.toContainEqual(
       expect.objectContaining({ provider: "tutti-agent" }),
     );
-    expect(response.json().localAgentProviders).toContainEqual(
-      expect.objectContaining({
-        provider: "tutti-agent",
-        displayName: "Tutti Agent",
-        supported: false,
-        authState: "missing",
-      }),
+    expect(response.json().localAgentProviders).not.toContainEqual(
+      expect.objectContaining({ provider: "tutti-agent" }),
     );
-    expect(response.json().localAgentProviders).toContainEqual(
-      expect.objectContaining({
-        provider: "claude-code",
-        supported: false,
-        authState: "expired",
-      }),
+    expect(response.json().localAgentProviders).not.toContainEqual(
+      expect.objectContaining({ provider: "claude-code" }),
     );
     expect(response.json().models).toContainEqual(
       expect.objectContaining({ id: "codex:default", provider: "codex" }),
@@ -556,7 +547,7 @@ describe("registerModelRoutes", () => {
         provider: "codex",
         supported: true,
         authState: "ok",
-        defaultModelId: "default",
+        defaultModelId: "codex:default",
       }),
     );
   });
