@@ -1329,7 +1329,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       })
     ) {
       throw new LocalAgentRunError(
-        "application_error",
+        "local_agent_disabled",
         "Local agent runtime is disabled for this server.",
         403,
       );

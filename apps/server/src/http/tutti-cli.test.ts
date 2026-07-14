@@ -289,6 +289,41 @@ describe("registerTuttiCliRoutes", () => {
     });
   });
 
+  it("preserves the explicit local-agent-disabled policy error", async () => {
+    const agentOperations = {
+      cancelRun: vi.fn(),
+      listRunEvents: vi.fn(),
+      startRun: vi.fn(async () => {
+        throw {
+          code: "local_agent_disabled",
+          message: "Local agent runtime is disabled for this server.",
+          statusCode: 403,
+        };
+      }),
+    };
+    const app = buildTestApp({ agentOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/agent/run",
+      payload: {
+        "session-id": "session-1",
+        "conversation-id": "canvas-1",
+        prompt: "Continue",
+        "agent-id": "team:designer",
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "local_agent_disabled",
+        message: "Local agent runtime is disabled for this server.",
+      },
+    });
+  });
+
   it("sanitizes shaped operational errors from agent runs", async () => {
     const agentOperations = {
       cancelRun: vi.fn(),

@@ -1026,6 +1026,7 @@ function isCliStatusError(error: unknown): error is {
 const PUBLIC_AGENT_RUN_ERROR_CODES = new Set([
   "agent_target_unavailable",
   "invalid_model",
+  "local_agent_disabled",
   "session_not_found",
 ]);
 
