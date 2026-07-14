@@ -455,12 +455,14 @@ describe("createAgentRunService", () => {
       },
       {
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },
     );
 
     expect(run).toMatchObject({
+      agentTargetId: "local:codex",
       runtimeKind: "local-agent",
       runtimeProvider: "codex",
     });
@@ -481,6 +483,7 @@ describe("createAgentRunService", () => {
   });
 
   it("preserves the local CLI default model for the host adapter", async () => {
+    vi.stubEnv("TUTTI_CLI", "");
     localAgentRuntimeRunMock.mockClear();
     const localAgentRuntimeDetectMock = vi.fn(async () => [
       {
@@ -524,6 +527,7 @@ describe("createAgentRunService", () => {
       },
       {
         model: "codex:default",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },
@@ -533,7 +537,9 @@ describe("createAgentRunService", () => {
       // Exhaust the stream so runtime reaches the provider invocation.
     }
 
-    expect(localAgentRuntimeDetectMock).toHaveBeenCalledOnce();
+    // One call checks provider availability; the standalone composer performs
+    // additional detection for its catalog and model options.
+    expect(localAgentRuntimeDetectMock.mock.calls.length).toBeGreaterThan(1);
     expect(localAgentRuntimeRunMock).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "default",
@@ -678,6 +684,7 @@ describe("createAgentRunService", () => {
       {
         accessToken: "local-token",
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
         userId: "user-1",
@@ -863,6 +870,7 @@ describe("createAgentRunService", () => {
       {
         accessToken: "local-token",
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
         userId: "user-1",
@@ -1017,6 +1025,7 @@ describe("createAgentRunService", () => {
       {
         accessToken: "local-token",
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
         userId: "user-1",
@@ -1146,6 +1155,7 @@ describe("createAgentRunService", () => {
       {
         accessToken: "local-token",
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
         userId: "user-1",
@@ -1298,6 +1308,7 @@ describe("createAgentRunService", () => {
         accessToken: "local-token",
         codexImagegenDelegation: "ask",
         model: "claude-code:default",
+        agentTargetId: "local:claude-code",
         runtimeKind: "local-agent",
         runtimeProvider: "claude-code",
         userId: "user-1",
@@ -1425,6 +1436,7 @@ describe("createAgentRunService", () => {
           webOrigin: "http://localhost:3000",
         },
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
         userId: "user-1",
@@ -1572,6 +1584,7 @@ describe("createAgentRunService", () => {
       {
         accessToken: "local-token",
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
         userId: "user-1",
@@ -1712,6 +1725,7 @@ describe("createAgentRunService", () => {
       {
         accessToken: "local-token",
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
         userId: "user-1",
@@ -1808,6 +1822,7 @@ describe("createAgentRunService", () => {
       },
       {
         model: "sonnet",
+        agentTargetId: "local:claude-code",
         runtimeKind: "local-agent",
         runtimeProvider: "claude-code",
       },
@@ -1899,6 +1914,7 @@ describe("createAgentRunService", () => {
       },
       {
         model: "tutti-agent:openai-codex:gpt-5.4",
+        agentTargetId: "local:tutti-agent",
         runtimeKind: "local-agent",
         runtimeProvider: "tutti-agent",
       },
@@ -1935,6 +1951,7 @@ describe("createAgentRunService", () => {
         createRun,
         getRun: vi.fn(() => ({
           id: "run-previous",
+          agent_target_id: "local:codex",
           provider_session_id: "provider-session-prev",
           resume_token: "resume-token-prev",
           runtime_kind: "local-agent",
@@ -1973,6 +1990,7 @@ describe("createAgentRunService", () => {
       },
       {
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },
@@ -2005,6 +2023,78 @@ describe("createAgentRunService", () => {
         resumeToken: "resume-token-next",
         runId: run.runId,
       }),
+    );
+  });
+
+  it("turns an explicit provider-local resume into handoff when the exact target changes", () => {
+    const createRun = vi.fn();
+    const runs = createAgentRunService({
+      agentRunStore: {
+        createRun,
+        getRun: vi.fn(() => ({
+          id: "run-previous",
+          agent_target_id: "team:designer",
+          runtime_kind: "local-agent",
+          runtime_provider: "codex",
+          session_id: "session-1",
+          status: "completed",
+        })),
+        updateRun: vi.fn(),
+      },
+      env: {
+        agentBackendMode: "state",
+        agentModel: "agnes:agnes-2.0-flash",
+        port: 3001,
+        version: "0.0.0",
+        webOrigin: "http://localhost:3000",
+      },
+      localAgentRuntime: {
+        run: vi.fn(async function* () {}),
+      },
+      loadSessionMessages: async () => [],
+      toolGateway: {
+        createSession: vi.fn(() => ({ token: "tool-token" })),
+        revokeSession: vi.fn(),
+      } as never,
+      toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+    });
+
+    expect(() =>
+      runs.createRun(
+        {
+          canvasId: "canvas-1",
+          conversationId: "canvas-1",
+          prompt: "继续",
+          sessionId: "session-1",
+        },
+        {
+          model: "codex:gpt-5.4",
+          runtimeKind: "local-agent",
+          runtimeProvider: "codex",
+        },
+      ),
+    ).toThrow("must resolve an exact agentTargetId");
+
+    const run = runs.createRun(
+      {
+        canvasId: "canvas-1",
+        conversationId: "canvas-1",
+        prompt: "继续",
+        resumeFromRunId: "run-previous",
+        resumeMode: "provider-local",
+        sessionId: "session-1",
+      },
+      {
+        agentTargetId: "team:reviewer",
+        model: "codex:gpt-5.4",
+        runtimeKind: "local-agent",
+        runtimeProvider: "codex",
+      },
+    );
+
+    expect(run.resumeMode).toBe("handoff");
+    expect(createRun).toHaveBeenCalledWith(
+      expect.objectContaining({ resumeMode: "handoff" }),
     );
   });
 
@@ -2058,6 +2148,7 @@ describe("createAgentRunService", () => {
       },
       {
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },
@@ -2123,6 +2214,7 @@ describe("createAgentRunService", () => {
       },
       {
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },
@@ -2197,6 +2289,7 @@ describe("createAgentRunService", () => {
       {
         accessToken: "local-token",
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },
@@ -2367,6 +2460,7 @@ describe("createAgentRunService", () => {
       },
       {
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },
@@ -2451,6 +2545,7 @@ describe("createAgentRunService", () => {
       },
       {
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },
@@ -2529,6 +2624,7 @@ describe("createAgentRunService", () => {
       },
       {
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },
@@ -2616,6 +2712,7 @@ describe("createAgentRunService", () => {
       },
       {
         model: "codex:gpt-5.4",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },
@@ -2719,6 +2816,7 @@ describe("createAgentRunService", () => {
         },
         {
           model: "codex:gpt-5.4",
+          agentTargetId: "local:codex",
           runtimeKind: "local-agent",
           runtimeProvider: "codex",
         },
@@ -2761,6 +2859,7 @@ describe("createAgentRunService", () => {
         },
         {
           model: "codex:gpt-5.4",
+          agentTargetId: "local:codex",
           runtimeKind: "local-agent",
           runtimeProvider: "codex",
         },
@@ -2981,6 +3080,7 @@ describe("createAgentRunService", () => {
           [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
         },
         model: "codex:default",
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },
@@ -3042,6 +3142,7 @@ describe("createAgentRunService", () => {
         managedAgentHeaders: {
           [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
         },
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },
@@ -3099,6 +3200,7 @@ describe("createAgentRunService", () => {
         managedAgentHeaders: {
           [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
         },
+        agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
       },

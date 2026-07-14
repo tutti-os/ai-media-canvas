@@ -13,6 +13,11 @@ import {
 } from "@tutti-os/agent-acp-kit";
 
 import {
+  type AgentCatalogRuntime,
+  loadAgentTargetCatalog,
+} from "../agent/agent-targets.js";
+
+import {
   type LocalAgentModelDetectContext,
   type LocalAgentModelDiscovery,
   buildLocalAgentModels,
@@ -80,6 +85,20 @@ const GOOGLE_MODELS: ModelInfo[] = [
     provider: "google",
   },
 ];
+
+function resolveLocalAgentModelDiscovery(options: {
+  localAgentCatalogRuntime?: AgentCatalogRuntime;
+  localAgentModelDiscovery?: LocalAgentModelDiscovery;
+}): LocalAgentModelDiscovery {
+  if (options.localAgentModelDiscovery) return options.localAgentModelDiscovery;
+  if (options.localAgentCatalogRuntime) {
+    return {
+      detect: (context?: LocalAgentModelDetectContext) =>
+        options.localAgentCatalogRuntime!.detect(context),
+    };
+  }
+  return createDefaultLocalAgentModelDiscovery();
+}
 
 const AGNES_MODELS: ModelInfo[] = [
   { id: "agnes:agnes-2.0-flash", name: "Agnes 2.0 Flash", provider: "agnes" },
@@ -253,6 +272,7 @@ export async function registerModelRoutes(
   env: ServerEnv,
   settingsService?: SettingsService,
   options?: {
+    localAgentCatalogRuntime?: AgentCatalogRuntime;
     localAgentModelDiscovery?: LocalAgentModelDiscovery;
     tuttiManagedCredentials?: TuttiManagedCredentialService;
   },
@@ -261,9 +281,14 @@ export async function registerModelRoutes(
   // One route-scoped runtime handles both standalone and managed detection.
   // Managed calls do not use the standalone plugin cache; the kit selects the
   // Tutti strategy from each request context.
-  const localAgentModelDiscovery =
-    options?.localAgentModelDiscovery ??
-    createDefaultLocalAgentModelDiscovery();
+  const localAgentModelDiscovery = resolveLocalAgentModelDiscovery({
+    ...(options?.localAgentCatalogRuntime
+      ? { localAgentCatalogRuntime: options.localAgentCatalogRuntime }
+      : {}),
+    ...(options?.localAgentModelDiscovery
+      ? { localAgentModelDiscovery: options.localAgentModelDiscovery }
+      : {}),
+  });
   const sendModels = async (
     reply: FastifyReply,
     input: {
@@ -272,12 +297,17 @@ export async function registerModelRoutes(
     } = {},
   ) => {
     const managedAgentDetectContext = input.headers
-      ? createManagedAgentDetectContextFromHeaders(input.headers)
+      ? createManagedAgentDetectContextFromHeaders(input.headers, {
+          ...(env.appDataDir ? { appDataDir: env.appDataDir } : {}),
+        })
       : undefined;
     const result = await listAgentModelCatalog({
       env,
       logger: app.log,
       localAgentModelDiscovery,
+      ...(options?.localAgentCatalogRuntime
+        ? { localAgentCatalogRuntime: options.localAgentCatalogRuntime }
+        : {}),
       ...(managedAgentDetectContext ? { managedAgentDetectContext } : {}),
       ...(input.refreshLocalAgentModels
         ? { refreshLocalAgentModels: true }
@@ -310,6 +340,7 @@ export async function registerModelRoutes(
 
 export type ListAgentModelsOptions = {
   env: ServerEnv;
+  localAgentCatalogRuntime?: AgentCatalogRuntime;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
   managedAgentDetectContext?: DetectContext;
@@ -336,6 +367,10 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
     : options.env;
   const models: ModelInfo[] = [];
   const localAgentProviders: LocalAgentProviderInfo[] = [];
+  let localAgentTargets: Awaited<
+    ReturnType<typeof loadAgentTargetCatalog>
+  >["targets"] = [];
+  let defaultAgentTargetId: string | null = null;
   if (effectiveEnv.openAIApiKey) {
     let openAIModels = workspaceSettings?.providerModels.openai.length
       ? buildConfiguredModels("openai", workspaceSettings.providerModels.openai)
@@ -408,7 +443,11 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
   if (effectiveEnv.trustedLocalAgentMode !== false) {
     const managedAgentDetectContext =
       options.managedAgentDetectContext ??
-      createManagedAgentDetectContextFromHeaders(options.managedAgentHeaders);
+      createManagedAgentDetectContextFromHeaders(options.managedAgentHeaders, {
+        ...(effectiveEnv.appDataDir
+          ? { appDataDir: effectiveEnv.appDataDir }
+          : {}),
+      });
     const localAgentDetectContext: LocalAgentModelDetectContext | undefined =
       options.refreshLocalAgentModels
         ? { ...(managedAgentDetectContext ?? {}), refresh: true }
@@ -417,16 +456,14 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
       process.env.TUTTI_WORKSPACE_ROOT?.trim() ||
       localAgentDetectContext?.cwd?.trim();
     try {
-      const runtime =
-        options.localAgentModelDiscovery ??
-        createDefaultLocalAgentModelDiscovery();
+      const runtime = resolveLocalAgentModelDiscovery(options);
       const detect = () =>
         runtime.detect({
           ...(localAgentDetectContext ?? {}),
           ...(workspaceCwd ? { cwd: workspaceCwd } : {}),
         });
-      const detections = options.modelDiscoverySingleFlight
-        ? await options.modelDiscoverySingleFlight.run(
+      const detectionsPromise = options.modelDiscoverySingleFlight
+        ? options.modelDiscoverySingleFlight.run(
             {
               workspaceId:
                 process.env.TSH_WORKSPACE_ID?.trim() || LOCAL_WORKSPACE_ID,
@@ -441,16 +478,55 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
             },
             detect,
           )
-        : await detect();
+        : detect();
+      const detections = await detectionsPromise;
+      const catalogDetectContext = {
+        ...(localAgentDetectContext ?? {}),
+        ...(workspaceCwd ? { cwd: workspaceCwd } : {}),
+      };
+      const agentCatalog = await loadAgentTargetCatalog({
+        ...(Object.keys(catalogDetectContext).length > 0
+          ? { detectContext: catalogDetectContext }
+          : {}),
+        detections,
+        refresh: options.refreshLocalAgentModels === true,
+        ...(options.localAgentCatalogRuntime
+          ? { runtime: options.localAgentCatalogRuntime }
+          : {}),
+      });
       // Keep the runtime's complete detection result available here for
       // diagnostics, but only expose runnable providers to API consumers.
       const supportedDetections = detections.filter(
-        (detection) => detection.supported,
+        (detection) =>
+          detection.supported &&
+          agentCatalog.targets.some(
+            (target) => target.providerId === detection.provider,
+          ),
       );
-      models.push(...buildLocalAgentModels(supportedDetections));
+      const ambiguousProviderIds = new Set(agentCatalog.ambiguousProviderIds);
+      models.push(
+        ...buildLocalAgentModels(supportedDetections).filter(
+          (model) => !ambiguousProviderIds.has(model.provider),
+        ),
+      );
       localAgentProviders.push(
-        ...buildLocalAgentProviderInfo(supportedDetections),
+        ...buildLocalAgentProviderInfo(supportedDetections).map((provider) => {
+          if (!ambiguousProviderIds.has(provider.provider)) return provider;
+          const { defaultModelId: _defaultModelId, ...providerWithoutDefault } =
+            provider;
+          const targetReason = agentCatalog.targets.find(
+            (target) => target.providerId === provider.provider,
+          )?.reason;
+          return {
+            ...providerWithoutDefault,
+            supported: false,
+            ...(targetReason ? { reason: targetReason } : {}),
+            models: [],
+          };
+        }),
       );
+      localAgentTargets = agentCatalog.targets;
+      defaultAgentTargetId = agentCatalog.defaultAgentTargetId;
     } catch (error) {
       options.logger?.warn(
         managedAgentDetectContext ? {} : { err: error },
@@ -461,5 +537,10 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
   if (options.tuttiManagedCredentials) {
     models.push(...(await options.tuttiManagedCredentials.listModels()));
   }
-  return { models, localAgentProviders };
+  return {
+    models,
+    localAgentProviders,
+    localAgentTargets,
+    defaultAgentTargetId,
+  };
 }

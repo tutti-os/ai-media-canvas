@@ -4,7 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LocalAgentModelDetectContext } from "../agent/local-agent-models.js";
 import { loadServerEnv } from "../config/env.js";
-import { listAgentModels, registerModelRoutes } from "./models.js";
+import {
+  listAgentModelCatalog,
+  listAgentModels,
+  registerModelRoutes,
+} from "./models.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -357,13 +361,10 @@ describe("registerModelRoutes", () => {
           provider: "claude-code",
           source: "local-agent",
         },
-        {
-          id: "hermes:openai-codex:gpt-5.4",
-          name: "Hermes GPT",
-          provider: "hermes",
-          source: "local-agent",
-        },
       ]),
+    );
+    expect(models).not.toContainEqual(
+      expect.objectContaining({ provider: "hermes" }),
     );
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(1);
     expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({});
@@ -553,7 +554,7 @@ describe("registerModelRoutes", () => {
   });
 
   it("passes a managed agent invocation to local-agent model discovery for POST model requests", async () => {
-    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "");
     vi.stubEnv("CODEX_HOME", "/tmp/user-codex-home");
     vi.stubEnv("CLAUDE_CONFIG_DIR", "/tmp/user-claude-config");
     const localAgentModelDiscovery = {
@@ -620,6 +621,97 @@ describe("registerModelRoutes", () => {
         CLAUDE_CONFIG_DIR: expect.any(String),
         CODEX_HOME: expect.any(String),
         PATH: expect.any(String),
+      }),
+    );
+  });
+
+  it("uses one workspace-scoped discovery snapshot for models and exact targets", async () => {
+    vi.stubEnv("TUTTI_WORKSPACE_ROOT", "/tmp/aimc-workspace");
+    const localAgentModelDiscovery = {
+      detect: vi.fn(async () => [
+        {
+          provider: "codex" as const,
+          displayName: "Codex",
+          authState: "ok" as const,
+          models: [{ id: "gpt-snapshot", label: "GPT Snapshot" }],
+          defaultModelId: "gpt-snapshot",
+          supported: true,
+        },
+      ]),
+    };
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv({ agentModel: "codex:gpt-snapshot" }, {}),
+      undefined,
+      { localAgentModelDiscovery },
+    );
+
+    const response = await app.inject({ method: "GET", url: "/api/models" });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(1);
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: "/tmp/aimc-workspace" }),
+    );
+    expect(response.json().models).toContainEqual(
+      expect.objectContaining({ id: "codex:gpt-snapshot" }),
+    );
+    expect(response.json().localAgentTargets).toContainEqual(
+      expect.objectContaining({
+        agentTargetId: "local:codex",
+        models: expect.arrayContaining([
+          expect.objectContaining({ id: "codex:gpt-snapshot" }),
+        ]),
+      }),
+    );
+  });
+
+  it("uses the matching catalog runtime for injected provider discovery", async () => {
+    vi.stubEnv("TUTTI_CLI", "");
+    const detections = [
+      {
+        provider: "future-runtime" as const,
+        displayName: "Future Agent",
+        authState: "ok" as const,
+        models: [{ id: "future-model", label: "Future Model" }],
+        defaultModelId: "future-model",
+        supported: true,
+      },
+    ];
+    const localAgentCatalogRuntime = {
+      cancel: vi.fn(async () => undefined),
+      detect: vi.fn(async () => detections),
+      listProviders: () => [
+        {
+          id: "future-runtime",
+          displayName: "Future Agent",
+          kind: "local-agent" as const,
+        },
+      ],
+      run: vi.fn(async function* () {
+        yield* [];
+      }),
+    };
+
+    const result = await listAgentModelCatalog({
+      env: loadServerEnv({}, {}),
+      localAgentCatalogRuntime,
+    });
+
+    expect(localAgentCatalogRuntime.detect).toHaveBeenCalled();
+    expect(result.localAgentTargets).toContainEqual(
+      expect.objectContaining({
+        agentTargetId: "local:future-runtime",
+        available: true,
+        providerId: "future-runtime",
+      }),
+    );
+    expect(result.models).toContainEqual(
+      expect.objectContaining({
+        id: "future-runtime:future-model",
+        provider: "future-runtime",
       }),
     );
   });

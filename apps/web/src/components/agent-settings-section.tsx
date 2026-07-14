@@ -32,7 +32,6 @@ import {
   fetchTuttiManagedConnection,
 } from "@/lib/server-api";
 import {
-  type TuttiLocalAgentManagerProvider,
   hasTuttiManagedCredentialBridge,
   openTuttiAgentManager,
   openTuttiManagedModelSettings,
@@ -283,12 +282,6 @@ function getProviderLabel(provider: AgentProtocolId): string {
 
 function getModelProvider(modelId: string) {
   return modelId.includes(":") ? (modelId.split(":", 1)[0] ?? "") : "";
-}
-
-function isTuttiManageableLocalProvider(
-  provider: string,
-): provider is TuttiLocalAgentManagerProvider {
-  return provider === "codex" || provider === "claude-code";
 }
 
 function normalizeAgentSettings(
@@ -713,8 +706,8 @@ function LocalCliProviderModelPicker({
   onProviderChange: (provider: string) => void;
   onSelect: (modelId: string) => void;
   onRescan: () => void;
-  onManageProvider: (provider: TuttiLocalAgentManagerProvider) => void;
-  openingManagerProvider: TuttiLocalAgentManagerProvider | null;
+  onManageProvider: (provider: string) => void;
+  openingManagerProvider: string | null;
 }) {
   const { t } = useAppTranslation("settings");
   const activeGroup =
@@ -749,9 +742,7 @@ function LocalCliProviderModelPicker({
                 const selected = activeGroup?.provider === group.provider;
                 const openingManager =
                   openingManagerProvider === group.provider;
-                const canManage =
-                  !group.available &&
-                  isTuttiManageableLocalProvider(group.provider);
+                const canManage = !group.available;
 
                 return (
                   <button
@@ -765,9 +756,7 @@ function LocalCliProviderModelPicker({
                     }
                     onClick={() => {
                       if (!group.available) {
-                        if (isTuttiManageableLocalProvider(group.provider)) {
-                          onManageProvider(group.provider);
-                        }
+                        onManageProvider(group.provider);
                         return;
                       }
                       onProviderChange(group.provider);
@@ -823,16 +812,12 @@ function LocalCliProviderModelPicker({
                 );
               })}
             </div>
-            {providerGroups.length === 0 ? (
-              <p className="mt-3 text-xs text-muted-foreground">
-                {t("agentSettings.local.setupHint")}
-              </p>
-            ) : null}
           </div>
         </div>
       ) : (
         <div className="rounded-xl border bg-muted/20 p-5 text-sm text-muted-foreground">
-          {t("agentSettings.local.empty")}
+          <p>{t("agentSettings.local.empty")}</p>
+          <p className="mt-2 text-xs">{t("agentSettings.local.setupHint")}</p>
         </div>
       )}
     </section>
@@ -878,7 +863,7 @@ export function AgentSettingsSection({
   const [
     openingLocalAgentManagerProvider,
     setOpeningLocalAgentManagerProvider,
-  ] = useState<TuttiLocalAgentManagerProvider | null>(null);
+  ] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
@@ -1028,13 +1013,11 @@ export function AgentSettingsSection({
     }));
   }
 
-  async function handleOpenLocalAgentManager(
-    provider: TuttiLocalAgentManagerProvider,
-  ) {
+  async function handleOpenLocalAgentManager(provider: string) {
     setFeedback(null);
     setOpeningLocalAgentManagerProvider(provider);
     try {
-      await openTuttiAgentManager(provider);
+      await openTuttiAgentManager();
       setFeedback({
         type: "success",
         message: t("agentSettings.local.feedback.managerOpened"),

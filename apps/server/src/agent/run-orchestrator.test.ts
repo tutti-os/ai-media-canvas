@@ -1,17 +1,19 @@
-import { describe, expect, it } from "vitest";
 import { createDefaultLocalAgentProviderPlugins } from "@tutti-os/agent-acp-kit";
+import { describe, expect, it } from "vitest";
 
 import {
   AgentRunModelResolutionError,
   createAgentRunOrchestrator,
   createAssistantMessageProjection,
   createRuntimeControlPlane,
+  getLocalAgentModelProvider,
   inferAimcRuntimeTarget,
   inferRuntimeKind,
   isLocalAgentRuntimeRequested,
   projectStreamEventToAssistantMessage,
   resolveAgentRunModel,
   resolveResumeMode,
+  shouldResolveLocalAgentTarget,
 } from "./run-orchestrator.js";
 
 function createRuntimeProvider(runtime: {
@@ -389,8 +391,10 @@ describe("agent run orchestrator", () => {
       resolveResumeMode({
         previousRuntimeKind: "local-agent",
         previousRuntimeProvider: "codex",
+        previousAgentTargetId: "team:designer",
         nextRuntimeKind: "local-agent",
         nextRuntimeProvider: "codex",
+        nextAgentTargetId: "team:designer",
       }),
     ).toBe("provider-local");
 
@@ -401,6 +405,53 @@ describe("agent run orchestrator", () => {
         nextRuntimeKind: "server-deepagent",
       }),
     ).toBe("handoff");
+
+    expect(
+      resolveResumeMode({
+        previousRuntimeKind: "local-agent",
+        previousRuntimeProvider: "codex",
+        previousAgentTargetId: "team:designer",
+        nextRuntimeKind: "local-agent",
+        nextRuntimeProvider: "codex",
+        nextAgentTargetId: "team:reviewer",
+      }),
+    ).toBe("handoff");
+  });
+
+  it("requires exact target resolution for model-only and workspace-default local runs", () => {
+    expect(shouldResolveLocalAgentTarget({ model: "codex:gpt-5.4" })).toBe(
+      true,
+    );
+    expect(
+      shouldResolveLocalAgentTarget({
+        model: "codex:default",
+        modelSource: "local-agent",
+      }),
+    ).toBe(true);
+    expect(shouldResolveLocalAgentTarget({ model: "openai:gpt-5.4" })).toBe(
+      false,
+    );
+    expect(
+      shouldResolveLocalAgentTarget({
+        model: "codex:gpt-5.4",
+        runtimeKind: "server-deepagent",
+      }),
+    ).toBe(false);
+  });
+
+  it("preserves an explicit server runtime over a local workspace default", () => {
+    expect(
+      shouldResolveLocalAgentTarget({
+        model: "codex:gpt-5.4",
+        modelSource: "local-agent",
+        runtimeKind: "server-deepagent",
+      }),
+    ).toBe(false);
+  });
+
+  it("extracts only registered local-agent model providers", () => {
+    expect(getLocalAgentModelProvider("codex:gpt-5.4")).toBe("codex");
+    expect(getLocalAgentModelProvider("openai:gpt-5.4")).toBeUndefined();
   });
 
   it("keeps server-deepagent as the default runtime", () => {
@@ -437,14 +488,18 @@ describe("agent run orchestrator", () => {
     expect(
       isLocalAgentRuntimeRequested({ runtimeProvider: "claude-code" }),
     ).toBe(true);
-    for (const provider of createDefaultLocalAgentProviderPlugins().map((item) => item.id)) {
+    for (const provider of createDefaultLocalAgentProviderPlugins().map(
+      (item) => item.id,
+    )) {
       expect(
         isLocalAgentRuntimeRequested({ model: `${provider}:default` }),
       ).toBe(true);
     }
     expect(isLocalAgentRuntimeRequested({ model: "default" })).toBe(false);
     expect(isLocalAgentRuntimeRequested({ model: ":default" })).toBe(false);
-    expect(isLocalAgentRuntimeRequested({ model: "agnes:agnes-2.0-flash" })).toBe(false);
+    expect(
+      isLocalAgentRuntimeRequested({ model: "agnes:agnes-2.0-flash" }),
+    ).toBe(false);
   });
 
   it("uses the local provider default model for local-agent runs without a requested model", () => {

@@ -5,7 +5,10 @@ import { extname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
-import type { ManagedAgentInvocationCredentialHeaders } from "@tutti-os/agent-acp-kit";
+import {
+  type ManagedAgentInvocationCredentialHeaders,
+  createManagedAgentDetectContextFromHeaders,
+} from "@tutti-os/agent-acp-kit";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import {
@@ -21,12 +24,18 @@ import {
   viewerResponseSchema,
 } from "@aimc/shared";
 
+import {
+  AgentTargetResolutionError,
+  resolveAgentTarget,
+} from "./agent/agent-targets.js";
 import { createLocalToolGatewayService } from "./agent/local-agent-host/tool-gateway.js";
 import {
   AgentRunModelResolutionError,
   createAgentRunOrchestrator,
+  getLocalAgentModelProvider,
   isLocalAgentRuntimeRequested,
   resolveAgentRunModel,
+  shouldResolveLocalAgentTarget,
 } from "./agent/run-orchestrator.js";
 import { createAgentRunService } from "./agent/runtime.js";
 import type { RequestAuthenticator } from "./auth/request.js";
@@ -1216,15 +1225,71 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       settingsService.getWorkspaceSettings(localUser, LOCAL_WORKSPACE_ID),
     ]);
     const baseRuntimeEnv = createStandaloneAgentEnv(effectiveEnv);
+    const requestsLocalAgent = shouldResolveLocalAgentTarget({
+      ...(payload.agentTargetId
+        ? { agentTargetId: payload.agentTargetId }
+        : {}),
+      model: payload.model ?? baseRuntimeEnv.agentModel,
+      modelSource:
+        payload.modelSource ??
+        (!payload.model ? workspaceSettings.defaultModelSource : undefined),
+      ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
+      ...(payload.runtimeProvider
+        ? { runtimeProvider: payload.runtimeProvider }
+        : {}),
+    });
+    const managedDetectContext = managedAgentHeaders
+      ? createManagedAgentDetectContextFromHeaders(managedAgentHeaders, {
+          ...(baseRuntimeEnv.appDataDir
+            ? { appDataDir: baseRuntimeEnv.appDataDir }
+            : {}),
+        })
+      : undefined;
+    const modelProvider = getLocalAgentModelProvider(
+      payload.model ?? baseRuntimeEnv.agentModel,
+    );
+    let resolvedAgentTarget:
+      | Awaited<ReturnType<typeof resolveAgentTarget>>
+      | undefined;
+    if (requestsLocalAgent) {
+      try {
+        resolvedAgentTarget = await resolveAgentTarget({
+          ...(payload.agentTargetId
+            ? { agentTargetId: payload.agentTargetId }
+            : {}),
+          ...(payload.runtimeProvider
+            ? { providerId: payload.runtimeProvider }
+            : !payload.agentTargetId && modelProvider
+              ? { providerId: modelProvider }
+              : {}),
+          ...(managedDetectContext
+            ? { detectContext: managedDetectContext }
+            : {}),
+        });
+      } catch (error) {
+        if (!(error instanceof AgentTargetResolutionError)) throw error;
+        throw new LocalAgentRunError(
+          "agent_target_unavailable",
+          error instanceof Error ? error.message : String(error),
+          400,
+        );
+      }
+    }
     let resolvedModel: string | undefined;
     try {
       resolvedModel = resolveAgentRunModel({
         defaultModel: baseRuntimeEnv.agentModel,
         ...(payload.model ? { requestedModel: payload.model } : {}),
-        ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
-        ...(payload.runtimeProvider
-          ? { runtimeProvider: payload.runtimeProvider }
-          : {}),
+        ...(requestsLocalAgent
+          ? { runtimeKind: "local-agent" as const }
+          : payload.runtimeKind
+            ? { runtimeKind: payload.runtimeKind }
+            : {}),
+        ...(resolvedAgentTarget
+          ? { runtimeProvider: resolvedAgentTarget.providerId }
+          : payload.runtimeProvider
+            ? { runtimeProvider: payload.runtimeProvider }
+            : {}),
       });
     } catch (error) {
       if (error instanceof AgentRunModelResolutionError) {
@@ -1251,14 +1316,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       runtimeEnv.trustedLocalAgentMode === false &&
       isLocalAgentRuntimeRequested({
         ...(runtimeModel ? { model: runtimeModel } : {}),
-        ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
-        ...(payload.runtimeProvider
-          ? { runtimeProvider: payload.runtimeProvider }
-          : {}),
+        ...(requestsLocalAgent
+          ? { runtimeKind: "local-agent" as const }
+          : payload.runtimeKind
+            ? { runtimeKind: payload.runtimeKind }
+            : {}),
+        ...(resolvedAgentTarget
+          ? { runtimeProvider: resolvedAgentTarget.providerId }
+          : payload.runtimeProvider
+            ? { runtimeProvider: payload.runtimeProvider }
+            : {}),
       })
     ) {
       throw new LocalAgentRunError(
-        "application_error",
+        "local_agent_disabled",
         "Local agent runtime is disabled for this server.",
         403,
       );
@@ -1274,15 +1345,24 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     );
     const response = runCreateResponseSchema.parse(
       agentRuns.createRun(payload, {
+        ...(resolvedAgentTarget
+          ? { agentTargetId: resolvedAgentTarget.agentTargetId }
+          : {}),
         accessToken: LOCAL_AGENT_ACCESS_TOKEN,
         assistantMessageId: assistantMessage.id,
         env: runtimeEnv,
         ...(managedAgentHeaders ? { managedAgentHeaders } : {}),
         ...(runtimeModel ? { model: runtimeModel } : {}),
-        ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
-        ...(payload.runtimeProvider
-          ? { runtimeProvider: payload.runtimeProvider }
-          : {}),
+        ...(requestsLocalAgent
+          ? { runtimeKind: "local-agent" as const }
+          : payload.runtimeKind
+            ? { runtimeKind: payload.runtimeKind }
+            : {}),
+        ...(resolvedAgentTarget
+          ? { runtimeProvider: resolvedAgentTarget.providerId }
+          : payload.runtimeProvider
+            ? { runtimeProvider: payload.runtimeProvider }
+            : {}),
         ...(workspaceSettings.codexImagegenDelegation
           ? {
               codexImagegenDelegation:
@@ -1453,6 +1533,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
             runId: run.id,
             runtimeKind: run.runtime_kind,
             runtimeProvider: run.runtime_provider,
+            agentTargetId: run.agent_target_id,
             sessionId: run.session_id,
             status: run.status,
           };

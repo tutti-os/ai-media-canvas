@@ -377,6 +377,7 @@ type CreateAgentRuntimeOptions = {
   agentFactory?: AimcAgentFactory;
   agentRunStore?: {
     createRun(input: {
+      agentTargetId?: string;
       assistantMessageId?: string;
       canvasId?: string;
       model?: string;
@@ -389,6 +390,7 @@ type CreateAgentRuntimeOptions = {
       threadId?: string;
     }): void;
     updateRun(input: {
+      agentTargetId?: string;
       assistantMessageId?: string;
       errorCode?: string;
       errorMessage?: string;
@@ -401,6 +403,7 @@ type CreateAgentRuntimeOptions = {
     }): void;
     getRun?(runId: string):
       | {
+          agent_target_id?: string | null;
           id: string;
           previous_run_id?: string | null;
           provider_session_id?: string | null;
@@ -431,6 +434,10 @@ type CreateAgentRuntimeOptions = {
   localAgentDetectionRuntime?: Pick<
     LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
     "detect"
+  >;
+  localAgentComposerRuntime?: LocalAgentRuntime<
+    "local-agent",
+    AgentRuntimeProvider
   >;
   localAgentRuntime?: Pick<
     LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
@@ -574,6 +581,28 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     localAgentTrusted && options.toolGateway && options.toolGatewayBaseUrl
       ? (options.localAgentRuntime ?? defaultLocalAgentRuntime)
       : null;
+  const localAgentComposerRuntime =
+    options.localAgentComposerRuntime ??
+    (localAgentRuntime &&
+    typeof (localAgentRuntime as { listProviders?: unknown }).listProviders ===
+      "function" &&
+    typeof (localAgentRuntime as { detect?: unknown }).detect === "function"
+      ? (localAgentRuntime as LocalAgentRuntime<
+          "local-agent",
+          AgentRuntimeProvider
+        >)
+      : options.localAgentDetectionRuntime || options.localAgentRuntime?.detect
+        ? {
+            cancel: (runId: string) => defaultLocalAgentRuntime.cancel(runId),
+            detect: (context?: DetectContext) =>
+              localAgentDetectionRuntime.detect(context),
+            listProviders: () => defaultLocalAgentRuntime.listProviders(),
+            run: (input: Parameters<typeof defaultLocalAgentRuntime.run>[0]) =>
+              defaultLocalAgentRuntime.run(input),
+          }
+        : options.env.tuttiCliPath
+          ? defaultLocalAgentRuntime
+          : undefined);
   const localAgentGatewayDeps =
     localAgentRuntime && options.toolGateway && options.toolGatewayBaseUrl
       ? {
@@ -620,6 +649,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 ? { loadSessionMessages: options.loadSessionMessages }
                 : {}),
               localAgentRuntime,
+              ...(localAgentComposerRuntime
+                ? { localAgentComposerRuntime }
+                : {}),
               now,
               recordProviderResumeMetadata(metadata) {
                 options.agentRunStore?.updateRun({
@@ -692,6 +724,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     createRun(
       input: RuntimeRunCreateInput,
       runOptions?: {
+        agentTargetId?: string;
         accessToken?: string;
         assistantMessageId?: string;
         connectionId?: string;
@@ -733,6 +766,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         initialRuntimeTarget?.kind ?? requestedRuntimeKind;
       const persistedRuntimeProvider =
         initialRuntimeTarget?.provider ?? requestedRuntimeProvider;
+      const persistedAgentTargetId =
+        runOptions?.agentTargetId ?? runInput.agentTargetId;
+      if (persistedRuntimeKind === "local-agent" && !persistedAgentTargetId) {
+        throw new Error(
+          "Local agent runs must resolve an exact agentTargetId before createRun.",
+        );
+      }
       const detectContext = runOptions?.managedAgentHeaders
         ? createManagedAgentDetectContextFromHeaders(
             runOptions.managedAgentHeaders,
@@ -766,23 +806,35 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         );
       }
 
+      const identityResolvedResumeMode = runInput.resumeFromRunId
+        ? resolveResumeMode({
+            ...(persistedAgentTargetId
+              ? { nextAgentTargetId: persistedAgentTargetId }
+              : {}),
+            ...(persistedRuntimeKind
+              ? { nextRuntimeKind: persistedRuntimeKind }
+              : {}),
+            ...(persistedRuntimeProvider
+              ? { nextRuntimeProvider: persistedRuntimeProvider }
+              : {}),
+            previousRuntimeKind: previousRun?.runtime_kind ?? null,
+            previousRuntimeProvider: previousRun?.runtime_provider ?? null,
+            previousAgentTargetId: previousRun?.agent_target_id ?? null,
+          })
+        : undefined;
       const rawResumeMode =
         runInput.resumeMode && runInput.resumeMode !== "auto"
           ? runInput.resumeMode
           : runInput.resumeFromRunId
-            ? resolveResumeMode({
-                ...(persistedRuntimeKind
-                  ? { nextRuntimeKind: persistedRuntimeKind }
-                  : {}),
-                ...(persistedRuntimeProvider
-                  ? { nextRuntimeProvider: persistedRuntimeProvider }
-                  : {}),
-                previousRuntimeKind: previousRun?.runtime_kind ?? null,
-                previousRuntimeProvider: previousRun?.runtime_provider ?? null,
-              })
+            ? identityResolvedResumeMode
             : undefined;
-      const resolvedResumeMode =
+      const requestedResumeMode =
         rawResumeMode === "native" ? "provider-local" : rawResumeMode;
+      const resolvedResumeMode =
+        requestedResumeMode === "provider-local" &&
+        identityResolvedResumeMode !== "provider-local"
+          ? "handoff"
+          : requestedResumeMode;
       const resumeContext = resolvedResumeMode
         ? {
             mode: resolvedResumeMode,
@@ -795,6 +847,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(previousRun?.runtime_provider != null
               ? { previousRuntimeProvider: previousRun.runtime_provider }
               : {}),
+            ...(previousRun?.agent_target_id != null
+              ? { previousAgentTargetId: previousRun.agent_target_id }
+              : {}),
             ...(previousRun?.provider_session_id
               ? { providerSessionId: previousRun.provider_session_id }
               : {}),
@@ -806,6 +861,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       const run: RuntimeRunRecord = {
         ...runInput,
+        ...(persistedAgentTargetId
+          ? { agentTargetId: persistedAgentTargetId }
+          : {}),
         ...(runOptions?.accessToken
           ? { accessToken: runOptions.accessToken }
           : {}),
@@ -844,6 +902,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }, TRANSIENT_INVOCATION_CONTEXT_TTL_MS).unref?.();
 
       options.agentRunStore?.createRun({
+        ...(persistedAgentTargetId
+          ? { agentTargetId: persistedAgentTargetId }
+          : {}),
         ...(runOptions?.assistantMessageId
           ? { assistantMessageId: runOptions.assistantMessageId }
           : {}),
@@ -863,6 +924,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       });
 
       return {
+        ...(persistedAgentTargetId
+          ? { agentTargetId: persistedAgentTargetId }
+          : {}),
         ...(runOptions?.assistantMessageId
           ? { assistantMessageId: runOptions.assistantMessageId }
           : {}),

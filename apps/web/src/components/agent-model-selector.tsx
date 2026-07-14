@@ -11,7 +11,10 @@ import {
 } from "@/lib/agent-model-groups";
 import { fetchModels, fetchWorkspaceSettings } from "@/lib/server-api";
 import { WORKSPACE_SETTINGS_UPDATED_EVENT } from "@/lib/workspace-settings-events";
-import type { LocalAgentProviderInfo } from "@aimc/shared";
+import type {
+  LocalAgentProviderInfo,
+  LocalAgentTargetInfo,
+} from "@aimc/shared";
 import { Cloud, Settings2, Terminal } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useAppTranslation } from "../i18n";
@@ -154,7 +157,7 @@ export function AgentModelSelector({
   tooltipPlacement?: "top" | "bottom";
 } = {}) {
   const { t } = useAppTranslation("chat");
-  const { model, modelSource, setModel } = useAgentModel();
+  const { agentTargetId, model, modelSource, setModel } = useAgentModel();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialSourceTab, setSettingsInitialSourceTab] = useState<
@@ -166,6 +169,9 @@ export function AgentModelSelector({
   >("idle");
   const [localAgentProviders, setLocalAgentProviders] = useState<
     LocalAgentProviderInfo[]
+  >([]);
+  const [localAgentTargets, setLocalAgentTargets] = useState<
+    LocalAgentTargetInfo[]
   >([]);
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
     string | null
@@ -179,8 +185,22 @@ export function AgentModelSelector({
     setModelLoadState("loading");
     fetchModels()
       .then((data) => {
+        const providers = localAgentProvidersFromModelResponse(data);
         setModels(data.models);
-        setLocalAgentProviders(localAgentProvidersFromModelResponse(data));
+        setLocalAgentProviders(providers);
+        setLocalAgentTargets(
+          data.localAgentTargets ??
+            providers.map((provider) => ({
+              agentTargetId: `local:${provider.provider}`,
+              providerId: provider.provider,
+              displayName: provider.displayName,
+              available: provider.supported,
+              runtimeSupported: provider.supported,
+              isDefault: false,
+              ...(provider.reason ? { reason: provider.reason } : {}),
+              models: provider.models,
+            })),
+        );
         setModelLoadState("ready");
       })
       .catch(() => setModelLoadState("error"));
@@ -277,9 +297,13 @@ export function AgentModelSelector({
       ? workspaceDefaultProvider
       : "";
   const triggerLocalProviderLabel = triggerLocalProvider
-    ? (localAgentProviders.find(
+    ? (localAgentTargets.find(
+        (target) => target.agentTargetId === agentTargetId,
+      )?.displayName ??
+      localAgentProviders.find(
         (provider) => provider.provider === triggerLocalProvider,
-      )?.displayName ?? null)
+      )?.displayName ??
+      null)
     : null;
   const isActive = model !== null;
   const isTriggerActive = isActive || Boolean(triggerLocalProvider);
@@ -301,7 +325,7 @@ export function AgentModelSelector({
 
   const providers =
     activeModelTab === "local-agent"
-      ? localAgentProviders.map((provider) => provider.provider)
+      ? localAgentTargets.map((target) => target.agentTargetId)
       : [...new Set(visibleModels.map((item) => item.provider))].sort(
           (left, right) => {
             const leftIndex = PROVIDER_PRIORITY.indexOf(left);
@@ -474,26 +498,36 @@ export function AgentModelSelector({
           </button>
           {/* Group by provider */}
           {providers.map((provider) => {
-            const providerModels = visibleModels.filter(
-              (m) => m.provider === provider,
-            );
+            const localTarget =
+              activeModelTab === "local-agent"
+                ? localAgentTargets.find(
+                    (target) => target.agentTargetId === provider,
+                  )
+                : undefined;
+            const runtimeProvider = localTarget?.providerId ?? provider;
+            const providerModels = localTarget
+              ? localTarget.models
+              : visibleModels.filter((m) => m.provider === provider);
             const localProvider = localAgentProviders.find(
-              (entry) => entry.provider === provider,
+              (entry) => entry.provider === runtimeProvider,
             );
-            if (providerModels.length === 0 && !localProvider) return null;
+            if (providerModels.length === 0 && !localTarget && !localProvider)
+              return null;
             return (
               <div key={provider} className="mt-2">
                 <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
-                  <ProviderLogo provider={provider} />
-                  {isLocalCliProvider(provider)
-                    ? (localProvider?.displayName ??
-                      formatLocalCliProviderLabel(provider))
-                    : formatProviderLabel(provider)}
+                  <ProviderLogo provider={runtimeProvider} />
+                  {localTarget
+                    ? localTarget.displayName
+                    : isLocalCliProvider(runtimeProvider)
+                      ? (localProvider?.displayName ??
+                        formatLocalCliProviderLabel(runtimeProvider))
+                      : formatProviderLabel(provider)}
                 </div>
-                {localProvider &&
-                (localProvider.reason || !localProvider.supported) ? (
+                {localTarget &&
+                (localTarget.reason || !localTarget.available) ? (
                   <div className="rounded-lg px-2 py-2 text-xs text-muted-foreground">
-                    {localProvider.reason ??
+                    {localTarget.reason ??
                       t("agentModelSelector.providerUnavailable")}
                   </div>
                 ) : null}
@@ -501,15 +535,22 @@ export function AgentModelSelector({
                   <button
                     key={m.id}
                     type="button"
+                    disabled={Boolean(localTarget && !localTarget.available)}
                     onClick={() => {
+                      if (localTarget && !localTarget.available) return;
                       setModel(
                         resolveExecutableModelId(m.id),
                         getModelSourceTab(m),
+                        localTarget?.agentTargetId,
                       );
                       setOpen(false);
                     }}
-                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors ${
-                      model === m.id
+                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      model === m.id &&
+                      (
+                        !localTarget ||
+                          agentTargetId === localTarget.agentTargetId
+                      )
                         ? "bg-accent/10 text-accent-foreground"
                         : "hover:bg-muted"
                     }`}
@@ -522,16 +563,18 @@ export function AgentModelSelector({
                         </span>
                       )}
                     </span>
-                    {model === m.id && (
-                      <svg
-                        aria-hidden="true"
-                        className="h-3 w-3 text-accent-foreground"
-                        viewBox="0 0 16 16"
-                        fill="currentColor"
-                      >
-                        <path d={CHECK_PATH} />
-                      </svg>
-                    )}
+                    {model === m.id &&
+                      (!localTarget ||
+                        agentTargetId === localTarget.agentTargetId) && (
+                        <svg
+                          aria-hidden="true"
+                          className="h-3 w-3 text-accent-foreground"
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                        >
+                          <path d={CHECK_PATH} />
+                        </svg>
+                      )}
                   </button>
                 ))}
               </div>

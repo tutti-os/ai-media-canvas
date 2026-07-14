@@ -68,6 +68,9 @@ function createRuntimeContext(
       warn: vi.fn(),
     },
     run: {
+      agentTargetId:
+        overrides.agentTargetId ??
+        `local:${overrides.runtimeProvider ?? "codex"}`,
       consumed: false,
       controller: new AbortController(),
       conversationId: "canvas-1",
@@ -101,9 +104,81 @@ function writeFakeTuttiSkillCli(path: string) {
     path,
     [
       "#!/bin/sh",
+      'case "$*" in',
+      '  *"agent list"*)',
       "cat <<'JSON'",
       JSON.stringify({
         schemaVersion: 1,
+        defaultAgentTargetId: "local:codex",
+        agents: [
+          {
+            id: "local:codex",
+            provider: "codex",
+            name: "Canvas Agent",
+            availability: {
+              status: "available",
+              reasonCode: "ready",
+              detail: "Ready",
+            },
+            runtimeSupported: true,
+          },
+        ],
+      }),
+      "JSON",
+      "exit 0",
+      ";;",
+      '  *"agent composer-options"*)',
+      "cat <<'JSON'",
+      JSON.stringify({
+        schemaVersion: 2,
+        agentTargetId: "local:codex",
+        providerId: "codex",
+        effectiveSettings: {
+          model: "gpt-composer",
+          reasoningEffort: "high",
+          permissionMode: "workspace-write",
+        },
+        modelConfig: {
+          configurable: true,
+          currentValue: "gpt-composer",
+          defaultValue: "gpt-composer",
+          options: [
+            { id: "gpt-composer", value: "gpt-composer", label: "Composer" },
+          ],
+        },
+        reasoningConfig: {
+          configurable: true,
+          currentValue: "high",
+          defaultValue: "high",
+          options: [{ id: "high", value: "high", label: "High" }],
+        },
+        permissionConfig: {
+          configurable: true,
+          defaultValue: "workspace-write",
+          modes: [
+            {
+              id: "workspace-write",
+              label: "Workspace Write",
+              semantic: "accept-edits",
+            },
+          ],
+        },
+        speedConfig: {
+          configurable: false,
+          currentValue: "",
+          defaultValue: "",
+          options: [],
+        },
+      }),
+      "JSON",
+      "exit 0",
+      ";;",
+      "esac",
+      "cat <<'JSON'",
+      JSON.stringify({
+        schemaVersion: 1,
+        agentTargetId: "local:codex",
+        providerId: "codex",
         provider: "codex",
         agentSessionId: "run-1",
         recommendedSystemPrompt: {
@@ -571,6 +646,7 @@ describe("createLocalAgentRuntimeProvider", () => {
       const context = createRuntimeContext({
         prompt: "Open mention://workspace-app/aimc",
       });
+      context.run.agentTargetId = "local:codex";
       context.runtimeEnv = {
         ...context.runtimeEnv,
         tuttiCliPath,
@@ -655,6 +731,73 @@ describe("createLocalAgentRuntimeProvider", () => {
         skillId: "workspace-app",
       }),
     );
+  });
+
+  it("applies exact-target composer settings to a custom execution runtime", async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "aimc-tutti-composer-"));
+    const tuttiCliPath = join(tempRoot, "tutti");
+    writeFakeTuttiSkillCli(tuttiCliPath);
+    vi.stubEnv("TUTTI_CLI", tuttiCliPath);
+    const localAgentRuntimeRun = vi.fn(async function* () {
+      yield {
+        type: "done" as const,
+        status: "completed" as const,
+        reason: "completed" as const,
+        exitCode: 0,
+      };
+    });
+    const composerRuntime = {
+      cancel: vi.fn(async () => undefined),
+      detect: vi.fn(async () => []),
+      listProviders: () => [
+        {
+          id: "codex" as const,
+          displayName: "Codex",
+          kind: "local-agent" as const,
+        },
+      ],
+      run: vi.fn(async function* () {
+        yield* [];
+      }),
+    };
+    const runDir = join(tempRoot, "run");
+    mkdirSync(runDir, { recursive: true });
+    const provider = createLocalAgentRuntimeProvider(
+      {
+        assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
+        buildAttachmentDataMap: vi.fn(() => ({})),
+        buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
+        createRunDirectory: vi.fn(async () => runDir),
+        loadCanvasSummaryForRuntime: vi.fn(async () => null),
+        localAgentComposerRuntime: composerRuntime,
+        localAgentRuntime: { run: localAgentRuntimeRun },
+        now: () => "2026-06-17T00:00:00.000Z",
+        toolGateway: {
+          createSession: vi.fn(() => ({ token: "tool-token" })),
+          revokeSession: vi.fn(),
+        } as never,
+        toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+      },
+      createProviderPlugin("codex"),
+    );
+
+    try {
+      await collect(provider.streamRun(createRuntimeContext()));
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+
+    expect(localAgentRuntimeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-composer",
+        reasoning: "high",
+        permission: {
+          modeId: "workspace-write",
+          semantic: "accept-edits",
+        },
+      }),
+    );
+    expect(composerRuntime.detect).not.toHaveBeenCalled();
   });
 
   it("rejects a provider omitted by the fresh Tutti catalog and removes its run directory", async () => {

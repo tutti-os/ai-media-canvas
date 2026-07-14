@@ -50,6 +50,45 @@ describe("buildApp", () => {
     );
   });
 
+  it("returns the public policy error when the local agent runtime is disabled", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
+    dataRoots.push(dataRoot);
+    const setupStore = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = setupStore.createProject({ name: "Disabled agent run" });
+    const session = setupStore.createSession(project.primaryCanvas.id);
+    if (!session) throw new Error("Expected chat session to be created.");
+
+    const app = buildApp({
+      env: {
+        agentModel: "codex:gpt-5.4",
+        dataRoot,
+        trustedLocalAgentMode: false,
+      },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/agent/runs",
+      payload: {
+        conversationId: project.primaryCanvas.id,
+        prompt: "Continue",
+        runtimeKind: "server-deepagent",
+        sessionId: session.id,
+      },
+    });
+    await app.close();
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: {
+        code: "local_agent_disabled",
+        message: "Local agent runtime is disabled for this server.",
+      },
+    });
+  });
+
   it("serves local assets with byte-range support for media playback", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "aimc-app-test-"));
     dataRoots.push(dataRoot);

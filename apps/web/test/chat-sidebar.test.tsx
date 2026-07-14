@@ -606,8 +606,9 @@ describe("ChatSidebar", () => {
     );
   });
 
-  it("passes selected local CLI models without forcing the server runtime", async () => {
+  it("preserves provider compatibility for legacy local-agent selections", async () => {
     localStorage.setItem("aimc:agent-model", "claude:sonnet");
+    localStorage.setItem("aimc:agent-model-source", "local-agent");
 
     render(
       <ToastProvider>
@@ -629,6 +630,8 @@ describe("ChatSidebar", () => {
         expect.objectContaining({
           model: "claude:sonnet",
           prompt: "use claude",
+          runtimeKind: "local-agent",
+          runtimeProvider: "claude",
         }),
         expect.any(Function),
       ),
@@ -636,12 +639,6 @@ describe("ChatSidebar", () => {
     expect(mockWs.startRun).not.toHaveBeenCalledWith(
       expect.objectContaining({
         runtimeKind: "server-deepagent",
-      }),
-      expect.anything(),
-    );
-    expect(mockWs.startRun).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        runtimeProvider: expect.any(String),
       }),
       expect.anything(),
     );

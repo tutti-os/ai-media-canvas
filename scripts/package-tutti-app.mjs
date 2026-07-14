@@ -283,7 +283,7 @@ const CLI_COMMANDS = [
     path: ["agent", "run"],
     summary: "Start an agent run",
     description:
-      "Start an AI Canvas agent run for a session and conversation. Poll events with aimc agent events --run-id <runId>. For local agents, pass --runtime-kind local-agent --runtime-provider codex or --runtime-provider claude; when model is omitted the provider default is used. If model is provided with a local provider, use a matching provider-prefixed model such as codex:default or claude:default from aimc models list. If a non-Codex local agent needs Codex image generation and the user selected only this time, pass --codex-imagegen-consent allow-once on the follow-up run.",
+      "Start an AI Canvas agent run for a session and conversation. Poll events with aimc agent events --run-id <runId>. For local agents, inspect aimc models list and pass the exact --agent-id. Runtime provider is returned only as execution metadata. If a non-Codex local agent needs Codex image generation and the user selected only this time, pass --codex-imagegen-consent allow-once on the follow-up run.",
     properties: {
       "session-id": { type: "string", description: "Chat session id." },
       "conversation-id": {
@@ -299,16 +299,21 @@ const CLI_COMMANDS = [
       model: {
         type: "string",
         description:
-          "Optional agent model id. For local agents use a provider-prefixed id from aimc models list, for example codex:default or claude:default.",
+          "Optional agent model id advertised for the exact Agent Target by aimc models list.",
       },
-      "runtime-kind": {
+      "agent-id": {
         type: "string",
-        description: "Optional runtime kind, for example local-agent.",
+        description:
+          "Exact local Agent Target id from aimc models list. Required for local-agent runs.",
       },
       "runtime-provider": {
         type: "string",
         description:
-          "Optional local agent provider id such as codex or claude. Requires runtime-kind=local-agent.",
+          "Deprecated compatibility selector. Use agent-id. Accepted only when exactly one Agent Target uses the provider.",
+      },
+      "runtime-kind": {
+        type: "string",
+        description: "Optional runtime kind, for example local-agent.",
       },
       "codex-imagegen-consent": {
         type: "string",
@@ -494,7 +499,7 @@ const CLI_COMMANDS = [
     path: ["models", "list"],
     summary: "List agent models",
     description:
-      "List configured assistant and local-agent models available to agent runs.",
+      "List configured assistant models plus discoverable local Agent Targets and their exact agentTargetId values.",
   },
   {
     path: ["models", "image"],

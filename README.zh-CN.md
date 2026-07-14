@@ -25,7 +25,7 @@
 <p align="center">
   <a href="./LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue" /></a>
   <img alt="Local-first SQLite" src="https://img.shields.io/badge/local--first-SQLite-111827" />
-  <img alt="Local agent routes" src="https://img.shields.io/badge/local--agent-Codex%20%7C%20Claude%20Code-7c3aed" />
+  <img alt="Local agent routes" src="https://img.shields.io/badge/local--agent-Tutti%20Agent%20Targets-7c3aed" />
   <img alt="BYOK providers" src="https://img.shields.io/badge/BYOK-OpenAI--compatible%20%7C%20Anthropic-0f766e" />
   <img alt="i18n zh-CN and en" src="https://img.shields.io/badge/i18n-zh--CN%20%7C%20en-16a34a" />
   <img alt="Next.js" src="https://img.shields.io/badge/web-Next.js-000000" />
@@ -41,7 +41,7 @@ AI Canvas 是一个本地优先的 AI 创意工作台，用可视化画布组织
 
 - 可视化画布工作流：基于 Excalidraw 编排、检查和迭代创意内容。
 - AI 设计助手：在项目内聊天，并让助手读取或更新画布内容。
-- 灵活的 Agent 路线：可使用已登录的本地 Codex 或 Claude Code CLI，也可使用自己的 API key。
+- 灵活的 Agent 路线：可选择当前 Tutti 工作区暴露的任意 Agent Target，也可使用自己的 API key。
 - 图片与视频生成：可接入 OpenAI、Google、Replicate、火山方舟、Agnes 等 Provider。
 - 本地优先存储：项目、聊天、设置、技能和生成资源都落在本地 SQLite 与文件系统中。
 - 技能工作区：导入、创建、启用和复用本地 AI Skills，支持更专门的创意流程。
@@ -87,7 +87,7 @@ AIMC_WEB_DIST=apps/web/out pnpm --filter @aimc/server dev:server
 
 AI Canvas 支持两种 Agent 执行路线：
 
-- 本地 CLI 路线：使用已经安装并登录的 Codex 或 Claude Code CLI，包括你本机已有订阅覆盖的账号。
+- 本地 Agent 路线：AI Canvas 会读取当前 Tutti Agent Target 列表；即使多个 Agent 共用同一 Runtime Provider，也仍作为独立身份供选择。
 - BYOK API 路线：使用自己的 API key 和 Base URL，接入 OpenAI-compatible 网关、Anthropic-compatible Claude 路线、Google Gemini、Vertex AI、Agnes 以及其他已配置 Provider。
 
 常用变量：

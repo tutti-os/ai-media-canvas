@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { WebSocket } from "ws";
 import type {
   AgentRuntimeProvider,
   RuntimeKind,
   StreamEvent,
 } from "@aimc/shared";
+import type { WebSocket } from "ws";
 
 type PendingRPC = {
   resolve: (value: any) => void;
@@ -33,6 +33,7 @@ export class ConnectionManager {
       string,
       {
         assistantMessageId?: string;
+        agentTargetId?: string;
         runId: string;
         runtimeKind?: RuntimeKind;
         runtimeProvider?: AgentRuntimeProvider;
@@ -115,6 +116,7 @@ export class ConnectionManager {
     assistantMessageId?: string,
     runtimeKind?: RuntimeKind,
     runtimeProvider?: AgentRuntimeProvider,
+    agentTargetId?: string,
   ): void {
     const runsForCanvas = this.activeRuns.get(canvasId) ?? new Map();
     runsForCanvas.set(runId, {
@@ -123,6 +125,7 @@ export class ConnectionManager {
       sessionId,
       ...(runtimeKind ? { runtimeKind } : {}),
       ...(runtimeProvider ? { runtimeProvider } : {}),
+      ...(agentTargetId ? { agentTargetId } : {}),
       startedAt: Date.now(),
     });
     this.activeRuns.set(canvasId, runsForCanvas);
@@ -144,6 +147,7 @@ export class ConnectionManager {
     sessionId?: string,
   ): {
     assistantMessageId?: string;
+    agentTargetId?: string;
     runId: string;
     runtimeKind?: RuntimeKind;
     runtimeProvider?: AgentRuntimeProvider;
@@ -167,15 +171,16 @@ export class ConnectionManager {
   }
 
   /** Get active run info by run id, including its canvas binding. */
-  getActiveRunById(runId: string): ({
+  getActiveRunById(runId: string): {
     assistantMessageId?: string;
+    agentTargetId?: string;
     canvasId: string;
     runId: string;
     runtimeKind?: RuntimeKind;
     runtimeProvider?: AgentRuntimeProvider;
     sessionId: string;
     startedAt: number;
-  }) | null {
+  } | null {
     for (const [canvasId, runsForCanvas] of this.activeRuns.entries()) {
       const run = runsForCanvas.get(runId);
       if (!run) continue;
@@ -436,7 +441,10 @@ export class ConnectionManager {
   // Internal helpers
   // ---------------------------------------------------------------------------
 
-  private removeFromIndexes(connectionId: string, entry: ConnectionEntry): void {
+  private removeFromIndexes(
+    connectionId: string,
+    entry: ConnectionEntry,
+  ): void {
     // Remove from user index
     const userSet = this.userIndex.get(entry.userId);
     if (userSet) {

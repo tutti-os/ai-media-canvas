@@ -14,8 +14,6 @@ type TuttiManagedGrantResult = {
   models?: TuttiManagedModel[];
 };
 
-export type TuttiLocalAgentManagerProvider = "codex" | "claude-code";
-
 type TuttiAppContext = {
   appId?: string;
   contextToken?: string;
@@ -47,7 +45,6 @@ type TuttiBridge = {
   workspace?: {
     openFeature?: (input: {
       feature: "agent-manage";
-      provider?: TuttiLocalAgentManagerProvider;
     }) => Promise<void>;
   };
 };
@@ -76,18 +73,13 @@ export function hasTuttiAgentManagerBridge() {
   return typeof bridge?.workspace?.openFeature === "function";
 }
 
-export async function openTuttiAgentManager(
-  provider?: TuttiLocalAgentManagerProvider,
-) {
+export async function openTuttiAgentManager() {
   const openFeature = getManagedCredentialBridge()?.workspace?.openFeature;
   if (typeof openFeature !== "function") {
     throw new Error("Tutti agent manager bridge is unavailable.");
   }
 
-  await openFeature({
-    feature: "agent-manage",
-    ...(provider ? { provider } : {}),
-  });
+  await openFeature({ feature: "agent-manage" });
 }
 
 export async function requestTuttiManagedGrant(): Promise<TuttiManagedGrantCreateRequest> {

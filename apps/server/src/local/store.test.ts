@@ -68,6 +68,7 @@ describe("createLocalStore", () => {
     expect(session).not.toBeNull();
 
     store.createAgentRun({
+      agentTargetId: "team:designer",
       canvasId: project.primaryCanvas.id,
       model: "agnes:agnes-2.0-flash",
       previousRunId: "run-previous",
@@ -78,6 +79,7 @@ describe("createLocalStore", () => {
       threadId: "thread:run-session",
     });
     store.updateAgentRun({
+      agentTargetId: "team:reviewer",
       providerSessionId: "provider-session-1",
       runId: "run-1",
       resumeToken: "resume-token-1",
@@ -88,7 +90,7 @@ describe("createLocalStore", () => {
     const row = db
       .prepare(
         `SELECT id, canvas_id, session_id, thread_id, model, runtime_kind,
-                runtime_provider, previous_run_id, resume_mode,
+                runtime_provider, agent_target_id, previous_run_id, resume_mode,
                 provider_session_id, resume_token, status, completed_at
          FROM agent_runs
          WHERE id = ?`,
@@ -96,6 +98,7 @@ describe("createLocalStore", () => {
       .get("run-1") as
       | {
           canvas_id: string;
+          agent_target_id: string | null;
           completed_at: string | null;
           id: string;
           model: string;
@@ -113,6 +116,7 @@ describe("createLocalStore", () => {
     db.close();
 
     expect(row).toMatchObject({
+      agent_target_id: "team:reviewer",
       canvas_id: project.primaryCanvas.id,
       id: "run-1",
       model: "agnes:agnes-2.0-flash",

@@ -53,7 +53,7 @@
       "rescan": "Rescan",
       "selectCliFirst": "Select a CLI first...",
       "selectModel": "Select a model...",
-      "setupHint": "Use Tutti to install or sign in to Codex or Claude Code, then rescan to enable local agent routes."
+      "setupHint": "Use Tutti to install or sign in to the selected Agent Target, then rescan to enable local agent routes."
     },
     "source": {
       "apiProvider": "API provider",

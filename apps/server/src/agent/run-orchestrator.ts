@@ -82,8 +82,17 @@ const LOCAL_AGENT_MODEL_PROVIDER_IDS = new Set(
 );
 
 function hasLocalAgentModelProviderPrefix(model: string) {
+  return Boolean(getLocalAgentModelProvider(model));
+}
+
+export function getLocalAgentModelProvider(
+  model: string | undefined,
+): AgentRuntimeProvider | undefined {
+  if (!model) return undefined;
   const provider = getModelProvider(model);
-  return LOCAL_AGENT_MODEL_PROVIDER_IDS.has(provider);
+  return LOCAL_AGENT_MODEL_PROVIDER_IDS.has(provider)
+    ? (provider as AgentRuntimeProvider)
+    : undefined;
 }
 
 export function isLocalAgentRuntimeRequested(input: {
@@ -96,6 +105,24 @@ export function isLocalAgentRuntimeRequested(input: {
     input.runtimeKind === "local-agent" ||
     Boolean(input.runtimeProvider) ||
     (typeof model === "string" && hasLocalAgentModelProviderPrefix(model))
+  );
+}
+
+export function shouldResolveLocalAgentTarget(input: {
+  agentTargetId?: string | undefined;
+  model?: string | undefined;
+  modelSource?: RunCreateRequest["modelSource"] | undefined;
+  runtimeKind?: RuntimeKind | undefined;
+  runtimeProvider?: AgentRuntimeProvider | undefined;
+}) {
+  return (
+    (!input.runtimeKind && input.modelSource === "local-agent") ||
+    input.runtimeKind === "local-agent" ||
+    Boolean(input.agentTargetId || input.runtimeProvider) ||
+    (!input.runtimeKind &&
+      isLocalAgentRuntimeRequested({
+        ...(input.model ? { model: input.model } : {}),
+      }))
   );
 }
 
@@ -374,22 +401,27 @@ export type AgentRunResumeContext = {
   previousRunId?: string;
   previousRuntimeKind?: RuntimeKind | null;
   previousRuntimeProvider?: AgentRuntimeProvider | null;
+  previousAgentTargetId?: string | null;
   providerSessionId?: string;
   resumeToken?: string;
 };
 
 export function resolveResumeMode(input: {
+  nextAgentTargetId?: string;
   nextRuntimeKind?: RuntimeKind;
   nextRuntimeProvider?: AgentRuntimeProvider;
   previousRuntimeKind?: RuntimeKind | null;
   previousRuntimeProvider?: AgentRuntimeProvider | null;
+  previousAgentTargetId?: string | null;
 }): AgentRunResumeMode {
   if (!input.previousRuntimeKind) {
     return "fresh";
   }
   if (
     input.previousRuntimeKind === input.nextRuntimeKind &&
-    input.previousRuntimeProvider === input.nextRuntimeProvider
+    input.previousRuntimeProvider === input.nextRuntimeProvider &&
+    Boolean(input.previousAgentTargetId) &&
+    input.previousAgentTargetId === input.nextAgentTargetId
   ) {
     return "provider-local";
   }
@@ -405,6 +437,7 @@ type AgentRunStatus =
 
 export type AgentRunRecordStore = {
   createRun(input: {
+    agentTargetId?: string;
     assistantMessageId?: string;
     canvasId?: string;
     model?: string;
@@ -417,6 +450,7 @@ export type AgentRunRecordStore = {
     threadId?: string;
   }): void;
   updateRun(input: {
+    agentTargetId?: string;
     assistantMessageId?: string;
     errorCode?: string;
     errorMessage?: string;
@@ -429,6 +463,7 @@ export type AgentRunRecordStore = {
   }): void;
   getRun?(runId: string):
     | {
+        agent_target_id?: string | null;
         id: string;
         previous_run_id?: string | null;
         provider_session_id?: string | null;
@@ -485,6 +520,7 @@ export type AgentRunOrchestrator = {
     event: StreamEvent,
   ): AssistantMessageProjection;
   recordAcceptedRun(input: {
+    agentTargetId?: string;
     assistantMessageId?: string;
     canvasId?: string;
     model?: string;
@@ -495,6 +531,7 @@ export type AgentRunOrchestrator = {
     threadId?: string;
   }): void;
   updateRunStatus(input: {
+    agentTargetId?: string;
     assistantMessageId?: string;
     errorCode?: string;
     errorMessage?: string;

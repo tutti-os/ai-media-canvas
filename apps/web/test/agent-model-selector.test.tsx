@@ -12,6 +12,7 @@ const {
   setModelMock,
 } = vi.hoisted(() => ({
   agentModelState: {
+    agentTargetId: undefined as string | undefined,
     model: null as string | null,
     modelSource: undefined as
       | "api-provider"
@@ -56,6 +57,7 @@ vi.mock("../src/lib/server-api", () => ({
 
 vi.mock("../src/hooks/use-agent-model", () => ({
   useAgentModel: () => ({
+    agentTargetId: agentModelState.agentTargetId,
     model: agentModelState.model,
     modelSource: agentModelState.modelSource,
     setModel: setModelMock,
@@ -92,6 +94,7 @@ describe("AgentModelSelector", () => {
     setModelMock.mockReset();
     agentModelState.model = null;
     agentModelState.modelSource = undefined;
+    agentModelState.agentTargetId = undefined;
     fetchWorkspaceSettingsMock.mockResolvedValue({
       settings: {
         defaultModel: "openai:gpt-5.4",
@@ -377,6 +380,43 @@ describe("AgentModelSelector", () => {
     expect(setModelMock).not.toHaveBeenCalled();
   });
 
+  it("disables model buttons for an unavailable exact Agent Target", async () => {
+    fetchModelsMock.mockResolvedValue({
+      models: [],
+      localAgentProviders: [
+        {
+          provider: "codex",
+          displayName: "Codex Runtime",
+          supported: true,
+          authState: "ok",
+          models: [{ id: "codex:default", name: "Default", provider: "codex" }],
+        },
+      ],
+      localAgentTargets: [
+        {
+          agentTargetId: "team:offline",
+          providerId: "codex",
+          displayName: "Offline Reviewer",
+          available: false,
+          runtimeSupported: true,
+          isDefault: false,
+          reason: "This Agent Target is unavailable.",
+          models: [{ id: "codex:default", name: "Default", provider: "codex" }],
+        },
+      ],
+    });
+
+    render(<AgentModelSelector compact />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Agent/i }),
+    );
+
+    const modelButton = await screen.findByRole("button", { name: "Default" });
+    expect(modelButton).toBeDisabled();
+    await userEvent.click(modelButton);
+    expect(setModelMock).not.toHaveBeenCalled();
+  });
+
   it("shows a degraded discovery reason for a supported local provider", async () => {
     fetchModelsMock.mockResolvedValue({
       models: [{ id: "codex:default", name: "Default", provider: "codex" }],
@@ -548,7 +588,11 @@ describe("AgentModelSelector", () => {
       await screen.findByRole("button", { name: "Default (CLI config)" }),
     );
 
-    expect(setModelMock).toHaveBeenCalledWith("codex:default", "local-agent");
+    expect(setModelMock).toHaveBeenCalledWith(
+      "codex:default",
+      "local-agent",
+      "local:codex",
+    );
   });
 
   it("refreshes the trigger when workspace settings are saved elsewhere", async () => {

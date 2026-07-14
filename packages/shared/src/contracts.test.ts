@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applicationErrorResponseSchema,
   canvasGetResponseSchema,
   canvasSaveRequestSchema,
   codexImagegenDelegationSchema,
   modelListRequestSchema,
+  modelListResponseSchema,
   runCreateRequestSchema,
   workspaceSettingsSchema,
 } from "./index.js";
@@ -16,7 +18,7 @@ const baseRunCreateRequest = {
 };
 
 describe("runCreateRequestSchema", () => {
-  it("requires a provider when local-agent runtime is requested", () => {
+  it("requires an exact target or compatibility provider for local-agent runtime", () => {
     const result = runCreateRequestSchema.safeParse({
       ...baseRunCreateRequest,
       runtimeKind: "local-agent",
@@ -26,11 +28,24 @@ describe("runCreateRequestSchema", () => {
     expect(result.error?.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          message: "runtimeKind=local-agent requires runtimeProvider.",
-          path: ["runtimeProvider"],
+          message:
+            "runtimeKind=local-agent requires agentTargetId or deprecated runtimeProvider.",
+          path: ["agentTargetId"],
         }),
       ]),
     );
+  });
+
+  it("accepts exact Agent Target IDs", () => {
+    expect(
+      runCreateRequestSchema.safeParse({
+        sessionId: "s1",
+        conversationId: "c1",
+        prompt: "hello",
+        runtimeKind: "local-agent",
+        agentTargetId: "team:canvas-reviewer",
+      }).success,
+    ).toBe(true);
   });
 
   it("accepts explicit local provider ids", () => {
@@ -49,6 +64,44 @@ describe("runCreateRequestSchema", () => {
         runtimeProvider: "claude",
       }).success,
     ).toBe(true);
+  });
+
+  it("rejects exact targets with an incompatible explicit runtime", () => {
+    const result = runCreateRequestSchema.safeParse({
+      ...baseRunCreateRequest,
+      runtimeKind: "server-deepagent",
+      agentTargetId: "team:designer",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "agentTargetId requires runtimeKind=local-agent.",
+          path: ["agentTargetId"],
+        }),
+      ]),
+    );
+  });
+
+  it("rejects contradictory exact-target and deprecated-provider selectors", () => {
+    const result = runCreateRequestSchema.safeParse({
+      ...baseRunCreateRequest,
+      runtimeKind: "local-agent",
+      agentTargetId: "team:designer",
+      runtimeProvider: "claude-code",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message:
+            "Provide agentTargetId or deprecated runtimeProvider, not both.",
+          path: ["runtimeProvider"],
+        }),
+      ]),
+    );
   });
 
   it("does not expose managed agent invocation credentials in run bodies", () => {
@@ -158,6 +211,33 @@ describe("modelListRequestSchema", () => {
         "managedAgentInvocationCredential",
       );
     }
+  });
+});
+
+describe("modelListResponseSchema", () => {
+  it("rejects malformed default Agent Target IDs", () => {
+    expect(
+      modelListResponseSchema.safeParse({
+        models: [],
+        localAgentProviders: [],
+        localAgentTargets: [],
+        defaultAgentTargetId: "../bad target",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("applicationErrorResponseSchema", () => {
+  it.each([
+    "agent_target_unavailable",
+    "invalid_model",
+    "local_agent_disabled",
+  ])("accepts actionable agent run error code %s", (code) => {
+    expect(
+      applicationErrorResponseSchema.safeParse({
+        error: { code, message: "Actionable run error." },
+      }).success,
+    ).toBe(true);
   });
 });
 

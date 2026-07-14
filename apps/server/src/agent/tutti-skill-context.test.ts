@@ -1,11 +1,14 @@
 import type { DetectContext } from "@tutti-os/agent-acp-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loadTuttiAgentSkillContextMock } = vi.hoisted(() => ({
-  loadTuttiAgentSkillContextMock: vi.fn(),
-}));
+const { loadTuttiAgentCatalogMock, loadTuttiAgentSkillContextMock } =
+  vi.hoisted(() => ({
+    loadTuttiAgentCatalogMock: vi.fn(),
+    loadTuttiAgentSkillContextMock: vi.fn(),
+  }));
 
 vi.mock("@tutti-os/agent-acp-kit/tutti", () => ({
+  loadTuttiAgentCatalog: loadTuttiAgentCatalogMock,
   loadTuttiAgentSkillContext: loadTuttiAgentSkillContextMock,
   redactTuttiCliChildProcessText: (text: string, secrets: readonly string[]) =>
     secrets.reduce(
@@ -14,11 +17,15 @@ vi.mock("@tutti-os/agent-acp-kit/tutti", () => ({
     ),
 }));
 
-import { loadTuttiAgentSkillContextForRun } from "./tutti-skill-context.js";
+import {
+  loadDefaultTuttiAgentSkillContextForRun,
+  loadTuttiAgentSkillContextForRun,
+} from "./tutti-skill-context.js";
 
 describe("loadTuttiAgentSkillContextForRun", () => {
   beforeEach(() => {
     loadTuttiAgentSkillContextMock.mockReset();
+    loadTuttiAgentCatalogMock.mockReset();
     loadTuttiAgentSkillContextMock.mockResolvedValue({
       source: "standalone",
       skills: [],
@@ -35,15 +42,15 @@ describe("loadTuttiAgentSkillContextForRun", () => {
     vi.stubEnv("TUTTI_WORKSPACE_ROOT", "  /workspace/root  ");
 
     await loadTuttiAgentSkillContextForRun({
+      agentTargetId: "team:designer",
       cwd: "/tmp/run",
-      provider: "tutti-agent",
       runId: "run-1",
     });
 
     expect(loadTuttiAgentSkillContextMock).toHaveBeenCalledWith({
       agentSessionId: "run-1",
       cwd: "/workspace/root",
-      provider: "tutti-agent",
+      agentTargetId: "team:designer",
     });
   });
 
@@ -51,15 +58,15 @@ describe("loadTuttiAgentSkillContextForRun", () => {
     vi.stubEnv("TUTTI_WORKSPACE_ROOT", "  ");
 
     await loadTuttiAgentSkillContextForRun({
+      agentTargetId: "team:reviewer",
       cwd: "/tmp/run",
-      provider: "codex",
       runId: "run-2",
     });
 
     expect(loadTuttiAgentSkillContextMock).toHaveBeenCalledWith({
       agentSessionId: "run-2",
       cwd: "/tmp/run",
-      provider: "codex",
+      agentTargetId: "team:reviewer",
     });
   });
 
@@ -74,9 +81,9 @@ describe("loadTuttiAgentSkillContextForRun", () => {
     const controller = new AbortController();
 
     await loadTuttiAgentSkillContextForRun({
+      agentTargetId: "team:designer",
       cwd: "/workspace/run",
       detectContext,
-      provider: "codex",
       runId: "run-1",
       signal: controller.signal,
     });
@@ -87,7 +94,7 @@ describe("loadTuttiAgentSkillContextForRun", () => {
     expect(input).toMatchObject({
       agentSessionId: "run-1",
       cwd: "/workspace/run",
-      provider: "codex",
+      agentTargetId: "team:designer",
       signal: controller.signal,
     });
   });
@@ -101,12 +108,12 @@ describe("loadTuttiAgentSkillContextForRun", () => {
 
     await expect(
       loadTuttiAgentSkillContextForRun({
+        agentTargetId: "team:designer",
         cwd: "/workspace/run",
         detectContext: {
           managedAgentInvocation: { credential: secret, cwd: "/app-data" },
           redactionSecrets: [secret],
         },
-        provider: "codex",
         runId: "run-1",
       }),
     ).resolves.toEqual({ source: "standalone", skillManifest: [], skills: [] });
@@ -129,13 +136,50 @@ describe("loadTuttiAgentSkillContextForRun", () => {
 
     await expect(
       loadTuttiAgentSkillContextForRun({
+        agentTargetId: "team:designer",
         cwd: "/workspace/run",
-        provider: "codex",
         runId: "run-1",
         signal: controller.signal,
       }),
     ).rejects.toBe(abortError);
 
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("loads server guidance for the available exact default Agent Target", async () => {
+    loadTuttiAgentCatalogMock.mockResolvedValue({
+      schemaVersion: 1,
+      source: "tutti-cli",
+      cliContract: "agent-id",
+      defaultAgentTargetId: "team:reviewer",
+      agents: [
+        {
+          agentTargetId: "team:designer",
+          providerId: "shared-runtime",
+          displayName: "Designer",
+          runtimeSupported: true,
+          availability: { status: "available", reasonCode: "", detail: "" },
+        },
+        {
+          agentTargetId: "team:reviewer",
+          providerId: "shared-runtime",
+          displayName: "Reviewer",
+          runtimeSupported: true,
+          availability: { status: "available", reasonCode: "", detail: "" },
+        },
+      ],
+    });
+
+    const result = await loadDefaultTuttiAgentSkillContextForRun({
+      cwd: "/workspace/run",
+      runId: "run-default",
+    });
+
+    expect(result.agentTargetId).toBe("team:reviewer");
+    expect(loadTuttiAgentSkillContextMock).toHaveBeenCalledWith({
+      agentTargetId: "team:reviewer",
+      agentSessionId: "run-default",
+      cwd: "/workspace/run",
+    });
   });
 });

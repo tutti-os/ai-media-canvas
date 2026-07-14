@@ -565,12 +565,15 @@ export function ChatSidebar({
   activeVideoGenerationPreferenceRef.current = activeVideoGenerationPreference;
 
   const {
+    agentTargetId,
     model: agentModel,
     modelSource: agentModelSource,
     ensureAgentModelConfigured,
   } = useAgentModelRequirement();
   const agentModelRef = useRef(agentModel);
   agentModelRef.current = agentModel;
+  const agentTargetIdRef = useRef(agentTargetId);
+  agentTargetIdRef.current = agentTargetId;
   const agentModelSourceRef = useRef(agentModelSource);
   agentModelSourceRef.current = agentModelSource;
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1010,6 +1013,12 @@ export function ChatSidebar({
           });
 
           // Start run via WebSocket
+          const legacyRuntimeProvider =
+            agentModelRef.current &&
+            agentModelSourceRef.current === "local-agent" &&
+            !agentTargetIdRef.current
+              ? agentModelRef.current.split(":")[0]?.trim()
+              : undefined;
           const runPayload = {
             sessionId: currentSessionId,
             conversationId: canvasId,
@@ -1033,8 +1042,17 @@ export function ChatSidebar({
                 }
               : {}),
             ...(agentModelRef.current ? { model: agentModelRef.current } : {}),
+            ...(agentTargetIdRef.current
+              ? { agentTargetId: agentTargetIdRef.current }
+              : {}),
             ...(agentModelRef.current && agentModelSourceRef.current
               ? { modelSource: agentModelSourceRef.current }
+              : {}),
+            ...(legacyRuntimeProvider
+              ? {
+                  runtimeKind: "local-agent" as const,
+                  runtimeProvider: legacyRuntimeProvider,
+                }
               : {}),
           };
 

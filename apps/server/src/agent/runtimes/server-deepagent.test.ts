@@ -33,9 +33,28 @@ function writeFakeTuttiSkillCli(path: string) {
     path,
     [
       "#!/bin/sh",
+      'case "$*" in',
+      '  *"agent list"*)',
       "cat <<'JSON'",
       JSON.stringify({
         schemaVersion: 1,
+        defaultAgentTargetId: "team:designer",
+        agents: [
+          {
+            id: "team:designer",
+            provider: "codex",
+            name: "Designer",
+            availability: { status: "available" },
+          },
+        ],
+      }),
+      "JSON",
+      "    ;;",
+      "  *)",
+      "cat <<'JSON'",
+      JSON.stringify({
+        schemaVersion: 2,
+        agentTargetId: "team:designer",
         provider: "codex",
         agentSessionId: "run-1",
         recommendedSystemPrompt: {
@@ -51,6 +70,8 @@ function writeFakeTuttiSkillCli(path: string) {
         ],
       }),
       "JSON",
+      "    ;;",
+      "esac",
     ].join("\n"),
     "utf8",
   );

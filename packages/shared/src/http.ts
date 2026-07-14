@@ -1,12 +1,14 @@
 import { z } from "zod";
 
 import {
+  agentTargetIdSchema,
   assetObjectSchema,
   canvasContentSchema,
   canvasDetailSchema,
   chatMessageSchema,
   chatSessionSummarySchema,
   localAgentProviderInfoSchema,
+  localAgentTargetInfoSchema,
   modelInfoSchema,
   projectIdSchema,
   projectSummarySchema,
@@ -97,7 +99,10 @@ export const applicationErrorCodeSchema = z.enum([
   "asset_not_found",
   "variant_not_found",
   "generation_failed",
+  "agent_target_unavailable",
   "invalid_input",
+  "invalid_model",
+  "local_agent_disabled",
   "job_not_found",
   "job_create_failed",
   "job_query_failed",
@@ -159,6 +164,8 @@ export const workspaceSettingsUpdateRequestSchema = workspaceSettingsSchema;
 export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),
   localAgentProviders: z.array(localAgentProviderInfoSchema),
+  localAgentTargets: z.array(localAgentTargetInfoSchema),
+  defaultAgentTargetId: agentTargetIdSchema.nullable(),
 });
 
 export const modelListRequestSchema = z.object({});

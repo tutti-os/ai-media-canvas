@@ -44,7 +44,7 @@ import type { CanvasOperations } from "./canvas-operations.js";
 import type { ChatOperations } from "./chat-operations.js";
 import { listImageModels } from "./image-models.js";
 import type { JobOperations } from "./job-operations.js";
-import { listAgentModels } from "./models.js";
+import { listAgentModelCatalog } from "./models.js";
 import type { ProjectOperations } from "./project-operations.js";
 import type { SkillOperations } from "./skill-operations.js";
 import { isZodError, sendCliError, sendCliJson } from "./tutti-cli-output.js";
@@ -140,6 +140,7 @@ const agentRunCliBodySchema = z.object({
   prompt: z.string(),
   "canvas-id": z.string().min(1).optional(),
   model: z.string().min(1).optional(),
+  "agent-id": z.string().min(1).optional(),
   "runtime-kind": z.enum(["server-deepagent", "local-agent"]).optional(),
   "runtime-provider": z.string().min(1).optional(),
   "codex-imagegen-consent": z.enum(["allow-once"]).optional(),
@@ -411,29 +412,40 @@ export async function registerTuttiCliRoutes(
     "/tutti/cli/agent/run",
     async (body, request) => {
       const payload = agentRunCliBodySchema.parse(body);
-      return options.agentOperations.startRun(
-        runCreateRequestSchema.parse({
-          sessionId: payload["session-id"],
-          conversationId: payload["conversation-id"],
-          prompt: payload.prompt,
-          ...(payload["canvas-id"] ? { canvasId: payload["canvas-id"] } : {}),
-          ...(payload.model ? { model: payload.model } : {}),
-          ...(payload["runtime-kind"]
-            ? { runtimeKind: payload["runtime-kind"] }
-            : {}),
-          ...(payload["runtime-provider"]
-            ? { runtimeProvider: payload["runtime-provider"] }
-            : {}),
-          ...(payload["codex-imagegen-consent"]
-            ? {
-                delegationConsent: {
-                  codexImagegen: payload["codex-imagegen-consent"],
-                },
-              }
-            : {}),
-        }),
-        request.headers,
-      );
+      const runInput = runCreateRequestSchema.parse({
+        sessionId: payload["session-id"],
+        conversationId: payload["conversation-id"],
+        prompt: payload.prompt,
+        ...(payload["canvas-id"] ? { canvasId: payload["canvas-id"] } : {}),
+        ...(payload.model ? { model: payload.model } : {}),
+        ...(payload["agent-id"] ? { agentTargetId: payload["agent-id"] } : {}),
+        ...(payload["runtime-kind"]
+          ? { runtimeKind: payload["runtime-kind"] }
+          : {}),
+        ...(payload["runtime-provider"]
+          ? { runtimeProvider: payload["runtime-provider"] }
+          : {}),
+        ...(payload["codex-imagegen-consent"]
+          ? {
+              delegationConsent: {
+                codexImagegen: payload["codex-imagegen-consent"],
+              },
+            }
+          : {}),
+      });
+      try {
+        return await options.agentOperations.startRun(
+          runInput,
+          request.headers,
+        );
+      } catch (error) {
+        if (isPublicAgentRunCliError(error)) throw error;
+        throw {
+          code: "application_error",
+          message: "Unable to start local agent run.",
+          statusCode: 500,
+        };
+      }
     },
     202,
   );
@@ -592,8 +604,8 @@ export async function registerTuttiCliRoutes(
     return options.jobOperations.cancelJob(parseRequiredString(body, "job-id"));
   });
 
-  route("/tutti/cli/models/list", async () => ({
-    models: await listAgentModels({
+  route("/tutti/cli/models/list", async () =>
+    listAgentModelCatalog({
       env: options.env,
       logger: app.log,
       ...(options.tuttiManagedCredentials
@@ -603,7 +615,7 @@ export async function registerTuttiCliRoutes(
         ? { settingsService: options.settingsService }
         : {}),
     }),
-  }));
+  );
   route("/tutti/cli/models/image", async () => ({
     models: await listImageModels(options.env, options.settingsService),
   }));
@@ -994,6 +1006,41 @@ function splitCsv(value: string) {
     .filter(Boolean);
 }
 
+function isCliStatusError(error: unknown): error is {
+  code: string;
+  message: string;
+  statusCode: number;
+} {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    "message" in error &&
+    "statusCode" in error &&
+    typeof (error as { code?: unknown }).code === "string" &&
+    typeof (error as { message?: unknown }).message === "string" &&
+    typeof (error as { statusCode?: unknown }).statusCode === "number"
+  );
+}
+
+const PUBLIC_AGENT_RUN_ERROR_CODES = new Set([
+  "agent_target_unavailable",
+  "invalid_model",
+  "local_agent_disabled",
+  "session_not_found",
+]);
+
+function isPublicAgentRunCliError(
+  error: unknown,
+): error is { code: string; message: string; statusCode: number } {
+  return (
+    isCliStatusError(error) &&
+    error.statusCode >= 400 &&
+    error.statusCode < 500 &&
+    PUBLIC_AGENT_RUN_ERROR_CODES.has(error.code)
+  );
+}
+
 function sendCliRouteError(error: unknown, reply: FastifyReply) {
   if (
     error instanceof CanvasServiceError ||
@@ -1025,25 +1072,11 @@ function sendCliRouteError(error: unknown, reply: FastifyReply) {
     );
   }
 
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    "message" in error &&
-    "statusCode" in error &&
-    typeof (error as { code?: unknown }).code === "string" &&
-    typeof (error as { message?: unknown }).message === "string" &&
-    typeof (error as { statusCode?: unknown }).statusCode === "number"
-  ) {
-    const typedError = error as {
-      code: string;
-      message: string;
-      statusCode: number;
-    };
+  if (isCliStatusError(error)) {
     return sendCliError(
       reply,
-      { code: typedError.code, message: typedError.message },
-      typedError.statusCode,
+      { code: error.code, message: error.message },
+      error.statusCode,
     );
   }
 

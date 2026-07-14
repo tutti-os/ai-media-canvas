@@ -1,7 +1,7 @@
 "use client";
 
 import type { AgentModelSource } from "@aimc/shared";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   getAgentModelSourceTab,
@@ -17,19 +17,48 @@ export const AGENT_MODEL_REQUIRED_MESSAGE = "请先配置或选择一个 Agent �
 async function isConfiguredModelAvailable(
   configuredModel: string,
   configuredSource: AgentModelSource | null,
-) {
+  agentTargetId?: string | null,
+): Promise<{ available: boolean; migratedAgentTargetId?: string }> {
   const source = configuredSource ?? getAgentModelSourceTab(configuredModel);
-  if (source !== "local-agent") return true;
+  if (source !== "local-agent") return { available: true };
   const provider = configuredModel.split(":")[0] ?? "";
-  if (!provider) return false;
+  if (!provider) return { available: false };
   const response = await fetchModels();
-  return localAgentProvidersFromModelResponse(response).some(
-    (entry) => entry.provider === provider && entry.supported,
-  );
+  if (agentTargetId && Array.isArray(response.localAgentTargets)) {
+    return {
+      available: response.localAgentTargets.some(
+        (entry) =>
+          entry.agentTargetId === agentTargetId &&
+          entry.providerId === provider &&
+          entry.available,
+      ),
+    };
+  }
+  // A provider-only browser selection predates Agent Target IDs. Do not guess
+  // when the provider now has multiple exposed agent identities.
+  if (Array.isArray(response.localAgentTargets)) {
+    const targets = response.localAgentTargets.filter(
+      (entry) => entry.providerId === provider,
+    );
+    if (targets.length !== 1 || !targets[0]?.available) {
+      return { available: false };
+    }
+    return {
+      available: true,
+      migratedAgentTargetId: targets[0].agentTargetId,
+    };
+  }
+  return {
+    available: localAgentProvidersFromModelResponse(response).some(
+      (entry) => entry.provider === provider && entry.supported,
+    ),
+  };
 }
 
 export function useAgentModelRequirement() {
-  const { model, modelSource } = useAgentModel();
+  const { agentTargetId, model, modelSource, setModel } = useAgentModel();
+  const selectionRef = useRef({ agentTargetId, model, modelSource });
+  selectionRef.current = { agentTargetId, model, modelSource };
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
     string | null
   >(null);
@@ -93,8 +122,38 @@ export function useAgentModelRequirement() {
   }, [refreshWorkspaceDefaultModel]);
 
   const ensureAgentModelConfigured = useCallback(async () => {
-    if (model?.trim()) {
-      return isConfiguredModelAvailable(model.trim(), modelSource);
+    if (selectionRef.current.model?.trim()) {
+      // A catalog request validates one immutable selection snapshot. If the
+      // user changes selection while it is pending, validate the newer choice
+      // instead of authorizing it with stale data or treating it as invalid.
+      while (true) {
+        const validatedSelection = selectionRef.current;
+        const configuredModel = validatedSelection.model?.trim();
+        if (!configuredModel) return false;
+        const availability = await isConfiguredModelAvailable(
+          configuredModel,
+          validatedSelection.modelSource,
+          validatedSelection.agentTargetId,
+        );
+        const currentSelection = selectionRef.current;
+        const selectionUnchanged =
+          currentSelection.agentTargetId ===
+            validatedSelection.agentTargetId &&
+          currentSelection.model === validatedSelection.model &&
+          currentSelection.modelSource === validatedSelection.modelSource;
+        if (!selectionUnchanged) continue;
+        if (
+          availability.migratedAgentTargetId &&
+          !validatedSelection.agentTargetId
+        ) {
+          setModel(
+            configuredModel,
+            "local-agent",
+            availability.migratedAgentTargetId,
+          );
+        }
+        return availability.available;
+      }
     }
 
     try {
@@ -104,16 +163,18 @@ export function useAgentModelRequirement() {
       setWorkspaceDefaultModel(defaultModel || null);
       setWorkspaceDefaultModelSource(defaultModel ? defaultModelSource : null);
       return defaultModel.length > 0
-        ? isConfiguredModelAvailable(defaultModel, defaultModelSource)
+        ? (await isConfiguredModelAvailable(defaultModel, defaultModelSource))
+            .available
         : false;
     } catch {
       return false;
     }
-  }, [model, modelSource]);
+  }, [agentTargetId, model, modelSource, setModel]);
 
   return {
     model,
     modelSource,
+    agentTargetId,
     workspaceDefaultModel,
     workspaceDefaultModelSource,
     isAgentModelConfigured: Boolean(model?.trim() || workspaceDefaultModel),

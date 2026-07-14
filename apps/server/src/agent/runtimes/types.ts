@@ -36,6 +36,7 @@ import type {
 import type { WorkspaceSkillEntry } from "../workspace-skills.js";
 
 export type RuntimeRunRecord = {
+  agentTargetId?: string | undefined;
   accessToken?: string | undefined;
   assistantMessageId?: string | undefined;
   attachments?: ImageAttachment[] | undefined;
@@ -60,6 +61,7 @@ export type RuntimeRunRecord = {
         previousRunId?: string;
         previousRuntimeKind?: RuntimeKind | null;
         previousRuntimeProvider?: AgentRuntimeProvider | null;
+        previousAgentTargetId?: string | null;
         providerSessionId?: string;
         resumeToken?: string;
       }
@@ -147,6 +149,10 @@ export type LocalAgentRuntimeProviderDeps = {
     Partial<
       Pick<LocalAgentRuntime<"local-agent", AgentRuntimeProvider>, "detect">
     >;
+  localAgentComposerRuntime?: LocalAgentRuntime<
+    "local-agent",
+    AgentRuntimeProvider
+  >;
   now: () => string;
   recordProviderResumeMetadata?: (input: {
     providerSessionId?: string;

@@ -161,6 +161,29 @@ describe("registerTuttiCliRoutes", () => {
     });
   });
 
+  it("returns the exact Agent Target catalog from models list", async () => {
+    const app = buildTestApp({
+      env: { trustedLocalAgentMode: false },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/models/list",
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      kind: "json",
+      value: {
+        defaultAgentTargetId: null,
+        localAgentProviders: [],
+        localAgentTargets: [],
+        models: [],
+      },
+    });
+  });
+
   it("maps one-time Codex imagegen consent on agent runs", async () => {
     const agentOperations = {
       cancelRun: vi.fn(),
@@ -197,6 +220,144 @@ describe("registerTuttiCliRoutes", () => {
       },
       expect.any(Object),
     );
+  });
+
+  it("does not expose operational agent target discovery errors", async () => {
+    const agentOperations = {
+      cancelRun: vi.fn(),
+      listRunEvents: vi.fn(),
+      startRun: vi.fn(async () => {
+        throw new Error("catalog transport exposed secret-value");
+      }),
+    };
+    const app = buildTestApp({ agentOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/agent/run",
+      payload: {
+        "session-id": "session-1",
+        "conversation-id": "canvas-1",
+        prompt: "Continue",
+        "agent-id": "team:designer",
+      },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "application_error",
+        message: "Unable to start local agent run.",
+      },
+    });
+    expect(response.body).not.toContain("secret-value");
+  });
+
+  it("preserves expected agent target availability errors", async () => {
+    const agentOperations = {
+      cancelRun: vi.fn(),
+      listRunEvents: vi.fn(),
+      startRun: vi.fn(async () => {
+        throw {
+          code: "agent_target_unavailable",
+          message: "Agent target team:designer is unavailable.",
+          statusCode: 400,
+        };
+      }),
+    };
+    const app = buildTestApp({ agentOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/agent/run",
+      payload: {
+        "session-id": "session-1",
+        "conversation-id": "canvas-1",
+        prompt: "Continue",
+        "agent-id": "team:designer",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "agent_target_unavailable",
+        message: "Agent target team:designer is unavailable.",
+      },
+    });
+  });
+
+  it("preserves the explicit local-agent-disabled policy error", async () => {
+    const agentOperations = {
+      cancelRun: vi.fn(),
+      listRunEvents: vi.fn(),
+      startRun: vi.fn(async () => {
+        throw {
+          code: "local_agent_disabled",
+          message: "Local agent runtime is disabled for this server.",
+          statusCode: 403,
+        };
+      }),
+    };
+    const app = buildTestApp({ agentOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/agent/run",
+      payload: {
+        "session-id": "session-1",
+        "conversation-id": "canvas-1",
+        prompt: "Continue",
+        "agent-id": "team:designer",
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "local_agent_disabled",
+        message: "Local agent runtime is disabled for this server.",
+      },
+    });
+  });
+
+  it("sanitizes shaped operational errors from agent runs", async () => {
+    const agentOperations = {
+      cancelRun: vi.fn(),
+      listRunEvents: vi.fn(),
+      startRun: vi.fn(async () => {
+        throw {
+          code: "application_error",
+          message: "database secret-value unavailable",
+          statusCode: 503,
+        };
+      }),
+    };
+    const app = buildTestApp({ agentOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/agent/run",
+      payload: {
+        "session-id": "session-1",
+        "conversation-id": "canvas-1",
+        prompt: "Continue",
+        "agent-id": "team:designer",
+      },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "application_error",
+        message: "Unable to start local agent run.",
+      },
+    });
+    expect(response.body).not.toContain("secret-value");
   });
 
   it("requests opening the app home page when no project id is provided", async () => {
