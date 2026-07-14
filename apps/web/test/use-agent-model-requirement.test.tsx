@@ -68,6 +68,43 @@ describe("useAgentModelRequirement", () => {
     );
   });
 
+  it("does not overwrite a newer selection after legacy migration validation", async () => {
+    let resolveModels!: (value: unknown) => void;
+    fetchModelsMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveModels = resolve;
+      }),
+    );
+    const { result, rerender } = renderHook(() =>
+      useAgentModelRequirement(),
+    );
+    await waitFor(() =>
+      expect(result.current.isAgentModelConfigurationLoaded).toBe(true),
+    );
+
+    let configured: Promise<boolean>;
+    await act(async () => {
+      configured = result.current.ensureAgentModelConfigured();
+      await Promise.resolve();
+    });
+    selection.model = "codex:gpt-newer";
+    rerender();
+    resolveModels({
+      models: [],
+      localAgentProviders: [],
+      localAgentTargets: [
+        {
+          agentTargetId: "team:designer",
+          providerId: "codex",
+          available: true,
+        },
+      ],
+    });
+
+    await expect(configured!).resolves.toBe(true);
+    expect(setModelMock).not.toHaveBeenCalled();
+  });
+
   it("rejects a stale exact target whose provider does not match the model", async () => {
     selection.agentTargetId = "team:reviewer";
     fetchModelsMock.mockResolvedValue({

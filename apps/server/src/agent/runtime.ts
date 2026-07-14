@@ -591,7 +591,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           "local-agent",
           AgentRuntimeProvider
         >)
-      : options.localAgentDetectionRuntime
+      : options.localAgentDetectionRuntime || options.localAgentRuntime?.detect
         ? {
             cancel: (runId: string) => defaultLocalAgentRuntime.cancel(runId),
             detect: (context?: DetectContext) =>

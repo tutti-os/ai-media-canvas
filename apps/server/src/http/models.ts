@@ -12,7 +12,10 @@ import {
   createManagedAgentDetectContextFromHeaders,
 } from "@tutti-os/agent-acp-kit";
 
-import { loadAgentTargetCatalog } from "../agent/agent-targets.js";
+import {
+  type AgentCatalogRuntime,
+  loadAgentTargetCatalog,
+} from "../agent/agent-targets.js";
 
 import {
   type LocalAgentModelDetectContext,
@@ -255,6 +258,7 @@ export async function registerModelRoutes(
   env: ServerEnv,
   settingsService?: SettingsService,
   options?: {
+    localAgentCatalogRuntime?: AgentCatalogRuntime;
     localAgentModelDiscovery?: LocalAgentModelDiscovery;
     tuttiManagedCredentials?: TuttiManagedCredentialService;
   },
@@ -282,6 +286,9 @@ export async function registerModelRoutes(
       env,
       logger: app.log,
       localAgentModelDiscovery,
+      ...(options?.localAgentCatalogRuntime
+        ? { localAgentCatalogRuntime: options.localAgentCatalogRuntime }
+        : {}),
       ...(managedAgentDetectContext ? { managedAgentDetectContext } : {}),
       ...(input.refreshLocalAgentModels
         ? { refreshLocalAgentModels: true }
@@ -314,6 +321,7 @@ export async function registerModelRoutes(
 
 export type ListAgentModelsOptions = {
   env: ServerEnv;
+  localAgentCatalogRuntime?: AgentCatalogRuntime;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
   managedAgentDetectContext?: DetectContext;
@@ -465,11 +473,18 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
           : {}),
         detections,
         refresh: options.refreshLocalAgentModels === true,
+        ...(options.localAgentCatalogRuntime
+          ? { runtime: options.localAgentCatalogRuntime }
+          : {}),
       });
       // Keep the runtime's complete detection result available here for
       // diagnostics, but only expose runnable providers to API consumers.
       const supportedDetections = detections.filter(
-        (detection) => detection.supported,
+        (detection) =>
+          detection.supported &&
+          agentCatalog.targets.some(
+            (target) => target.providerId === detection.provider,
+          ),
       );
       const ambiguousProviderIds = new Set(agentCatalog.ambiguousProviderIds);
       models.push(

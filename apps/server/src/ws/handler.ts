@@ -12,7 +12,10 @@ import {
   wsRpcResponseSchema,
 } from "@aimc/shared";
 import { createManagedAgentDetectContextFromHeaders } from "@tutti-os/agent-acp-kit";
-import { resolveAgentTarget } from "../agent/agent-targets.js";
+import {
+  AgentTargetResolutionError,
+  resolveAgentTarget,
+} from "../agent/agent-targets.js";
 import {
   AgentRunModelResolutionError,
   type AgentRunOrchestrator,
@@ -460,10 +463,13 @@ async function handleRunCommand(
           : {}),
       });
     } catch (error) {
+      const expected = error instanceof AgentTargetResolutionError;
       connectionManager.sendTo(connectionId, {
         type: "error",
-        code: "agent_target_unavailable",
-        message: error instanceof Error ? error.message : String(error),
+        code: expected ? "agent_target_unavailable" : "internal_error",
+        message: expected
+          ? error.message
+          : "Local agent target discovery failed.",
       });
       return;
     }

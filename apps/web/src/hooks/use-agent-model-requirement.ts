@@ -1,7 +1,7 @@
 "use client";
 
 import type { AgentModelSource } from "@aimc/shared";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   getAgentModelSourceTab,
@@ -57,6 +57,8 @@ async function isConfiguredModelAvailable(
 
 export function useAgentModelRequirement() {
   const { agentTargetId, model, modelSource, setModel } = useAgentModel();
+  const selectionRef = useRef({ agentTargetId, model, modelSource });
+  selectionRef.current = { agentTargetId, model, modelSource };
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
     string | null
   >(null);
@@ -121,12 +123,24 @@ export function useAgentModelRequirement() {
 
   const ensureAgentModelConfigured = useCallback(async () => {
     if (model?.trim()) {
+      const validatedSelection = {
+        agentTargetId,
+        model,
+        modelSource,
+      };
       const availability = await isConfiguredModelAvailable(
         model.trim(),
         modelSource,
         agentTargetId,
       );
-      if (availability.migratedAgentTargetId) {
+      const currentSelection = selectionRef.current;
+      if (
+        availability.migratedAgentTargetId &&
+        !validatedSelection.agentTargetId &&
+        currentSelection.agentTargetId === validatedSelection.agentTargetId &&
+        currentSelection.model === validatedSelection.model &&
+        currentSelection.modelSource === validatedSelection.modelSource
+      ) {
         setModel(
           model.trim(),
           "local-agent",

@@ -2,6 +2,7 @@ import type { LocalAgentTargetInfo } from "@aimc/shared";
 import { describe, expect, it } from "vitest";
 
 import {
+  AgentTargetResolutionError,
   isCatalogProviderAddressable,
   loadAgentTargetCatalog,
   resolveAgentTargetFromCatalog,
@@ -68,7 +69,7 @@ describe("resolveAgentTargetFromCatalog", () => {
       resolveAgentTargetFromCatalog(targets, "team:designer", {
         agentTargetId: "team:missing",
       }),
-    ).toThrow("team:missing");
+    ).toThrow(AgentTargetResolutionError);
     expect(() =>
       resolveAgentTargetFromCatalog(targets, "team:designer", {
         providerId: "missing-runtime",

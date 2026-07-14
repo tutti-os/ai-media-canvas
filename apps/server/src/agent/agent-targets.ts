@@ -15,7 +15,7 @@ import {
 
 import { buildLocalAgentModels } from "./local-agent-models.js";
 
-type AgentCatalogRuntime = LocalAgentRuntime<
+export type AgentCatalogRuntime = LocalAgentRuntime<
   "local-agent",
   AgentRuntimeProvider
 >;
@@ -26,6 +26,13 @@ export type ResolvedAgentTarget = {
   agentTargetId: string;
   providerId: AgentRuntimeProvider;
 };
+
+export class AgentTargetResolutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AgentTargetResolutionError";
+  }
+}
 
 export function isCatalogProviderAddressable(
   catalog: Pick<TuttiAgentCatalog, "agents" | "cliContract">,
@@ -159,7 +166,7 @@ export function resolveAgentTargetFromCatalog(
   const exactId = input.agentTargetId?.trim();
   const legacyProvider = input.providerId?.trim();
   if (exactId && legacyProvider) {
-    throw new Error(
+    throw new AgentTargetResolutionError(
       "Provide agentTargetId or deprecated runtimeProvider, not both.",
     );
   }
@@ -171,7 +178,7 @@ export function resolveAgentTargetFromCatalog(
       (entry) => entry.providerId === legacyProvider,
     );
     if (matches.length !== 1) {
-      throw new Error(
+      throw new AgentTargetResolutionError(
         matches.length > 1
           ? `Multiple agents use provider ${legacyProvider}; select an exact agentTargetId.`
           : `No agent target uses provider ${legacyProvider}.`,
@@ -185,14 +192,14 @@ export function resolveAgentTargetFromCatalog(
     );
   }
   if (!target) {
-    throw new Error(
+    throw new AgentTargetResolutionError(
       exactId
         ? `Agent target is not exposed by Tutti: ${exactId}`
         : "No local agent target is available.",
     );
   }
   if (!target.available) {
-    throw new Error(
+    throw new AgentTargetResolutionError(
       target.reason || `Agent target ${target.agentTargetId} is unavailable.`,
     );
   }

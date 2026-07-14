@@ -24,7 +24,10 @@ import {
   viewerResponseSchema,
 } from "@aimc/shared";
 
-import { resolveAgentTarget } from "./agent/agent-targets.js";
+import {
+  AgentTargetResolutionError,
+  resolveAgentTarget,
+} from "./agent/agent-targets.js";
 import { createLocalToolGatewayService } from "./agent/local-agent-host/tool-gateway.js";
 import {
   AgentRunModelResolutionError,
@@ -1264,6 +1267,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
             : {}),
         });
       } catch (error) {
+        if (!(error instanceof AgentTargetResolutionError)) throw error;
         throw new LocalAgentRunError(
           "agent_target_unavailable",
           error instanceof Error ? error.message : String(error),

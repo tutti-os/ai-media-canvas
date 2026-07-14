@@ -536,7 +536,7 @@ describe("createAgentRunService", () => {
       // Exhaust the stream so runtime reaches the provider invocation.
     }
 
-    expect(localAgentRuntimeDetectMock).toHaveBeenCalledOnce();
+    expect(localAgentRuntimeDetectMock).toHaveBeenCalled();
     expect(localAgentRuntimeRunMock).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "default",
