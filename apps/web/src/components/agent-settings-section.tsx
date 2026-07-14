@@ -812,16 +812,12 @@ function LocalCliProviderModelPicker({
                 );
               })}
             </div>
-            {providerGroups.length === 0 ? (
-              <p className="mt-3 text-xs text-muted-foreground">
-                {t("agentSettings.local.setupHint")}
-              </p>
-            ) : null}
           </div>
         </div>
       ) : (
         <div className="rounded-xl border bg-muted/20 p-5 text-sm text-muted-foreground">
-          {t("agentSettings.local.empty")}
+          <p>{t("agentSettings.local.empty")}</p>
+          <p className="mt-2 text-xs">{t("agentSettings.local.setupHint")}</p>
         </div>
       )}
     </section>

@@ -29,6 +29,7 @@ import { createLocalToolGatewayService } from "./agent/local-agent-host/tool-gat
 import {
   AgentRunModelResolutionError,
   createAgentRunOrchestrator,
+  getLocalAgentModelProvider,
   isLocalAgentRuntimeRequested,
   resolveAgentRunModel,
   shouldResolveLocalAgentTarget,
@@ -1235,21 +1236,41 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         : {}),
     });
     const managedDetectContext = managedAgentHeaders
-      ? createManagedAgentDetectContextFromHeaders(managedAgentHeaders)
-      : undefined;
-    const resolvedAgentTarget = requestsLocalAgent
-      ? await resolveAgentTarget({
-          ...(payload.agentTargetId
-            ? { agentTargetId: payload.agentTargetId }
-            : {}),
-          ...(!payload.agentTargetId && payload.runtimeProvider
-            ? { providerId: payload.runtimeProvider }
-            : {}),
-          ...(managedDetectContext
-            ? { detectContext: managedDetectContext }
+      ? createManagedAgentDetectContextFromHeaders(managedAgentHeaders, {
+          ...(baseRuntimeEnv.appDataDir
+            ? { appDataDir: baseRuntimeEnv.appDataDir }
             : {}),
         })
       : undefined;
+    const modelProvider = getLocalAgentModelProvider(
+      payload.model ?? baseRuntimeEnv.agentModel,
+    );
+    let resolvedAgentTarget:
+      | Awaited<ReturnType<typeof resolveAgentTarget>>
+      | undefined;
+    if (requestsLocalAgent) {
+      try {
+        resolvedAgentTarget = await resolveAgentTarget({
+          ...(payload.agentTargetId
+            ? { agentTargetId: payload.agentTargetId }
+            : {}),
+          ...(payload.runtimeProvider
+            ? { providerId: payload.runtimeProvider }
+            : !payload.agentTargetId && modelProvider
+              ? { providerId: modelProvider }
+              : {}),
+          ...(managedDetectContext
+            ? { detectContext: managedDetectContext }
+            : {}),
+        });
+      } catch (error) {
+        throw new LocalAgentRunError(
+          "agent_target_unavailable",
+          error instanceof Error ? error.message : String(error),
+          400,
+        );
+      }
+    }
     let resolvedModel: string | undefined;
     try {
       resolvedModel = resolveAgentRunModel({

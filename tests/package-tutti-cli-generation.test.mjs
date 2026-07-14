@@ -56,3 +56,20 @@ test("Tutti CLI generation commands tell agents to wait for terminal job status"
   assert.match(guide, /queued and running are intermediate states/);
   assert.match(guide, /report the generated asset from job\.result/);
 });
+
+test("Tutti CLI agent commands expose exact target discovery and deprecated provider compatibility", () => {
+  const manifest = createCliManifest();
+  const runCommand = manifest.commands.find(
+    (command) => command.path.join(" ") === "agent run",
+  );
+  const modelsCommand = manifest.commands.find(
+    (command) => command.path.join(" ") === "models list",
+  );
+
+  assert.ok(runCommand?.inputSchema.properties["agent-id"]);
+  assert.match(
+    runCommand?.inputSchema.properties["runtime-provider"]?.description ?? "",
+    /Deprecated compatibility selector/,
+  );
+  assert.match(modelsCommand?.description ?? "", /exact agentTargetId/);
+});

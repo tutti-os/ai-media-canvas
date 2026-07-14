@@ -1013,6 +1013,12 @@ export function ChatSidebar({
           });
 
           // Start run via WebSocket
+          const legacyRuntimeProvider =
+            agentModelRef.current &&
+            agentModelSourceRef.current === "local-agent" &&
+            !agentTargetIdRef.current
+              ? agentModelRef.current.split(":")[0]?.trim()
+              : undefined;
           const runPayload = {
             sessionId: currentSessionId,
             conversationId: canvasId,
@@ -1041,6 +1047,12 @@ export function ChatSidebar({
               : {}),
             ...(agentModelRef.current && agentModelSourceRef.current
               ? { modelSource: agentModelSourceRef.current }
+              : {}),
+            ...(legacyRuntimeProvider
+              ? {
+                  runtimeKind: "local-agent" as const,
+                  runtimeProvider: legacyRuntimeProvider,
+                }
               : {}),
           };
 

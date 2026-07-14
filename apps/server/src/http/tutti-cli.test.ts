@@ -161,6 +161,29 @@ describe("registerTuttiCliRoutes", () => {
     });
   });
 
+  it("returns the exact Agent Target catalog from models list", async () => {
+    const app = buildTestApp({
+      env: { trustedLocalAgentMode: false },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/models/list",
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      kind: "json",
+      value: {
+        defaultAgentTargetId: null,
+        localAgentProviders: [],
+        localAgentTargets: [],
+        models: [],
+      },
+    });
+  });
+
   it("maps one-time Codex imagegen consent on agent runs", async () => {
     const agentOperations = {
       cancelRun: vi.fn(),

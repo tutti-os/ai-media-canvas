@@ -82,8 +82,17 @@ const LOCAL_AGENT_MODEL_PROVIDER_IDS = new Set(
 );
 
 function hasLocalAgentModelProviderPrefix(model: string) {
+  return Boolean(getLocalAgentModelProvider(model));
+}
+
+export function getLocalAgentModelProvider(
+  model: string | undefined,
+): AgentRuntimeProvider | undefined {
+  if (!model) return undefined;
   const provider = getModelProvider(model);
-  return LOCAL_AGENT_MODEL_PROVIDER_IDS.has(provider);
+  return LOCAL_AGENT_MODEL_PROVIDER_IDS.has(provider)
+    ? (provider as AgentRuntimeProvider)
+    : undefined;
 }
 
 export function isLocalAgentRuntimeRequested(input: {
@@ -107,7 +116,7 @@ export function shouldResolveLocalAgentTarget(input: {
   runtimeProvider?: AgentRuntimeProvider | undefined;
 }) {
   return (
-    input.modelSource === "local-agent" ||
+    (!input.runtimeKind && input.modelSource === "local-agent") ||
     input.runtimeKind === "local-agent" ||
     Boolean(input.agentTargetId || input.runtimeProvider) ||
     (!input.runtimeKind &&

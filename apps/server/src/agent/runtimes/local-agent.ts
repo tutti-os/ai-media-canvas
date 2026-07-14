@@ -6,7 +6,6 @@ import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 import type {
   AgentEvent,
   LocalAgentProviderPlugin,
-  LocalAgentRuntime,
   ManagedAgentRunContext,
 } from "@tutti-os/agent-acp-kit";
 import { loadTuttiAgentComposerOptions } from "@tutti-os/agent-acp-kit/tutti";
@@ -395,9 +394,6 @@ export function createLocalAgentRuntimeProvider(
             : {}),
           sessionId: run.sessionId,
         });
-        const canLoadComposer =
-          typeof (deps.localAgentRuntime as { listProviders?: unknown })
-            .listProviders === "function";
         const [tuttiSkillContext, composerOptions] = await Promise.all([
           shouldUseTuttiSkillContext(enrichedPrompt)
             ? loadTuttiAgentSkillContextForRun({
@@ -415,15 +411,20 @@ export function createLocalAgentRuntimeProvider(
                 skills: [],
                 recommendedSystemPrompt: undefined,
               }),
-          canLoadComposer
+          deps.localAgentComposerRuntime
             ? loadTuttiAgentComposerOptions({
-                runtime: deps.localAgentRuntime as unknown as LocalAgentRuntime<
-                  string,
-                  string
-                >,
+                runtime: deps.localAgentComposerRuntime,
                 agentTargetId: effectiveAgentTargetId,
                 cwd: runDir,
-                env: process.env,
+                ...(run.detectContext
+                  ? { detectContext: run.detectContext }
+                  : {}),
+                env: {
+                  ...process.env,
+                  ...(runtimeEnv.tuttiCliPath
+                    ? { TUTTI_CLI: runtimeEnv.tuttiCliPath }
+                    : {}),
+                },
                 model: resolvedModel,
                 signal: run.controller.signal,
               })

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   isCatalogProviderAddressable,
+  loadAgentTargetCatalog,
   resolveAgentTargetFromCatalog,
 } from "./agent-targets.js";
 
@@ -53,6 +54,35 @@ describe("resolveAgentTargetFromCatalog", () => {
     ).toEqual({ agentTargetId: "team:writer", providerId: "claude-code" });
   });
 
+  it("rejects duplicate exact and deprecated selectors", () => {
+    expect(() =>
+      resolveAgentTargetFromCatalog(targets, "team:designer", {
+        agentTargetId: "team:designer",
+        providerId: "codex",
+      }),
+    ).toThrow("not both");
+  });
+
+  it("rejects unknown exact targets and deprecated providers", () => {
+    expect(() =>
+      resolveAgentTargetFromCatalog(targets, "team:designer", {
+        agentTargetId: "team:missing",
+      }),
+    ).toThrow("team:missing");
+    expect(() =>
+      resolveAgentTargetFromCatalog(targets, "team:designer", {
+        providerId: "missing-runtime",
+      }),
+    ).toThrow("No agent target uses provider missing-runtime");
+  });
+
+  it("uses the available catalog default when no selector is supplied", () => {
+    expect(resolveAgentTargetFromCatalog(targets, "team:writer", {})).toEqual({
+      agentTargetId: "team:writer",
+      providerId: "claude-code",
+    });
+  });
+
   it("does not run unavailable exact targets", () => {
     expect(() =>
       resolveAgentTargetFromCatalog(
@@ -93,5 +123,55 @@ describe("resolveAgentTargetFromCatalog", () => {
         "codex",
       ),
     ).toBe(true);
+  });
+});
+
+describe("loadAgentTargetCatalog", () => {
+  it("forwards managed detection context to the catalog runtime boundary", async () => {
+    const detections = [
+      {
+        provider: "external-agent",
+        displayName: "External Agent",
+        authState: "ok" as const,
+        models: [{ id: "default", label: "Default" }],
+        supported: true,
+      },
+    ];
+    const runtime = {
+      cancel: async () => undefined,
+      detect: async () => detections,
+      listProviders: () => [
+        {
+          id: "external-agent",
+          displayName: "External Agent",
+          kind: "local-agent" as const,
+        },
+      ],
+      run: async function* () {
+        yield* [];
+      },
+    };
+
+    const result = await loadAgentTargetCatalog({
+      detections,
+      detectContext: {
+        cwd: "/tmp/aimc-managed",
+        managedAgentInvocation: {
+          credential: "managed-secret",
+          cwd: "/tmp/aimc-managed",
+        },
+        redactionSecrets: ["managed-secret"],
+      },
+      runtime,
+    });
+
+    expect(result.targets).toEqual([
+      expect.objectContaining({
+        agentTargetId: "local:external-agent",
+        available: false,
+        providerId: "external-agent",
+        runtimeSupported: false,
+      }),
+    ]);
   });
 });

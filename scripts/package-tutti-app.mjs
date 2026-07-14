@@ -306,6 +306,11 @@ const CLI_COMMANDS = [
         description:
           "Exact local Agent Target id from aimc models list. Required for local-agent runs.",
       },
+      "runtime-provider": {
+        type: "string",
+        description:
+          "Deprecated compatibility selector. Use agent-id. Accepted only when exactly one Agent Target uses the provider.",
+      },
       "runtime-kind": {
         type: "string",
         description: "Optional runtime kind, for example local-agent.",
@@ -494,7 +499,7 @@ const CLI_COMMANDS = [
     path: ["models", "list"],
     summary: "List agent models",
     description:
-      "List configured assistant and local-agent models available to agent runs.",
+      "List configured assistant models plus discoverable local Agent Targets and their exact agentTargetId values.",
   },
   {
     path: ["models", "image"],

@@ -26,6 +26,18 @@ function emitChange() {
   for (const listener of listeners) listener();
 }
 
+const AGENT_MODEL_STORAGE_KEYS = new Set([
+  STORAGE_KEY,
+  SOURCE_STORAGE_KEY,
+  AGENT_TARGET_STORAGE_KEY,
+]);
+
+function handleStorageChange(event: StorageEvent) {
+  if (event.key === null || AGENT_MODEL_STORAGE_KEYS.has(event.key)) {
+    emitChange();
+  }
+}
+
 // Cache parsed result -- useSyncExternalStore requires stable references
 let cachedRaw: string | null | undefined;
 let cachedSourceRaw: string | null | undefined;
@@ -73,8 +85,16 @@ function getServerSnapshot(): AgentModelSelection {
 }
 
 function subscribe(callback: () => void): () => void {
+  if (listeners.size === 0) {
+    window.addEventListener("storage", handleStorageChange);
+  }
   listeners.add(callback);
-  return () => listeners.delete(callback);
+  return () => {
+    listeners.delete(callback);
+    if (listeners.size === 0) {
+      window.removeEventListener("storage", handleStorageChange);
+    }
+  };
 }
 
 export function useAgentModel() {
@@ -86,6 +106,12 @@ export function useAgentModel() {
 
   const setModel = useCallback(
     (next: AgentModel, source?: AgentModelSource, agentTargetId?: string) => {
+      const exactAgentTargetId = agentTargetId?.trim();
+      if (next && source === "local-agent" && !exactAgentTargetId) {
+        throw new Error(
+          "New local-agent model selections require an exact Agent Target ID.",
+        );
+      }
       if (next) {
         localStorage.setItem(STORAGE_KEY, next);
         if (source) {
@@ -93,8 +119,8 @@ export function useAgentModel() {
         } else {
           localStorage.removeItem(SOURCE_STORAGE_KEY);
         }
-        if (source === "local-agent" && agentTargetId) {
-          localStorage.setItem(AGENT_TARGET_STORAGE_KEY, agentTargetId);
+        if (source === "local-agent" && exactAgentTargetId) {
+          localStorage.setItem(AGENT_TARGET_STORAGE_KEY, exactAgentTargetId);
         } else {
           localStorage.removeItem(AGENT_TARGET_STORAGE_KEY);
         }

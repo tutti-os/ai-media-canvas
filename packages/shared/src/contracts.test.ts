@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applicationErrorResponseSchema,
   canvasGetResponseSchema,
   canvasSaveRequestSchema,
   codexImagegenDelegationSchema,
   modelListRequestSchema,
+  modelListResponseSchema,
   runCreateRequestSchema,
   workspaceSettingsSchema,
 } from "./index.js";
@@ -26,7 +28,8 @@ describe("runCreateRequestSchema", () => {
     expect(result.error?.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          message: "runtimeKind=local-agent requires agentTargetId.",
+          message:
+            "runtimeKind=local-agent requires agentTargetId or deprecated runtimeProvider.",
           path: ["agentTargetId"],
         }),
       ]),
@@ -61,6 +64,44 @@ describe("runCreateRequestSchema", () => {
         runtimeProvider: "claude",
       }).success,
     ).toBe(true);
+  });
+
+  it("rejects exact targets with an incompatible explicit runtime", () => {
+    const result = runCreateRequestSchema.safeParse({
+      ...baseRunCreateRequest,
+      runtimeKind: "server-deepagent",
+      agentTargetId: "team:designer",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "agentTargetId requires runtimeKind=local-agent.",
+          path: ["agentTargetId"],
+        }),
+      ]),
+    );
+  });
+
+  it("rejects contradictory exact-target and deprecated-provider selectors", () => {
+    const result = runCreateRequestSchema.safeParse({
+      ...baseRunCreateRequest,
+      runtimeKind: "local-agent",
+      agentTargetId: "team:designer",
+      runtimeProvider: "claude-code",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message:
+            "Provide agentTargetId or deprecated runtimeProvider, not both.",
+          path: ["runtimeProvider"],
+        }),
+      ]),
+    );
   });
 
   it("does not expose managed agent invocation credentials in run bodies", () => {
@@ -171,6 +212,32 @@ describe("modelListRequestSchema", () => {
       );
     }
   });
+});
+
+describe("modelListResponseSchema", () => {
+  it("rejects malformed default Agent Target IDs", () => {
+    expect(
+      modelListResponseSchema.safeParse({
+        models: [],
+        localAgentProviders: [],
+        localAgentTargets: [],
+        defaultAgentTargetId: "../bad target",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("applicationErrorResponseSchema", () => {
+  it.each(["agent_target_unavailable", "invalid_model"])(
+    "accepts actionable agent run error code %s",
+    (code) => {
+      expect(
+        applicationErrorResponseSchema.safeParse({
+          error: { code, message: "Actionable run error." },
+        }).success,
+      ).toBe(true);
+    },
+  );
 });
 
 describe("workspaceSettingsSchema", () => {

@@ -18,16 +18,21 @@ async function isConfiguredModelAvailable(
   configuredModel: string,
   configuredSource: AgentModelSource | null,
   agentTargetId?: string | null,
-) {
+): Promise<{ available: boolean; migratedAgentTargetId?: string }> {
   const source = configuredSource ?? getAgentModelSourceTab(configuredModel);
-  if (source !== "local-agent") return true;
+  if (source !== "local-agent") return { available: true };
   const provider = configuredModel.split(":")[0] ?? "";
-  if (!provider) return false;
+  if (!provider) return { available: false };
   const response = await fetchModels();
   if (agentTargetId && Array.isArray(response.localAgentTargets)) {
-    return response.localAgentTargets.some(
-      (entry) => entry.agentTargetId === agentTargetId && entry.available,
-    );
+    return {
+      available: response.localAgentTargets.some(
+        (entry) =>
+          entry.agentTargetId === agentTargetId &&
+          entry.providerId === provider &&
+          entry.available,
+      ),
+    };
   }
   // A provider-only browser selection predates Agent Target IDs. Do not guess
   // when the provider now has multiple exposed agent identities.
@@ -35,15 +40,23 @@ async function isConfiguredModelAvailable(
     const targets = response.localAgentTargets.filter(
       (entry) => entry.providerId === provider,
     );
-    if (targets.length !== 1) return false;
+    if (targets.length !== 1 || !targets[0]?.available) {
+      return { available: false };
+    }
+    return {
+      available: true,
+      migratedAgentTargetId: targets[0].agentTargetId,
+    };
   }
-  return localAgentProvidersFromModelResponse(response).some(
-    (entry) => entry.provider === provider && entry.supported,
-  );
+  return {
+    available: localAgentProvidersFromModelResponse(response).some(
+      (entry) => entry.provider === provider && entry.supported,
+    ),
+  };
 }
 
 export function useAgentModelRequirement() {
-  const { agentTargetId, model, modelSource } = useAgentModel();
+  const { agentTargetId, model, modelSource, setModel } = useAgentModel();
   const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<
     string | null
   >(null);
@@ -108,11 +121,19 @@ export function useAgentModelRequirement() {
 
   const ensureAgentModelConfigured = useCallback(async () => {
     if (model?.trim()) {
-      return isConfiguredModelAvailable(
+      const availability = await isConfiguredModelAvailable(
         model.trim(),
         modelSource,
         agentTargetId,
       );
+      if (availability.migratedAgentTargetId) {
+        setModel(
+          model.trim(),
+          "local-agent",
+          availability.migratedAgentTargetId,
+        );
+      }
+      return availability.available;
     }
 
     try {
@@ -122,12 +143,13 @@ export function useAgentModelRequirement() {
       setWorkspaceDefaultModel(defaultModel || null);
       setWorkspaceDefaultModelSource(defaultModel ? defaultModelSource : null);
       return defaultModel.length > 0
-        ? isConfiguredModelAvailable(defaultModel, defaultModelSource)
+        ? (await isConfiguredModelAvailable(defaultModel, defaultModelSource))
+            .available
         : false;
     } catch {
       return false;
     }
-  }, [agentTargetId, model, modelSource]);
+  }, [agentTargetId, model, modelSource, setModel]);
 
   return {
     model,

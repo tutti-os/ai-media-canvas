@@ -10,9 +10,9 @@ logging, and media delegation policy.
   `aimc agent run --agent-id <id>`.
 - The selected target is persisted on `agent_runs`, returned in run responses,
   and included in reconnect metadata.
-- Native/provider-local resume is allowed only when both the target ID and
-  runtime provider match. Switching between two targets backed by the same
-  provider uses conversation handoff.
+- Native/provider-local resume is allowed only when runtime kind, target ID,
+  and runtime provider all match. Switching runtime kinds or switching between
+  two targets backed by the same provider uses conversation handoff.
 - Deprecated `runtimeProvider` input remains accepted during the compatibility
   window only when exactly one target in the complete catalog uses that
   provider. Ambiguous or stale provider-only state fails closed.

@@ -149,6 +149,10 @@ export type LocalAgentRuntimeProviderDeps = {
     Partial<
       Pick<LocalAgentRuntime<"local-agent", AgentRuntimeProvider>, "detect">
     >;
+  localAgentComposerRuntime?: LocalAgentRuntime<
+    "local-agent",
+    AgentRuntimeProvider
+  >;
   now: () => string;
   recordProviderResumeMetadata?: (input: {
     providerSessionId?: string;

@@ -5,6 +5,7 @@ import type {
 } from "@aimc/shared";
 import {
   type DetectContext,
+  type LocalAgentRuntime,
   createDefaultLocalAgentRuntime,
 } from "@tutti-os/agent-acp-kit";
 import {
@@ -14,7 +15,12 @@ import {
 
 import { buildLocalAgentModels } from "./local-agent-models.js";
 
-const runtime = createDefaultLocalAgentRuntime();
+type AgentCatalogRuntime = LocalAgentRuntime<
+  "local-agent",
+  AgentRuntimeProvider
+>;
+
+const defaultRuntime = createDefaultLocalAgentRuntime() as AgentCatalogRuntime;
 
 export type ResolvedAgentTarget = {
   agentTargetId: string;
@@ -35,7 +41,9 @@ export function isCatalogProviderAddressable(
 export async function loadAgentTargetCatalog(
   input: {
     detectContext?: DetectContext;
+    detections?: Awaited<ReturnType<AgentCatalogRuntime["detect"]>>;
     refresh?: boolean;
+    runtime?: AgentCatalogRuntime;
   } = {},
 ): Promise<{
   ambiguousProviderIds: string[];
@@ -47,9 +55,24 @@ export async function loadAgentTargetCatalog(
     ...(input.detectContext ?? {}),
     ...(input.refresh ? { refresh: true } : {}),
   };
+  const selectedRuntime = input.runtime ?? defaultRuntime;
+  const catalogRuntime: AgentCatalogRuntime = input.detections
+    ? {
+        cancel: (runId) => selectedRuntime.cancel(runId),
+        detect: async () => input.detections ?? [],
+        listProviders: () => selectedRuntime.listProviders(),
+        run: (runInput) => selectedRuntime.run(runInput),
+      }
+    : selectedRuntime;
   const [catalog, detections] = await Promise.all([
-    loadTuttiAgentCatalog({ runtime, ...detectContext }),
-    runtime.detect(detectContext),
+    loadTuttiAgentCatalog({
+      runtime: catalogRuntime,
+      detectContext,
+      ...(detectContext.cwd ? { cwd: detectContext.cwd } : {}),
+    }),
+    input.detections
+      ? Promise.resolve(input.detections)
+      : selectedRuntime.detect(detectContext),
   ]);
   const detectionsByProvider = new Map(
     detections.map((entry) => [String(entry.provider), entry]),

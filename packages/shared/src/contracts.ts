@@ -94,6 +94,25 @@ export const runCreateRequestSchema = z
     delegationConsent: codexImagegenDelegationConsentSchema.optional(),
   })
   .superRefine((value, ctx) => {
+    if (
+      value.agentTargetId &&
+      value.runtimeKind &&
+      value.runtimeKind !== "local-agent"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "agentTargetId requires runtimeKind=local-agent.",
+        path: ["agentTargetId"],
+      });
+    }
+    if (value.agentTargetId && value.runtimeProvider) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Provide agentTargetId or deprecated runtimeProvider, not both.",
+        path: ["runtimeProvider"],
+      });
+    }
     if (value.runtimeProvider && value.runtimeKind !== "local-agent") {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -108,7 +127,8 @@ export const runCreateRequestSchema = z
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "runtimeKind=local-agent requires agentTargetId.",
+        message:
+          "runtimeKind=local-agent requires agentTargetId or deprecated runtimeProvider.",
         path: ["agentTargetId"],
       });
     }

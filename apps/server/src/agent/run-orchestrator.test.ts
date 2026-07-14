@@ -6,6 +6,7 @@ import {
   createAgentRunOrchestrator,
   createAssistantMessageProjection,
   createRuntimeControlPlane,
+  getLocalAgentModelProvider,
   inferAimcRuntimeTarget,
   inferRuntimeKind,
   isLocalAgentRuntimeRequested,
@@ -436,6 +437,21 @@ describe("agent run orchestrator", () => {
         runtimeKind: "server-deepagent",
       }),
     ).toBe(false);
+  });
+
+  it("preserves an explicit server runtime over a local workspace default", () => {
+    expect(
+      shouldResolveLocalAgentTarget({
+        model: "codex:gpt-5.4",
+        modelSource: "local-agent",
+        runtimeKind: "server-deepagent",
+      }),
+    ).toBe(false);
+  });
+
+  it("extracts only registered local-agent model providers", () => {
+    expect(getLocalAgentModelProvider("codex:gpt-5.4")).toBe("codex");
+    expect(getLocalAgentModelProvider("openai:gpt-5.4")).toBeUndefined();
   });
 
   it("keeps server-deepagent as the default runtime", () => {

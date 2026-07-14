@@ -274,7 +274,9 @@ export async function registerModelRoutes(
     } = {},
   ) => {
     const managedAgentDetectContext = input.headers
-      ? createManagedAgentDetectContextFromHeaders(input.headers)
+      ? createManagedAgentDetectContextFromHeaders(input.headers, {
+          ...(env.appDataDir ? { appDataDir: env.appDataDir } : {}),
+        })
       : undefined;
     const result = await listAgentModelCatalog({
       env,
@@ -414,7 +416,11 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
   if (effectiveEnv.trustedLocalAgentMode !== false) {
     const managedAgentDetectContext =
       options.managedAgentDetectContext ??
-      createManagedAgentDetectContextFromHeaders(options.managedAgentHeaders);
+      createManagedAgentDetectContextFromHeaders(options.managedAgentHeaders, {
+        ...(effectiveEnv.appDataDir
+          ? { appDataDir: effectiveEnv.appDataDir }
+          : {}),
+      });
     const localAgentDetectContext: LocalAgentModelDetectContext | undefined =
       options.refreshLocalAgentModels
         ? { ...(managedAgentDetectContext ?? {}), refresh: true }
@@ -448,16 +454,18 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
             detect,
           )
         : detect();
-      const agentCatalogPromise = loadAgentTargetCatalog({
-        ...(localAgentDetectContext
-          ? { detectContext: localAgentDetectContext }
+      const detections = await detectionsPromise;
+      const catalogDetectContext = {
+        ...(localAgentDetectContext ?? {}),
+        ...(workspaceCwd ? { cwd: workspaceCwd } : {}),
+      };
+      const agentCatalog = await loadAgentTargetCatalog({
+        ...(Object.keys(catalogDetectContext).length > 0
+          ? { detectContext: catalogDetectContext }
           : {}),
+        detections,
         refresh: options.refreshLocalAgentModels === true,
       });
-      const [detections, agentCatalog] = await Promise.all([
-        detectionsPromise,
-        agentCatalogPromise,
-      ]);
       // Keep the runtime's complete detection result available here for
       // diagnostics, but only expose runnable providers to API consumers.
       const supportedDetections = detections.filter(
@@ -472,11 +480,13 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
       localAgentProviders.push(
         ...buildLocalAgentProviderInfo(supportedDetections).map((provider) => {
           if (!ambiguousProviderIds.has(provider.provider)) return provider;
+          const { defaultModelId: _defaultModelId, ...providerWithoutDefault } =
+            provider;
           const targetReason = agentCatalog.targets.find(
             (target) => target.providerId === provider.provider,
           )?.reason;
           return {
-            ...provider,
+            ...providerWithoutDefault,
             supported: false,
             ...(targetReason ? { reason: targetReason } : {}),
             models: [],

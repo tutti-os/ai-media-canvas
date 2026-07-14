@@ -553,7 +553,7 @@ describe("registerModelRoutes", () => {
   });
 
   it("passes a managed agent invocation to local-agent model discovery for POST model requests", async () => {
-    vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
+    vi.stubEnv("TUTTI_APP_DATA_DIR", "");
     vi.stubEnv("CODEX_HOME", "/tmp/user-codex-home");
     vi.stubEnv("CLAUDE_CONFIG_DIR", "/tmp/user-claude-config");
     const localAgentModelDiscovery = {
@@ -620,6 +620,49 @@ describe("registerModelRoutes", () => {
         CLAUDE_CONFIG_DIR: expect.any(String),
         CODEX_HOME: expect.any(String),
         PATH: expect.any(String),
+      }),
+    );
+  });
+
+  it("uses one workspace-scoped discovery snapshot for models and exact targets", async () => {
+    vi.stubEnv("TUTTI_WORKSPACE_ROOT", "/tmp/aimc-workspace");
+    const localAgentModelDiscovery = {
+      detect: vi.fn(async () => [
+        {
+          provider: "codex" as const,
+          displayName: "Codex",
+          authState: "ok" as const,
+          models: [{ id: "gpt-snapshot", label: "GPT Snapshot" }],
+          defaultModelId: "gpt-snapshot",
+          supported: true,
+        },
+      ]),
+    };
+    const app = Fastify();
+    apps.push(app);
+    await registerModelRoutes(
+      app,
+      loadServerEnv({ agentModel: "codex:gpt-snapshot" }, {}),
+      undefined,
+      { localAgentModelDiscovery },
+    );
+
+    const response = await app.inject({ method: "GET", url: "/api/models" });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledTimes(1);
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: "/tmp/aimc-workspace" }),
+    );
+    expect(response.json().models).toContainEqual(
+      expect.objectContaining({ id: "codex:gpt-snapshot" }),
+    );
+    expect(response.json().localAgentTargets).toContainEqual(
+      expect.objectContaining({
+        agentTargetId: "local:codex",
+        models: expect.arrayContaining([
+          expect.objectContaining({ id: "codex:gpt-snapshot" }),
+        ]),
       }),
     );
   });

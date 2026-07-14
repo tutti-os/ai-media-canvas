@@ -17,6 +17,7 @@ import {
   AgentRunModelResolutionError,
   type AgentRunOrchestrator,
   createAgentRunOrchestrator,
+  getLocalAgentModelProvider,
   isLocalAgentRuntimeRequested,
   resolveAgentRunModel,
   shouldResolveLocalAgentTarget,
@@ -436,15 +437,24 @@ async function handleRunCommand(
     | undefined;
   if (requestsLocalAgent) {
     try {
-      const managedDetectContext =
-        createManagedAgentDetectContextFromHeaders(managedAgentHeaders);
+      const managedDetectContext = createManagedAgentDetectContextFromHeaders(
+        managedAgentHeaders,
+        {
+          ...(effectiveEnv?.appDataDir
+            ? { appDataDir: effectiveEnv.appDataDir }
+            : {}),
+        },
+      );
+      const modelProvider = getLocalAgentModelProvider(payload.model ?? model);
       resolvedAgentTarget = await resolveAgentTarget({
         ...(payload.agentTargetId
           ? { agentTargetId: payload.agentTargetId }
           : {}),
-        ...(!payload.agentTargetId && payload.runtimeProvider
+        ...(payload.runtimeProvider
           ? { providerId: payload.runtimeProvider }
-          : {}),
+          : !payload.agentTargetId && modelProvider
+            ? { providerId: modelProvider }
+            : {}),
         ...(managedDetectContext
           ? { detectContext: managedDetectContext }
           : {}),

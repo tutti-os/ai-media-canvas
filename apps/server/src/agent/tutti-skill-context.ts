@@ -42,12 +42,7 @@ export async function loadTuttiAgentSkillContextForRun(input: {
     if (input.signal?.aborted) {
       throw error;
     }
-    console.warn(
-      `[aimc] Unable to load Tutti agent skill bundle: ${redactTuttiCliChildProcessText(
-        errorMessage(error),
-        input.detectContext?.redactionSecrets ?? [],
-      )}`,
-    );
+    warnTuttiSkillContextFailure(error, input.detectContext);
     return emptyTuttiSkillContext();
   }
 }

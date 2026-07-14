@@ -44,7 +44,7 @@ import type { CanvasOperations } from "./canvas-operations.js";
 import type { ChatOperations } from "./chat-operations.js";
 import { listImageModels } from "./image-models.js";
 import type { JobOperations } from "./job-operations.js";
-import { listAgentModels } from "./models.js";
+import { listAgentModelCatalog } from "./models.js";
 import type { ProjectOperations } from "./project-operations.js";
 import type { SkillOperations } from "./skill-operations.js";
 import { isZodError, sendCliError, sendCliJson } from "./tutti-cli-output.js";
@@ -596,8 +596,8 @@ export async function registerTuttiCliRoutes(
     return options.jobOperations.cancelJob(parseRequiredString(body, "job-id"));
   });
 
-  route("/tutti/cli/models/list", async () => ({
-    models: await listAgentModels({
+  route("/tutti/cli/models/list", async () =>
+    listAgentModelCatalog({
       env: options.env,
       logger: app.log,
       ...(options.tuttiManagedCredentials
@@ -607,7 +607,7 @@ export async function registerTuttiCliRoutes(
         ? { settingsService: options.settingsService }
         : {}),
     }),
-  }));
+  );
   route("/tutti/cli/models/image", async () => ({
     models: await listImageModels(options.env, options.settingsService),
   }));
