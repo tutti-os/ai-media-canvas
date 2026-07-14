@@ -439,7 +439,7 @@ export async function registerTuttiCliRoutes(
           request.headers,
         );
       } catch (error) {
-        if (isCliStatusError(error)) throw error;
+        if (isPublicAgentRunCliError(error)) throw error;
         throw {
           code: "application_error",
           message: "Unable to start local agent run.",
@@ -1020,6 +1020,23 @@ function isCliStatusError(error: unknown): error is {
     typeof (error as { code?: unknown }).code === "string" &&
     typeof (error as { message?: unknown }).message === "string" &&
     typeof (error as { statusCode?: unknown }).statusCode === "number"
+  );
+}
+
+const PUBLIC_AGENT_RUN_ERROR_CODES = new Set([
+  "agent_target_unavailable",
+  "invalid_model",
+  "session_not_found",
+]);
+
+function isPublicAgentRunCliError(
+  error: unknown,
+): error is { code: string; message: string; statusCode: number } {
+  return (
+    isCliStatusError(error) &&
+    error.statusCode >= 400 &&
+    error.statusCode < 500 &&
+    PUBLIC_AGENT_RUN_ERROR_CODES.has(error.code)
   );
 }
 

@@ -146,6 +146,10 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       modelSource: agentModelSource,
       ensureAgentModelConfigured,
     } = agentRequirement;
+    const agentModelRef = useRef(agentModel);
+    agentModelRef.current = agentModel;
+    const agentModelSourceRef = useRef(agentModelSource);
+    agentModelSourceRef.current = agentModelSource;
     const { missingImageModel, missingVideoModel } =
       useMediaModelConfigurationStatus();
     const seedImageItems =
@@ -206,6 +210,8 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
           ...seedAttachments,
         ];
 
+        const validatedAgentModel = agentModelRef.current;
+        const validatedAgentModelSource = agentModelSourceRef.current;
         onSubmit(
           trimmed,
           mergedAttachments.length > 0 ? mergedAttachments : undefined,
@@ -219,8 +225,10 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             videoPreference.models.length > 0
             ? videoPreference
             : undefined,
-          agentModel ?? undefined,
-          agentModel ? (agentModelSource ?? undefined) : undefined,
+          validatedAgentModel ?? undefined,
+          validatedAgentModel
+            ? (validatedAgentModelSource ?? undefined)
+            : undefined,
         );
         setValue("");
       } finally {

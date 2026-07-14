@@ -289,6 +289,42 @@ describe("registerTuttiCliRoutes", () => {
     });
   });
 
+  it("sanitizes shaped operational errors from agent runs", async () => {
+    const agentOperations = {
+      cancelRun: vi.fn(),
+      listRunEvents: vi.fn(),
+      startRun: vi.fn(async () => {
+        throw {
+          code: "application_error",
+          message: "database secret-value unavailable",
+          statusCode: 503,
+        };
+      }),
+    };
+    const app = buildTestApp({ agentOperations });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tutti/cli/agent/run",
+      payload: {
+        "session-id": "session-1",
+        "conversation-id": "canvas-1",
+        prompt: "Continue",
+        "agent-id": "team:designer",
+      },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      kind: "error",
+      error: {
+        code: "application_error",
+        message: "Unable to start local agent run.",
+      },
+    });
+    expect(response.body).not.toContain("secret-value");
+  });
+
   it("requests opening the app home page when no project id is provided", async () => {
     const appOpenRequester = vi.fn(async () => undefined);
     const app = buildTestApp({

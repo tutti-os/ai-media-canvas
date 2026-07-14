@@ -86,6 +86,20 @@ const GOOGLE_MODELS: ModelInfo[] = [
   },
 ];
 
+function resolveLocalAgentModelDiscovery(options: {
+  localAgentCatalogRuntime?: AgentCatalogRuntime;
+  localAgentModelDiscovery?: LocalAgentModelDiscovery;
+}): LocalAgentModelDiscovery {
+  if (options.localAgentModelDiscovery) return options.localAgentModelDiscovery;
+  if (options.localAgentCatalogRuntime) {
+    return {
+      detect: (context?: LocalAgentModelDetectContext) =>
+        options.localAgentCatalogRuntime!.detect(context),
+    };
+  }
+  return createDefaultLocalAgentModelDiscovery();
+}
+
 const AGNES_MODELS: ModelInfo[] = [
   { id: "agnes:agnes-2.0-flash", name: "Agnes 2.0 Flash", provider: "agnes" },
   { id: "agnes:agnes-1.5-flash", name: "Agnes 1.5 Flash", provider: "agnes" },
@@ -267,15 +281,14 @@ export async function registerModelRoutes(
   // One route-scoped runtime handles both standalone and managed detection.
   // Managed calls do not use the standalone plugin cache; the kit selects the
   // Tutti strategy from each request context.
-  const localAgentCatalogRuntime = options?.localAgentCatalogRuntime;
-  const localAgentModelDiscovery =
-    options?.localAgentModelDiscovery ??
-    (localAgentCatalogRuntime
-      ? {
-          detect: (context?: LocalAgentModelDetectContext) =>
-            localAgentCatalogRuntime.detect(context),
-        }
-      : createDefaultLocalAgentModelDiscovery());
+  const localAgentModelDiscovery = resolveLocalAgentModelDiscovery({
+    ...(options?.localAgentCatalogRuntime
+      ? { localAgentCatalogRuntime: options.localAgentCatalogRuntime }
+      : {}),
+    ...(options?.localAgentModelDiscovery
+      ? { localAgentModelDiscovery: options.localAgentModelDiscovery }
+      : {}),
+  });
   const sendModels = async (
     reply: FastifyReply,
     input: {
@@ -443,15 +456,7 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
       process.env.TUTTI_WORKSPACE_ROOT?.trim() ||
       localAgentDetectContext?.cwd?.trim();
     try {
-      const localAgentCatalogRuntime = options.localAgentCatalogRuntime;
-      const runtime =
-        options.localAgentModelDiscovery ??
-        (localAgentCatalogRuntime
-          ? {
-              detect: (context?: LocalAgentModelDetectContext) =>
-                localAgentCatalogRuntime.detect(context),
-            }
-          : createDefaultLocalAgentModelDiscovery());
+      const runtime = resolveLocalAgentModelDiscovery(options);
       const detect = () =>
         runtime.detect({
           ...(localAgentDetectContext ?? {}),

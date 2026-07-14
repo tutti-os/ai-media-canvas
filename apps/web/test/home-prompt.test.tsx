@@ -285,6 +285,44 @@ describe("HomePrompt", () => {
     );
   });
 
+  it("submits the selection that was current when validation completed", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    let resolveValidation: ((configured: boolean) => void) | undefined;
+    const ensureAgentModelConfigured = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveValidation = resolve;
+        }),
+    );
+    let requirement = {
+      model: "codex:old",
+      modelSource: "local-agent" as const,
+      isAgentModelConfigured: true,
+      ensureAgentModelConfigured,
+    };
+    agentModelRequirementMock.mockImplementation(() => requirement);
+
+    const { rerender } = render(<HomePrompt onSubmit={onSubmit} />);
+    await user.type(await findPromptInput(), "使用最新模型");
+    await user.click(screen.getByRole("button", { name: "提交 prompt" }));
+
+    requirement = { ...requirement, model: "codex:new" };
+    rerender(<HomePrompt onSubmit={onSubmit} />);
+    await act(async () => {
+      resolveValidation?.(true);
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      "使用最新模型",
+      undefined,
+      undefined,
+      undefined,
+      "codex:new",
+      "local-agent",
+    );
+  });
+
   it("does not render a persistent configuration banner when agent and media models are missing", async () => {
     agentModelRequirementMock.mockReturnValue({
       model: null,
