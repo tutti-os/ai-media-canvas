@@ -102,6 +102,7 @@ export const applicationErrorCodeSchema = z.enum([
   "agent_target_unavailable",
   "invalid_input",
   "invalid_model",
+  "local_agent_disabled",
   "job_not_found",
   "job_create_failed",
   "job_query_failed",

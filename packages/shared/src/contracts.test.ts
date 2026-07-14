@@ -228,16 +228,17 @@ describe("modelListResponseSchema", () => {
 });
 
 describe("applicationErrorResponseSchema", () => {
-  it.each(["agent_target_unavailable", "invalid_model"])(
-    "accepts actionable agent run error code %s",
-    (code) => {
-      expect(
-        applicationErrorResponseSchema.safeParse({
-          error: { code, message: "Actionable run error." },
-        }).success,
-      ).toBe(true);
-    },
-  );
+  it.each([
+    "agent_target_unavailable",
+    "invalid_model",
+    "local_agent_disabled",
+  ])("accepts actionable agent run error code %s", (code) => {
+    expect(
+      applicationErrorResponseSchema.safeParse({
+        error: { code, message: "Actionable run error." },
+      }).success,
+    ).toBe(true);
+  });
 });
 
 describe("workspaceSettingsSchema", () => {
