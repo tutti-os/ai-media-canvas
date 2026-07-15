@@ -9,12 +9,10 @@ import type { LocalStore } from "../local/store.js";
 // v1 exposes project-attributed media assets as a two-level tree:
 //   root            -> one group per project (displayName = project name)
 //   group "project:<id>" -> file references (displayName = file name)
-// Generated assets without a project are exposed under a special unassigned
-// group so Tutti can still browse reusable agent outputs.
+// Only app projects are exposed at the root so ordering and membership match
+// the in-app project list exactly.
 
 const PROJECT_GROUP_PREFIX = "project:";
-const UNASSIGNED_GROUP_ID = "unassigned";
-const UNASSIGNED_GROUP_LABEL = "项目外资源";
 
 // Global Tutti file-type category ids -> file extensions (no leading dot).
 // `other` is handled specially: it matches files with no recognized extension.
@@ -35,7 +33,7 @@ const CATEGORY_EXTENSIONS: Record<string, readonly string[]> = {
     "tiff",
     "ico",
   ],
-  video: ["mp4", "mov", "webm", "mkv", "avi", "m4v"],
+  video: ["mp4", "mov", "webm", "mkv", "avi", "m4v", "mpeg", "mpg"],
   document: [
     "pdf",
     "doc",
@@ -169,34 +167,9 @@ export async function registerReferenceRoutes(
       });
       const items: GroupItem[] = groups.map((group) => ({
         type: "group",
-        id:
-          group.projectId == null
-            ? UNASSIGNED_GROUP_ID
-            : `${PROJECT_GROUP_PREFIX}${group.projectId}`,
+        id: `${PROJECT_GROUP_PREFIX}${group.projectId}`,
         displayName: group.name,
         referenceCount: group.referenceCount,
-      }));
-      return reply.code(200).send({ items, nextCursor });
-    }
-
-    if (body.parentGroupId === UNASSIGNED_GROUP_ID) {
-      const { files, nextCursor } = store.listReferenceUnassignedAssets({
-        filterText,
-        fromMs: timeRange?.fromMs,
-        toMs: timeRange?.toMs,
-        limit,
-        cursor: body.cursor,
-      });
-      const items: FileReferenceItem[] = files.map((file) => ({
-        type: "reference",
-        reference: {
-          kind: "file",
-          displayName: file.displayName,
-          location: { type: "app-data-relative", path: file.relativePath },
-          ...(file.sizeBytes != null ? { sizeBytes: file.sizeBytes } : {}),
-          ...(file.mtimeMs != null ? { mtimeMs: file.mtimeMs } : {}),
-          ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-        },
       }));
       return reply.code(200).send({ items, nextCursor });
     }
@@ -271,7 +244,9 @@ export async function registerReferenceRoutes(
         ...(file.sizeBytes != null ? { sizeBytes: file.sizeBytes } : {}),
         ...(file.mtimeMs != null ? { mtimeMs: file.mtimeMs } : {}),
         ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-        parentGroupLabel: file.projectName ?? UNASSIGNED_GROUP_LABEL,
+        ...(file.projectName != null
+          ? { parentGroupLabel: file.projectName }
+          : {}),
       },
     }));
     return reply.code(200).send({ items, nextCursor });

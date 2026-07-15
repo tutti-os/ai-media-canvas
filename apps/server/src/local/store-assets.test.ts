@@ -33,4 +33,24 @@ describe("local asset storage", () => {
     expect(uploaded.asset.objectPath).toMatch(/\.mp4$/);
     expect(uploaded.filePath).toMatch(/\.mp4$/);
   });
+
+  it("does not store extensionless MPEG recordings as .bin files", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-assets-"));
+    tempDirs.push(dataRoot);
+
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+
+    const uploaded = store.uploadFile({
+      bucket: "project-assets",
+      fileName: "generated-recording",
+      fileBuffer: Buffer.from("video"),
+      mimeType: "video/mpeg",
+    });
+
+    expect(uploaded.asset.objectPath).toMatch(/\.mpeg$/);
+    expect(uploaded.filePath).toMatch(/\.mpeg$/);
+  });
 });
