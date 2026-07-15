@@ -375,7 +375,14 @@ export function createLocalStore(options: {
   mkdirSync(projectRoot, { recursive: true });
   mkdirSync(generatedRoot, { recursive: true });
 
-  const db = new DatabaseSync(join(databaseRoot, "ai-media-canvas.db"));
+  // The packaged runtime starts the HTTP server and background worker as
+  // separate processes. Both initialize this store, so one process can briefly
+  // hold SQLite's schema/WAL lock while the other starts. The node:sqlite
+  // default is to fail immediately (timeout=0), which made an otherwise healthy
+  // app exit nondeterministically during startup.
+  const db = new DatabaseSync(join(databaseRoot, "ai-media-canvas.db"), {
+    timeout: 10_000,
+  });
   db.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS app_profile (

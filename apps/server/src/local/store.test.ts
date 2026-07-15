@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
+import { Worker } from "node:worker_threads";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { loadWorkspaceSkills } from "../agent/workspace-skills.js";
@@ -17,6 +18,42 @@ afterEach(() => {
 });
 
 describe("createLocalStore", () => {
+  it("waits for a concurrent runtime process to release the SQLite lock", async () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-data-"));
+    const databaseRoot = mkdtempSync(join(tmpdir(), "aimc-database-"));
+    tempDirs.push(dataRoot, databaseRoot);
+    const dbPath = join(databaseRoot, "ai-media-canvas.db");
+
+    const lockHolder = new Worker(
+      `
+        const { parentPort, workerData } = require("node:worker_threads");
+        const { DatabaseSync } = require("node:sqlite");
+        const db = new DatabaseSync(workerData.dbPath);
+        db.exec("CREATE TABLE IF NOT EXISTS lock_holder (id INTEGER); BEGIN EXCLUSIVE");
+        parentPort.postMessage("locked");
+        setTimeout(() => {
+          db.exec("COMMIT");
+          db.close();
+          parentPort.postMessage("released");
+        }, 200);
+      `,
+      { eval: true, workerData: { dbPath } },
+    );
+    await new Promise<void>((resolve, reject) => {
+      lockHolder.once("message", () => resolve());
+      lockHolder.once("error", reject);
+    });
+
+    expect(() =>
+      createLocalStore({
+        assetBaseUrl: "http://127.0.0.1:3001",
+        dataRoot,
+        databaseRoot,
+      }),
+    ).not.toThrow();
+    await lockHolder.terminate();
+  });
+
   it("keeps SQLite under the dedicated database root", () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-data-"));
     const databaseRoot = mkdtempSync(join(tmpdir(), "aimc-database-"));
