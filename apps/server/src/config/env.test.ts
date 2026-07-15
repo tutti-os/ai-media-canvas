@@ -24,6 +24,7 @@ describe("loadServerEnv", () => {
       {
         TUTTI_API_BASE_URL: "https://tutti.example/api",
         TUTTI_APP_DATA_DIR: "/data/tutti-app",
+        TUTTI_APP_DATABASE_DIR: "/var/lib/tutti-app-database",
         TUTTI_APP_ID: "tutti-app",
         TUTTI_APP_INSTALLATION_ID: "tutti-installation",
         TUTTI_CLI: "/usr/local/bin/tutti",
@@ -35,6 +36,7 @@ describe("loadServerEnv", () => {
 
     expect(env.tuttiApiBaseUrl).toBe("https://tutti.example/api");
     expect(env.appDataDir).toBe("/data/tutti-app");
+    expect(env.databaseRoot).toBe("/var/lib/tutti-app-database");
     expect(env.tuttiAppId).toBe("tutti-app");
     expect(env.tuttiAppInstallationId).toBe("tutti-installation");
     expect(env.tuttiCliPath).toBe("/usr/local/bin/tutti");

@@ -364,6 +364,11 @@ test("renderBootstrap maps Tutti runtime env into AI Canvas env", () => {
     bootstrap,
     /export AIMC_DATA_ROOT="\$\{TUTTI_APP_DATA_DIR:-\$package_dir\/\.data\}"/,
   );
+  assert.match(
+    bootstrap,
+    /export AIMC_DATABASE_ROOT="\$\{TUTTI_APP_DATABASE_DIR:-\$AIMC_DATA_ROOT\}"/,
+  );
+  assert.match(bootstrap, /legacy_db="\$AIMC_DATA_ROOT\/ai-media-canvas\.db"/);
   assert.match(bootstrap, /export AIMC_SKILLS_ROOT="\$package_dir\/skills"/);
   assert.match(
     bootstrap,

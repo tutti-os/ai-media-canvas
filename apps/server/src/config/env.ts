@@ -24,6 +24,7 @@ export type ServerEnv = {
   codexImagegenAgentModelConfigured?: boolean;
   codexImagegenTimeoutMs?: number;
   appDataDir?: string;
+  databaseRoot?: string;
   dataRoot?: string;
   googleApiKey?: string;
   googleApplicationCredentials?: string;
@@ -64,6 +65,12 @@ export function loadServerEnv(
     overrides.webDistDir ?? normalizeOptionalString(source.AIMC_WEB_DIST);
   const dataRoot =
     overrides.dataRoot ?? normalizeOptionalString(source.AIMC_DATA_ROOT);
+  const databaseRoot =
+    overrides.databaseRoot ??
+    normalizeOptionalString(
+      source.AIMC_DATABASE_ROOT ?? source.TUTTI_APP_DATABASE_DIR,
+    ) ??
+    dataRoot;
   const appDataDir =
     overrides.appDataDir ??
     normalizeOptionalString(source.TUTTI_APP_DATA_DIR) ??
@@ -248,6 +255,7 @@ export function loadServerEnv(
     ...(appDataDir ? { appDataDir } : {}),
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(dataRoot ? { dataRoot } : {}),
+    ...(databaseRoot ? { databaseRoot } : {}),
     ...(webDistDir ? { webDistDir } : {}),
     ...(agnesApiKey ? { agnesApiKey } : {}),
     ...(agnesBaseUrl ? { agnesBaseUrl } : {}),

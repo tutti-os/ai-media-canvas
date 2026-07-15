@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
@@ -17,6 +17,22 @@ afterEach(() => {
 });
 
 describe("createLocalStore", () => {
+  it("keeps SQLite under the dedicated database root", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "aimc-data-"));
+    const databaseRoot = mkdtempSync(join(tmpdir(), "aimc-database-"));
+    tempDirs.push(dataRoot, databaseRoot);
+
+    createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+      databaseRoot,
+    });
+
+    expect(existsSync(join(databaseRoot, "ai-media-canvas.db"))).toBe(true);
+    expect(existsSync(join(dataRoot, "ai-media-canvas.db"))).toBe(false);
+    expect(existsSync(join(dataRoot, "assets"))).toBe(true);
+  });
+
   it("creates unique slugs for duplicate project names", () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-store-"));
     tempDirs.push(dataRoot);
