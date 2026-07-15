@@ -134,7 +134,7 @@ describe("POST /tutti/references/list", () => {
       mimeType: "application/json",
       projectId: project.id,
     });
-    const unassigned = createGeneratedOutput(store, {
+    createGeneratedOutput(store, {
       fileName: "stray.png",
       jobType: "image_generation",
       mimeType: "image/png",
@@ -143,7 +143,6 @@ describe("POST /tutti/references/list", () => {
       dataRoot,
       project,
       assetIds: [image.asset.id, video.asset.id],
-      unassignedAssetId: unassigned.asset.id,
     };
   }
 
@@ -160,15 +159,10 @@ describe("POST /tutti/references/list", () => {
       displayName: "Campaign A",
       referenceCount: 2, // image + video; json excluded
     });
-    expect(findUnassignedGroup(root)).toMatchObject({
-      type: "group",
-      id: "unassigned",
-      displayName: "项目外资源",
-      referenceCount: 1,
-    });
+    expect(findUnassignedGroup(root)).toBeUndefined();
   });
 
-  it("orders root project groups by updated time descending", async () => {
+  it("keeps root project groups in the same updated order as the app", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-project-order-"));
     dataRoots.push(dataRoot);
     const store = createLocalStore({
@@ -178,15 +172,36 @@ describe("POST /tutti/references/list", () => {
     const older = store.createProject({ name: "Chronology Alpha Older" });
     await new Promise((resolve) => setTimeout(resolve, 5));
     const newer = store.createProject({ name: "Chronology Zed Newer" });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    store.saveCanvas(older.primaryCanvas.id, {
+      elements: [],
+      appState: {},
+      files: {},
+    });
+    const expectedIds = store
+      .listProjects()
+      .filter((project) => project.name.toLowerCase().includes("chronology"))
+      .map((project) => `project:${project.id}`);
     const app = buildApp({ env: { dataRoot } });
 
     const root = await listReferences(app, { filterText: "chronology" });
+    const firstPage = await listReferences(app, {
+      filterText: "chronology",
+      limit: 1,
+    });
+    const secondPage = await listReferences(app, {
+      filterText: "chronology",
+      limit: 1,
+      cursor: firstPage.nextCursor,
+    });
     await app.close();
 
-    expect(root.items.map((item) => item.id)).toEqual([
-      `project:${newer.id}`,
-      `project:${older.id}`,
-    ]);
+    expect(expectedIds).toEqual([`project:${older.id}`, `project:${newer.id}`]);
+    expect(root.items.map((item) => item.id)).toEqual(expectedIds);
+    expect([
+      ...firstPage.items.map((item) => item.id),
+      ...secondPage.items.map((item) => item.id),
+    ]).toEqual(expectedIds);
   });
 
   it("filters root project groups by project id and display name", async () => {
@@ -260,30 +275,18 @@ describe("POST /tutti/references/list", () => {
     expect(search.items).toEqual([]);
   });
 
-  it("lists unassigned media assets under a special root group", async () => {
-    const { dataRoot, unassignedAssetId } = await seedStore();
+  it("does not expose project-less generated assets as a synthetic project", async () => {
+    const { dataRoot } = await seedStore();
     const app = buildApp({ env: { dataRoot } });
 
+    const root = await listReferences(app, {});
     const files = await listReferences(app, { parentGroupId: "unassigned" });
+    const search = await searchReferences(app, {});
     await app.close();
 
-    expect(files.items).toHaveLength(1);
-    expect(files.items[0]).toMatchObject({
-      type: "reference",
-      reference: {
-        kind: "file",
-        displayName: `${unassignedAssetId}.png`,
-        location: {
-          type: "app-data-relative",
-        },
-        mimeType: "image/png",
-      },
-    });
-    const reference = files.items[0]?.reference as {
-      location: { path: string };
-    };
-    expect(reference.location.path).toMatch(/^assets\//);
-    expect(reference.location.path).not.toContain("..");
+    expect(findUnassignedGroup(root)).toBeUndefined();
+    expect(files.items).toEqual([]);
+    expect(search.items).toHaveLength(2);
   });
 
   it("lists projects without reusable media as empty root groups", async () => {
@@ -356,7 +359,7 @@ describe("POST /tutti/references/list", () => {
       fileBuffer: Buffer.from("generated"),
       mimeType: "image/png",
     });
-    const stray = createGeneratedOutput(store, {
+    createGeneratedOutput(store, {
       fileName: "stray.png",
       jobType: "image_generation",
       mimeType: "image/png",
@@ -399,13 +402,99 @@ describe("POST /tutti/references/list", () => {
       id: `project:${project.id}`,
       referenceCount: 1,
     });
-    expect(findUnassignedGroup(root)).toMatchObject({
-      type: "group",
-      id: "unassigned",
-      referenceCount: 1,
-    });
+    expect(findUnassignedGroup(root)).toBeUndefined();
     expect(displayNames(projectFiles)).toEqual([`${generated.asset.id}.png`]);
-    expect(displayNames(unassignedFiles)).toEqual([`${stray.asset.id}.png`]);
+    expect(unassignedFiles.items).toEqual([]);
+  });
+
+  it("excludes internal .bin media while retaining recognized MPEG recordings", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-bin-"));
+    dataRoots.push(dataRoot);
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = store.createProject({ name: "Binary Guard" });
+    const binary = createGeneratedOutput(store, {
+      fileName: "opaque-recording",
+      jobType: "video_generation",
+      mimeType: "video/x-private",
+      projectId: project.id,
+    });
+    const recording = createGeneratedOutput(store, {
+      fileName: "mpeg-recording",
+      jobType: "video_generation",
+      mimeType: "video/mpeg",
+      projectId: project.id,
+    });
+    expect(binary.asset.objectPath).toMatch(/\.bin$/);
+    expect(recording.asset.objectPath).toMatch(/\.mpeg$/);
+    const app = buildApp({ env: { dataRoot } });
+
+    const root = await listReferences(app, {});
+    const files = await listReferences(app, {
+      parentGroupId: `project:${project.id}`,
+    });
+    const search = await searchReferences(app, { filters: ["video"] });
+    await app.close();
+
+    expect(findGroup(root, project.id)).toMatchObject({ referenceCount: 1 });
+    expect(displayNames(files)).toEqual([`${recording.asset.id}.mpeg`]);
+    expect(displayNames(search)).toEqual([`${recording.asset.id}.mpeg`]);
+  });
+
+  it("does not duplicate a project-owned asset into another canvas project", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-owner-"));
+    dataRoots.push(dataRoot);
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const owner = store.createProject({ name: "Reference Owner" });
+    const other = store.createProject({ name: "Reference Other" });
+    const generated = createGeneratedOutput(store, {
+      fileName: "owned.png",
+      jobType: "image_generation",
+      mimeType: "image/png",
+      projectId: owner.id,
+    });
+    store.saveCanvas(other.primaryCanvas.id, {
+      elements: [
+        {
+          id: "copied-element",
+          type: "image",
+          fileId: "copied-file",
+          isDeleted: false,
+          customData: {
+            source: "generated",
+            assetId: generated.asset.id,
+          },
+        } as never,
+      ],
+      appState: {},
+      files: {
+        "copied-file": {
+          id: "copied-file",
+          assetId: generated.asset.id,
+          mimeType: "image/png",
+        },
+      },
+    });
+    const app = buildApp({ env: { dataRoot } });
+
+    const root = await listReferences(app, { filterText: "reference" });
+    const ownerFiles = await listReferences(app, {
+      parentGroupId: `project:${owner.id}`,
+    });
+    const otherFiles = await listReferences(app, {
+      parentGroupId: `project:${other.id}`,
+    });
+    await app.close();
+
+    expect(findGroup(root, owner.id)).toMatchObject({ referenceCount: 1 });
+    expect(findGroup(root, other.id)).toMatchObject({ referenceCount: 0 });
+    expect(displayNames(ownerFiles)).toEqual([`${generated.asset.id}.png`]);
+    expect(otherFiles.items).toEqual([]);
   });
 
   it("does not expose project thumbnail snapshots as app references", async () => {
@@ -498,8 +587,8 @@ describe("POST /tutti/references/search", () => {
     );
   });
 
-  // Two projects, each with one image + one video, plus an excluded non-media
-  // file and an unassigned (project-less) media asset.
+  // Two projects, each with generated media, plus excluded non-media and
+  // project-less generated assets.
   async function seedStore() {
     const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-search-"));
     dataRoots.push(dataRoot);
@@ -567,9 +656,9 @@ describe("POST /tutti/references/search", () => {
     const result = await searchReferences(app, {});
     await app.close();
 
-    // 3 project images (including svg) + 2 project videos + 1 unassigned image;
-    // ordinary json is excluded.
-    expect(result.items).toHaveLength(6);
+    // 3 project images (including svg) + 2 project videos; ordinary json and
+    // project-less generated media are excluded.
+    expect(result.items).toHaveLength(5);
     for (const item of result.items) {
       const reference = item.reference as {
         kind: string;
@@ -578,11 +667,7 @@ describe("POST /tutti/references/search", () => {
       };
       expect(reference.kind).toBe("file");
       expect(reference.location.type).toBe("app-data-relative");
-      // Flattened search labels each result with its owning project or the
-      // special unassigned group.
-      expect(reference.parentGroupLabel).toMatch(
-        /^Campaign [AB]$|^项目外资源$/,
-      );
+      expect(reference.parentGroupLabel).toMatch(/^Campaign [AB]$/);
     }
   });
 
@@ -597,10 +682,16 @@ describe("POST /tutti/references/search", () => {
     await app.close();
 
     expect(
-      byId.items.map((item) => (item.reference as { parentGroupLabel?: string }).parentGroupLabel),
+      byId.items.map(
+        (item) =>
+          (item.reference as { parentGroupLabel?: string }).parentGroupLabel,
+      ),
     ).toEqual(["Campaign A", "Campaign A", "Campaign A"]);
     expect(
-      byDisplayName.items.map((item) => (item.reference as { parentGroupLabel?: string }).parentGroupLabel),
+      byDisplayName.items.map(
+        (item) =>
+          (item.reference as { parentGroupLabel?: string }).parentGroupLabel,
+      ),
     ).toEqual(["Campaign A", "Campaign A", "Campaign A"]);
   });
 
@@ -611,7 +702,7 @@ describe("POST /tutti/references/search", () => {
     const result = await searchReferences(app, { filters: ["image"] });
     await app.close();
 
-    expect(result.items).toHaveLength(4);
+    expect(result.items).toHaveLength(3);
     for (const name of displayNames(result)) {
       expect(name).toMatch(/\.(png|jpg|jpeg|svg)$/);
     }
@@ -636,7 +727,7 @@ describe("POST /tutti/references/search", () => {
     });
     await app.close();
 
-    expect(pngAsImage.items).toHaveLength(2);
+    expect(pngAsImage.items).toHaveLength(1);
     expect(displayNames(pngAsImage)[0]).toMatch(/\.png$/);
     expect(pngAsVideo.items).toEqual([]);
   });
@@ -650,7 +741,7 @@ describe("POST /tutti/references/search", () => {
     });
     await app.close();
 
-    expect(result.items).toHaveLength(6);
+    expect(result.items).toHaveLength(5);
   });
 
   it("ignores unknown category ids", async () => {
@@ -665,8 +756,8 @@ describe("POST /tutti/references/search", () => {
     });
     await app.close();
 
-    expect(unknownOnly.items).toHaveLength(6);
-    expect(mixed.items).toHaveLength(4);
+    expect(unknownOnly.items).toHaveLength(5);
+    expect(mixed.items).toHaveLength(3);
   });
 
   it("returns nothing for a category that matches no exposed assets", async () => {

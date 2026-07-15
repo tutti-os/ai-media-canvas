@@ -306,12 +306,31 @@ function mimeToExt(mimeType: string) {
       return ".svg";
     case "image/gif":
       return ".gif";
+    case "image/bmp":
+      return ".bmp";
+    case "image/avif":
+      return ".avif";
+    case "image/heic":
+      return ".heic";
+    case "image/tiff":
+      return ".tiff";
+    case "image/x-icon":
+    case "image/vnd.microsoft.icon":
+      return ".ico";
     case "video/mp4":
       return ".mp4";
     case "video/quicktime":
       return ".mov";
     case "video/webm":
       return ".webm";
+    case "video/mpeg":
+      return ".mpeg";
+    case "video/x-matroska":
+      return ".mkv";
+    case "video/x-msvideo":
+      return ".avi";
+    case "video/x-m4v":
+      return ".m4v";
     default:
       return ".bin";
   }
@@ -3844,15 +3863,13 @@ export function createLocalStore(options: {
   }
 
   // --- Tutti reference protocol (project-scoped asset browsing) ---------------
-  // Agent-generated media outputs are exposed under their project. Generated
-  // media without a project is exposed under a special group. Non-media files
-  // (e.g. generated video plan JSON) and intermediate UI assets are excluded.
-  const UNASSIGNED_REFERENCE_GROUP_ID = "unassigned";
-  const UNASSIGNED_REFERENCE_GROUP_LABEL = "项目外资源";
+  // Agent-generated media outputs are exposed under their app project.
+  // Project-less media, non-media files (e.g. generated video plan JSON),
+  // internal .bin files, and intermediate UI assets are excluded.
   const REFERENCE_MEDIA_TYPE_PREDICATE =
-    "(a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%')";
+    "((a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%') AND a.object_path NOT LIKE '%.bin')";
   const REFERENCE_MEDIA_TYPE_PREDICATE_FILE =
-    "(mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')";
+    "((mime_type LIKE 'image/%' OR mime_type LIKE 'video/%') AND object_path NOT LIKE '%.bin')";
 
   function referenceString(value: unknown) {
     return typeof value === "string" && value.trim() ? value : null;
@@ -3924,6 +3941,32 @@ export function createLocalStore(options: {
     return Array.from(ids);
   }
 
+  function generatedCanvasAssetProjectNames() {
+    const projectNames = new Map<string, string>();
+    const rows = db
+      .prepare(
+        `
+          SELECT canvases.content, projects.name
+          FROM canvases
+          INNER JOIN projects ON projects.id = canvases.project_id
+          WHERE projects.archived_at IS NULL
+          ORDER BY projects.updated_at DESC, projects.created_at DESC, projects.id DESC
+        `,
+      )
+      .all() as Array<{ content: string; name: string }>;
+    for (const row of rows) {
+      const content = parseJson<CanvasContent>(row.content, {
+        elements: [],
+        appState: {},
+        files: {},
+      });
+      for (const id of collectGeneratedCanvasAssetIds(content)) {
+        if (!projectNames.has(id)) projectNames.set(id, row.name);
+      }
+    }
+    return projectNames;
+  }
+
   function collectGeneratedJobAssetIds(projectId?: string | null) {
     const ids = new Set<string>();
     const rows = db
@@ -3968,16 +4011,16 @@ export function createLocalStore(options: {
     fromMs?: number | undefined;
     toMs?: number | undefined;
   }) {
-    const assetIds = listGeneratedReferenceAssetIds(input.projectId);
+    const assetIds = listGeneratedCanvasAssetIds(input.projectId);
     if (assetIds.length === 0) return 0;
     const { fromIso, toIso } = referenceTimeBounds(input);
     const placeholders = assetIds.map(() => "?").join(", ");
     const conditions = [
       `id IN (${placeholders})`,
       REFERENCE_MEDIA_TYPE_PREDICATE_FILE,
-      "(project_id IS NULL OR project_id != ?)",
+      "project_id IS NULL",
     ];
-    const params: SQLInputValue[] = [...assetIds, input.projectId];
+    const params: SQLInputValue[] = [...assetIds];
     if (fromIso) {
       conditions.push("created_at >= ?");
       params.push(fromIso);
@@ -4037,11 +4080,10 @@ export function createLocalStore(options: {
       : dataRelativePath(row.file_path);
   }
 
-  // Root level: one group per active project plus one special group for
-  // unassigned media assets when any exist. referenceCount only includes
-  // in-range reusable media assets; projects with no reusable outputs remain
-  // navigable empty groups so newly created projects are visible in Tutti.
-  // Keyset paginated on (updated_at desc, group id desc).
+  // Root level: one group per active project, in the exact same order as the
+  // in-app project list. Projects with no reusable outputs remain navigable
+  // empty groups so newly created projects are visible in Tutti.
+  // Keyset paginated on (updated_at desc, created_at desc, group id desc).
   function listReferenceProjectGroups(input: {
     filterText?: string | undefined;
     fromMs?: number | undefined;
@@ -4050,7 +4092,7 @@ export function createLocalStore(options: {
     cursor?: string | null | undefined;
   }): {
     groups: Array<{
-      projectId: string | null;
+      projectId: string;
       name: string;
       referenceCount: number;
     }>;
@@ -4058,14 +4100,9 @@ export function createLocalStore(options: {
   } {
     const { fromIso, toIso } = referenceTimeBounds(input);
     const generatedAssetIds = listGeneratedReferenceAssetIds();
-    const generatedUnassignedAssetIds = listGeneratedReferenceAssetIds(null);
     const generatedPlaceholders =
       generatedAssetIds.length > 0
         ? generatedAssetIds.map(() => "?").join(", ")
-        : null;
-    const generatedUnassignedPlaceholders =
-      generatedUnassignedAssetIds.length > 0
-        ? generatedUnassignedAssetIds.map(() => "?").join(", ")
         : null;
     const joinConditions = [
       "a.project_id = p.id",
@@ -4073,49 +4110,39 @@ export function createLocalStore(options: {
       generatedPlaceholders ? `a.id IN (${generatedPlaceholders})` : "0",
     ];
     const joinParams: SQLInputValue[] = [...generatedAssetIds];
-    const unassignedConditions = [
-      "a.project_id IS NULL",
-      REFERENCE_MEDIA_TYPE_PREDICATE,
-      generatedUnassignedPlaceholders
-        ? `a.id IN (${generatedUnassignedPlaceholders})`
-        : "0",
-    ];
-    const unassignedParams: SQLInputValue[] = [...generatedUnassignedAssetIds];
     const conditions = ["p.archived_at IS NULL"];
     const params: SQLInputValue[] = [];
     if (fromIso) {
       joinConditions.push("a.created_at >= ?");
       joinParams.push(fromIso);
-      unassignedConditions.push("a.created_at >= ?");
-      unassignedParams.push(fromIso);
     }
     if (toIso) {
       joinConditions.push("a.created_at <= ?");
       joinParams.push(toIso);
-      unassignedConditions.push("a.created_at <= ?");
-      unassignedParams.push(toIso);
     }
     if (input.filterText) {
       conditions.push(
         "(p.id LIKE ? COLLATE NOCASE OR p.name LIKE ? COLLATE NOCASE)",
       );
       params.push(`%${input.filterText}%`, `%${input.filterText}%`);
-      unassignedConditions.push("? LIKE ? COLLATE NOCASE");
-      unassignedParams.push(
-        UNASSIGNED_REFERENCE_GROUP_LABEL,
-        `%${input.filterText}%`,
-      );
     }
     const cursorConditions: string[] = [];
     const cursorParams: SQLInputValue[] = [];
     const cursor = decodeReferenceCursor(input.cursor);
-    if (cursor && cursor.length === 2) {
+    if (cursor && cursor.length === 3) {
       const cursorUpdatedAt = cursor[0] ?? "";
-      const cursorId = cursor[1] ?? "";
+      const cursorCreatedAt = cursor[1] ?? "";
+      const cursorId = cursor[2] ?? "";
       cursorConditions.push(
-        "(updated_at < ? OR (updated_at = ? AND group_id < ?))",
+        "(updated_at < ? OR (updated_at = ? AND (created_at < ? OR (created_at = ? AND group_id < ?))))",
       );
-      cursorParams.push(cursorUpdatedAt, cursorUpdatedAt, cursorId);
+      cursorParams.push(
+        cursorUpdatedAt,
+        cursorUpdatedAt,
+        cursorCreatedAt,
+        cursorCreatedAt,
+        cursorId,
+      );
     }
     const limit = Math.max(1, Math.min(50, input.limit));
     const outerWhere =
@@ -4125,49 +4152,31 @@ export function createLocalStore(options: {
     const rows = db
       .prepare(
         `
-          SELECT group_id, project_id, name, updated_at, reference_count
+          SELECT group_id, project_id, name, updated_at, created_at, reference_count
           FROM (
             SELECT
               'project:' || p.id AS group_id,
               p.id AS project_id,
               p.name AS name,
               p.updated_at AS updated_at,
+              p.created_at AS created_at,
               COUNT(a.id) AS reference_count
             FROM projects p
             LEFT JOIN assets a ON ${joinConditions.join(" AND ")}
             WHERE ${conditions.join(" AND ")}
-            GROUP BY p.id, p.name, p.updated_at
-
-            UNION ALL
-
-            SELECT
-              ? AS group_id,
-              NULL AS project_id,
-              ? AS name,
-              COALESCE(MAX(a.created_at), '') AS updated_at,
-              COUNT(a.id) AS reference_count
-            FROM assets a
-            WHERE ${unassignedConditions.join(" AND ")}
-            HAVING COUNT(a.id) > 0
+            GROUP BY p.id, p.name, p.updated_at, p.created_at
           )
           ${outerWhere}
-          ORDER BY updated_at DESC, group_id DESC
+          ORDER BY updated_at DESC, created_at DESC, group_id DESC
           LIMIT ?
         `,
       )
-      .all(
-        ...joinParams,
-        ...params,
-        UNASSIGNED_REFERENCE_GROUP_ID,
-        UNASSIGNED_REFERENCE_GROUP_LABEL,
-        ...unassignedParams,
-        ...cursorParams,
-        limit + 1,
-      ) as Array<{
+      .all(...joinParams, ...params, ...cursorParams, limit + 1) as Array<{
       group_id: string;
-      project_id: string | null;
+      project_id: string;
       name: string;
       updated_at: string;
+      created_at: string;
       reference_count: number;
     }>;
     const hasMore = rows.length > limit;
@@ -4179,17 +4188,19 @@ export function createLocalStore(options: {
         name: row.name,
         referenceCount:
           row.reference_count +
-          (row.project_id
-            ? countAdditionalCanvasGeneratedReferenceAssets({
-                projectId: row.project_id,
-                fromMs: input.fromMs,
-                toMs: input.toMs,
-              })
-            : 0),
+          countAdditionalCanvasGeneratedReferenceAssets({
+            projectId: row.project_id,
+            fromMs: input.fromMs,
+            toMs: input.toMs,
+          }),
       })),
       nextCursor:
         hasMore && last
-          ? encodeReferenceCursor([last.updated_at, last.group_id])
+          ? encodeReferenceCursor([
+              last.updated_at,
+              last.created_at,
+              last.group_id,
+            ])
           : null,
     };
   }
@@ -4216,108 +4227,27 @@ export function createLocalStore(options: {
     nextCursor: string | null;
   } {
     const { fromIso, toIso } = referenceTimeBounds(input);
-    const generatedAssetIds = listGeneratedReferenceAssetIds(input.projectId);
+    const generatedAssetIds = listGeneratedReferenceAssetIds();
     if (generatedAssetIds.length === 0) {
       return { files: [], nextCursor: null };
     }
-    const params: SQLInputValue[] = [...generatedAssetIds];
+    const generatedCanvasAssetIds = listGeneratedCanvasAssetIds(
+      input.projectId,
+    );
+    const ownershipCondition =
+      generatedCanvasAssetIds.length > 0
+        ? `(project_id = ? OR (project_id IS NULL AND id IN (${generatedCanvasAssetIds.map(() => "?").join(", ")})))`
+        : "project_id = ?";
+    const params: SQLInputValue[] = [
+      ...generatedAssetIds,
+      input.projectId,
+      ...generatedCanvasAssetIds,
+    ];
     const conditions = [
       `id IN (${generatedAssetIds.map(() => "?").join(", ")})`,
       REFERENCE_MEDIA_TYPE_PREDICATE_FILE,
+      ownershipCondition,
     ];
-    if (fromIso) {
-      conditions.push("created_at >= ?");
-      params.push(fromIso);
-    }
-    if (toIso) {
-      conditions.push("created_at <= ?");
-      params.push(toIso);
-    }
-    if (input.filterText) {
-      conditions.push(
-        "(object_path LIKE ? COLLATE NOCASE OR display_name LIKE ? COLLATE NOCASE)",
-      );
-      params.push(`%${input.filterText}%`, `%${input.filterText}%`);
-    }
-    const cursor = decodeReferenceCursor(input.cursor);
-    if (cursor && cursor.length === 2) {
-      const cursorTime = cursor[0] ?? "";
-      const cursorId = cursor[1] ?? "";
-      conditions.push("(created_at < ? OR (created_at = ? AND id < ?))");
-      params.push(cursorTime, cursorTime, cursorId);
-    }
-    const limit = Math.max(1, Math.min(50, input.limit));
-    const rows = db
-      .prepare(
-        `
-          SELECT id, object_path, mime_type, byte_size, file_path, source, display_name, created_at
-          FROM assets
-          WHERE ${conditions.join(" AND ")}
-          ORDER BY created_at DESC, id DESC
-          LIMIT ?
-        `,
-      )
-      .all(...params, limit + 1) as Array<{
-      id: string;
-      object_path: string;
-      mime_type: string | null;
-      byte_size: number | null;
-      file_path: string;
-      source: AssetSource | null;
-      display_name: string | null;
-      created_at: string;
-    }>;
-    const hasMore = rows.length > limit;
-    const page = hasMore ? rows.slice(0, limit) : rows;
-    const last = page.at(-1);
-    return {
-      files: page.map((row) => {
-        const mtime = Date.parse(row.created_at);
-        return {
-          id: row.id,
-          displayName:
-            row.display_name ?? row.object_path.split("/").at(-1) ?? row.id,
-          relativePath: assetReferencePath(row),
-          mimeType: row.mime_type,
-          sizeBytes: row.byte_size,
-          mtimeMs: Number.isNaN(mtime) ? null : mtime,
-        };
-      }),
-      nextCursor:
-        hasMore && last
-          ? encodeReferenceCursor([last.created_at, last.id])
-          : null,
-    };
-  }
-
-  function listReferenceUnassignedAssets(input: {
-    filterText?: string | undefined;
-    fromMs?: number | undefined;
-    toMs?: number | undefined;
-    limit: number;
-    cursor?: string | null | undefined;
-  }): {
-    files: Array<{
-      id: string;
-      displayName: string;
-      relativePath: string;
-      mimeType: string | null;
-      sizeBytes: number | null;
-      mtimeMs: number | null;
-    }>;
-    nextCursor: string | null;
-  } {
-    const { fromIso, toIso } = referenceTimeBounds(input);
-    const generatedAssetIds = listGeneratedReferenceAssetIds(null);
-    if (generatedAssetIds.length === 0) {
-      return { files: [], nextCursor: null };
-    }
-    const conditions = [
-      "project_id IS NULL",
-      `id IN (${generatedAssetIds.map(() => "?").join(", ")})`,
-      REFERENCE_MEDIA_TYPE_PREDICATE_FILE,
-    ];
-    const params: SQLInputValue[] = [...generatedAssetIds];
     if (fromIso) {
       conditions.push("created_at >= ?");
       params.push(fromIso);
@@ -4413,11 +4343,20 @@ export function createLocalStore(options: {
     if (generatedAssetIds.length === 0) {
       return { files: [], nextCursor: null };
     }
+    const canvasProjectNames = generatedCanvasAssetProjectNames();
+    const generatedCanvasAssetIds = Array.from(canvasProjectNames.keys());
     const conditions = [
       `a.id IN (${generatedAssetIds.map(() => "?").join(", ")})`,
       REFERENCE_MEDIA_TYPE_PREDICATE,
+      generatedCanvasAssetIds.length > 0
+        ? `(a.project_id IS NOT NULL OR a.id IN (${generatedCanvasAssetIds.map(() => "?").join(", ")}))`
+        : "a.project_id IS NOT NULL",
+      "(a.project_id IS NULL OR (p.id IS NOT NULL AND p.archived_at IS NULL))",
     ];
-    const params: SQLInputValue[] = [...generatedAssetIds];
+    const params: SQLInputValue[] = [
+      ...generatedAssetIds,
+      ...generatedCanvasAssetIds,
+    ];
     if (input.query) {
       conditions.push(
         "(a.object_path LIKE ? COLLATE NOCASE OR a.display_name LIKE ? COLLATE NOCASE OR p.id LIKE ? COLLATE NOCASE OR p.name LIKE ? COLLATE NOCASE)",
@@ -4507,7 +4446,8 @@ export function createLocalStore(options: {
           mimeType: row.mime_type,
           sizeBytes: row.byte_size,
           mtimeMs: Number.isNaN(mtime) ? null : mtime,
-          projectName: row.project_name,
+          projectName:
+            row.project_name ?? canvasProjectNames.get(row.id) ?? null,
         };
       }),
       nextCursor:
@@ -4603,7 +4543,6 @@ export function createLocalStore(options: {
     },
     listReferenceProjectGroups,
     listReferenceProjectAssets,
-    listReferenceUnassignedAssets,
     searchReferenceAssets,
     resetAllData,
   };
