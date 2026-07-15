@@ -3941,19 +3941,19 @@ export function createLocalStore(options: {
     return Array.from(ids);
   }
 
-  function generatedCanvasAssetProjectNames() {
-    const projectNames = new Map<string, string>();
+  function generatedCanvasAssetOwners() {
+    const owners = new Map<string, { projectId: string; projectName: string }>();
     const rows = db
       .prepare(
         `
-          SELECT canvases.content, projects.name
+          SELECT canvases.content, projects.id AS project_id, projects.name
           FROM canvases
           INNER JOIN projects ON projects.id = canvases.project_id
           WHERE projects.archived_at IS NULL
           ORDER BY projects.updated_at DESC, projects.created_at DESC, projects.id DESC
         `,
       )
-      .all() as Array<{ content: string; name: string }>;
+      .all() as Array<{ content: string; project_id: string; name: string }>;
     for (const row of rows) {
       const content = parseJson<CanvasContent>(row.content, {
         elements: [],
@@ -3961,35 +3961,31 @@ export function createLocalStore(options: {
         files: {},
       });
       for (const id of collectGeneratedCanvasAssetIds(content)) {
-        if (!projectNames.has(id)) projectNames.set(id, row.name);
+        if (!owners.has(id)) {
+          owners.set(id, {
+            projectId: row.project_id,
+            projectName: row.name,
+          });
+        }
       }
     }
-    return projectNames;
+    return owners;
   }
 
-  function collectGeneratedJobAssetIds(projectId?: string | null) {
+  function collectGeneratedJobAssetIds() {
     const ids = new Set<string>();
     const rows = db
       .prepare(
         `
-          SELECT background_jobs.result, background_jobs.project_id,
-                 canvases.project_id AS canvas_project_id
+          SELECT background_jobs.result
           FROM background_jobs
-          LEFT JOIN canvases ON canvases.id = background_jobs.canvas_id
           WHERE background_jobs.status = 'succeeded'
             AND background_jobs.job_type IN ('image_generation', 'video_generation')
             AND background_jobs.result IS NOT NULL
         `,
       )
-      .all() as Array<{
-      result: string | null;
-      project_id: string | null;
-      canvas_project_id: string | null;
-    }>;
+      .all() as Array<{ result: string | null }>;
     for (const row of rows) {
-      const ownerProjectId = row.project_id ?? row.canvas_project_id ?? null;
-      if (projectId !== undefined && ownerProjectId !== projectId) continue;
-
       const result = parseJson<Record<string, unknown>>(row.result, {});
       const assetId = referenceString(result.asset_id ?? result.assetId);
       if (assetId) ids.add(assetId);
@@ -3997,12 +3993,11 @@ export function createLocalStore(options: {
     return Array.from(ids);
   }
 
-  function listGeneratedReferenceAssetIds(projectId?: string | null) {
-    const ids = new Set<string>();
-    if (projectId !== null) {
-      for (const id of listGeneratedCanvasAssetIds(projectId)) ids.add(id);
-    }
-    for (const id of collectGeneratedJobAssetIds(projectId)) ids.add(id);
+  function listGeneratedReferenceAssetIds(
+    canvasAssetIds: Iterable<string> = listGeneratedCanvasAssetIds(),
+  ) {
+    const ids = new Set(canvasAssetIds);
+    for (const id of collectGeneratedJobAssetIds()) ids.add(id);
     return Array.from(ids);
   }
 
@@ -4339,12 +4334,14 @@ export function createLocalStore(options: {
     nextCursor: string | null;
   } {
     const { fromIso, toIso } = referenceTimeBounds(input);
-    const generatedAssetIds = listGeneratedReferenceAssetIds();
+    const canvasAssetOwners = generatedCanvasAssetOwners();
+    const generatedCanvasAssetIds = Array.from(canvasAssetOwners.keys());
+    const generatedAssetIds = listGeneratedReferenceAssetIds(
+      generatedCanvasAssetIds,
+    );
     if (generatedAssetIds.length === 0) {
       return { files: [], nextCursor: null };
     }
-    const canvasProjectNames = generatedCanvasAssetProjectNames();
-    const generatedCanvasAssetIds = Array.from(canvasProjectNames.keys());
     const conditions = [
       `a.id IN (${generatedAssetIds.map(() => "?").join(", ")})`,
       REFERENCE_MEDIA_TYPE_PREDICATE,
@@ -4358,14 +4355,27 @@ export function createLocalStore(options: {
       ...generatedCanvasAssetIds,
     ];
     if (input.query) {
+      const normalizedQuery = input.query.toLocaleLowerCase();
+      const matchingFallbackAssetIds = Array.from(canvasAssetOwners.entries())
+        .filter(
+          ([, owner]) =>
+            owner.projectId.toLocaleLowerCase().includes(normalizedQuery) ||
+            owner.projectName.toLocaleLowerCase().includes(normalizedQuery),
+        )
+        .map(([assetId]) => assetId);
+      const fallbackOwnershipMatch =
+        matchingFallbackAssetIds.length > 0
+          ? ` OR a.id IN (${matchingFallbackAssetIds.map(() => "?").join(", ")})`
+          : "";
       conditions.push(
-        "(a.object_path LIKE ? COLLATE NOCASE OR a.display_name LIKE ? COLLATE NOCASE OR p.id LIKE ? COLLATE NOCASE OR p.name LIKE ? COLLATE NOCASE)",
+        `(a.object_path LIKE ? COLLATE NOCASE OR a.display_name LIKE ? COLLATE NOCASE OR p.id LIKE ? COLLATE NOCASE OR p.name LIKE ? COLLATE NOCASE${fallbackOwnershipMatch})`,
       );
       params.push(
         `%${input.query}%`,
         `%${input.query}%`,
         `%${input.query}%`,
         `%${input.query}%`,
+        ...matchingFallbackAssetIds,
       );
     }
     // Build the OR group of file-type categories. Each known extension maps to a
@@ -4447,7 +4457,9 @@ export function createLocalStore(options: {
           sizeBytes: row.byte_size,
           mtimeMs: Number.isNaN(mtime) ? null : mtime,
           projectName:
-            row.project_name ?? canvasProjectNames.get(row.id) ?? null,
+            row.project_name ??
+            canvasAssetOwners.get(row.id)?.projectName ??
+            null,
         };
       }),
       nextCursor:

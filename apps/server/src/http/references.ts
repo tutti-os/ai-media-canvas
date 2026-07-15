@@ -244,7 +244,9 @@ export async function registerReferenceRoutes(
         ...(file.sizeBytes != null ? { sizeBytes: file.sizeBytes } : {}),
         ...(file.mtimeMs != null ? { mtimeMs: file.mtimeMs } : {}),
         ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-        ...(file.projectName ? { parentGroupLabel: file.projectName } : {}),
+        ...(file.projectName != null
+          ? { parentGroupLabel: file.projectName }
+          : {}),
       },
     }));
     return reply.code(200).send({ items, nextCursor });

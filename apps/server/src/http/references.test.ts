@@ -695,6 +695,91 @@ describe("POST /tutti/references/search", () => {
     ).toEqual(["Campaign A", "Campaign A", "Campaign A"]);
   });
 
+  it("matches legacy canvas assets against their fallback project owner", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-search-owner-"));
+    dataRoots.push(dataRoot);
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = store.createProject({ name: "Legacy Canvas Owner" });
+    const generated = store.uploadFile({
+      bucket: "project-assets",
+      fileName: "legacy-output.png",
+      fileBuffer: Buffer.from("generated"),
+      mimeType: "image/png",
+    });
+    store.saveCanvas(project.primaryCanvas.id, {
+      elements: [
+        {
+          id: "legacy-element",
+          type: "image",
+          fileId: "legacy-file",
+          isDeleted: false,
+          customData: {
+            source: "generated",
+            assetId: generated.asset.id,
+          },
+        } as never,
+      ],
+      appState: {},
+      files: {
+        "legacy-file": {
+          id: "legacy-file",
+          assetId: generated.asset.id,
+          mimeType: "image/png",
+        },
+      },
+    });
+    const app = buildApp({ env: { dataRoot } });
+
+    const byId = await searchReferences(app, {
+      query: project.id.slice(0, 8),
+    });
+    const byName = await searchReferences(app, { query: "legacy canvas" });
+    await app.close();
+
+    expect(displayNames(byId)).toEqual([`${generated.asset.id}.png`]);
+    expect(displayNames(byName)).toEqual([`${generated.asset.id}.png`]);
+    for (const result of [byId, byName]) {
+      expect(
+        (result.items[0]?.reference as { parentGroupLabel?: string })
+          .parentGroupLabel,
+      ).toBe("Legacy Canvas Owner");
+    }
+  });
+
+  it("preserves an empty resolved project label in search results", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "aimc-refs-empty-label-"));
+    dataRoots.push(dataRoot);
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const project = store.createProject({ name: "Temporary Name" });
+    createGeneratedOutput(store, {
+      projectId: project.id,
+      fileName: "owned.png",
+      jobType: "image_generation",
+      mimeType: "image/png",
+    });
+    expect(store.updateProject(project.id, { name: "   " })).toEqual({
+      ok: true,
+    });
+    const app = buildApp({ env: { dataRoot } });
+
+    const result = await searchReferences(app, {
+      query: project.id.slice(0, 8),
+    });
+    await app.close();
+
+    expect(result.items).toHaveLength(1);
+    expect(
+      (result.items[0]?.reference as { parentGroupLabel?: string })
+        .parentGroupLabel,
+    ).toBe("");
+  });
+
   it("filters to images only via the image category id (filter-only)", async () => {
     const { dataRoot } = await seedStore();
     const app = buildApp({ env: { dataRoot } });
