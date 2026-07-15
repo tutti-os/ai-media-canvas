@@ -128,7 +128,7 @@ describe("resolveAgentTargetFromCatalog", () => {
 });
 
 describe("loadAgentTargetCatalog", () => {
-  it("forwards managed detection context to the catalog runtime boundary", async () => {
+  it("projects an injected standalone detection snapshot", async () => {
     const detections = [
       {
         provider: "external-agent",
@@ -155,23 +155,15 @@ describe("loadAgentTargetCatalog", () => {
 
     const result = await loadAgentTargetCatalog({
       detections,
-      detectContext: {
-        cwd: "/tmp/aimc-managed",
-        managedAgentInvocation: {
-          credential: "managed-secret",
-          cwd: "/tmp/aimc-managed",
-        },
-        redactionSecrets: ["managed-secret"],
-      },
       runtime,
     });
 
     expect(result.targets).toEqual([
       expect.objectContaining({
         agentTargetId: "local:external-agent",
-        available: false,
+        available: true,
         providerId: "external-agent",
-        runtimeSupported: false,
+        runtimeSupported: true,
       }),
     ]);
   });

@@ -9,14 +9,14 @@ import {
 } from "@aimc/shared";
 
 import type { AgentRunService } from "../agent/runtime.js";
+import type { RequestAuthenticator } from "../auth/request.js";
+import type { ServerEnv } from "../config/env.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
-  ThreadServiceError,
   type ThreadService,
+  ThreadServiceError,
 } from "../features/chat/thread-service.js";
-import type { ServerEnv } from "../config/env.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
-import type { RequestAuthenticator } from "../auth/request.js";
 
 export async function registerRunRoutes(
   app: FastifyInstance,
@@ -75,9 +75,13 @@ export async function registerRunRoutes(
 
       const response = runCreateResponseSchema.parse(
         agentRuns.createRun(parsedPayload, {
-          ...(authenticatedUser ? { accessToken: authenticatedUser.accessToken, userId: authenticatedUser.id } : {}),
+          ...(authenticatedUser
+            ? {
+                accessToken: authenticatedUser.accessToken,
+                userId: authenticatedUser.id,
+              }
+            : {}),
           ...(runEnv ? { env: runEnv } : {}),
-          managedAgentHeaders: request.headers,
           ...(model ? { model } : {}),
           ...(sessionThread ? { threadId: sessionThread.threadId } : {}),
         }),

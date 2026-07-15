@@ -5,11 +5,6 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import {
-  type DetectContext,
-  type ManagedAgentInvocationCredentialHeaders,
-  createManagedAgentDetectContextFromHeaders,
-} from "@tutti-os/agent-acp-kit";
-import {
   projectTuttiCliChildProcess,
   redactTuttiCliChildProcessText,
 } from "@tutti-os/agent-acp-kit/tutti";
@@ -59,10 +54,7 @@ type AgentCliOperations = {
     decision: "allow-once" | "always" | "deny";
     runId: string;
   }) => Promise<unknown>;
-  startRun: (
-    payload: RunCreateRequest,
-    managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders,
-  ) => Promise<RunCreateResponse>;
+  startRun: (payload: RunCreateRequest) => Promise<RunCreateResponse>;
 };
 
 type AssetCliOperations = {
@@ -77,7 +69,6 @@ type AssetCliOperations = {
 type CanvasWriterClient = Parameters<typeof insertImageGenerationNode>[0];
 type AppOpenRequester = (input: {
   appId: string;
-  detectContext?: DetectContext;
   params?: Record<string, string>;
   route: string;
   tuttiCliPath?: string;
@@ -244,7 +235,7 @@ export async function registerTuttiCliRoutes(
     };
   });
 
-  route("/tutti/cli/open", async (body, request) => {
+  route("/tutti/cli/open", async (body) => {
     const payload = openCliBodySchema.parse(body ?? {});
     const target = payload["project-id"]
       ? await resolveProjectOpenTarget(
@@ -254,20 +245,7 @@ export async function registerTuttiCliRoutes(
       : {
           route: "/home",
         };
-    const detectContext = createManagedAgentDetectContextFromHeaders(
-      request.headers,
-      {
-        ...(options.env.appDataDir
-          ? { appDataDir: options.env.appDataDir }
-          : {}),
-      },
-    );
-    await requestTuttiAppOpen(
-      options.env,
-      target,
-      detectContext,
-      options.appOpenRequester,
-    );
+    await requestTuttiAppOpen(options.env, target, options.appOpenRequester);
     return {
       openRequested: true,
       ...target,
@@ -434,10 +412,7 @@ export async function registerTuttiCliRoutes(
           : {}),
       });
       try {
-        return await options.agentOperations.startRun(
-          runInput,
-          request.headers,
-        );
+        return await options.agentOperations.startRun(runInput);
       } catch (error) {
         if (isPublicAgentRunCliError(error)) throw error;
         throw {
@@ -718,7 +693,6 @@ async function requestTuttiAppOpen(
     params?: Record<string, string>;
     route: string;
   },
-  detectContext?: DetectContext,
   appOpenRequester: AppOpenRequester = invokeTuttiAppOpen,
 ) {
   const { route } = target;
@@ -738,7 +712,6 @@ async function requestTuttiAppOpen(
   }
   await appOpenRequester({
     appId: env.tuttiAppId,
-    ...(detectContext ? { detectContext } : {}),
     route,
     ...(target.params ? { params: target.params } : {}),
     ...(env.tuttiCliPath ? { tuttiCliPath: env.tuttiCliPath } : {}),
@@ -747,7 +720,6 @@ async function requestTuttiAppOpen(
 
 async function invokeTuttiAppOpen(input: {
   appId: string;
-  detectContext?: DetectContext;
   params?: Record<string, string>;
   route: string;
   tuttiCliPath?: string;
@@ -763,7 +735,6 @@ async function invokeTuttiAppOpen(input: {
 
   const child = projectTuttiCliChildProcess({
     baseEnv: process.env,
-    ...(input.detectContext ? { detectContext: input.detectContext } : {}),
   });
   try {
     const args = [

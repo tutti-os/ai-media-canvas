@@ -5,10 +5,6 @@ import { extname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
-import {
-  type ManagedAgentInvocationCredentialHeaders,
-  createManagedAgentDetectContextFromHeaders,
-} from "@tutti-os/agent-acp-kit";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import {
@@ -1209,10 +1205,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     })();
   };
 
-  const startLocalAgentRun = async (
-    payload: RunCreateRequest,
-    managedAgentHeaders?: ManagedAgentInvocationCredentialHeaders,
-  ) => {
+  const startLocalAgentRun = async (payload: RunCreateRequest) => {
     if (store.listMessages(payload.sessionId) === null) {
       throw new LocalAgentRunError(
         "session_not_found",
@@ -1239,13 +1232,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         ? { runtimeProvider: payload.runtimeProvider }
         : {}),
     });
-    const managedDetectContext = managedAgentHeaders
-      ? createManagedAgentDetectContextFromHeaders(managedAgentHeaders, {
-          ...(baseRuntimeEnv.appDataDir
-            ? { appDataDir: baseRuntimeEnv.appDataDir }
-            : {}),
-        })
-      : undefined;
     const modelProvider = getLocalAgentModelProvider(
       payload.model ?? baseRuntimeEnv.agentModel,
     );
@@ -1263,9 +1249,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
             : !payload.agentTargetId && modelProvider
               ? { providerId: modelProvider }
               : {}),
-          ...(managedDetectContext
-            ? { detectContext: managedDetectContext }
-            : {}),
         });
       } catch (error) {
         if (!(error instanceof AgentTargetResolutionError)) throw error;
@@ -1352,7 +1335,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         accessToken: LOCAL_AGENT_ACCESS_TOKEN,
         assistantMessageId: assistantMessage.id,
         env: runtimeEnv,
-        ...(managedAgentHeaders ? { managedAgentHeaders } : {}),
         ...(runtimeModel ? { model: runtimeModel } : {}),
         ...(requestsLocalAgent
           ? { runtimeKind: "local-agent" as const }
@@ -1590,9 +1572,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.post("/api/agent/runs", async (request, reply) => {
     try {
       const parsedPayload = runCreateRequestSchema.parse(request.body);
-      return reply
-        .code(202)
-        .send(await startLocalAgentRun(parsedPayload, request.headers));
+      return reply.code(202).send(await startLocalAgentRun(parsedPayload));
     } catch (error) {
       if (error instanceof LocalAgentRunError) {
         return sendApplicationError(

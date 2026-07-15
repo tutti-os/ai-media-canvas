@@ -2,7 +2,6 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { createAgentBackendMock } = vi.hoisted(() => ({
@@ -2933,7 +2932,7 @@ describe("createAgentRunService", () => {
     });
   });
 
-  it("does not expose managed agent invocation credentials outside local-agent runs", async () => {
+  it("keeps local-agent runtime state out of server-deepagent runs", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
     let capturedAgentOptions: unknown;
     let capturedStreamConfig: unknown;
@@ -2971,49 +2970,29 @@ describe("createAgentRunService", () => {
       loadSessionMessages: async () => [],
     });
 
-    const run = runs.createRun(
-      {
-        canvasId: "canvas-1",
-        conversationId: "canvas-1",
-        prompt: "hi",
-        sessionId: "session-1",
-      },
-      {
-        managedAgentHeaders: {
-          [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
-        },
-      },
-    );
+    const run = runs.createRun({
+      canvasId: "canvas-1",
+      conversationId: "canvas-1",
+      prompt: "hi",
+      sessionId: "session-1",
+    });
 
     for await (const _event of runs.streamRun(run.runId)) {
       // Exhaust the stream so the server runtime reaches the agent factory.
     }
 
-    expect(createRun).toHaveBeenCalledWith(
-      expect.not.objectContaining({
-        managedAgentInvocationCredential: "credential-run-1",
-      }),
-    );
-    expect(JSON.stringify(createRun.mock.calls)).not.toContain(
-      "credential-run-1",
-    );
-    expect(JSON.stringify(updateRun.mock.calls)).not.toContain(
-      "credential-run-1",
-    );
-    expect(JSON.stringify(capturedAgentOptions)).not.toContain(
-      "credential-run-1",
-    );
-    expect(JSON.stringify(capturedStreamConfig)).not.toContain(
-      "credential-run-1",
-    );
+    expect(createRun).toHaveBeenCalled();
+    expect(updateRun).toHaveBeenCalled();
+    expect(capturedAgentOptions).toBeDefined();
+    expect(capturedStreamConfig).toBeDefined();
   });
 
-  it("gates managed runs through runtime.detect without probing provider plugins", async () => {
+  it("gates VM-local runs through runtime.detect without probing provider plugins", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
     vi.stubEnv("AIMC_TOOLS_MCP_PATH", "/tmp/aimc-tools-mcp");
     localAgentRuntimeRunMock.mockClear();
     const pluginDetect = vi.fn(async () => {
-      throw new Error("managed gating must not probe the app runtime");
+      throw new Error("runtime gating must not probe provider plugins");
     });
     const runtimeDetect = vi.fn(async () => [
       {
@@ -3076,9 +3055,6 @@ describe("createAgentRunService", () => {
         sessionId: "session-1",
       },
       {
-        managedAgentHeaders: {
-          [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
-        },
         model: "codex:default",
         agentTargetId: "local:codex",
         runtimeKind: "local-agent",
@@ -3091,18 +3067,16 @@ describe("createAgentRunService", () => {
 
     expect(runtimeDetect).toHaveBeenCalledWith(
       expect.objectContaining({
-        managedAgentInvocation: expect.objectContaining({
-          credential: "credential-run-1",
-        }),
+        cwd: expect.any(String),
+        refresh: true,
       }),
     );
     expect(pluginDetect).not.toHaveBeenCalled();
     expect(localAgentRuntimeRunMock).toHaveBeenCalled();
   });
 
-  it("clears transient invocation when the initial run-store update fails", async () => {
+  it("propagates an initial run-store update failure", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
-    const onTransientInvocationCleared = vi.fn();
     const updateRun = vi.fn(() => {
       throw new Error("run store unavailable");
     });
@@ -3123,7 +3097,6 @@ describe("createAgentRunService", () => {
         run: localAgentRuntimeRunMock,
       },
       loadSessionMessages: async () => [],
-      onTransientInvocationCleared,
       toolGateway: {
         createSession: vi.fn(() => ({ token: "tool-token" })),
         revokeSession: vi.fn(),
@@ -3139,9 +3112,6 @@ describe("createAgentRunService", () => {
         sessionId: "session-1",
       },
       {
-        managedAgentHeaders: {
-          [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
-        },
         agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
@@ -3155,11 +3125,6 @@ describe("createAgentRunService", () => {
     };
 
     await expect(consume()).rejects.toThrow("run store unavailable");
-    expect(onTransientInvocationCleared).toHaveBeenCalledWith({
-      hasDetectContext: false,
-      hasManagedAgentRunContextLoader: false,
-      runId: run.runId,
-    });
   });
 
   it("does not start local provider work after an accepted run is canceled", async () => {
@@ -3197,9 +3162,6 @@ describe("createAgentRunService", () => {
         sessionId: "session-1",
       },
       {
-        managedAgentHeaders: {
-          [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-run-1",
-        },
         agentTargetId: "local:codex",
         runtimeKind: "local-agent",
         runtimeProvider: "codex",
