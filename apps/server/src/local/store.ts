@@ -3941,19 +3941,25 @@ export function createLocalStore(options: {
     return Array.from(ids);
   }
 
-  function generatedCanvasAssetOwners() {
+  function generatedCanvasAssetIndex() {
+    const assetIds = new Set<string>();
     const owners = new Map<string, { projectId: string; projectName: string }>();
     const rows = db
       .prepare(
         `
-          SELECT canvases.content, projects.id AS project_id, projects.name
+          SELECT canvases.content, projects.id AS project_id, projects.name,
+                 projects.archived_at
           FROM canvases
           INNER JOIN projects ON projects.id = canvases.project_id
-          WHERE projects.archived_at IS NULL
           ORDER BY projects.updated_at DESC, projects.created_at DESC, projects.id DESC
         `,
       )
-      .all() as Array<{ content: string; project_id: string; name: string }>;
+      .all() as Array<{
+      content: string;
+      project_id: string;
+      name: string;
+      archived_at: string | null;
+    }>;
     for (const row of rows) {
       const content = parseJson<CanvasContent>(row.content, {
         elements: [],
@@ -3961,7 +3967,8 @@ export function createLocalStore(options: {
         files: {},
       });
       for (const id of collectGeneratedCanvasAssetIds(content)) {
-        if (!owners.has(id)) {
+        assetIds.add(id);
+        if (row.archived_at == null && !owners.has(id)) {
           owners.set(id, {
             projectId: row.project_id,
             projectName: row.name,
@@ -3969,7 +3976,7 @@ export function createLocalStore(options: {
         }
       }
     }
-    return owners;
+    return { assetIds: Array.from(assetIds), owners };
   }
 
   function collectGeneratedJobAssetIds() {
@@ -4334,10 +4341,11 @@ export function createLocalStore(options: {
     nextCursor: string | null;
   } {
     const { fromIso, toIso } = referenceTimeBounds(input);
-    const canvasAssetOwners = generatedCanvasAssetOwners();
+    const canvasAssetIndex = generatedCanvasAssetIndex();
+    const canvasAssetOwners = canvasAssetIndex.owners;
     const generatedCanvasAssetIds = Array.from(canvasAssetOwners.keys());
     const generatedAssetIds = listGeneratedReferenceAssetIds(
-      generatedCanvasAssetIds,
+      canvasAssetIndex.assetIds,
     );
     if (generatedAssetIds.length === 0) {
       return { files: [], nextCursor: null };
@@ -4365,7 +4373,7 @@ export function createLocalStore(options: {
         .map(([assetId]) => assetId);
       const fallbackOwnershipMatch =
         matchingFallbackAssetIds.length > 0
-          ? ` OR a.id IN (${matchingFallbackAssetIds.map(() => "?").join(", ")})`
+          ? ` OR (a.project_id IS NULL AND a.id IN (${matchingFallbackAssetIds.map(() => "?").join(", ")}))`
           : "";
       conditions.push(
         `(a.object_path LIKE ? COLLATE NOCASE OR a.display_name LIKE ? COLLATE NOCASE OR p.id LIKE ? COLLATE NOCASE OR p.name LIKE ? COLLATE NOCASE${fallbackOwnershipMatch})`,

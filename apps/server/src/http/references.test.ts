@@ -489,12 +489,16 @@ describe("POST /tutti/references/list", () => {
     const otherFiles = await listReferences(app, {
       parentGroupId: `project:${other.id}`,
     });
+    const otherSearch = await searchReferences(app, {
+      query: "Reference Other",
+    });
     await app.close();
 
     expect(findGroup(root, owner.id)).toMatchObject({ referenceCount: 1 });
     expect(findGroup(root, other.id)).toMatchObject({ referenceCount: 0 });
     expect(displayNames(ownerFiles)).toEqual([`${generated.asset.id}.png`]);
     expect(otherFiles.items).toEqual([]);
+    expect(otherSearch.items).toEqual([]);
   });
 
   it("does not expose project thumbnail snapshots as app references", async () => {
@@ -778,6 +782,59 @@ describe("POST /tutti/references/search", () => {
       (result.items[0]?.reference as { parentGroupLabel?: string })
         .parentGroupLabel,
     ).toBe("");
+  });
+
+  it("keeps active owned assets discovered from archived canvases searchable", async () => {
+    const dataRoot = await mkdtemp(
+      join(tmpdir(), "aimc-refs-archived-marker-"),
+    );
+    dataRoots.push(dataRoot);
+    const store = createLocalStore({
+      assetBaseUrl: "http://127.0.0.1:3001",
+      dataRoot,
+    });
+    const owner = store.createProject({ name: "Active Asset Owner" });
+    const archived = store.createProject({ name: "Archived Marker" });
+    const generated = store.uploadFile({
+      bucket: "project-assets",
+      fileName: "archived-marker.png",
+      fileBuffer: Buffer.from("generated"),
+      mimeType: "image/png",
+      projectId: owner.id,
+    });
+    store.saveCanvas(archived.primaryCanvas.id, {
+      elements: [
+        {
+          id: "archived-element",
+          type: "image",
+          fileId: "archived-file",
+          isDeleted: false,
+          customData: {
+            source: "generated",
+            assetId: generated.asset.id,
+          },
+        } as never,
+      ],
+      appState: {},
+      files: {
+        "archived-file": {
+          id: "archived-file",
+          assetId: generated.asset.id,
+          mimeType: "image/png",
+        },
+      },
+    });
+    expect(store.archiveProject(archived.id)).toBe(true);
+    const app = buildApp({ env: { dataRoot } });
+
+    const result = await searchReferences(app, { query: "active asset" });
+    await app.close();
+
+    expect(displayNames(result)).toEqual([`${generated.asset.id}.png`]);
+    expect(
+      (result.items[0]?.reference as { parentGroupLabel?: string })
+        .parentGroupLabel,
+    ).toBe("Active Asset Owner");
   });
 
   it("filters to images only via the image category id (filter-only)", async () => {
