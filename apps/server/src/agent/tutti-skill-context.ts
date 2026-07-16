@@ -1,12 +1,8 @@
-import {
-  type DetectContext,
-  createDefaultLocalAgentRuntime,
-} from "@tutti-os/agent-acp-kit";
+import { createDefaultLocalAgentRuntime } from "@tutti-os/agent-acp-kit";
 import {
   type TuttiAgentSkillContext,
   loadTuttiAgentCatalog,
   loadTuttiAgentSkillContext,
-  redactTuttiCliChildProcessText,
 } from "@tutti-os/agent-acp-kit/tutti";
 
 const localAgentRuntime = createDefaultLocalAgentRuntime();
@@ -25,7 +21,6 @@ export function shouldUseTuttiSkillContext(prompt: string) {
 export async function loadTuttiAgentSkillContextForRun(input: {
   agentTargetId: string;
   cwd: string;
-  detectContext?: DetectContext;
   runId: string;
   signal?: AbortSignal;
 }): Promise<TuttiAgentSkillContext> {
@@ -35,14 +30,13 @@ export async function loadTuttiAgentSkillContextForRun(input: {
       agentTargetId: input.agentTargetId,
       agentSessionId: input.runId,
       cwd: process.env.TUTTI_WORKSPACE_ROOT?.trim() || input.cwd,
-      ...(input.detectContext ? { detectContext: input.detectContext } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
     });
   } catch (error) {
     if (input.signal?.aborted) {
       throw error;
     }
-    warnTuttiSkillContextFailure(error, input.detectContext);
+    warnTuttiSkillContextFailure(error);
     return emptyTuttiSkillContext();
   }
 }
@@ -54,7 +48,6 @@ export async function loadTuttiAgentSkillContextForRun(input: {
  */
 export async function loadDefaultTuttiAgentSkillContextForRun(input: {
   cwd: string;
-  detectContext?: DetectContext;
   runId: string;
   signal?: AbortSignal;
 }): Promise<{
@@ -65,7 +58,6 @@ export async function loadDefaultTuttiAgentSkillContextForRun(input: {
   try {
     const catalog = await loadTuttiAgentCatalog({
       runtime: localAgentRuntime,
-      ...(input.detectContext ? { detectContext: input.detectContext } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
     });
     const availableAgents = catalog.agents.filter(
@@ -88,7 +80,7 @@ export async function loadDefaultTuttiAgentSkillContextForRun(input: {
     };
   } catch (error) {
     if (input.signal?.aborted) throw error;
-    warnTuttiSkillContextFailure(error, input.detectContext);
+    warnTuttiSkillContextFailure(error);
     return { agentTargetId: null, context: emptyTuttiSkillContext() };
   }
 }
@@ -97,15 +89,9 @@ function emptyTuttiSkillContext(): TuttiAgentSkillContext {
   return { source: "standalone", skillManifest: [], skills: [] };
 }
 
-function warnTuttiSkillContextFailure(
-  error: unknown,
-  detectContext?: DetectContext,
-) {
+function warnTuttiSkillContextFailure(error: unknown) {
   console.warn(
-    `[aimc] Unable to load Tutti agent skill bundle: ${redactTuttiCliChildProcessText(
-      errorMessage(error),
-      detectContext?.redactionSecrets ?? [],
-    )}`,
+    `[aimc] Unable to load Tutti agent skill bundle: ${errorMessage(error)}`,
   );
 }
 

@@ -6,7 +6,6 @@ import type { AgentRuntimeProvider, StreamEvent } from "@aimc/shared";
 import type {
   AgentEvent,
   LocalAgentProviderPlugin,
-  ManagedAgentRunContext,
 } from "@tutti-os/agent-acp-kit";
 import { loadTuttiAgentComposerOptions } from "@tutti-os/agent-acp-kit/tutti";
 
@@ -48,16 +47,11 @@ function safeRunDirSegment(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-type LocalAgentRunDirectoryResult = {
-  runDir: string;
-  useManagedAgentInvocation: boolean;
-};
-
 export async function createLocalAgentRunDirectory(input: {
   appDataDir?: string;
   runId: string;
   runtimeProvider: AgentRuntimeProvider;
-}): Promise<LocalAgentRunDirectoryResult> {
+}): Promise<string> {
   const appDataRunsDir = input.appDataDir
     ? join(input.appDataDir, LOCAL_AGENT_RUNS_DIR_NAME)
     : undefined;
@@ -66,12 +60,9 @@ export async function createLocalAgentRunDirectory(input: {
     return createAppDataLocalAgentRunDirectory(input, appDataRunsDir);
   }
 
-  return {
-    runDir: await mkdtemp(
-      join(tmpdir(), `aimc-local-agent-${input.runtimeProvider}-run-`),
-    ),
-    useManagedAgentInvocation: false,
-  };
+  return mkdtemp(
+    join(tmpdir(), `aimc-local-agent-${input.runtimeProvider}-run-`),
+  );
 }
 
 async function createAppDataLocalAgentRunDirectory(
@@ -80,7 +71,7 @@ async function createAppDataLocalAgentRunDirectory(
     runtimeProvider: AgentRuntimeProvider;
   },
   appDataRunsDir: string,
-): Promise<LocalAgentRunDirectoryResult> {
+): Promise<string> {
   const runDir = join(
     appDataRunsDir,
     `${safeRunDirSegment(input.runtimeProvider)}-${safeRunDirSegment(
@@ -88,24 +79,7 @@ async function createAppDataLocalAgentRunDirectory(
     )}`,
   );
   await mkdir(runDir, { recursive: true });
-  return {
-    runDir,
-    useManagedAgentInvocation: false,
-  };
-}
-
-function normalizeRunDirectoryResult(
-  result: string | LocalAgentRunDirectoryResult,
-  managed: boolean,
-): LocalAgentRunDirectoryResult {
-  if (typeof result !== "string") {
-    return result;
-  }
-
-  return {
-    runDir: result,
-    useManagedAgentInvocation: managed,
-  };
+  return runDir;
 }
 
 function mapResumeContext(
@@ -284,37 +258,21 @@ export function createLocalAgentRuntimeProvider(
         handoffSection,
         normalizedPrompt,
       ].join("\n\n");
-      let managedRunContext: ManagedAgentRunContext | undefined;
       let runDir: string | undefined;
       try {
         run.controller.signal.throwIfAborted();
-        const loadManagedAgentRunContext = run.loadManagedAgentRunContext;
-        if (loadManagedAgentRunContext) {
-          run.loadManagedAgentRunContext = undefined;
-        }
-        managedRunContext = loadManagedAgentRunContext
-          ? await loadManagedAgentRunContext()
-          : undefined;
-        const managed = Boolean(managedRunContext);
-        const runDirectory = managedRunContext
-          ? undefined
-          : normalizeRunDirectoryResult(
-              deps.createRunDirectory
-                ? await deps.createRunDirectory({
-                    managed,
-                    runId: run.runId,
-                    runtimeProvider,
-                  })
-                : await createLocalAgentRunDirectory({
-                    ...(runtimeEnv.appDataDir
-                      ? { appDataDir: runtimeEnv.appDataDir }
-                      : {}),
-                    runId: run.runId,
-                    runtimeProvider,
-                  }),
-              managed,
-            );
-        runDir = managedRunContext?.cwd ?? runDirectory?.runDir;
+        runDir = deps.createRunDirectory
+          ? await deps.createRunDirectory({
+              runId: run.runId,
+              runtimeProvider,
+            })
+          : await createLocalAgentRunDirectory({
+              ...(runtimeEnv.appDataDir
+                ? { appDataDir: runtimeEnv.appDataDir }
+                : {}),
+              runId: run.runId,
+              runtimeProvider,
+            });
         if (!runDir) {
           throw new Error("Local agent run directory is required.");
         }
@@ -325,7 +283,6 @@ export function createLocalAgentRuntimeProvider(
         }
         throw error;
       }
-      const managedAgentInvocation = managedRunContext?.managedAgentInvocation;
       let gatewaySessionToken: string | undefined;
       try {
         await deps.assertLocalAgentProviderAvailable({
@@ -333,7 +290,6 @@ export function createLocalAgentRuntimeProvider(
           detectContext: {
             cwd: runDir,
             refresh: true,
-            ...(managedAgentInvocation ? { managedAgentInvocation } : {}),
           },
         });
         await materializeWorkspaceSkillsForLocalAgent({
@@ -399,9 +355,6 @@ export function createLocalAgentRuntimeProvider(
             ? loadTuttiAgentSkillContextForRun({
                 agentTargetId: effectiveAgentTargetId,
                 cwd: runDir,
-                ...(run.detectContext
-                  ? { detectContext: run.detectContext }
-                  : {}),
                 runId: run.runId,
                 signal: run.controller.signal,
               })
@@ -416,9 +369,6 @@ export function createLocalAgentRuntimeProvider(
                 runtime: deps.localAgentComposerRuntime,
                 agentTargetId: effectiveAgentTargetId,
                 cwd: runDir,
-                ...(run.detectContext
-                  ? { detectContext: run.detectContext }
-                  : {}),
                 env: {
                   ...process.env,
                   ...(runtimeEnv.tuttiCliPath
@@ -462,7 +412,6 @@ export function createLocalAgentRuntimeProvider(
           createAimcToolsMcpServerConfig({
             gatewayBaseUrl: deps.toolGatewayBaseUrl,
             gatewayToken: gatewaySession.token,
-            requireSandboxEntrypoint: Boolean(managedAgentInvocation),
             startupTimeoutMs: DEFAULT_LOCAL_AGENT_MCP_STARTUP_TIMEOUT_MS,
             toolTimeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
           }),
@@ -483,7 +432,6 @@ export function createLocalAgentRuntimeProvider(
           prompt,
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
-          ...(managedAgentInvocation ? { managedAgentInvocation } : {}),
           model: localAgentModelIdForAcp(composerModel, runtimeProvider),
           ...((composerOptions.reasoningConfig.currentValue ||
             composerOptions.reasoningConfig.defaultValue) && {

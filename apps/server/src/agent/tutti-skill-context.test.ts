@@ -1,4 +1,3 @@
-import type { DetectContext } from "@tutti-os/agent-acp-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { loadTuttiAgentCatalogMock, loadTuttiAgentSkillContextMock } =
@@ -70,27 +69,19 @@ describe("loadTuttiAgentSkillContextForRun", () => {
     });
   });
 
-  it("forwards the same request DetectContext to the kit facade", async () => {
-    const detectContext: DetectContext = {
-      managedAgentInvocation: {
-        credential: "credential-1",
-        cwd: "/app-data",
-      },
-      redactionSecrets: ["credential-1"],
-    };
+  it("forwards cancellation without any request credential context", async () => {
     const controller = new AbortController();
 
     await loadTuttiAgentSkillContextForRun({
       agentTargetId: "team:designer",
       cwd: "/workspace/run",
-      detectContext,
       runId: "run-1",
       signal: controller.signal,
     });
 
     expect(loadTuttiAgentSkillContextMock).toHaveBeenCalledOnce();
     const input = loadTuttiAgentSkillContextMock.mock.calls[0]?.[0];
-    expect(input.detectContext).toBe(detectContext);
+    expect(input).not.toHaveProperty("detectContext");
     expect(input).toMatchObject({
       agentSessionId: "run-1",
       cwd: "/workspace/run",
@@ -99,27 +90,23 @@ describe("loadTuttiAgentSkillContextForRun", () => {
     });
   });
 
-  it("redacts request credentials from fallback warnings", async () => {
-    const secret = "credential-warning-secret";
+  it("reports standalone skill-context failures", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     loadTuttiAgentSkillContextMock.mockRejectedValue(
-      new Error(`skill failed with ${secret}`),
+      new Error("skill context unavailable"),
     );
 
     await expect(
       loadTuttiAgentSkillContextForRun({
         agentTargetId: "team:designer",
         cwd: "/workspace/run",
-        detectContext: {
-          managedAgentInvocation: { credential: secret, cwd: "/app-data" },
-          redactionSecrets: [secret],
-        },
         runId: "run-1",
       }),
     ).resolves.toEqual({ source: "standalone", skillManifest: [], skills: [] });
 
-    expect(JSON.stringify(warn.mock.calls)).not.toContain(secret);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[REDACTED]"));
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("skill context unavailable"),
+    );
   });
 
   it("rethrows cancellation instead of returning an empty skill bundle", async () => {

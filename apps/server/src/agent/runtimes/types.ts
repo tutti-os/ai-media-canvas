@@ -16,7 +16,6 @@ import type {
   DetectContext,
   LocalAgentProviderPlugin,
   LocalAgentRuntime,
-  ManagedAgentRunContext,
 } from "@tutti-os/agent-acp-kit";
 
 import type { UserDataClient } from "../../auth/request.js";
@@ -46,12 +45,8 @@ export type RuntimeRunRecord = {
   controller: AbortController;
   conversationId: string;
   delegationConsent?: RunCreateRequest["delegationConsent"];
-  detectContext?: DetectContext | undefined;
   envOverride?: ServerEnv | undefined;
   imageGenerationPreference?: ImageGenerationPreference | undefined;
-  loadManagedAgentRunContext?:
-    | (() => Promise<ManagedAgentRunContext | undefined>)
-    | undefined;
   locale?: RunCreateRequest["locale"];
   modelOverride?: string | undefined;
   prompt: string;
@@ -130,16 +125,9 @@ export type LocalAgentRuntimeProviderDeps = {
   buildAttachmentDataMap: BuildAttachmentDataMap;
   buildUserMessage: BuildUserMessage;
   createRunDirectory?: (input: {
-    managed: boolean;
     runId: string;
     runtimeProvider: AgentRuntimeProvider;
-  }) => Promise<
-    | string
-    | {
-        runDir: string;
-        useManagedAgentInvocation: boolean;
-      }
-  >;
+  }) => Promise<string>;
   loadCanvasSummaryForRuntime: LoadCanvasSummaryForRuntime;
   loadSessionMessages?: (sessionId: string) => Promise<ChatMessage[]>;
   localAgentRuntime: Pick<

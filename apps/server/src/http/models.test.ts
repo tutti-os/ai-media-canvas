@@ -1,4 +1,3 @@
-import { MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER } from "@tutti-os/agent-acp-kit";
 import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -553,7 +552,7 @@ describe("registerModelRoutes", () => {
     );
   });
 
-  it("passes a managed agent invocation to local-agent model discovery for POST model requests", async () => {
+  it("uses standalone local-agent model discovery for POST model requests", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "");
     vi.stubEnv("CODEX_HOME", "/tmp/user-codex-home");
     vi.stubEnv("CLAUDE_CONFIG_DIR", "/tmp/user-claude-config");
@@ -589,7 +588,7 @@ describe("registerModelRoutes", () => {
       method: "POST",
       url: "/api/models",
       headers: {
-        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-model-1",
+        "x-tsh-managed-agent-credential": "obsolete-credential",
       },
       payload: {},
     });
@@ -601,28 +600,7 @@ describe("registerModelRoutes", () => {
       provider: "tutti-agent",
       source: "local-agent",
     });
-    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({
-      managedAgentInvocation: {
-        credential: "credential-model-1",
-        cwd: "/tmp/aimc-app-data",
-      },
-      cwd: "/tmp/aimc-app-data",
-      env: expect.objectContaining({
-        TUTTI_APP_DATA_DIR: "/tmp/aimc-app-data",
-      }),
-      redactionSecrets: ["credential-model-1"],
-    });
-    const detectContext = localAgentModelDiscovery.detect.mock.calls[0]?.[0];
-    expect(detectContext?.env ?? {}).toMatchObject({
-      TUTTI_APP_DATA_DIR: "/tmp/aimc-app-data",
-    });
-    expect(detectContext?.env ?? {}).not.toEqual(
-      expect.objectContaining({
-        CLAUDE_CONFIG_DIR: expect.any(String),
-        CODEX_HOME: expect.any(String),
-        PATH: expect.any(String),
-      }),
-    );
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({});
   });
 
   it("uses one workspace-scoped discovery snapshot for models and exact targets", async () => {
@@ -716,33 +694,18 @@ describe("registerModelRoutes", () => {
     );
   });
 
-  it("reuses one route runtime while keeping managed credential contexts distinct", async () => {
+  it("does not partition model discovery by obsolete credential headers", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
     const localAgentModelDiscovery = {
-      detect: vi.fn(async (context?: LocalAgentModelDetectContext) => {
-        const credential =
-          context?.managedAgentInvocation?.credential ?? "missing";
-        return [
-          {
-            provider: "tutti-agent" as const,
-            displayName: "Tutti Agent",
-            authState: "ok" as const,
-            models: [
-              {
-                id:
-                  credential === "credential-model-a"
-                    ? "managed-a"
-                    : "managed-b",
-                label:
-                  credential === "credential-model-a"
-                    ? "Managed A"
-                    : "Managed B",
-              },
-            ],
-            supported: true,
-          },
-        ];
-      }),
+      detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
+        {
+          provider: "tutti-agent" as const,
+          displayName: "Tutti Agent",
+          authState: "ok" as const,
+          models: [{ id: "default", label: "Default" }],
+          supported: true,
+        },
+      ]),
     };
     const app = Fastify();
     apps.push(app);
@@ -765,7 +728,7 @@ describe("registerModelRoutes", () => {
       method: "POST",
       url: "/api/models",
       headers: {
-        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-model-a",
+        "x-tsh-managed-agent-credential": "obsolete-a",
       },
       payload: {},
     });
@@ -773,7 +736,7 @@ describe("registerModelRoutes", () => {
       method: "POST",
       url: "/api/models",
       headers: {
-        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-model-b",
+        "x-tsh-managed-agent-credential": "obsolete-b",
       },
       payload: {},
     });
@@ -781,36 +744,16 @@ describe("registerModelRoutes", () => {
     expect(responseA.statusCode, responseA.body).toBe(200);
     expect(responseB.statusCode, responseB.body).toBe(200);
     expect(responseA.json().models).toContainEqual(
-      expect.objectContaining({ id: "tutti-agent:managed-a" }),
-    );
-    expect(responseA.json().models).not.toContainEqual(
-      expect.objectContaining({ id: "tutti-agent:managed-b" }),
+      expect.objectContaining({ id: "tutti-agent:default" }),
     );
     expect(responseB.json().models).toContainEqual(
-      expect.objectContaining({ id: "tutti-agent:managed-b" }),
+      expect.objectContaining({ id: "tutti-agent:default" }),
     );
-    expect(responseB.json().models).not.toContainEqual(
-      expect.objectContaining({ id: "tutti-agent:managed-a" }),
-    );
-    expect(localAgentModelDiscovery.detect).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        managedAgentInvocation: expect.objectContaining({
-          credential: "credential-model-a",
-        }),
-      }),
-    );
-    expect(localAgentModelDiscovery.detect).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        managedAgentInvocation: expect.objectContaining({
-          credential: "credential-model-b",
-        }),
-      }),
-    );
+    expect(localAgentModelDiscovery.detect).toHaveBeenNthCalledWith(1, {});
+    expect(localAgentModelDiscovery.detect).toHaveBeenNthCalledWith(2, {});
   });
 
-  it("passes managed headers to the supplied reusable discovery", async () => {
+  it("uses standalone context for supplied reusable discovery", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
     const localAgentModelDiscovery = { detect: vi.fn(async () => []) };
 
@@ -823,21 +766,12 @@ describe("registerModelRoutes", () => {
         {},
       ),
       localAgentModelDiscovery,
-      managedAgentHeaders: {
-        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "credential-from-header",
-      },
     });
 
-    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith(
-      expect.objectContaining({
-        managedAgentInvocation: expect.objectContaining({
-          credential: "credential-from-header",
-        }),
-      }),
-    );
+    expect(localAgentModelDiscovery.detect).toHaveBeenCalledWith({});
   });
 
-  it("keeps managed model discovery credentials out of logs", async () => {
+  it("logs standalone model discovery failures", async () => {
     const logger = { warn: vi.fn() };
     await listAgentModels({
       env: loadServerEnv(
@@ -849,24 +783,14 @@ describe("registerModelRoutes", () => {
       ),
       localAgentModelDiscovery: {
         detect: vi.fn(async () => {
-          throw new Error("credential-model-1");
+          throw new Error("local discovery failed");
         }),
       },
       logger,
-      managedAgentDetectContext: {
-        cwd: "/tmp/aimc-app-data",
-        managedAgentInvocation: {
-          credential: "credential-model-1",
-          cwd: "/tmp/aimc-app-data",
-        },
-      },
     });
 
-    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(
-      "credential-model-1",
-    );
     expect(logger.warn).toHaveBeenCalledWith(
-      {},
+      { err: expect.any(Error) },
       "Failed to load local-agent models; omitting local providers.",
     );
   });
@@ -906,7 +830,7 @@ describe("registerModelRoutes", () => {
       method: "GET",
       url: "/api/models",
       headers: {
-        [MANAGED_AGENT_INVOCATION_CREDENTIAL_HEADER]: "unused-credential",
+        "x-tsh-managed-agent-credential": "obsolete-credential",
       },
     });
 

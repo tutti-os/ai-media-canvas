@@ -53,16 +53,4 @@ describe("createAimcToolsMcpServerConfig", () => {
     });
     expect(config).not.toHaveProperty("executionSide");
   });
-
-  it("requires a packaged MCP entrypoint for managed VM execution", () => {
-    expect(() =>
-      createAimcToolsMcpServerConfig({
-        gatewayBaseUrl: "http://127.0.0.1:4000/api/tools",
-        gatewayToken: "tool-token",
-        requireSandboxEntrypoint: true,
-      }),
-    ).toThrow(
-      "AIMC_TOOLS_MCP_PATH is required for managed local-agent MCP VM execution.",
-    );
-  });
 });

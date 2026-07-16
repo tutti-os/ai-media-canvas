@@ -11,7 +11,6 @@ export type AimcToolsMcpServerConfig = LocalAgentMcpServerConfig & {
 export function createAimcToolsMcpServerConfig(input: {
   gatewayBaseUrl: string;
   gatewayToken: string;
-  requireSandboxEntrypoint?: boolean;
   startupTimeoutMs?: number;
   toolTimeoutMs?: number;
 }): AimcToolsMcpServerConfig {
@@ -34,12 +33,6 @@ export function createAimcToolsMcpServerConfig(input: {
         AIMC_TOOL_TOKEN: input.gatewayToken,
       },
     };
-  }
-
-  if (input.requireSandboxEntrypoint) {
-    throw new Error(
-      "AIMC_TOOLS_MCP_PATH is required for managed local-agent MCP VM execution.",
-    );
   }
 
   const serverRoot = resolve(import.meta.dirname, "../../..");

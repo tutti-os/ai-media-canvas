@@ -11,7 +11,6 @@ import {
   wsCommandSchema,
   wsRpcResponseSchema,
 } from "@aimc/shared";
-import { createManagedAgentDetectContextFromHeaders } from "@tutti-os/agent-acp-kit";
 import {
   AgentTargetResolutionError,
   resolveAgentTarget,
@@ -261,7 +260,6 @@ async function authenticateAndBind(
           agentRuns,
           connectionManager,
           options,
-          request.headers,
         );
       } else if (msg.action === "agent.cancel") {
         log.info("run_cancel", {
@@ -364,7 +362,6 @@ async function handleRunCommand(
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
   services: RegisterWsOptions,
-  managedAgentHeaders: FastifyRequest["headers"],
 ) {
   const log = createPipelineLogger("agent.run", {
     userId: authenticatedUser.id,
@@ -440,14 +437,6 @@ async function handleRunCommand(
     | undefined;
   if (requestsLocalAgent) {
     try {
-      const managedDetectContext = createManagedAgentDetectContextFromHeaders(
-        managedAgentHeaders,
-        {
-          ...(effectiveEnv?.appDataDir
-            ? { appDataDir: effectiveEnv.appDataDir }
-            : {}),
-        },
-      );
       const modelProvider = getLocalAgentModelProvider(payload.model ?? model);
       resolvedAgentTarget = await resolveAgentTarget({
         ...(payload.agentTargetId
@@ -458,9 +447,6 @@ async function handleRunCommand(
           : !payload.agentTargetId && modelProvider
             ? { providerId: modelProvider }
             : {}),
-        ...(managedDetectContext
-          ? { detectContext: managedDetectContext }
-          : {}),
       });
     } catch (error) {
       const expected = error instanceof AgentTargetResolutionError;
@@ -573,7 +559,6 @@ async function handleRunCommand(
     ...(assistantMessageId ? { assistantMessageId } : {}),
     connectionId,
     ...(runtimeEnv ? { env: runtimeEnv } : {}),
-    managedAgentHeaders,
     userId: authenticatedUser.id,
     ...(runtimeModel ? { model: runtimeModel } : {}),
     ...(requestsLocalAgent
