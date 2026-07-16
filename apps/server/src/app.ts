@@ -901,6 +901,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const store = createLocalStore({
     assetBaseUrl,
     ...(env.dataRoot ? { dataRoot: env.dataRoot } : {}),
+    ...(env.databaseRoot ? { databaseRoot: env.databaseRoot } : {}),
   });
   store.recoverInterruptedAgentRuns();
 

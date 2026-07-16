@@ -356,23 +356,33 @@ export type LocalStore = ReturnType<typeof createLocalStore>;
 
 export function createLocalStore(options: {
   assetBaseUrl: string;
+  databaseRoot?: string;
   dataRoot?: string;
 }) {
   let workspaceSettingsHasLegacyIdColumn = false;
   const dataRoot =
     options.dataRoot ?? resolve(process.cwd(), "../../local-data");
+  const databaseRoot = options.databaseRoot ?? dataRoot;
   const assetsRoot = join(dataRoot, "assets");
   const uploadsRoot = join(assetsRoot, "uploads");
   const brandKitRoot = join(assetsRoot, "brand-kits");
   const projectRoot = join(assetsRoot, "projects");
   const generatedRoot = join(assetsRoot, "generated");
   mkdirSync(dataRoot, { recursive: true });
+  mkdirSync(databaseRoot, { recursive: true });
   mkdirSync(uploadsRoot, { recursive: true });
   mkdirSync(brandKitRoot, { recursive: true });
   mkdirSync(projectRoot, { recursive: true });
   mkdirSync(generatedRoot, { recursive: true });
 
-  const db = new DatabaseSync(join(dataRoot, "ai-media-canvas.db"));
+  // The packaged runtime starts the HTTP server and background worker as
+  // separate processes. Both initialize this store, so one process can briefly
+  // hold SQLite's schema/WAL lock while the other starts. The node:sqlite
+  // default is to fail immediately (timeout=0), which made an otherwise healthy
+  // app exit nondeterministically during startup.
+  const db = new DatabaseSync(join(databaseRoot, "ai-media-canvas.db"), {
+    timeout: 10_000,
+  });
   db.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS app_profile (
