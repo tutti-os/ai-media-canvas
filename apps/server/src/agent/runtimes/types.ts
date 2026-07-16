@@ -13,7 +13,6 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type {
   AgentEvent,
-  DetectContext,
   LocalAgentProviderPlugin,
   LocalAgentRuntime,
 } from "@tutti-os/agent-acp-kit";
@@ -118,10 +117,6 @@ export type LoadCanvasSummaryForRuntime = (
 ) => Promise<string | null>;
 
 export type LocalAgentRuntimeProviderDeps = {
-  assertLocalAgentProviderAvailable: (input: {
-    detectContext: DetectContext;
-    provider: AgentRuntimeProvider;
-  }) => Promise<void>;
   buildAttachmentDataMap: BuildAttachmentDataMap;
   buildUserMessage: BuildUserMessage;
   createRunDirectory?: (input: {
@@ -137,10 +132,6 @@ export type LocalAgentRuntimeProviderDeps = {
     Partial<
       Pick<LocalAgentRuntime<"local-agent", AgentRuntimeProvider>, "detect">
     >;
-  localAgentComposerRuntime?: LocalAgentRuntime<
-    "local-agent",
-    AgentRuntimeProvider
-  >;
   now: () => string;
   recordProviderResumeMetadata?: (input: {
     providerSessionId?: string;

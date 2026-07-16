@@ -279,6 +279,7 @@ describe("registerModelRoutes", () => {
     const localAgentModelDiscovery = {
       detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
         {
+          agentTargetId: "local:codex",
           provider: "codex" as const,
           displayName: "Codex CLI",
           authState: "ok" as const,
@@ -289,6 +290,7 @@ describe("registerModelRoutes", () => {
           supported: true,
         },
         {
+          agentTargetId: "local:claude-code",
           provider: "claude-code" as const,
           displayName: "Claude Code",
           authState: "ok" as const,
@@ -303,6 +305,7 @@ describe("registerModelRoutes", () => {
           supported: true,
         },
         {
+          agentTargetId: "local:hermes",
           provider: "hermes" as const,
           displayName: "Hermes",
           authState: "ok" as const,
@@ -449,6 +452,7 @@ describe("registerModelRoutes", () => {
     const localAgentModelDiscovery = {
       detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
         {
+          agentTargetId: "local:claude-code",
           provider: "claude-code" as const,
           displayName: "Claude Code",
           authState: "ok" as const,
@@ -493,6 +497,7 @@ describe("registerModelRoutes", () => {
     const localAgentModelDiscovery = {
       detect: vi.fn(async () => [
         {
+          agentTargetId: "local:tutti-agent",
           provider: "tutti-agent" as const,
           displayName: "Tutti Agent",
           authState: "missing" as const,
@@ -500,6 +505,7 @@ describe("registerModelRoutes", () => {
           supported: false,
         },
         {
+          agentTargetId: "local:claude-code",
           provider: "claude-code" as const,
           displayName: "Claude Code",
           authState: "expired" as const,
@@ -508,6 +514,7 @@ describe("registerModelRoutes", () => {
           supported: false,
         },
         {
+          agentTargetId: "local:codex",
           provider: "codex" as const,
           displayName: "Codex",
           authState: "ok" as const,
@@ -559,6 +566,7 @@ describe("registerModelRoutes", () => {
     const localAgentModelDiscovery = {
       detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
         {
+          agentTargetId: "local:tutti-agent",
           provider: "tutti-agent" as const,
           displayName: "Tutti Agent",
           authState: "ok" as const,
@@ -608,6 +616,7 @@ describe("registerModelRoutes", () => {
     const localAgentModelDiscovery = {
       detect: vi.fn(async () => [
         {
+          agentTargetId: "team:canvas",
           provider: "codex" as const,
           displayName: "Codex",
           authState: "ok" as const,
@@ -638,7 +647,7 @@ describe("registerModelRoutes", () => {
     );
     expect(response.json().localAgentTargets).toContainEqual(
       expect.objectContaining({
-        agentTargetId: "local:codex",
+        agentTargetId: "team:canvas",
         models: expect.arrayContaining([
           expect.objectContaining({ id: "codex:gpt-snapshot" }),
         ]),
@@ -650,6 +659,7 @@ describe("registerModelRoutes", () => {
     vi.stubEnv("TUTTI_CLI", "");
     const detections = [
       {
+        agentTargetId: "local:future-runtime",
         provider: "future-runtime" as const,
         displayName: "Future Agent",
         authState: "ok" as const,
@@ -658,7 +668,7 @@ describe("registerModelRoutes", () => {
         supported: true,
       },
     ];
-    const localAgentCatalogRuntime = {
+    const localAgentDiscoveryRuntime = {
       cancel: vi.fn(async () => undefined),
       detect: vi.fn(async () => detections),
       listProviders: () => [
@@ -675,10 +685,10 @@ describe("registerModelRoutes", () => {
 
     const result = await listAgentModelCatalog({
       env: loadServerEnv({}, {}),
-      localAgentCatalogRuntime,
+      localAgentDiscoveryRuntime,
     });
 
-    expect(localAgentCatalogRuntime.detect).toHaveBeenCalled();
+    expect(localAgentDiscoveryRuntime.detect).toHaveBeenCalled();
     expect(result.localAgentTargets).toContainEqual(
       expect.objectContaining({
         agentTargetId: "local:future-runtime",
@@ -699,6 +709,7 @@ describe("registerModelRoutes", () => {
     const localAgentModelDiscovery = {
       detect: vi.fn(async (_context?: LocalAgentModelDetectContext) => [
         {
+          agentTargetId: "local:tutti-agent",
           provider: "tutti-agent" as const,
           displayName: "Tutti Agent",
           authState: "ok" as const,

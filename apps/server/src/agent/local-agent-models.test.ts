@@ -102,6 +102,40 @@ describe("local agent model helpers", () => {
     ]);
   });
 
+  it("keeps legacy provider info unique when multiple targets share a provider", () => {
+    expect(
+      buildLocalAgentProviderInfo([
+        {
+          agentTargetId: "team:designer",
+          provider: "codex",
+          displayName: "Designer",
+          supported: true,
+          authState: "ok",
+          models: [{ id: "design", label: "Design" }],
+        },
+        {
+          agentTargetId: "team:reviewer",
+          provider: "codex",
+          displayName: "Reviewer",
+          supported: true,
+          authState: "ok",
+          models: [{ id: "review", label: "Review" }],
+          defaultModelId: "review",
+          isDefault: true,
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        provider: "codex",
+        defaultModelId: "codex:review",
+        models: [
+          expect.objectContaining({ id: "codex:review" }),
+          expect.objectContaining({ id: "codex:design" }),
+        ],
+      }),
+    ]);
+  });
+
   it("uses configured Codex Imagegen model before detection", async () => {
     await expect(
       resolveCodexImagegenAgentModel("codex:gpt-5.5", {

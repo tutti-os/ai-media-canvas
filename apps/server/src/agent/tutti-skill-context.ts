@@ -1,7 +1,6 @@
 import { createDefaultLocalAgentRuntime } from "@tutti-os/agent-acp-kit";
 import {
   type TuttiAgentSkillContext,
-  loadTuttiAgentCatalog,
   loadTuttiAgentSkillContext,
 } from "@tutti-os/agent-acp-kit/tutti";
 
@@ -50,32 +49,37 @@ export async function loadDefaultTuttiAgentSkillContextForRun(input: {
   cwd: string;
   runId: string;
   signal?: AbortSignal;
+  runtime?: Pick<typeof localAgentRuntime, "detect">;
 }): Promise<{
   agentTargetId: string | null;
   context: TuttiAgentSkillContext;
 }> {
   input.signal?.throwIfAborted();
+  if (!process.env.TUTTI_CLI?.trim() && !input.runtime) {
+    return { agentTargetId: null, context: emptyTuttiSkillContext() };
+  }
   try {
-    const catalog = await loadTuttiAgentCatalog({
-      runtime: localAgentRuntime,
-      ...(input.signal ? { signal: input.signal } : {}),
+    const cwd = process.env.TUTTI_WORKSPACE_ROOT?.trim() || input.cwd;
+    const detections = await (input.runtime ?? localAgentRuntime).detect({
+      cwd,
+      refresh: true,
     });
-    const availableAgents = catalog.agents.filter(
-      (agent) =>
-        agent.runtimeSupported && agent.availability.status === "available",
+    const availableAgents = detections.filter(
+      (agent) => agent.supported && Boolean(agent.agentTargetId),
     );
     const selected =
-      availableAgents.find(
-        (agent) => agent.agentTargetId === catalog.defaultAgentTargetId,
-      ) ?? availableAgents[0];
-    if (!selected) {
+      availableAgents.find((agent) => agent.isDefault) ?? availableAgents[0];
+    const selectedAgentTargetId = selected?.agentTargetId;
+    if (!selectedAgentTargetId) {
       return { agentTargetId: null, context: emptyTuttiSkillContext() };
     }
     return {
-      agentTargetId: selected.agentTargetId,
+      agentTargetId: selectedAgentTargetId,
       context: await loadTuttiAgentSkillContextForRun({
-        ...input,
-        agentTargetId: selected.agentTargetId,
+        agentTargetId: selectedAgentTargetId,
+        cwd: input.cwd,
+        runId: input.runId,
+        ...(input.signal ? { signal: input.signal } : {}),
       }),
     };
   } catch (error) {

@@ -7,7 +7,6 @@ import type {
   AgentEvent,
   LocalAgentProviderPlugin,
 } from "@tutti-os/agent-acp-kit";
-import { loadTuttiAgentComposerOptions } from "@tutti-os/agent-acp-kit/tutti";
 
 import {
   type ImageAttachmentMetadata,
@@ -285,13 +284,6 @@ export function createLocalAgentRuntimeProvider(
       }
       let gatewaySessionToken: string | undefined;
       try {
-        await deps.assertLocalAgentProviderAvailable({
-          provider: runtimeProvider,
-          detectContext: {
-            cwd: runDir,
-            refresh: true,
-          },
-        });
         await materializeWorkspaceSkillsForLocalAgent({
           runDir,
           workspaceSkills,
@@ -350,43 +342,21 @@ export function createLocalAgentRuntimeProvider(
             : {}),
           sessionId: run.sessionId,
         });
-        const [tuttiSkillContext, composerOptions] = await Promise.all([
-          shouldUseTuttiSkillContext(enrichedPrompt)
-            ? loadTuttiAgentSkillContextForRun({
-                agentTargetId: effectiveAgentTargetId,
-                cwd: runDir,
-                runId: run.runId,
-                signal: run.controller.signal,
-              })
-            : Promise.resolve({
-                source: "standalone" as const,
-                skillManifest: [],
-                skills: [],
-                recommendedSystemPrompt: undefined,
-              }),
-          deps.localAgentComposerRuntime
-            ? loadTuttiAgentComposerOptions({
-                runtime: deps.localAgentComposerRuntime,
-                agentTargetId: effectiveAgentTargetId,
-                cwd: runDir,
-                env: {
-                  ...process.env,
-                  ...(runtimeEnv.tuttiCliPath
-                    ? { TUTTI_CLI: runtimeEnv.tuttiCliPath }
-                    : {}),
-                },
-                model: resolvedModel,
-                signal: run.controller.signal,
-              })
-            : Promise.resolve({
-                modelConfig: {
-                  currentValue: resolvedModel,
-                  defaultValue: resolvedModel,
-                },
-                permissionConfig: { defaultValue: "", modes: [] },
-                reasoningConfig: { currentValue: "", defaultValue: "" },
-              }),
-        ]);
+        const tuttiSkillContext = await (shouldUseTuttiSkillContext(
+          enrichedPrompt,
+        )
+          ? loadTuttiAgentSkillContextForRun({
+              agentTargetId: effectiveAgentTargetId,
+              cwd: runDir,
+              runId: run.runId,
+              signal: run.controller.signal,
+            })
+          : Promise.resolve({
+              source: "standalone" as const,
+              skillManifest: [],
+              skills: [],
+              recommendedSystemPrompt: undefined,
+            }));
         const skillManifest = [
           ...mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills),
           ...tuttiSkillContext.skillManifest,
@@ -401,13 +371,6 @@ export function createLocalAgentRuntimeProvider(
           ),
         );
         const resume = mapResumeContext(run.resumeContext);
-        const permissionMode = composerOptions.permissionConfig.modes.find(
-          (mode) => mode.id === composerOptions.permissionConfig.defaultValue,
-        );
-        const composerModel =
-          composerOptions.modelConfig.currentValue ||
-          composerOptions.modelConfig.defaultValue ||
-          resolvedModel;
         const mcpServers = [
           createAimcToolsMcpServerConfig({
             gatewayBaseUrl: deps.toolGatewayBaseUrl,
@@ -426,26 +389,16 @@ export function createLocalAgentRuntimeProvider(
         };
 
         for await (const event of deps.localAgentRuntime.run({
+          agentTargetId: effectiveAgentTargetId,
           runId: run.runId,
           provider: runtimeProvider,
           cwd: runDir,
           prompt,
           systemPrompt,
           ...(history.length > 0 ? { history } : {}),
-          model: localAgentModelIdForAcp(composerModel, runtimeProvider),
-          ...((composerOptions.reasoningConfig.currentValue ||
-            composerOptions.reasoningConfig.defaultValue) && {
-            reasoning:
-              composerOptions.reasoningConfig.currentValue ||
-              composerOptions.reasoningConfig.defaultValue,
-          }),
-          ...(permissionMode
-            ? {
-                permission: {
-                  modeId: permissionMode.id,
-                  semantic: permissionMode.semantic,
-                },
-              }
+          model: localAgentModelIdForAcp(resolvedModel, runtimeProvider),
+          ...(runtimeEnv.tuttiCliPath
+            ? { env: { TUTTI_CLI: runtimeEnv.tuttiCliPath } }
             : {}),
           runtimeKind: "local-agent",
           runtimeProvider,

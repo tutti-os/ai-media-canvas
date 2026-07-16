@@ -7,8 +7,8 @@ import {
   modelListResponseSchema,
 } from "@aimc/shared";
 import {
-  type AgentCatalogRuntime,
-  loadAgentTargetCatalog,
+  type AgentDiscoveryRuntime,
+  detectAgentTargets,
 } from "../agent/agent-targets.js";
 
 import {
@@ -81,15 +81,15 @@ const GOOGLE_MODELS: ModelInfo[] = [
 ];
 
 function resolveLocalAgentModelDiscovery(options: {
-  localAgentCatalogRuntime?: AgentCatalogRuntime;
+  localAgentDiscoveryRuntime?: AgentDiscoveryRuntime;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
 }): LocalAgentModelDiscovery {
   if (options.localAgentModelDiscovery) return options.localAgentModelDiscovery;
-  const catalogRuntime = options.localAgentCatalogRuntime;
-  if (catalogRuntime) {
+  const discoveryRuntime = options.localAgentDiscoveryRuntime;
+  if (discoveryRuntime) {
     return {
       detect: (context?: LocalAgentModelDetectContext) =>
-        catalogRuntime.detect(context),
+        discoveryRuntime.detect(context),
     };
   }
   return createDefaultLocalAgentModelDiscovery();
@@ -267,16 +267,16 @@ export async function registerModelRoutes(
   env: ServerEnv,
   settingsService?: SettingsService,
   options?: {
-    localAgentCatalogRuntime?: AgentCatalogRuntime;
+    localAgentDiscoveryRuntime?: AgentDiscoveryRuntime;
     localAgentModelDiscovery?: LocalAgentModelDiscovery;
     tuttiManagedCredentials?: TuttiManagedCredentialService;
   },
 ) {
   const modelDiscoverySingleFlight = createModelDiscoverySingleFlight();
-  // One route-scoped runtime handles VM-local standalone detection.
+  // One route-scoped runtime owns Tutti-aware or standalone discovery.
   const localAgentModelDiscovery = resolveLocalAgentModelDiscovery({
-    ...(options?.localAgentCatalogRuntime
-      ? { localAgentCatalogRuntime: options.localAgentCatalogRuntime }
+    ...(options?.localAgentDiscoveryRuntime
+      ? { localAgentDiscoveryRuntime: options.localAgentDiscoveryRuntime }
       : {}),
     ...(options?.localAgentModelDiscovery
       ? { localAgentModelDiscovery: options.localAgentModelDiscovery }
@@ -292,8 +292,8 @@ export async function registerModelRoutes(
       env,
       logger: app.log,
       localAgentModelDiscovery,
-      ...(options?.localAgentCatalogRuntime
-        ? { localAgentCatalogRuntime: options.localAgentCatalogRuntime }
+      ...(options?.localAgentDiscoveryRuntime
+        ? { localAgentDiscoveryRuntime: options.localAgentDiscoveryRuntime }
         : {}),
       ...(input.refreshLocalAgentModels
         ? { refreshLocalAgentModels: true }
@@ -324,7 +324,7 @@ export async function registerModelRoutes(
 
 export type ListAgentModelsOptions = {
   env: ServerEnv;
-  localAgentCatalogRuntime?: AgentCatalogRuntime;
+  localAgentDiscoveryRuntime?: AgentDiscoveryRuntime;
   localAgentModelDiscovery?: LocalAgentModelDiscovery;
   logger?: ModelDiscoveryLogger;
   refreshLocalAgentModels?: boolean;
@@ -350,7 +350,7 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
   const models: ModelInfo[] = [];
   const localAgentProviders: LocalAgentProviderInfo[] = [];
   let localAgentTargets: Awaited<
-    ReturnType<typeof loadAgentTargetCatalog>
+    ReturnType<typeof detectAgentTargets>
   >["targets"] = [];
   let defaultAgentTargetId: string | null = null;
   if (effectiveEnv.openAIApiKey) {
@@ -444,53 +444,27 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
           )
         : detect();
       const detections = await detectionsPromise;
-      const catalogDetectContext = {
-        ...(localAgentDetectContext ?? {}),
-        ...(workspaceCwd ? { cwd: workspaceCwd } : {}),
-      };
-      const agentCatalog = await loadAgentTargetCatalog({
-        ...(Object.keys(catalogDetectContext).length > 0
-          ? { detectContext: catalogDetectContext }
-          : {}),
+      const agentTargets = await detectAgentTargets({
         detections,
-        refresh: options.refreshLocalAgentModels === true,
-        ...(options.localAgentCatalogRuntime
-          ? { runtime: options.localAgentCatalogRuntime }
+        ...(options.localAgentDiscoveryRuntime
+          ? { runtime: options.localAgentDiscoveryRuntime }
           : {}),
       });
-      // Keep the runtime's complete detection result available here for
-      // diagnostics, but only expose runnable providers to API consumers.
       const supportedDetections = detections.filter(
         (detection) =>
           detection.supported &&
-          agentCatalog.targets.some(
-            (target) => target.providerId === detection.provider,
+          agentTargets.targets.some(
+            (target) =>
+              target.agentTargetId === detection.agentTargetId &&
+              target.available,
           ),
       );
-      const ambiguousProviderIds = new Set(agentCatalog.ambiguousProviderIds);
-      models.push(
-        ...buildLocalAgentModels(supportedDetections).filter(
-          (model) => !ambiguousProviderIds.has(model.provider),
-        ),
-      );
+      models.push(...buildLocalAgentModels(supportedDetections));
       localAgentProviders.push(
-        ...buildLocalAgentProviderInfo(supportedDetections).map((provider) => {
-          if (!ambiguousProviderIds.has(provider.provider)) return provider;
-          const { defaultModelId: _defaultModelId, ...providerWithoutDefault } =
-            provider;
-          const targetReason = agentCatalog.targets.find(
-            (target) => target.providerId === provider.provider,
-          )?.reason;
-          return {
-            ...providerWithoutDefault,
-            supported: false,
-            ...(targetReason ? { reason: targetReason } : {}),
-            models: [],
-          };
-        }),
+        ...buildLocalAgentProviderInfo(supportedDetections),
       );
-      localAgentTargets = agentCatalog.targets;
-      defaultAgentTargetId = agentCatalog.defaultAgentTargetId;
+      localAgentTargets = agentTargets.targets;
+      defaultAgentTargetId = agentTargets.defaultAgentTargetId;
     } catch (error) {
       options.logger?.warn(
         { err: error },

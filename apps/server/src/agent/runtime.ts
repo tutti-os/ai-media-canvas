@@ -20,7 +20,6 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { InMemoryStore } from "@langchain/langgraph";
 import {
-  type DetectContext,
   type LocalAgentProviderPlugin,
   type LocalAgentRuntime,
   createDefaultLocalAgentProviderPlugins,
@@ -337,10 +336,6 @@ type PatchWorkspaceSettings = (input: {
 }) => Promise<WorkspaceSettings>;
 
 type CreateAgentRuntimeOptions = {
-  assertLocalAgentProviderAvailable?: (input: {
-    detectContext: DetectContext;
-    provider: AgentRuntimeProvider;
-  }) => Promise<void>;
   agentFactory?: AimcAgentFactory;
   agentRunStore?: {
     createRun(input: {
@@ -401,10 +396,6 @@ type CreateAgentRuntimeOptions = {
   localAgentDetectionRuntime?: Pick<
     LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
     "detect"
-  >;
-  localAgentComposerRuntime?: LocalAgentRuntime<
-    "local-agent",
-    AgentRuntimeProvider
   >;
   localAgentRuntime?: Pick<
     LocalAgentRuntime<"local-agent", AgentRuntimeProvider>,
@@ -543,28 +534,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     localAgentTrusted && options.toolGateway && options.toolGatewayBaseUrl
       ? (options.localAgentRuntime ?? defaultLocalAgentRuntime)
       : null;
-  const localAgentComposerRuntime =
-    options.localAgentComposerRuntime ??
-    (localAgentRuntime &&
-    typeof (localAgentRuntime as { listProviders?: unknown }).listProviders ===
-      "function" &&
-    typeof (localAgentRuntime as { detect?: unknown }).detect === "function"
-      ? (localAgentRuntime as LocalAgentRuntime<
-          "local-agent",
-          AgentRuntimeProvider
-        >)
-      : options.localAgentDetectionRuntime || options.localAgentRuntime?.detect
-        ? {
-            cancel: (runId: string) => defaultLocalAgentRuntime.cancel(runId),
-            detect: (context?: DetectContext) =>
-              localAgentDetectionRuntime.detect(context),
-            listProviders: () => defaultLocalAgentRuntime.listProviders(),
-            run: (input: Parameters<typeof defaultLocalAgentRuntime.run>[0]) =>
-              defaultLocalAgentRuntime.run(input),
-          }
-        : options.env.tuttiCliPath
-          ? defaultLocalAgentRuntime
-          : undefined);
   const localAgentGatewayDeps =
     localAgentRuntime && options.toolGateway && options.toolGatewayBaseUrl
       ? {
@@ -577,33 +546,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       ? localAgentProviderPlugins.map((providerPlugin) =>
           createLocalAgentRuntimeProvider(
             {
-              async assertLocalAgentProviderAvailable({
-                detectContext,
-                provider,
-              }: {
-                detectContext: DetectContext;
-                provider: AgentRuntimeProvider;
-              }) {
-                if (options.assertLocalAgentProviderAvailable) {
-                  await options.assertLocalAgentProviderAvailable({
-                    detectContext,
-                    provider,
-                  });
-                  return;
-                }
-                const providers =
-                  await localAgentDetectionRuntime.detect(detectContext);
-                const entry = providers.find(
-                  (candidate) => candidate.provider === provider,
-                );
-                if (!entry?.supported) {
-                  throw new Error(
-                    entry?.reason
-                      ? `Agent provider ${provider} is unavailable: ${entry.reason}`
-                      : `Agent provider ${provider} is not available from Tutti.`,
-                  );
-                }
-              },
               buildAttachmentDataMap,
               buildUserMessage,
               loadCanvasSummaryForRuntime,
@@ -611,9 +553,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 ? { loadSessionMessages: options.loadSessionMessages }
                 : {}),
               localAgentRuntime,
-              ...(localAgentComposerRuntime
-                ? { localAgentComposerRuntime }
-                : {}),
               now,
               recordProviderResumeMetadata(metadata) {
                 options.agentRunStore?.updateRun({

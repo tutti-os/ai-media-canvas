@@ -1,26 +1,19 @@
-import type {
-  AgentRuntimeProvider,
-  LocalAgentTargetInfo,
-  ModelInfo,
-} from "@aimc/shared";
+import type { AgentRuntimeProvider, LocalAgentTargetInfo } from "@aimc/shared";
 import {
   type DetectContext,
   type LocalAgentRuntime,
   createDefaultLocalAgentRuntime,
 } from "@tutti-os/agent-acp-kit";
-import {
-  type TuttiAgentCatalog,
-  loadTuttiAgentCatalog,
-} from "@tutti-os/agent-acp-kit/tutti";
 
 import { buildLocalAgentModels } from "./local-agent-models.js";
 
-export type AgentCatalogRuntime = LocalAgentRuntime<
+export type AgentDiscoveryRuntime = LocalAgentRuntime<
   "local-agent",
   AgentRuntimeProvider
 >;
 
-const defaultRuntime = createDefaultLocalAgentRuntime() as AgentCatalogRuntime;
+const defaultRuntime =
+  createDefaultLocalAgentRuntime() as AgentDiscoveryRuntime;
 
 export type ResolvedAgentTarget = {
   agentTargetId: string;
@@ -34,114 +27,60 @@ export class AgentTargetResolutionError extends Error {
   }
 }
 
-export function isCatalogProviderAddressable(
-  catalog: Pick<TuttiAgentCatalog, "agents" | "cliContract">,
-  providerId: string,
-): boolean {
-  if (catalog.cliContract === "agent-id") return true;
-  return (
-    catalog.agents.filter((agent) => agent.providerId === providerId).length ===
-    1
-  );
-}
-
-export async function loadAgentTargetCatalog(
+/**
+ * Projects the kit's single high-level discovery result into AIMC's API shape.
+ * In a Tutti workspace runtime.detect() returns exact Agent Targets and their
+ * composer models; outside Tutti it returns local:<provider> targets.
+ */
+export async function detectAgentTargets(
   input: {
     detectContext?: DetectContext;
-    detections?: Awaited<ReturnType<AgentCatalogRuntime["detect"]>>;
+    detections?: Awaited<ReturnType<AgentDiscoveryRuntime["detect"]>>;
     refresh?: boolean;
-    runtime?: AgentCatalogRuntime;
+    runtime?: AgentDiscoveryRuntime;
   } = {},
 ): Promise<{
-  ambiguousProviderIds: string[];
-  catalog: TuttiAgentCatalog;
   defaultAgentTargetId: string | null;
+  detections: Awaited<ReturnType<AgentDiscoveryRuntime["detect"]>>;
   targets: LocalAgentTargetInfo[];
 }> {
   const detectContext = {
     ...(input.detectContext ?? {}),
     ...(input.refresh ? { refresh: true } : {}),
   };
-  const selectedRuntime = input.runtime ?? defaultRuntime;
-  const catalogRuntime: AgentCatalogRuntime = input.detections
-    ? {
-        cancel: (runId) => selectedRuntime.cancel(runId),
-        detect: async () => input.detections ?? [],
-        listProviders: () => selectedRuntime.listProviders(),
-        run: (runInput) => selectedRuntime.run(runInput),
-      }
-    : selectedRuntime;
-  const [catalog, detections] = await Promise.all([
-    loadTuttiAgentCatalog({
-      runtime: catalogRuntime,
-      detectContext,
-      ...(detectContext.cwd ? { cwd: detectContext.cwd } : {}),
-    }),
-    input.detections
-      ? Promise.resolve(input.detections)
-      : selectedRuntime.detect(detectContext),
-  ]);
-  const detectionsByProvider = new Map(
-    detections.map((entry) => [String(entry.provider), entry]),
+  const runtime = input.runtime ?? defaultRuntime;
+  const detections = input.detections ?? (await runtime.detect(detectContext));
+  const registeredProviders = new Set(
+    runtime.listProviders().map((provider) => String(provider.id)),
   );
-  const modelsByProvider = new Map<string, ModelInfo[]>();
-  for (const model of buildLocalAgentModels(detections)) {
-    const values = modelsByProvider.get(model.provider) ?? [];
-    values.push(model);
-    modelsByProvider.set(model.provider, values);
-  }
-  const targets = catalog.agents.map((agent) => {
-    const detection = detectionsByProvider.get(agent.providerId);
-    const providerAddressable = isCatalogProviderAddressable(
-      catalog,
-      agent.providerId,
-    );
-    const available =
-      agent.availability.status === "available" &&
-      agent.runtimeSupported &&
-      detection?.supported === true &&
-      providerAddressable;
-    return {
-      agentTargetId: agent.agentTargetId,
-      providerId: agent.providerId,
-      displayName: agent.displayName,
-      available,
-      runtimeSupported: agent.runtimeSupported,
-      isDefault: agent.agentTargetId === catalog.defaultAgentTargetId,
-      ...(agent.availability.detail || detection?.reason || !providerAddressable
-        ? {
-            reason:
-              agent.availability.detail ||
-              detection?.reason ||
-              `Provider ${agent.providerId} maps to multiple Agent Targets and cannot be selected by this Tutti daemon.`,
-          }
-        : {}),
-      models: modelsByProvider.get(agent.providerId) ?? [],
-    } satisfies LocalAgentTargetInfo;
+  const targets = detections.flatMap((detection) => {
+    const agentTargetId = detection.agentTargetId?.trim();
+    if (!agentTargetId) return [];
+    const providerId = String(detection.provider) as AgentRuntimeProvider;
+    const runtimeSupported = registeredProviders.has(providerId);
+    return [
+      {
+        agentTargetId,
+        providerId,
+        displayName: detection.displayName,
+        available: detection.supported && runtimeSupported,
+        runtimeSupported,
+        isDefault: detection.isDefault === true,
+        ...(detection.reason ? { reason: detection.reason } : {}),
+        models: buildLocalAgentModels([detection]),
+      } satisfies LocalAgentTargetInfo,
+    ];
   });
   const preferred = targets.find(
-    (target) =>
-      target.agentTargetId === catalog.defaultAgentTargetId && target.available,
+    (target) => target.isDefault && target.available,
   );
+
   return {
-    ambiguousProviderIds:
-      catalog.cliContract === "provider-compat"
-        ? [
-            ...new Set(
-              catalog.agents
-                .filter(
-                  (agent) =>
-                    !isCatalogProviderAddressable(catalog, agent.providerId),
-                )
-                .map((agent) => agent.providerId),
-            ),
-          ]
-        : [],
-    catalog,
     defaultAgentTargetId:
       preferred?.agentTargetId ??
       targets.find((target) => target.available)?.agentTargetId ??
       null,
+    detections,
     targets,
   };
 }
@@ -152,7 +91,7 @@ export async function resolveAgentTarget(input: {
   providerId?: string;
   detectContext?: DetectContext;
 }): Promise<ResolvedAgentTarget> {
-  const { defaultAgentTargetId, targets } = await loadAgentTargetCatalog({
+  const { defaultAgentTargetId, targets } = await detectAgentTargets({
     ...(input.detectContext ? { detectContext: input.detectContext } : {}),
   });
   return resolveAgentTargetFromCatalog(targets, defaultAgentTargetId, input);
