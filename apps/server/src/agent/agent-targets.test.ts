@@ -3,8 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AgentTargetResolutionError,
-  isCatalogProviderAddressable,
-  loadAgentTargetCatalog,
+  detectAgentTargets,
   resolveAgentTargetFromCatalog,
 } from "./agent-targets.js";
 
@@ -93,49 +92,28 @@ describe("resolveAgentTargetFromCatalog", () => {
       ),
     ).toThrow("unavailable");
   });
+});
 
-  it("fails closed at the catalog boundary for ambiguous provider compatibility", () => {
-    const agents = [
+describe("detectAgentTargets", () => {
+  it("projects exact targets and their per-target models from one detect snapshot", async () => {
+    const detections = [
       {
         agentTargetId: "team:designer",
-        providerId: "codex",
+        provider: "codex",
         displayName: "Designer",
-        availability: { status: "available" as const },
-        runtimeSupported: true,
+        authState: "ok" as const,
+        models: [{ id: "gpt-designer", label: "GPT Designer" }],
+        supported: true,
+        isDefault: true as const,
       },
       {
         agentTargetId: "team:reviewer",
-        providerId: "codex",
+        provider: "codex",
         displayName: "Reviewer",
-        availability: { status: "available" as const },
-        runtimeSupported: true,
-      },
-    ];
-
-    expect(
-      isCatalogProviderAddressable(
-        { agents, cliContract: "provider-compat" },
-        "codex",
-      ),
-    ).toBe(false);
-    expect(
-      isCatalogProviderAddressable(
-        { agents, cliContract: "agent-id" },
-        "codex",
-      ),
-    ).toBe(true);
-  });
-});
-
-describe("loadAgentTargetCatalog", () => {
-  it("projects an injected standalone detection snapshot", async () => {
-    const detections = [
-      {
-        provider: "external-agent",
-        displayName: "External Agent",
-        authState: "ok" as const,
-        models: [{ id: "default", label: "Default" }],
-        supported: true,
+        authState: "missing" as const,
+        models: [],
+        supported: false,
+        reason: "Provider authentication is required.",
       },
     ];
     const runtime = {
@@ -143,8 +121,8 @@ describe("loadAgentTargetCatalog", () => {
       detect: async () => detections,
       listProviders: () => [
         {
-          id: "external-agent",
-          displayName: "External Agent",
+          id: "codex",
+          displayName: "Codex",
           kind: "local-agent" as const,
         },
       ],
@@ -153,17 +131,28 @@ describe("loadAgentTargetCatalog", () => {
       },
     };
 
-    const result = await loadAgentTargetCatalog({
+    const result = await detectAgentTargets({
       detections,
       runtime,
     });
 
+    expect(result.defaultAgentTargetId).toBe("team:designer");
     expect(result.targets).toEqual([
       expect.objectContaining({
-        agentTargetId: "local:external-agent",
+        agentTargetId: "team:designer",
         available: true,
-        providerId: "external-agent",
+        providerId: "codex",
         runtimeSupported: true,
+        models: [
+          expect.objectContaining({
+            id: "codex:gpt-designer",
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        agentTargetId: "team:reviewer",
+        available: false,
+        reason: "Provider authentication is required.",
       }),
     ]);
   });

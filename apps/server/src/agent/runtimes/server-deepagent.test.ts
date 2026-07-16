@@ -50,6 +50,51 @@ function writeFakeTuttiSkillCli(path: string) {
       }),
       "JSON",
       "    ;;",
+      '  *"agent composer-options"*)',
+      "cat <<'JSON'",
+      JSON.stringify({
+        schemaVersion: 2,
+        agentTargetId: "team:designer",
+        providerId: "codex",
+        effectiveSettings: {
+          model: "gpt-designer",
+          reasoningEffort: "high",
+          permissionMode: "workspace-write",
+        },
+        modelConfig: {
+          configurable: true,
+          currentValue: "gpt-designer",
+          defaultValue: "gpt-designer",
+          options: [
+            { id: "gpt-designer", value: "gpt-designer", label: "Designer" },
+          ],
+        },
+        reasoningConfig: {
+          configurable: true,
+          currentValue: "high",
+          defaultValue: "high",
+          options: [{ id: "high", value: "high", label: "High" }],
+        },
+        permissionConfig: {
+          configurable: true,
+          defaultValue: "workspace-write",
+          modes: [
+            {
+              id: "workspace-write",
+              label: "Workspace Write",
+              semantic: "accept-edits",
+            },
+          ],
+        },
+        speedConfig: {
+          configurable: false,
+          currentValue: "",
+          defaultValue: "",
+          options: [],
+        },
+      }),
+      "JSON",
+      "    ;;",
       "  *)",
       "cat <<'JSON'",
       JSON.stringify({

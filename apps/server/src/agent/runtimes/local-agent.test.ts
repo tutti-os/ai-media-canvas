@@ -246,7 +246,6 @@ describe("createLocalAgentRuntimeProvider", () => {
     const revokeSession = vi.fn();
     const provider = createLocalAgentRuntimeProvider(
       {
-        assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
         buildAttachmentDataMap: vi.fn(() => ({})),
         buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
         createRunDirectory,
@@ -298,7 +297,6 @@ describe("createLocalAgentRuntimeProvider", () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-vm-local-cancel-"));
     vi.stubEnv("TUTTI_APP_DATA_DIR", tempRoot);
     const runDir = join(tempRoot, "run");
-    const assertLocalAgentProviderAvailable = vi.fn(async () => undefined);
     const localAgentRuntimeRun = vi.fn(async function* () {
       yield {
         type: "done" as const,
@@ -315,7 +313,6 @@ describe("createLocalAgentRuntimeProvider", () => {
     const context = createRuntimeContext();
     const provider = createLocalAgentRuntimeProvider(
       {
-        assertLocalAgentProviderAvailable,
         buildAttachmentDataMap: vi.fn(() => ({})),
         buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
         createRunDirectory,
@@ -343,7 +340,6 @@ describe("createLocalAgentRuntimeProvider", () => {
 
       await expect(execution).rejects.toMatchObject({ name: "AbortError" });
       expect(existsSync(runDir)).toBe(false);
-      expect(assertLocalAgentProviderAvailable).not.toHaveBeenCalled();
       expect(localAgentRuntimeRun).not.toHaveBeenCalled();
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
@@ -369,7 +365,6 @@ describe("createLocalAgentRuntimeProvider", () => {
     };
     const provider = createLocalAgentRuntimeProvider(
       {
-        assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
         buildAttachmentDataMap: vi.fn(() => ({})),
         buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
         loadCanvasSummaryForRuntime: vi.fn(async () => null),
@@ -426,7 +421,6 @@ describe("createLocalAgentRuntimeProvider", () => {
     };
     const provider = createLocalAgentRuntimeProvider(
       {
-        assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
         buildAttachmentDataMap: vi.fn(() => ({})),
         buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
         loadCanvasSummaryForRuntime: vi.fn(async () => null),
@@ -480,7 +474,6 @@ describe("createLocalAgentRuntimeProvider", () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", tempRoot);
     const provider = createLocalAgentRuntimeProvider(
       {
-        assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
         buildAttachmentDataMap: vi.fn(() => ({})),
         buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
         loadCanvasSummaryForRuntime: vi.fn(async () => null),
@@ -524,7 +517,6 @@ describe("createLocalAgentRuntimeProvider", () => {
     });
     const provider = createLocalAgentRuntimeProvider(
       {
-        assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
         buildAttachmentDataMap: vi.fn(() => ({})),
         buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
         createRunDirectory,
@@ -573,7 +565,6 @@ describe("createLocalAgentRuntimeProvider", () => {
     mkdirSync(runDir, { recursive: true });
     const provider = createLocalAgentRuntimeProvider(
       {
-        assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
         buildAttachmentDataMap: vi.fn(() => ({})),
         buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
         createRunDirectory: vi.fn(async () => runDir),
@@ -604,7 +595,8 @@ describe("createLocalAgentRuntimeProvider", () => {
     }
 
     const params = localAgentRuntimeRun.mock.calls[0]?.[0];
-    expect(params).not.toHaveProperty("env");
+    expect(params?.env).toEqual({ TUTTI_CLI: tuttiCliPath });
+    expectOrdinaryEnvOmitsToolToken(params?.env);
     expect(params?.systemPrompt).toContain(
       "Additional Tutti CLI skill guidance:",
     );
@@ -637,7 +629,6 @@ describe("createLocalAgentRuntimeProvider", () => {
     mkdirSync(runDir, { recursive: true });
     const provider = createLocalAgentRuntimeProvider(
       {
-        assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
         buildAttachmentDataMap: vi.fn(() => ({})),
         buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
         createRunDirectory: vi.fn(async () => runDir),
@@ -680,7 +671,7 @@ describe("createLocalAgentRuntimeProvider", () => {
     );
   });
 
-  it("applies exact-target composer settings to a custom execution runtime", async () => {
+  it("delegates exact-target composer preparation to the kit runtime", async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-tutti-composer-"));
     const tuttiCliPath = join(tempRoot, "tutti");
     writeFakeTuttiSkillCli(tuttiCliPath);
@@ -693,30 +684,14 @@ describe("createLocalAgentRuntimeProvider", () => {
         exitCode: 0,
       };
     });
-    const composerRuntime = {
-      cancel: vi.fn(async () => undefined),
-      detect: vi.fn(async () => []),
-      listProviders: () => [
-        {
-          id: "codex" as const,
-          displayName: "Codex",
-          kind: "local-agent" as const,
-        },
-      ],
-      run: vi.fn(async function* () {
-        yield* [];
-      }),
-    };
     const runDir = join(tempRoot, "run");
     mkdirSync(runDir, { recursive: true });
     const provider = createLocalAgentRuntimeProvider(
       {
-        assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
         buildAttachmentDataMap: vi.fn(() => ({})),
         buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
         createRunDirectory: vi.fn(async () => runDir),
         loadCanvasSummaryForRuntime: vi.fn(async () => null),
-        localAgentComposerRuntime: composerRuntime,
         localAgentRuntime: { run: localAgentRuntimeRun },
         now: () => "2026-06-17T00:00:00.000Z",
         toolGateway: {
@@ -736,18 +711,13 @@ describe("createLocalAgentRuntimeProvider", () => {
 
     expect(localAgentRuntimeRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "gpt-composer",
-        reasoning: "high",
-        permission: {
-          modeId: "workspace-write",
-          semantic: "accept-edits",
-        },
+        agentTargetId: "local:codex",
+        model: "gpt-5.4",
       }),
     );
-    expect(composerRuntime.detect).not.toHaveBeenCalled();
   });
 
-  it("rejects a provider omitted by the fresh Tutti catalog and removes its run directory", async () => {
+  it("cleans the run directory when the kit rejects an exact target", async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-unavailable-agent-"));
     const runDir = join(
       tempRoot,
@@ -755,22 +725,12 @@ describe("createLocalAgentRuntimeProvider", () => {
       ".aimc-agent-runs",
       "tutti-agent-run-1",
     );
-    const assertLocalAgentProviderAvailable = vi.fn(async () => {
-      throw new Error(
-        "Agent provider tutti-agent is not available from Tutti.",
-      );
-    });
     const localAgentRuntimeRun = vi.fn(async function* () {
-      yield {
-        type: "done" as const,
-        status: "completed" as const,
-        reason: "completed" as const,
-        exitCode: 0,
-      };
+      yield* [];
+      throw new Error("Agent Target local:tutti-agent is unavailable.");
     });
     const provider = createLocalAgentRuntimeProvider(
       {
-        assertLocalAgentProviderAvailable,
         buildAttachmentDataMap: vi.fn(() => ({})),
         buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
         loadCanvasSummaryForRuntime: vi.fn(async () => null),
@@ -794,13 +754,11 @@ describe("createLocalAgentRuntimeProvider", () => {
         appDataDir: join(tempRoot, "app-data"),
       };
       await expect(collect(provider.streamRun(context))).rejects.toThrow(
-        "not available from Tutti",
+        "local:tutti-agent is unavailable",
       );
-      expect(assertLocalAgentProviderAvailable).toHaveBeenCalledWith({
-        provider: "tutti-agent",
-        detectContext: { cwd: runDir, refresh: true },
-      });
-      expect(localAgentRuntimeRun).not.toHaveBeenCalled();
+      expect(localAgentRuntimeRun).toHaveBeenCalledWith(
+        expect.objectContaining({ agentTargetId: "local:tutti-agent" }),
+      );
       expect(existsSync(runDir)).toBe(false);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
@@ -818,7 +776,6 @@ describe("createLocalAgentRuntimeProvider", () => {
     const revokeSession = vi.fn();
     const provider = createLocalAgentRuntimeProvider(
       {
-        assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
         buildAttachmentDataMap: vi.fn(() => ({})),
         buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
         createRunDirectory: vi.fn(async () => "/tmp/aimc-local-agent-run"),

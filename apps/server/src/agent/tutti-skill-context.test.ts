@@ -1,13 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loadTuttiAgentCatalogMock, loadTuttiAgentSkillContextMock } =
-  vi.hoisted(() => ({
-    loadTuttiAgentCatalogMock: vi.fn(),
-    loadTuttiAgentSkillContextMock: vi.fn(),
-  }));
+const { loadTuttiAgentSkillContextMock } = vi.hoisted(() => ({
+  loadTuttiAgentSkillContextMock: vi.fn(),
+}));
 
 vi.mock("@tutti-os/agent-acp-kit/tutti", () => ({
-  loadTuttiAgentCatalog: loadTuttiAgentCatalogMock,
   loadTuttiAgentSkillContext: loadTuttiAgentSkillContextMock,
   redactTuttiCliChildProcessText: (text: string, secrets: readonly string[]) =>
     secrets.reduce(
@@ -24,7 +21,6 @@ import {
 describe("loadTuttiAgentSkillContextForRun", () => {
   beforeEach(() => {
     loadTuttiAgentSkillContextMock.mockReset();
-    loadTuttiAgentCatalogMock.mockReset();
     loadTuttiAgentSkillContextMock.mockResolvedValue({
       source: "standalone",
       skills: [],
@@ -134,32 +130,32 @@ describe("loadTuttiAgentSkillContextForRun", () => {
   });
 
   it("loads server guidance for the available exact default Agent Target", async () => {
-    loadTuttiAgentCatalogMock.mockResolvedValue({
-      schemaVersion: 1,
-      source: "tutti-cli",
-      cliContract: "agent-id",
-      defaultAgentTargetId: "team:reviewer",
-      agents: [
+    const runtime = {
+      detect: vi.fn(async () => [
         {
           agentTargetId: "team:designer",
-          providerId: "shared-runtime",
+          provider: "codex",
           displayName: "Designer",
-          runtimeSupported: true,
-          availability: { status: "available", reasonCode: "", detail: "" },
+          supported: true,
+          authState: "ok" as const,
+          models: [],
         },
         {
           agentTargetId: "team:reviewer",
-          providerId: "shared-runtime",
+          provider: "codex",
           displayName: "Reviewer",
-          runtimeSupported: true,
-          availability: { status: "available", reasonCode: "", detail: "" },
+          supported: true,
+          authState: "ok" as const,
+          models: [],
+          isDefault: true as const,
         },
-      ],
-    });
+      ]),
+    };
 
     const result = await loadDefaultTuttiAgentSkillContextForRun({
       cwd: "/workspace/run",
       runId: "run-default",
+      runtime,
     });
 
     expect(result.agentTargetId).toBe("team:reviewer");
@@ -167,6 +163,10 @@ describe("loadTuttiAgentSkillContextForRun", () => {
       agentTargetId: "team:reviewer",
       agentSessionId: "run-default",
       cwd: "/workspace/run",
+    });
+    expect(runtime.detect).toHaveBeenCalledWith({
+      cwd: "/workspace/run",
+      refresh: true,
     });
   });
 });

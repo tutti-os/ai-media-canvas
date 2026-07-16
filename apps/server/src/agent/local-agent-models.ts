@@ -102,11 +102,17 @@ export function buildLocalAgentModels(
 export function buildLocalAgentProviderInfo(
   detections: Awaited<ReturnType<LocalAgentModelDiscovery["detect"]>>,
 ): LocalAgentProviderInfo[] {
-  return detections.map((detection) => {
+  const providers = new Map<string, LocalAgentProviderInfo>();
+  const orderedDetections = [...detections].sort(
+    (left, right) =>
+      Number(right.isDefault === true) - Number(left.isDefault === true),
+  );
+
+  for (const detection of orderedDetections) {
     const defaultModelId = detection.defaultModelId
       ? localAgentModelId(detection.provider, detection.defaultModelId)
       : null;
-    return {
+    const candidate = {
       provider: detection.provider,
       displayName: detection.displayName,
       supported: detection.supported,
@@ -120,8 +126,36 @@ export function buildLocalAgentProviderInfo(
         );
         return catalogModel ? [catalogModel] : [];
       }),
-    };
-  });
+    } satisfies LocalAgentProviderInfo;
+    const existing = providers.get(String(detection.provider));
+    if (!existing) {
+      providers.set(String(detection.provider), candidate);
+      continue;
+    }
+
+    const models = new Map(
+      [...existing.models, ...candidate.models].map((model) => [
+        model.id,
+        model,
+      ]),
+    );
+    const { reason: _existingReason, ...existingWithoutReason } = existing;
+    const supported = existing.supported || candidate.supported;
+    const reason = existing.reason ?? candidate.reason;
+    providers.set(String(detection.provider), {
+      ...existingWithoutReason,
+      supported,
+      ...(!supported && reason ? { reason } : {}),
+      ...(existing.defaultModelId || candidate.defaultModelId
+        ? {
+            defaultModelId: existing.defaultModelId ?? candidate.defaultModelId,
+          }
+        : {}),
+      models: [...models.values()],
+    });
+  }
+
+  return [...providers.values()];
 }
 
 export async function resolveCodexImagegenAgentModel(

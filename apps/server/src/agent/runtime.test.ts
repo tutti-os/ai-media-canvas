@@ -422,7 +422,6 @@ describe("createAgentRunService", () => {
     const updateRun = vi.fn();
 
     const runs = createAgentRunService({
-      assertLocalAgentProviderAvailable: async () => {},
       agentRunStore: {
         createRun: vi.fn(),
         updateRun,
@@ -536,9 +535,9 @@ describe("createAgentRunService", () => {
       // Exhaust the stream so runtime reaches the provider invocation.
     }
 
-    // One call checks provider availability; the standalone composer performs
-    // additional detection for its catalog and model options.
-    expect(localAgentRuntimeDetectMock.mock.calls.length).toBeGreaterThan(1);
+    // The App does not preflight discovery during execution. The real kit
+    // runtime prepares composer options from agentTargetId inside run().
+    expect(localAgentRuntimeDetectMock).not.toHaveBeenCalled();
     expect(localAgentRuntimeRunMock).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "default",
@@ -1203,7 +1202,6 @@ describe("createAgentRunService", () => {
     const createJob = vi.fn(async () => ({ id: "job-1" }));
 
     const runs = createAgentRunService({
-      assertLocalAgentProviderAvailable: async () => {},
       createUserClient: () => ({
         from(table: string) {
           let isUpdate = false;
@@ -1767,7 +1765,6 @@ describe("createAgentRunService", () => {
     });
 
     const runs = createAgentRunService({
-      assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
       env: {
         agentBackendMode: "state",
         agentModel: "agnes:agnes-2.0-flash",
@@ -1859,7 +1856,6 @@ describe("createAgentRunService", () => {
     });
 
     const runs = createAgentRunService({
-      assertLocalAgentProviderAvailable: vi.fn(async () => undefined),
       env: {
         agentBackendMode: "state",
         agentModel: "agnes:agnes-2.0-flash",
@@ -2987,7 +2983,7 @@ describe("createAgentRunService", () => {
     expect(capturedStreamConfig).toBeDefined();
   });
 
-  it("gates VM-local runs through runtime.detect without probing provider plugins", async () => {
+  it("delegates exact-target validation to runtime.run without probing discovery", async () => {
     vi.stubEnv("TUTTI_APP_DATA_DIR", "/tmp/aimc-app-data");
     vi.stubEnv("AIMC_TOOLS_MCP_PATH", "/tmp/aimc-tools-mcp");
     localAgentRuntimeRunMock.mockClear();
@@ -3065,14 +3061,11 @@ describe("createAgentRunService", () => {
       // Exhaust the stream so provider gating and execution both run.
     }
 
-    expect(runtimeDetect).toHaveBeenCalledWith(
-      expect.objectContaining({
-        cwd: expect.any(String),
-        refresh: true,
-      }),
-    );
+    expect(runtimeDetect).not.toHaveBeenCalled();
     expect(pluginDetect).not.toHaveBeenCalled();
-    expect(localAgentRuntimeRunMock).toHaveBeenCalled();
+    expect(localAgentRuntimeRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({ agentTargetId: "local:codex" }),
+    );
   });
 
   it("propagates an initial run-store update failure", async () => {
