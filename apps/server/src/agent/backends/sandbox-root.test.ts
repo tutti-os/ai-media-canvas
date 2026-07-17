@@ -16,14 +16,14 @@ afterEach(() => {
 });
 
 describe("agent sandbox root", () => {
-  it("uses TUTTI_APP_DATA_DIR for production sandboxes", () => {
+  it("uses TUTTI_APP_DATA_DIR for production sandboxes", async () => {
     const tempRoot = createTempRoot();
     const appDataDir = join(tempRoot, "app-data");
     const skillsRoot = join(tempRoot, "skills");
     mkdirSync(appDataDir, { recursive: true });
     mkdirSync(skillsRoot, { recursive: true });
 
-    const backendResult = createAgentBackend(
+    const backendResult = await createAgentBackend(
       {
         agentBackendMode: "state",
         appDataDir,
@@ -38,14 +38,14 @@ describe("agent sandbox root", () => {
     );
   });
 
-  it("uses AIMC_DATA_ROOT as the production sandbox fallback", () => {
+  it("uses AIMC_DATA_ROOT as the production sandbox fallback", async () => {
     const tempRoot = createTempRoot();
     const dataRoot = join(tempRoot, "data-root");
     const skillsRoot = join(tempRoot, "skills");
     mkdirSync(dataRoot, { recursive: true });
     mkdirSync(skillsRoot, { recursive: true });
 
-    const backendResult = createAgentBackend(
+    const backendResult = await createAgentBackend(
       loadServerEnv({
         agentBackendMode: "state",
         dataRoot,
@@ -60,7 +60,7 @@ describe("agent sandbox root", () => {
     );
   });
 
-  it("uses TUTTI_APP_DATA_DIR for filesystem sandboxes", () => {
+  it("uses TUTTI_APP_DATA_DIR for filesystem sandboxes", async () => {
     const tempRoot = createTempRoot();
     const agentFilesRoot = join(tempRoot, "agent-files");
     const appDataDir = join(tempRoot, "app-data");
@@ -69,7 +69,7 @@ describe("agent sandbox root", () => {
     mkdirSync(appDataDir, { recursive: true });
     mkdirSync(skillsRoot, { recursive: true });
 
-    const backendResult = createAgentBackend({
+    const backendResult = await createAgentBackend({
       agentBackendMode: "filesystem",
       agentFilesRoot,
       appDataDir,
@@ -82,7 +82,7 @@ describe("agent sandbox root", () => {
     );
   });
 
-  it("uses AIMC_DATA_ROOT as the filesystem sandbox fallback", () => {
+  it("uses AIMC_DATA_ROOT as the filesystem sandbox fallback", async () => {
     const tempRoot = createTempRoot();
     const agentFilesRoot = join(tempRoot, "agent-files");
     const dataRoot = join(tempRoot, "data-root");
@@ -91,7 +91,7 @@ describe("agent sandbox root", () => {
     mkdirSync(dataRoot, { recursive: true });
     mkdirSync(skillsRoot, { recursive: true });
 
-    const backendResult = createAgentBackend(loadServerEnv({
+    const backendResult = await createAgentBackend(loadServerEnv({
       agentBackendMode: "filesystem",
       agentFilesRoot,
       dataRoot,

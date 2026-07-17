@@ -55,7 +55,7 @@ export type AimcAgentFactory = (options: {
   submitVideoJob?: SubmitVideoJobFn;
   updateWorkspaceSettings?: ApplyWorkspaceSettingsPatch;
   workspaceSkills?: WorkspaceSkillEntry[];
-}) => AimcAgent;
+}) => AimcAgent | Promise<AimcAgent>;
 
 function createVideoSubAgent(): SubAgent {
   return {
@@ -69,7 +69,7 @@ If video generation is not available or fails, clearly explain the limitation.`,
   };
 }
 
-export function createAimcDeepAgent(options: {
+export async function createAimcDeepAgent(options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
   canvasId?: string;
@@ -87,10 +87,10 @@ export function createAimcDeepAgent(options: {
   submitVideoJob?: SubmitVideoJobFn;
   updateWorkspaceSettings?: ApplyWorkspaceSettingsPatch;
   workspaceSkills?: WorkspaceSkillEntry[];
-}): AimcAgent {
+}): Promise<AimcAgent> {
   const backendResult =
     options.backendResult ??
-    createAgentBackend(options.env, options.canvasId, {
+    await createAgentBackend(options.env, options.canvasId, {
       workspaceSkills: options.workspaceSkills ?? [],
     });
 

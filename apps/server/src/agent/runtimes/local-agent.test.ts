@@ -206,7 +206,7 @@ afterEach(() => {
 });
 
 describe("createLocalAgentRuntimeProvider", () => {
-  it("uses app data for regular local-agent run directories", async () => {
+  it("keeps regular local-agent run directories off durable app data", async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-local-agent-runs-"));
     try {
       const result = await createLocalAgentRunDirectory({
@@ -215,9 +215,8 @@ describe("createLocalAgentRuntimeProvider", () => {
         runtimeProvider: "codex",
       });
 
-      expect(result).toBe(
-        join(tempRoot, "app-data", ".aimc-agent-runs", "codex-run-1"),
-      );
+      expect(result).toContain(join(tmpdir(), "aimc-local-agent-codex-run-"));
+      expect(result).not.toContain(join(tempRoot, "app-data"));
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -386,7 +385,8 @@ describe("createLocalAgentRuntimeProvider", () => {
     }
 
     const params = localAgentRuntimeRun.mock.calls[0]?.[0];
-    expect(params?.cwd).toBe(join(tempRoot, ".aimc-agent-runs", "codex-run-1"));
+    expect(params?.cwd).toContain(join(tmpdir(), "aimc-local-agent-codex-run-"));
+    expect(params?.cwd).not.toContain(tempRoot);
     expect(params).toMatchObject({
       mcpServers: [
         expect.objectContaining({
@@ -442,7 +442,8 @@ describe("createLocalAgentRuntimeProvider", () => {
     }
 
     const params = localAgentRuntimeRun.mock.calls[0]?.[0];
-    expect(params?.cwd).toBe(join(tempRoot, ".aimc-agent-runs", "codex-run-1"));
+    expect(params?.cwd).toContain(join(tmpdir(), "aimc-local-agent-codex-run-"));
+    expect(params?.cwd).not.toContain(tempRoot);
     expect(params).not.toHaveProperty("managedAgentInvocation");
     expect(params).not.toHaveProperty("env");
     expect(JSON.stringify(params ?? {})).not.toContain("CODEX_HOME");

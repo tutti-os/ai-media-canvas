@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 /**
@@ -23,7 +23,8 @@ const LEVEL_LABEL: Record<LogLevel, string> = { info: "INFO", warn: "WARN", erro
 
 // Ensure log directory exists
 const LOG_DIR = join(import.meta.dirname ?? ".", "..", "..", "logs");
-try { mkdirSync(LOG_DIR, { recursive: true }); } catch { /* ignore */ }
+const logDirectoryReady = mkdir(LOG_DIR, { recursive: true }).catch(() => undefined);
+let logWriteQueue = Promise.resolve();
 
 /** Returns today's log file path: pipeline-YYYY-MM-DD.log */
 function getLogFile(): string {
@@ -65,7 +66,10 @@ export function createPipelineLogger(
     process.stdout.write(`${ts} [${LEVEL_LABEL[level]}] ${scope}.${event}${ctxStr}\n`);
 
     // file: structured JSON lines (daily rotation)
-    try { appendFileSync(getLogFile(), line); } catch { /* ignore */ }
+    logWriteQueue = logWriteQueue
+      .then(() => logDirectoryReady)
+      .then(() => appendFile(getLogFile(), line))
+      .catch(() => undefined);
   }
 
   return {

@@ -74,8 +74,8 @@ describe("createAimcDeepAgent", () => {
     createMainAgentToolsMock.mockClear();
   });
 
-  it("uses ChatAnthropic for anthropic-scoped default models", () => {
-    createAimcDeepAgent({
+  it("uses ChatAnthropic for anthropic-scoped default models", async () => {
+    await createAimcDeepAgent({
       canvasId: "canvas-1",
       env: {
         agentBackendMode: "state",
@@ -100,8 +100,8 @@ describe("createAimcDeepAgent", () => {
     expect(createDeepAgentMock).toHaveBeenCalledOnce();
   });
 
-  it("teaches the agent that normal canvas tools cannot delete and prefer single-shot image editing for reference-image cover requests", () => {
-    createAimcDeepAgent({
+  it("teaches the agent that normal canvas tools cannot delete and prefer single-shot image editing for reference-image cover requests", async () => {
+    await createAimcDeepAgent({
       canvasId: "canvas-1",
       env: {
         agentBackendMode: "state",
@@ -134,8 +134,8 @@ describe("createAimcDeepAgent", () => {
     );
   });
 
-  it("tells the agent to follow the latest user message language when clear", () => {
-    createAimcDeepAgent({
+  it("tells the agent to follow the latest user message language when clear", async () => {
+    await createAimcDeepAgent({
       canvasId: "canvas-1",
       env: {
         agentBackendMode: "state",
@@ -154,10 +154,10 @@ describe("createAimcDeepAgent", () => {
     );
   });
 
-  it("passes the LangGraph store through to deepagents", () => {
+  it("passes the LangGraph store through to deepagents", async () => {
     const store = { kind: "test-store" };
 
-    createAimcDeepAgent({
+    await createAimcDeepAgent({
       canvasId: "canvas-1",
       env: {
         agentBackendMode: "state",
@@ -177,8 +177,8 @@ describe("createAimcDeepAgent", () => {
     );
   });
 
-  it("appends runtime-provided system prompt guidance", () => {
-    createAimcDeepAgent({
+  it("appends runtime-provided system prompt guidance", async () => {
+    await createAimcDeepAgent({
       canvasId: "canvas-1",
       env: {
         agentBackendMode: "state",

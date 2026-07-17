@@ -1,4 +1,4 @@
-import { mkdirSync, realpathSync } from "node:fs";
+import { mkdir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
   type AnyBackendProtocol,
@@ -25,7 +25,7 @@ const DEFAULT_DEV_SANDBOX_ROOT = "/tmp/ai-media-canvas-sandbox-dev";
  * Uses LocalShellBackend for code execution. The agent's workspace files
  * are stored locally at agentFilesRoot, and skills are loaded from skillsRoot.
  */
-export function createDevelopmentBackend(
+export async function createDevelopmentBackend(
   env: AgentBackendEnv,
   options?: {
     /** Canvas ID — used to scope the run when workspace skills are available. */
@@ -33,7 +33,7 @@ export function createDevelopmentBackend(
     /** Workspace skills loaded for this run. */
     workspaceSkills?: WorkspaceSkillEntry[];
   },
-): AgentBackendResult {
+): Promise<AgentBackendResult> {
   if (!env.agentFilesRoot) {
     throw new Error(
       "AIMC_AGENT_FILES_ROOT must be set when filesystem backend mode is enabled.",
@@ -47,8 +47,8 @@ export function createDevelopmentBackend(
   );
   const runId = crypto.randomUUID();
   const sandboxDir = join(sandboxRoot, runId);
-  mkdirSync(sandboxDir, { recursive: true });
-  const realSandboxDir = realpathSync(sandboxDir);
+  await mkdir(sandboxDir, { recursive: true });
+  const realSandboxDir = await realpath(sandboxDir);
 
   const skillsRoot = resolve(
     env.skillsRoot ?? join(env.agentFilesRoot, "skills"),
@@ -75,7 +75,7 @@ export function createDevelopmentBackend(
     rootDir: env.agentFilesRoot,
     virtualMode: true,
   });
-  const workspaceSkillsBackend = createWorkspaceSkillsFilesystemBackend({
+  const workspaceSkillsBackend = await createWorkspaceSkillsFilesystemBackend({
     rootDir: join(sandboxDir, "workspace-skills"),
     workspaceSkills: options?.workspaceSkills ?? [],
   });

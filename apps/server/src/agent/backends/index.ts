@@ -21,11 +21,11 @@ export type AgentBackendResult = {
   sandboxDir?: string;
 };
 
-export function createAgentBackend(
+export async function createAgentBackend(
   env: AgentBackendEnv,
   canvasId?: string,
   options?: { workspaceSkills?: WorkspaceSkillEntry[] },
-): AgentBackendResult {
+): Promise<AgentBackendResult> {
   if (env.agentBackendMode === "filesystem") {
     return createDevelopmentBackend(env, {
       ...(canvasId != null ? { canvasId } : {}),
