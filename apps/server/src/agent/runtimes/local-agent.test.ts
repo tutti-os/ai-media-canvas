@@ -672,6 +672,52 @@ describe("createLocalAgentRuntimeProvider", () => {
     );
   });
 
+  it("settles concurrent skill preparation before cleaning up after history failure", async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "aimc-preparation-failure-"));
+    const tuttiCliPath = join(tempRoot, "tutti");
+    const runDir = join(tempRoot, "run");
+    mkdirSync(runDir, { recursive: true });
+    writeFakeTuttiSkillCli(tuttiCliPath);
+    vi.stubEnv("TUTTI_CLI", tuttiCliPath);
+    const revokeSession = vi.fn();
+    const localAgentRuntimeRun = vi.fn(async function* () {
+      yield* [];
+    });
+    const provider = createLocalAgentRuntimeProvider(
+      {
+        buildAttachmentDataMap: vi.fn(() => ({})),
+        buildUserMessage: vi.fn((prompt) => ({ text: prompt })),
+        createRunDirectory: vi.fn(async () => runDir),
+        loadCanvasSummaryForRuntime: vi.fn(async () => null),
+        loadSessionMessages: vi.fn(async () => {
+          throw new Error("history unavailable");
+        }),
+        localAgentRuntime: { run: localAgentRuntimeRun },
+        now: () => "2026-06-17T00:00:00.000Z",
+        toolGateway: {
+          createSession: vi.fn(() => ({ token: "tool-token" })),
+          revokeSession,
+        } as never,
+        toolGatewayBaseUrl: "http://127.0.0.1:3001/api/local-tools",
+      },
+      createProviderPlugin("codex"),
+    );
+
+    try {
+      const context = createRuntimeContext({
+        prompt: "Open mention://workspace-app/aimc",
+      });
+      await expect(collect(provider.streamRun(context))).rejects.toThrow(
+        "history unavailable",
+      );
+      expect(localAgentRuntimeRun).not.toHaveBeenCalled();
+      expect(revokeSession).toHaveBeenCalledWith("tool-token");
+      expect(existsSync(runDir)).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("delegates exact-target composer preparation to the kit runtime", async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "aimc-tutti-composer-"));
     const tuttiCliPath = join(tempRoot, "tutti");

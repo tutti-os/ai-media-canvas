@@ -93,6 +93,23 @@ function joinPromptParts(...parts: Array<string | undefined>) {
     .join("\n\n");
 }
 
+async function awaitConcurrentPreparation<T, U>(
+  first: Promise<T>,
+  second: Promise<U>,
+  abort: (reason: unknown) => void,
+): Promise<[T, U]> {
+  try {
+    return await Promise.all([first, second]);
+  } catch (error) {
+    // Promise.all rejects as soon as one branch fails. The other branch may
+    // still be reading or writing below runDir, so stop it and wait for both
+    // branches before the caller's finally block removes the directory.
+    abort(error);
+    await Promise.allSettled([first, second]);
+    throw error;
+  }
+}
+
 const DEFAULT_LOCAL_AGENT_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_LOCAL_AGENT_MCP_STARTUP_TIMEOUT_MS = 2 * 60_000;
 
@@ -307,28 +324,49 @@ export function createLocalAgentRuntimeProvider(
 
         rlog.lap("local_agent_runtime_start", { provider: runtimeProvider });
 
-        const history = await loadNormalizedSessionHistory({
+        const skillPreparationController = new AbortController();
+        const abortSkillPreparation = () => {
+          skillPreparationController.abort(run.controller.signal.reason);
+        };
+        run.controller.signal.addEventListener("abort", abortSkillPreparation, {
+          once: true,
+        });
+        if (run.controller.signal.aborted) {
+          abortSkillPreparation();
+        }
+        const historyPreparation = loadNormalizedSessionHistory({
           currentPrompt: enrichedPrompt,
           ...(deps.loadSessionMessages
             ? { loadSessionMessages: deps.loadSessionMessages }
             : {}),
           sessionId: run.sessionId,
         });
-        const tuttiSkillContext = await (shouldUseTuttiSkillContext(
-          enrichedPrompt,
-        )
+        const skillPreparation = shouldUseTuttiSkillContext(enrichedPrompt)
           ? loadTuttiAgentSkillContextForRun({
               agentTargetId: effectiveAgentTargetId,
               cwd: runDir,
               runId: run.runId,
-              signal: run.controller.signal,
+              signal: skillPreparationController.signal,
             })
           : Promise.resolve({
               source: "standalone" as const,
               skillManifest: [],
               skills: [],
-              recommendedSystemPrompt: undefined,
-            }));
+            });
+        let history: Awaited<typeof historyPreparation>;
+        let tuttiSkillContext: Awaited<typeof skillPreparation>;
+        try {
+          [history, tuttiSkillContext] = await awaitConcurrentPreparation(
+            historyPreparation,
+            skillPreparation,
+            (reason) => skillPreparationController.abort(reason),
+          );
+        } finally {
+          run.controller.signal.removeEventListener(
+            "abort",
+            abortSkillPreparation,
+          );
+        }
         const skillManifest = [
           ...mapWorkspaceSkillsToLocalAgentManifest(workspaceSkills),
           ...tuttiSkillContext.skillManifest,
