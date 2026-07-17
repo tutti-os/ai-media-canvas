@@ -73,7 +73,7 @@ export type RuntimeRunRecord = {
 };
 
 export type RuntimeExecutionContext = {
-  backendResult: ReturnType<typeof createAgentBackend>;
+  backendResult: Awaited<ReturnType<typeof createAgentBackend>>;
   brandKitId: string | null;
   resolvedModel: BaseLanguageModel | string | undefined;
   rlog: ReturnType<typeof createPipelineLogger>;

@@ -1,4 +1,4 @@
-import { mkdirSync, realpathSync } from "node:fs";
+import { mkdir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
   type AnyBackendProtocol,
@@ -32,7 +32,7 @@ const DEFAULT_SKILLS_ROOT = "/opt/ai-media-canvas/skills";
  *   /workspace-skills/ → FilesystemBackend (per-run user workspace skills, read-only)
  *   default            → LocalShellBackend (per-run sandbox, provides execute tool)
  */
-export function createProductionBackendFactory(
+export async function createProductionBackendFactory(
   canvasId: string,
   options?: {
     sandboxRoot?: string;
@@ -40,15 +40,15 @@ export function createProductionBackendFactory(
     tuttiCliPath?: string;
     workspaceSkills?: WorkspaceSkillEntry[];
   },
-): AgentBackendResult & { sandboxDir: string } {
+): Promise<AgentBackendResult & { sandboxDir: string }> {
   const sandboxRoot = resolve(options?.sandboxRoot ?? DEFAULT_SANDBOX_ROOT);
   const skillsRoot = resolve(options?.skillsRoot ?? DEFAULT_SKILLS_ROOT);
 
   // Per-run isolated directory
   const runId = crypto.randomUUID();
   const sandboxDir = join(sandboxRoot, runId);
-  mkdirSync(sandboxDir, { recursive: true });
-  const realSandboxDir = realpathSync(sandboxDir);
+  await mkdir(sandboxDir, { recursive: true });
+  const realSandboxDir = await realpath(sandboxDir);
 
   // LocalShellBackend = FilesystemBackend + execute tool
   // env 只传必要变量，不传 API key 等敏感信息
@@ -73,7 +73,7 @@ export function createProductionBackendFactory(
     rootDir: skillsRoot,
     virtualMode: true,
   });
-  const workspaceSkillsBackend = createWorkspaceSkillsFilesystemBackend({
+  const workspaceSkillsBackend = await createWorkspaceSkillsFilesystemBackend({
     rootDir: join(sandboxDir, "workspace-skills"),
     workspaceSkills: options?.workspaceSkills ?? [],
   });

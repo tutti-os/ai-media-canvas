@@ -1,4 +1,4 @@
-import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import {
   type AnyBackendProtocol,
@@ -53,34 +53,46 @@ class ReadonlyBackend implements BackendProtocolV2 {
   }
 }
 
-export function createWorkspaceSkillsFilesystemBackend(input: {
+export async function createWorkspaceSkillsFilesystemBackend(input: {
   rootDir: string;
   workspaceSkills: WorkspaceSkillEntry[];
-}): AnyBackendProtocol | null {
+}): Promise<AnyBackendProtocol | null> {
   if (input.workspaceSkills.length === 0) {
     return null;
   }
 
   const rootDir = resolve(input.rootDir);
-  mkdirSync(rootDir, { recursive: true });
+  await mkdir(rootDir, { recursive: true });
 
-  for (const skill of input.workspaceSkills) {
+  await mapWithConcurrency(input.workspaceSkills, 4, async (skill) => {
     const skillRoot = resolve(rootDir, skill.name);
     assertInside(rootDir, skillRoot);
-    mkdirSync(skillRoot, { recursive: true });
-    writeFileSync(join(skillRoot, "SKILL.md"), skill.content, "utf8");
+    await mkdir(skillRoot, { recursive: true });
 
-    for (const file of skill.files) {
+    await mapWithConcurrency([
+      { path: "SKILL.md", content: skill.content },
+      ...skill.files,
+    ], 6, async (file) => {
       const filePath = resolve(skillRoot, file.path);
       assertInside(skillRoot, filePath);
-      mkdirSync(dirname(filePath), { recursive: true });
-      writeFileSync(filePath, file.content, "utf8");
-    }
-  }
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFile(filePath, file.content, "utf8");
+    });
+  });
 
   const backend = new FilesystemBackend({
-    rootDir: realpathSync(rootDir),
+    rootDir: await realpath(rootDir),
     virtualMode: true,
   });
   return new ReadonlyBackend(backend);
+}
+
+async function mapWithConcurrency<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>) {
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const item = items[nextIndex++];
+      if (item) await worker(item);
+    }
+  }));
 }

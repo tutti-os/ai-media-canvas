@@ -1429,7 +1429,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       const runtimeEnv = run.envOverride ?? options.env;
 
       // Create backend — production uses StateBackend (no local shell).
-      const backendResult = createAgentBackend(runtimeEnv, run.canvasId, {
+      const backendResult = await createAgentBackend(runtimeEnv, run.canvasId, {
         workspaceSkills,
       });
 

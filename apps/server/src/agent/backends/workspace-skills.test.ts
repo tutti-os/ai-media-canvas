@@ -22,7 +22,7 @@ describe("workspace skills backend", () => {
     const skillsRoot = join(tempRoot, "system-skills");
     mkdirSync(skillsRoot, { recursive: true });
 
-    const backendResult = createProductionBackendFactory("canvas-1", {
+    const backendResult = await createProductionBackendFactory("canvas-1", {
       sandboxRoot: join(tempRoot, "sandboxes"),
       skillsRoot,
       workspaceSkills: [

@@ -213,7 +213,7 @@ export function createServerDeepAgentRuntimeProvider(
         }
       }
 
-      const agent = deps.resolvedAgentFactory({
+      const agent = await deps.resolvedAgentFactory({
         backendResult,
         ...(brandKitId ? { brandKitId } : {}),
         ...(run.canvasId ? { canvasId: run.canvasId } : {}),
