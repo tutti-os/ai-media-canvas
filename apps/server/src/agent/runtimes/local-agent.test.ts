@@ -227,6 +227,18 @@ describe("createLocalAgentRuntimeProvider", () => {
     vi.stubEnv("CODEX_HOME", "/tmp/user-codex-home");
     const localAgentRuntimeRun = vi.fn(async function* () {
       yield {
+        type: "status" as const,
+        status: "initializing" as const,
+        message: "agent_timing",
+        diagnostic: {
+          kind: "timing",
+          phase: "prepare",
+          stage: "provider_plan",
+          elapsedMs: 12,
+          totalElapsedMs: 20,
+        },
+      } as never;
+      yield {
         type: "done" as const,
         status: "completed" as const,
         reason: "completed" as const,
@@ -261,7 +273,12 @@ describe("createLocalAgentRuntimeProvider", () => {
     );
 
     try {
-      await collect(provider.streamRun(context));
+      const events = await collect(provider.streamRun(context));
+      expect(events).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "status", message: "agent_timing" }),
+        ]),
+      );
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -273,6 +290,7 @@ describe("createLocalAgentRuntimeProvider", () => {
     const params = localAgentRuntimeRun.mock.calls[0]?.[0];
     expect(params?.cwd).toBe(runDir);
     expect(params).toMatchObject({
+      metadata: { timingDiagnostics: true },
       mcpServers: [
         {
           name: "aimc",
@@ -289,6 +307,20 @@ describe("createLocalAgentRuntimeProvider", () => {
     expect(params).not.toHaveProperty("managedAgentInvocation");
     expect(params).not.toHaveProperty("env");
     expectOrdinaryEnvOmitsToolToken(params?.env);
+    expect(context.rlog.info).toHaveBeenCalledWith("agent_kit_timing", {
+      phase: "prepare",
+      stage: "provider_plan",
+      elapsed_ms: 12,
+      total_elapsed_ms: 20,
+    });
+    expect(context.rlog.info).toHaveBeenCalledWith(
+      "agent_prepare_done",
+      expect.objectContaining({
+        history_count: expect.any(Number),
+        skill_count: expect.any(Number),
+        mcp_server_count: 1,
+      }),
+    );
     expect(revokeSession).toHaveBeenCalledWith("tool-token");
   });
 

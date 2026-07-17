@@ -24,11 +24,19 @@ export type AgentBackendResult = {
 export async function createAgentBackend(
   env: AgentBackendEnv,
   canvasId?: string,
-  options?: { workspaceSkills?: WorkspaceSkillEntry[] },
+  options?: {
+    /**
+     * Override only the disposable shell sandbox location. Persistent canvas
+     * workspace and memory data continue to use StoreBackend.
+     */
+    sandboxRoot?: string;
+    workspaceSkills?: WorkspaceSkillEntry[];
+  },
 ): Promise<AgentBackendResult> {
   if (env.agentBackendMode === "filesystem") {
     return createDevelopmentBackend(env, {
       ...(canvasId != null ? { canvasId } : {}),
+      ...(options?.sandboxRoot ? { sandboxRoot: options.sandboxRoot } : {}),
       ...(options?.workspaceSkills
         ? { workspaceSkills: options.workspaceSkills }
         : {}),
@@ -43,9 +51,11 @@ export async function createAgentBackend(
   }
 
   return createProductionBackendFactory(canvasId, {
-    ...(env.appDataDir
-      ? { sandboxRoot: join(env.appDataDir, "ai-media-canvas-sandbox") }
-      : {}),
+    ...(options?.sandboxRoot
+      ? { sandboxRoot: options.sandboxRoot }
+      : env.appDataDir
+        ? { sandboxRoot: join(env.appDataDir, "ai-media-canvas-sandbox") }
+        : {}),
     ...(env.skillsRoot ? { skillsRoot: env.skillsRoot } : {}),
     ...(env.tuttiCliPath ? { tuttiCliPath: env.tuttiCliPath } : {}),
     ...(options?.workspaceSkills
