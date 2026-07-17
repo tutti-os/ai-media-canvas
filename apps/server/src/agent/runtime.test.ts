@@ -29,7 +29,11 @@ import {
 import { createLocalStore } from "../local/store.js";
 import { createLocalUserClient } from "../local/user-client.js";
 import { buildAimcSystemPrompt } from "./prompts/aimc-main.js";
-import { buildUserMessage, createAgentRunService } from "./runtime.js";
+import {
+  buildUserMessage,
+  createAgentRunService,
+  resolveBrandKitIdForRun,
+} from "./runtime.js";
 
 const tempDirs: string[] = [];
 
@@ -43,6 +47,21 @@ afterEach(() => {
 });
 
 describe("createAgentRunService", () => {
+  it("treats Brand Kit client construction failures as optional context", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(
+      resolveBrandKitIdForRun({
+        accessToken: "token",
+        canvasId: "canvas-1",
+        createUserClient: () => {
+          throw new Error("client unavailable");
+        },
+      }),
+    ).resolves.toBeNull();
+    expect(warn).toHaveBeenCalled();
+  });
+
   it("drops unavailable image generation preference models from user context", () => {
     registerImageProvider({
       name: "codex-imagegen",
@@ -2227,6 +2246,7 @@ describe("createAgentRunService", () => {
   });
 
   it("passes enabled local workspace skills to local-agent providers", async () => {
+    createAgentBackendMock.mockClear();
     const dataRoot = mkdtempSync(join(tmpdir(), "aimc-runtime-"));
     tempDirs.push(dataRoot);
 
@@ -2313,6 +2333,14 @@ describe("createAgentRunService", () => {
     );
     expect(capturedPrompt).not.toContain(
       "/workspace-skills/canvas-director/SKILL.md",
+    );
+    expect(createAgentBackendMock).toHaveBeenCalledWith(
+      expect.objectContaining({ agentBackendMode: "state" }),
+      project.primaryCanvas.id,
+      {
+        sandboxRoot: tmpdir(),
+        workspaceSkills: [],
+      },
     );
   });
 

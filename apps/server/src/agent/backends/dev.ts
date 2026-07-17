@@ -30,6 +30,8 @@ export async function createDevelopmentBackend(
   options?: {
     /** Canvas ID — used to scope the run when workspace skills are available. */
     canvasId?: string;
+    /** Override for disposable per-run shell files. */
+    sandboxRoot?: string;
     /** Workspace skills loaded for this run. */
     workspaceSkills?: WorkspaceSkillEntry[];
   },
@@ -41,9 +43,10 @@ export async function createDevelopmentBackend(
   }
 
   const sandboxRoot = resolve(
-    env.appDataDir
-      ? join(env.appDataDir, "ai-media-canvas-sandbox-dev")
-      : DEFAULT_DEV_SANDBOX_ROOT,
+    options?.sandboxRoot ??
+      (env.appDataDir
+        ? join(env.appDataDir, "ai-media-canvas-sandbox-dev")
+        : DEFAULT_DEV_SANDBOX_ROOT),
   );
   const runId = crypto.randomUUID();
   const sandboxDir = join(sandboxRoot, runId);

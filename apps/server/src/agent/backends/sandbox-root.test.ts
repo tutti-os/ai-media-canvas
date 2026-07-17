@@ -60,6 +60,29 @@ describe("agent sandbox root", () => {
     );
   });
 
+  it("honors a runtime-local sandbox override without changing app data", async () => {
+    const tempRoot = createTempRoot();
+    const appDataDir = join(tempRoot, "app-data");
+    const runtimeRoot = join(tempRoot, "runtime-local");
+    const skillsRoot = join(tempRoot, "skills");
+    mkdirSync(appDataDir, { recursive: true });
+    mkdirSync(runtimeRoot, { recursive: true });
+    mkdirSync(skillsRoot, { recursive: true });
+
+    const backendResult = await createAgentBackend(
+      {
+        agentBackendMode: "state",
+        appDataDir,
+        skillsRoot,
+      },
+      "canvas-1",
+      { sandboxRoot: runtimeRoot, workspaceSkills: [] },
+    );
+
+    expectSandboxDirInside(backendResult.sandboxDir, runtimeRoot);
+    expect(backendResult.sandboxDir?.startsWith(appDataDir)).toBe(false);
+  });
+
   it("uses TUTTI_APP_DATA_DIR for filesystem sandboxes", async () => {
     const tempRoot = createTempRoot();
     const agentFilesRoot = join(tempRoot, "agent-files");
@@ -91,12 +114,14 @@ describe("agent sandbox root", () => {
     mkdirSync(dataRoot, { recursive: true });
     mkdirSync(skillsRoot, { recursive: true });
 
-    const backendResult = await createAgentBackend(loadServerEnv({
-      agentBackendMode: "filesystem",
-      agentFilesRoot,
-      dataRoot,
-      skillsRoot,
-    }));
+    const backendResult = await createAgentBackend(
+      loadServerEnv({
+        agentBackendMode: "filesystem",
+        agentFilesRoot,
+        dataRoot,
+        skillsRoot,
+      }),
+    );
 
     expectSandboxDirInside(
       backendResult.sandboxDir,

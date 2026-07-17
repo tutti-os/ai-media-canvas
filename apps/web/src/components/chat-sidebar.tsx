@@ -343,6 +343,7 @@ export function ChatSidebar({
   const abortRef = useRef(false);
   const inFlightSessionIdsRef = useRef<Set<string>>(new Set());
   const activeRunIdsRef = useRef<Map<string, string>>(new Map());
+  const lastCompletedRunIdsRef = useRef<Map<string, string>>(new Map());
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [cancelingRunId, setCancelingRunId] = useState<string | null>(null);
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
@@ -935,6 +936,21 @@ export function ChatSidebar({
           cleanupStreamListener = ws.onEvent((entry) => {
             const event = entry.event;
             if (!runIdRef.current || event.runId !== runIdRef.current) return;
+            if (event.type === "run.completed") {
+              // The server validates runtime/target identity and downgrades an
+              // incompatible native resume to a history handoff. Keeping this
+              // cursor per chat session lets compatible local providers reuse
+              // their native session without coupling the UI to provider IDs.
+              lastCompletedRunIdsRef.current.set(currentSessionId, event.runId);
+            } else if (
+              event.type === "run.failed" ||
+              event.type === "run.canceled"
+            ) {
+              // The cached cursor belongs to the previous successful run, not
+              // to the current failed run. Drop it so a stale provider session
+              // cannot be retried indefinitely on the next send.
+              lastCompletedRunIdsRef.current.delete(currentSessionId);
+            }
             if (abortRef.current) {
               resolveStream();
               return;
@@ -1019,6 +1035,8 @@ export function ChatSidebar({
             !agentTargetIdRef.current
               ? agentModelRef.current.split(":")[0]?.trim()
               : undefined;
+          const previousRunId =
+            lastCompletedRunIdsRef.current.get(currentSessionId);
           const runPayload = {
             sessionId: currentSessionId,
             conversationId: canvasId,
@@ -1028,6 +1046,12 @@ export function ChatSidebar({
                 ? ("en" as const)
                 : ("zh-CN" as const),
             canvasId,
+            ...(previousRunId
+              ? {
+                  resumeFromRunId: previousRunId,
+                  resumeMode: "auto" as const,
+                }
+              : {}),
             ...(currentAttachments.length > 0
               ? { attachments: currentAttachments }
               : {}),

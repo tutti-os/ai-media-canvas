@@ -1,6 +1,7 @@
 // @credits-system — Agent tool runtime with credit checks before image/video generation
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type {
@@ -143,6 +144,69 @@ function recordOrNull(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+export async function resolveBrandKitIdForRun(input: {
+  accessToken?: string;
+  canvasId?: string;
+  createUserClient?: (accessToken: string) => unknown;
+}): Promise<string | null> {
+  if (!input.canvasId || !input.accessToken || !input.createUserClient) {
+    return null;
+  }
+
+  const { accessToken, canvasId, createUserClient } = input;
+  let client: BrandKitLookupClient;
+  try {
+    const candidate = createUserClient(accessToken);
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      !("from" in candidate) ||
+      typeof candidate.from !== "function"
+    ) {
+      return null;
+    }
+    client = candidate as BrandKitLookupClient;
+  } catch (error) {
+    console.warn("Failed to create Brand Kit lookup client:", error);
+    return null;
+  }
+  try {
+    const { data: canvas } = await client
+      .from("canvases")
+      .select("project_id, projects!inner(brand_kit_id)")
+      .eq("id", canvasId)
+      .maybeSingle();
+    const canvasRecord = recordOrNull(canvas);
+    const projectRecord = recordOrNull(canvasRecord?.projects);
+    return typeof projectRecord?.brand_kit_id === "string"
+      ? projectRecord.brand_kit_id
+      : null;
+  } catch {
+    // Some PostgREST deployments do not expose the FK relationship. Retain
+    // the compatible two-query fallback without delaying unrelated runtime
+    // preparation.
+    try {
+      const { data: canvas } = await client
+        .from("canvases")
+        .select("project_id")
+        .eq("id", canvasId)
+        .maybeSingle();
+      const projectId = recordOrNull(canvas)?.project_id;
+      if (typeof projectId !== "string") return null;
+      const { data: project } = await client
+        .from("projects")
+        .select("brand_kit_id")
+        .eq("id", projectId)
+        .maybeSingle();
+      const brandKitId = recordOrNull(project)?.brand_kit_id;
+      return typeof brandKitId === "string" ? brandKitId : null;
+    } catch (error) {
+      console.warn("Failed to resolve brand kit ID:", error);
+      return null;
+    }
+  }
 }
 
 /**
@@ -1406,37 +1470,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         };
       }
 
-      // Load workspace skills (user-installed skills from DB).
-      // Done before backend creation so we know whether to add the
-      // /workspace-skills/ Store route.
-      let workspaceSkills: WorkspaceSkillEntry[] = [];
-      if (run.canvasId && run.accessToken && options.createUserClient) {
-        try {
-          workspaceSkills = await resolveAimcWorkspaceSkills({
-            accessToken: run.accessToken,
-            canvasId: run.canvasId,
-            createUserClient: options.createUserClient,
-          });
-          rlog.lap("workspace_skills_loaded", {
-            count: workspaceSkills.length,
-          });
-        } catch (err) {
-          // Non-fatal: agent runs without workspace skills
-          console.warn("[runtime] Failed to load workspace skills:", err);
-        }
-      }
-
       const runtimeEnv = run.envOverride ?? options.env;
-
-      // Create backend — production uses StateBackend (no local shell).
-      const backendResult = await createAgentBackend(runtimeEnv, run.canvasId, {
-        workspaceSkills,
-      });
-
+      let backendResult: Awaited<ReturnType<typeof createAgentBackend>> | null =
+        null;
       let activeRuntimeTarget: RuntimeTarget | null = null;
       let runtimeLease: { release(): void } | null = null;
 
       try {
+        // Runtime selection is pure and must happen before filesystem/backend
+        // preparation. In particular, local-agent runs must not first create a
+        // durable NFS sandbox intended for the server deep-agent.
         const modelOverride =
           isManagedModelId(run.modelOverride) && runtimeEnv.agentModel
             ? runtimeEnv.agentModel
@@ -1461,57 +1504,84 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           run.runId,
         );
 
-        // Resolve brand kit ID from canvas → project in a single joined query
-        let brandKitId: string | null = null;
-        if (run.canvasId && run.accessToken && options.createUserClient) {
-          try {
-            const client = options.createUserClient(
-              run.accessToken,
-            ) as BrandKitLookupClient;
-            const { data: canvas } = await client
-              .from("canvases")
-              .select("project_id, projects!inner(brand_kit_id)")
-              .eq("id", run.canvasId)
-              .maybeSingle();
-            const canvasRecord = recordOrNull(canvas);
-            const projectRecord = recordOrNull(canvasRecord?.projects);
-            brandKitId =
-              typeof projectRecord?.brand_kit_id === "string"
-                ? projectRecord.brand_kit_id
-                : null;
-          } catch (err) {
-            // Fallback: joined query may fail if FK isn't exposed via PostgREST
-            // In that case, try the two-step approach
-            try {
-              const client = options.createUserClient(
-                run.accessToken,
-              ) as BrandKitLookupClient;
-              const { data: c } = await client
-                .from("canvases")
-                .select("project_id")
-                .eq("id", run.canvasId)
-                .maybeSingle();
-              const canvasRecord = recordOrNull(c);
-              const projectId = canvasRecord?.project_id;
-              if (typeof projectId === "string") {
-                const { data: p } = await client
-                  .from("projects")
-                  .select("brand_kit_id")
-                  .eq("id", projectId)
-                  .maybeSingle();
-                const projectRecord = recordOrNull(p);
-                brandKitId =
-                  typeof projectRecord?.brand_kit_id === "string"
-                    ? projectRecord.brand_kit_id
-                    : null;
-              }
-            } catch (err2) {
-              console.warn("Failed to resolve brand kit ID:", err2);
-            }
-          }
-        }
+        const workspaceSkillsStartedAt = Date.now();
+        const workspaceSkillsPromise = resolveAimcWorkspaceSkills({
+          ...(run.accessToken ? { accessToken: run.accessToken } : {}),
+          ...(run.canvasId ? { canvasId: run.canvasId } : {}),
+          ...(options.createUserClient
+            ? { createUserClient: options.createUserClient }
+            : {}),
+        })
+          .catch((error) => {
+            // Non-fatal: the agent remains usable without optional workspace
+            // skills.
+            console.warn("[runtime] Failed to load workspace skills:", error);
+            return [] as WorkspaceSkillEntry[];
+          })
+          .then((skills) => {
+            rlog.info("workspace_skills_prepare_done", {
+              count: skills.length,
+              elapsed_ms: Date.now() - workspaceSkillsStartedAt,
+            });
+            return skills;
+          });
 
-        rlog.lap("brand_kit_resolved");
+        const brandKitStartedAt = Date.now();
+        const brandKitPromise = resolveBrandKitIdForRun({
+          ...(run.accessToken ? { accessToken: run.accessToken } : {}),
+          ...(run.canvasId ? { canvasId: run.canvasId } : {}),
+          ...(options.createUserClient
+            ? { createUserClient: options.createUserClient }
+            : {}),
+        }).then((brandKitId) => {
+          rlog.info("brand_query_done", {
+            elapsed_ms: Date.now() - brandKitStartedAt,
+            found: brandKitId != null,
+          });
+          return brandKitId;
+        });
+
+        const backendStartedAt = Date.now();
+        const backendPromise =
+          resolvedRuntimeTarget.kind === "local-agent"
+            ? createAgentBackend(runtimeEnv, run.canvasId, {
+                // Only the StoreBackend routes are used by the local tool
+                // gateway. Keep its disposable shell backend VM-local and do
+                // not materialize workspace skills here: the provider runDir
+                // owns the single local-agent skill copy.
+                // Create the UUID directory directly below the OS/runtime
+                // temp root. A shared named parent could be owned by a
+                // previous Unix identity in workspace-session-user mode.
+                sandboxRoot: tmpdir(),
+                workspaceSkills: [],
+              })
+            : workspaceSkillsPromise.then((workspaceSkills) =>
+                createAgentBackend(runtimeEnv, run.canvasId, {
+                  workspaceSkills,
+                }),
+              );
+        const measuredBackendPromise = Promise.resolve(backendPromise).then(
+          (result) => {
+            rlog.info("backend_prepare_done", {
+              elapsed_ms: Date.now() - backendStartedAt,
+              runtime_kind: resolvedRuntimeTarget.kind,
+              sandbox_scope:
+                resolvedRuntimeTarget.kind === "local-agent"
+                  ? "runtime-local"
+                  : "configured",
+            });
+            return result;
+          },
+        );
+
+        const [workspaceSkills, brandKitId, preparedBackendResult] =
+          await Promise.all([
+            workspaceSkillsPromise,
+            brandKitPromise,
+            measuredBackendPromise,
+          ]);
+        backendResult = preparedBackendResult;
+        rlog.lap("runtime_preparation_done");
 
         options.agentRunStore?.updateRun({
           runId,
@@ -1525,7 +1595,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         for await (const event of runtimeControlPlane.streamRun(
           resolvedRuntimeTarget,
           {
-            backendResult,
+            backendResult: preparedBackendResult,
             brandKitId,
             resolvedModel,
             rlog,
@@ -1580,7 +1650,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         return;
       } finally {
         runtimeLease?.release();
-        if (backendResult.sandboxDir) {
+        if (backendResult?.sandboxDir) {
           rm(backendResult.sandboxDir, {
             recursive: true,
             force: true,

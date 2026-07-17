@@ -759,6 +759,81 @@ describe("ChatSidebar", () => {
     expect(saveMessageMock).toHaveBeenCalledTimes(1);
   });
 
+  it("drops a consumed resume cursor after the resumed run fails", async () => {
+    let listener: ((entry: { event: Record<string, unknown> }) => void) | null =
+      null;
+    let nextRun = 0;
+    mockWs = {
+      ...mockWs,
+      startRun: vi.fn((_payload, onAck) => {
+        nextRun += 1;
+        onAck?.({
+          type: "command.ack",
+          action: "agent.run",
+          payload: {
+            runId: `run-${nextRun}`,
+            assistantMessageId: `assistant-${nextRun}`,
+          },
+        });
+      }),
+      onEvent: vi.fn((nextListener) => {
+        listener = nextListener as typeof listener;
+        return () => {
+          listener = null;
+        };
+      }),
+    };
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await findChatInput();
+    await userEvent.type(input, "first{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+    act(() => {
+      listener?.({
+        event: {
+          type: "run.completed",
+          runId: "run-1",
+          timestamp: "2026-07-17T00:00:00.000Z",
+        },
+      });
+    });
+
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await userEvent.type(input, "second{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(2));
+    expect(
+      (mockWs.startRun as ReturnType<typeof vi.fn>).mock.calls[1]?.[0],
+    ).toMatchObject({ resumeFromRunId: "run-1", resumeMode: "auto" });
+    act(() => {
+      listener?.({
+        event: {
+          type: "run.failed",
+          runId: "run-2",
+          error: { code: "PROVIDER_FAILED", message: "stale session" },
+          timestamp: "2026-07-17T00:00:01.000Z",
+        },
+      });
+    });
+
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await userEvent.type(input, "third{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(3));
+    expect(
+      (mockWs.startRun as ReturnType<typeof vi.fn>).mock.calls[2]?.[0],
+    ).not.toHaveProperty("resumeFromRunId");
+  });
+
   it("allows a new session to send while another session is still running", async () => {
     render(
       <ToastProvider>
