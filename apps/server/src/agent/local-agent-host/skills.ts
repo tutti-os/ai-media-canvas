@@ -52,17 +52,36 @@ export async function materializeWorkspaceSkillsForLocalAgent(input: {
   workspaceSkills: WorkspaceSkillEntry[];
 }) {
   const runRoot = resolve(input.runDir);
-  for (const skill of input.workspaceSkills) {
+  await mapWithConcurrency(input.workspaceSkills, 6, async (skill) => {
     const skillRoot = resolve(runRoot, "workspace-skills", skill.name);
     assertInside(runRoot, skillRoot);
     await mkdir(skillRoot, { recursive: true });
-    await writeFile(join(skillRoot, "SKILL.md"), skill.content, "utf8");
+    await Promise.all([
+      writeFile(join(skillRoot, "SKILL.md"), skill.content, "utf8"),
+      mapWithConcurrency(skill.files, 6, async (file) => {
+        const filePath = resolve(skillRoot, file.path);
+        assertInside(skillRoot, filePath);
+        await mkdir(dirname(filePath), { recursive: true });
+        await writeFile(filePath, file.content, "utf8");
+      }),
+    ]);
+  });
+}
 
-    for (const file of skill.files) {
-      const filePath = resolve(skillRoot, file.path);
-      assertInside(skillRoot, filePath);
-      await mkdir(dirname(filePath), { recursive: true });
-      await writeFile(filePath, file.content, "utf8");
-    }
-  }
+async function mapWithConcurrency<T>(
+  values: readonly T[],
+  concurrency: number,
+  worker: (value: T) => Promise<void>,
+) {
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, values.length) },
+    async () => {
+      while (next < values.length) {
+        const index = next++;
+        await worker(values[index]!);
+      }
+    },
+  );
+  await Promise.all(workers);
 }

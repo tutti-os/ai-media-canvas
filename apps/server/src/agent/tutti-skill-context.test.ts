@@ -164,9 +164,6 @@ describe("loadTuttiAgentSkillContextForRun", () => {
       agentSessionId: "run-default",
       cwd: "/workspace/run",
     });
-    expect(runtime.detect).toHaveBeenCalledWith({
-      cwd: "/workspace/run",
-      refresh: true,
-    });
+    expect(runtime.detect).toHaveBeenCalledWith({ cwd: "/workspace/run" });
   });
 });

@@ -60,10 +60,7 @@ export async function loadDefaultTuttiAgentSkillContextForRun(input: {
   }
   try {
     const cwd = process.env.TUTTI_WORKSPACE_ROOT?.trim() || input.cwd;
-    const detections = await (input.runtime ?? localAgentRuntime).detect({
-      cwd,
-      refresh: true,
-    });
+    const detections = await (input.runtime ?? localAgentRuntime).detect({ cwd });
     const availableAgents = detections.filter(
       (agent) => agent.supported && Boolean(agent.agentTargetId),
     );

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -40,45 +40,17 @@ type AimcLocalAgentProviderPlugin = LocalAgentProviderPlugin<
   AgentRuntimeProvider
 >;
 
-const LOCAL_AGENT_RUNS_DIR_NAME = ".aimc-agent-runs";
-
-function safeRunDirSegment(value: string) {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
 export async function createLocalAgentRunDirectory(input: {
   appDataDir?: string;
   runId: string;
   runtimeProvider: AgentRuntimeProvider;
 }): Promise<string> {
-  const appDataRunsDir = input.appDataDir
-    ? join(input.appDataDir, LOCAL_AGENT_RUNS_DIR_NAME)
-    : undefined;
-
-  if (appDataRunsDir) {
-    return createAppDataLocalAgentRunDirectory(input, appDataRunsDir);
-  }
-
+  // Agent run state is disposable. Keeping it below TUTTI_APP_DATA_DIR makes
+  // every mkdir/write/rm cross FabricFS/NFS and blocks prompt startup. Use the
+  // VM-local temporary filesystem even when durable app data is configured.
   return mkdtemp(
     join(tmpdir(), `aimc-local-agent-${input.runtimeProvider}-run-`),
   );
-}
-
-async function createAppDataLocalAgentRunDirectory(
-  input: {
-    runId: string;
-    runtimeProvider: AgentRuntimeProvider;
-  },
-  appDataRunsDir: string,
-): Promise<string> {
-  const runDir = join(
-    appDataRunsDir,
-    `${safeRunDirSegment(input.runtimeProvider)}-${safeRunDirSegment(
-      input.runId,
-    )}`,
-  );
-  await mkdir(runDir, { recursive: true });
-  return runDir;
 }
 
 function mapResumeContext(
