@@ -93,6 +93,34 @@ function joinPromptParts(...parts: Array<string | undefined>) {
     .join("\n\n");
 }
 
+type AgentTimingDiagnostic = {
+  kind: "timing";
+  phase: "prepare" | "run";
+  stage: string;
+  elapsedMs: number;
+  totalElapsedMs: number;
+  outcome?: "completed" | "failed" | "canceled";
+};
+
+function readAgentTimingDiagnostic(
+  event: AgentEvent,
+): AgentTimingDiagnostic | undefined {
+  if (event.type !== "status") return undefined;
+  const diagnostic = (event as unknown as { diagnostic?: unknown }).diagnostic;
+  if (!diagnostic || typeof diagnostic !== "object") return undefined;
+  const candidate = diagnostic as Partial<AgentTimingDiagnostic>;
+  if (
+    candidate.kind !== "timing" ||
+    (candidate.phase !== "prepare" && candidate.phase !== "run") ||
+    typeof candidate.stage !== "string" ||
+    typeof candidate.elapsedMs !== "number" ||
+    typeof candidate.totalElapsedMs !== "number"
+  ) {
+    return undefined;
+  }
+  return candidate as AgentTimingDiagnostic;
+}
+
 async function awaitConcurrentPreparation<T, U>(
   first: Promise<T>,
   second: Promise<U>,
@@ -160,11 +188,22 @@ export function createLocalAgentRuntimeProvider(
         );
       }
 
-      const canvasSummary =
-        await deps.loadCanvasSummaryForRuntime(readyContext);
+      const appPrepareStartedAt = Date.now();
+      rlog.info("agent_prepare_started", {
+        provider: runtimeProvider,
+        agent_target_id: effectiveAgentTargetId,
+      });
+      const canvasSummaryStartedAt = Date.now();
+      const canvasSummary = await deps.loadCanvasSummaryForRuntime(readyContext);
+      rlog.info("agent_prepare_stage_done", {
+        stage: "canvas_summary",
+        elapsed_ms: Date.now() - canvasSummaryStartedAt,
+        found: canvasSummary != null,
+      });
 
       let attachmentDataMap: Record<string, string> = {};
       const attachmentMetadata: Record<string, ImageAttachmentMetadata> = {};
+      const attachmentPrepareStartedAt = Date.now();
       if (run.attachments?.length) {
         const downloaded: Array<{
           assetId: string;
@@ -210,6 +249,12 @@ export function createLocalAgentRuntimeProvider(
 
         attachmentDataMap = deps.buildAttachmentDataMap(downloaded);
       }
+      rlog.info("agent_prepare_stage_done", {
+        stage: "attachments",
+        elapsed_ms: Date.now() - attachmentPrepareStartedAt,
+        requested_count: run.attachments?.length ?? 0,
+        resolved_count: Object.keys(attachmentDataMap).length,
+      });
 
       const { text: enrichedPrompt } = deps.buildUserMessage(
         run.prompt,
@@ -247,6 +292,7 @@ export function createLocalAgentRuntimeProvider(
         normalizedPrompt,
       ].join("\n\n");
       let runDir: string | undefined;
+      const runDirectoryStartedAt = Date.now();
       try {
         run.controller.signal.throwIfAborted();
         runDir = deps.createRunDirectory
@@ -265,6 +311,10 @@ export function createLocalAgentRuntimeProvider(
           throw new Error("Local agent run directory is required.");
         }
         run.controller.signal.throwIfAborted();
+        rlog.info("agent_prepare_stage_done", {
+          stage: "run_directory",
+          elapsed_ms: Date.now() - runDirectoryStartedAt,
+        });
       } catch (error) {
         if (runDir) {
           await rm(runDir, { recursive: true, force: true });
@@ -272,11 +322,27 @@ export function createLocalAgentRuntimeProvider(
         throw error;
       }
       let gatewaySessionToken: string | undefined;
+      let executionStartedAt: number | undefined;
+      let executionOutcome: "completed" | "failed" | "canceled" = "failed";
+      let providerEventCount = 0;
+      let toolCallCount = 0;
+      let toolResultCount = 0;
+      let firstProviderEventSeen = false;
+      let firstTextSeen = false;
+      let firstToolSeen = false;
+      const toolStartedAt = new Map<string, number>();
       try {
+        const workspaceSkillMaterializationStartedAt = Date.now();
         await materializeWorkspaceSkillsForLocalAgent({
           runDir,
           workspaceSkills,
         });
+        rlog.info("agent_prepare_stage_done", {
+          stage: "workspace_skills_materialize",
+          elapsed_ms: Date.now() - workspaceSkillMaterializationStartedAt,
+          count: workspaceSkills.length,
+        });
+        const toolGatewayStartedAt = Date.now();
         const gatewaySession = deps.toolGateway.createSession({
           ...(run.accessToken ? { accessToken: run.accessToken } : {}),
           ...(Object.keys(attachmentDataMap).length > 0
@@ -317,6 +383,11 @@ export function createLocalAgentRuntimeProvider(
           ...(run.userId ? { userId: run.userId } : {}),
         });
         gatewaySessionToken = gatewaySession.token;
+        rlog.info("agent_prepare_stage_done", {
+          stage: "tool_gateway",
+          elapsed_ms: Date.now() - toolGatewayStartedAt,
+          mcp_server_count: 1,
+        });
 
         const messageId = run.assistantMessageId ?? `message_${run.runId}`;
         let terminalEmitted = false;
@@ -334,13 +405,22 @@ export function createLocalAgentRuntimeProvider(
         if (run.controller.signal.aborted) {
           abortSkillPreparation();
         }
+        const historyPreparationStartedAt = Date.now();
         const historyPreparation = loadNormalizedSessionHistory({
           currentPrompt: enrichedPrompt,
           ...(deps.loadSessionMessages
             ? { loadSessionMessages: deps.loadSessionMessages }
             : {}),
           sessionId: run.sessionId,
+        }).then((history) => {
+          rlog.info("agent_prepare_stage_done", {
+            stage: "conversation_history",
+            elapsed_ms: Date.now() - historyPreparationStartedAt,
+            count: history.length,
+          });
+          return history;
         });
+        const tuttiSkillPreparationStartedAt = Date.now();
         const skillPreparation = shouldUseTuttiSkillContext(enrichedPrompt)
           ? loadTuttiAgentSkillContextForRun({
               agentTargetId: effectiveAgentTargetId,
@@ -350,15 +430,25 @@ export function createLocalAgentRuntimeProvider(
             })
           : Promise.resolve({
               source: "standalone" as const,
+              recommendedSystemPrompt: undefined,
               skillManifest: [],
               skills: [],
             });
+        const measuredSkillPreparation = skillPreparation.then((context) => {
+          rlog.info("agent_prepare_stage_done", {
+            stage: "tutti_skill_context",
+            elapsed_ms: Date.now() - tuttiSkillPreparationStartedAt,
+            source: context.source,
+            skill_count: context.skillManifest.length,
+          });
+          return context;
+        });
         let history: Awaited<typeof historyPreparation>;
         let tuttiSkillContext: Awaited<typeof skillPreparation>;
         try {
           [history, tuttiSkillContext] = await awaitConcurrentPreparation(
             historyPreparation,
-            skillPreparation,
+            measuredSkillPreparation,
             (reason) => skillPreparationController.abort(reason),
           );
         } finally {
@@ -389,6 +479,12 @@ export function createLocalAgentRuntimeProvider(
             toolTimeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
           }),
         ];
+        rlog.info("agent_prepare_done", {
+          elapsed_ms: Date.now() - appPrepareStartedAt,
+          history_count: history.length,
+          skill_count: skillManifest.length,
+          mcp_server_count: mcpServers.length,
+        });
 
         yield {
           type: "run.started",
@@ -398,6 +494,11 @@ export function createLocalAgentRuntimeProvider(
           timestamp: deps.now(),
         };
 
+        executionStartedAt = Date.now();
+        rlog.info("agent_execution_started", {
+          provider: runtimeProvider,
+          model: localAgentModelIdForAcp(resolvedModel, runtimeProvider),
+        });
         for await (const event of deps.localAgentRuntime.run({
           agentTargetId: effectiveAgentTargetId,
           runId: run.runId,
@@ -417,9 +518,67 @@ export function createLocalAgentRuntimeProvider(
           signal: run.controller.signal,
           skillManifest,
           timeoutMs: resolveLocalAgentTimeoutMs(runtimeEnv),
+          metadata: { timingDiagnostics: true },
         })) {
+          const timingDiagnostic = readAgentTimingDiagnostic(event);
+          if (timingDiagnostic) {
+            rlog.info("agent_kit_timing", {
+              phase: timingDiagnostic.phase,
+              stage: timingDiagnostic.stage,
+              elapsed_ms: timingDiagnostic.elapsedMs,
+              total_elapsed_ms: timingDiagnostic.totalElapsedMs,
+              ...(timingDiagnostic.outcome
+                ? { outcome: timingDiagnostic.outcome }
+                : {}),
+            });
+            continue;
+          }
+          providerEventCount += 1;
+          if (!firstProviderEventSeen) {
+            firstProviderEventSeen = true;
+            rlog.info("agent_execution_first_event", {
+              elapsed_ms: Date.now() - executionStartedAt,
+              event_type: event.type,
+            });
+          }
+          if (!firstTextSeen && event.type === "text_delta") {
+            firstTextSeen = true;
+            rlog.info("agent_execution_first_text", {
+              elapsed_ms: Date.now() - executionStartedAt,
+            });
+          }
+          if (event.type === "tool_call") {
+            toolCallCount += 1;
+            toolStartedAt.set(event.id, Date.now());
+            if (!firstToolSeen) {
+              firstToolSeen = true;
+              rlog.info("agent_execution_first_tool", {
+                elapsed_ms: Date.now() - executionStartedAt,
+                tool_name: event.name,
+              });
+            }
+          }
+          if (event.type === "tool_result") {
+            toolResultCount += 1;
+            const startedAt = toolStartedAt.get(event.id);
+            rlog.info("agent_tool_done", {
+              tool_name: event.name ?? "unknown",
+              status:
+                event.status ?? (event.isError ? "failed" : "completed"),
+              ...(startedAt ? { elapsed_ms: Date.now() - startedAt } : {}),
+            });
+            toolStartedAt.delete(event.id);
+          }
           if (event.type === "error") {
             lastError = event;
+          }
+          if (event.type === "done") {
+            executionOutcome =
+              event.status === "failed"
+                ? "failed"
+                : event.status === "canceled"
+                  ? "canceled"
+                  : "completed";
           }
           if (event.type === "done" && (event.sessionId || event.resumeToken)) {
             deps.recordProviderResumeMetadata?.({
@@ -463,11 +622,34 @@ export function createLocalAgentRuntimeProvider(
             yield adaptedEvent;
           }
         }
+      } catch (error) {
+        executionOutcome = run.controller.signal.aborted
+          ? "canceled"
+          : "failed";
+        rlog.error("agent_execution_error", {
+          error_name: error instanceof Error ? error.name : "unknown",
+        });
+        throw error;
       } finally {
+        if (executionStartedAt !== undefined) {
+          rlog.info("agent_execution_done", {
+            outcome: executionOutcome,
+            elapsed_ms: Date.now() - executionStartedAt,
+            event_count: providerEventCount,
+            tool_call_count: toolCallCount,
+            tool_result_count: toolResultCount,
+            unfinished_tool_count: toolStartedAt.size,
+          });
+        }
+        const cleanupStartedAt = Date.now();
         if (gatewaySessionToken) {
           deps.toolGateway.revokeSession(gatewaySessionToken);
         }
         await rm(runDir, { recursive: true, force: true });
+        rlog.info("agent_cleanup_done", {
+          elapsed_ms: Date.now() - cleanupStartedAt,
+          total_elapsed_ms: Date.now() - appPrepareStartedAt,
+        });
       }
     },
   };
