@@ -24,7 +24,12 @@ function hasVertexConfig(settings: MediaProviderSettings) {
   );
 }
 
-function hasOfficialOpenAIImageProvider(settings: MediaProviderSettings) {
+const SUPPORTED_OPENAI_IMAGE_HOSTNAMES = new Set([
+  "api.openai.com",
+  "code.rayinai.com",
+]);
+
+function hasSupportedOpenAIImageProvider(settings: MediaProviderSettings) {
   if (!hasValue(settings.openAIApiKey)) return false;
   if (!hasValue(settings.openAIApiBase)) return true;
 
@@ -32,7 +37,8 @@ function hasOfficialOpenAIImageProvider(settings: MediaProviderSettings) {
     const url = new URL(settings.openAIApiBase);
     const pathname = url.pathname.replace(/\/+$/, "");
     return (
-      url.hostname === "api.openai.com" && (!pathname || pathname === "/v1")
+      SUPPORTED_OPENAI_IMAGE_HOSTNAMES.has(url.hostname) &&
+      (!pathname || pathname === "/v1")
     );
   } catch {
     return false;
@@ -46,7 +52,7 @@ export function hasConfiguredImageProvider(settings: MediaProviderSettings) {
     hasValue(settings.replicateApiToken) ||
     hasValue(settings.googleApiKey) ||
     hasVertexConfig(settings) ||
-    hasOfficialOpenAIImageProvider(settings) ||
+    hasSupportedOpenAIImageProvider(settings) ||
     hasValue(settings.volcesApiKey)
   );
 }
@@ -82,7 +88,7 @@ export function isMediaProviderConfigured(
     case "google-vertex":
       return hasVertexConfig(settings);
     case "openai":
-      return mediaType === "image" && hasOfficialOpenAIImageProvider(settings);
+      return mediaType === "image" && hasSupportedOpenAIImageProvider(settings);
     case "codex-imagegen":
       return mediaType === "image";
     case "volces":

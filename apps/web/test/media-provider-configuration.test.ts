@@ -40,6 +40,17 @@ describe("media provider configuration", () => {
     expect(isMediaProviderConfigured("openai", "image", settings)).toBe(true);
   });
 
+  it("treats the RayinAI gateway as an OpenAI image configuration", () => {
+    const settings = {
+      ...BASE_SETTINGS,
+      openAIApiKey: "sk-compatible",
+      openAIApiBase: "https://code.rayinai.com",
+    };
+
+    expect(hasConfiguredImageProvider(settings)).toBe(true);
+    expect(isMediaProviderConfigured("openai", "image", settings)).toBe(true);
+  });
+
   it("does not treat OpenAI-compatible gateways as official image configuration", () => {
     const settings = {
       ...BASE_SETTINGS,
@@ -52,11 +63,11 @@ describe("media provider configuration", () => {
   });
 
   it("treats Codex imagegen as configured when the backend exposes it", () => {
-    expect(isMediaProviderConfigured("codex-imagegen", "image", BASE_SETTINGS)).toBe(
-      true,
-    );
-    expect(isMediaProviderConfigured("codex-imagegen", "video", BASE_SETTINGS)).toBe(
-      false,
-    );
+    expect(
+      isMediaProviderConfigured("codex-imagegen", "image", BASE_SETTINGS),
+    ).toBe(true);
+    expect(
+      isMediaProviderConfigured("codex-imagegen", "video", BASE_SETTINGS),
+    ).toBe(false);
   });
 });

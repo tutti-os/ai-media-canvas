@@ -188,9 +188,8 @@ const MEDIA_PROVIDER_CARDS: readonly MediaProviderCard[] = [
     capabilities: ["image"],
     summaryKey: "media.cards.openai.summary",
     models: [
+      { label: "GPT Image 2", capabilities: ["image"] },
       { label: "GPT Image 1.5", capabilities: ["image"] },
-      { label: "GPT Image 1", capabilities: ["image"] },
-      { label: "GPT Image 1 Mini", capabilities: ["image"] },
     ],
     fields: [
       {

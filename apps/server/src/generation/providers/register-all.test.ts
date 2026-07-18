@@ -29,7 +29,7 @@ describe("registerAllProviders", () => {
 
     expect(getAvailableImageModels()).toContainEqual(
       expect.objectContaining({
-        id: "gpt-image-1",
+        id: "gpt-image-2",
         provider: "openai",
       }),
     );
@@ -48,7 +48,26 @@ describe("registerAllProviders", () => {
 
     expect(getAvailableImageModels()).toContainEqual(
       expect.objectContaining({
-        id: "gpt-image-1",
+        id: "gpt-image-2",
+        provider: "openai",
+      }),
+    );
+  });
+
+  it("registers OpenAI image models for the RayinAI compatible endpoint", () => {
+    registerAllProviders(
+      loadServerEnv(
+        {
+          openAIApiKey: "sk-compatible",
+          openAIApiBase: "https://code.rayinai.com",
+        },
+        {},
+      ),
+    );
+
+    expect(getAvailableImageModels()).toContainEqual(
+      expect.objectContaining({
+        id: "gpt-image-2",
         provider: "openai",
       }),
     );
@@ -67,7 +86,7 @@ describe("registerAllProviders", () => {
 
     expect(getAvailableImageModels()).not.toContainEqual(
       expect.objectContaining({
-        id: "gpt-image-1",
+        id: "gpt-image-2",
         provider: "openai",
       }),
     );
