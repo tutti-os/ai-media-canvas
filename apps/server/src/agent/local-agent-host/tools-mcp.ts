@@ -1,5 +1,7 @@
 import readline from "node:readline";
 
+import { Agent, fetch } from "undici";
+
 type JsonRpcId = number | string;
 
 type JsonRpcRequest = {
@@ -10,6 +12,16 @@ type JsonRpcRequest = {
 
 const gatewayUrl = process.env.AIMC_TOOL_GATEWAY_URL;
 const toolToken = process.env.AIMC_TOOL_TOKEN;
+
+// Node's global fetch uses Undici's 5-minute headers/body timeout by default.
+// Image jobs may legitimately run for up to 10 minutes, so keep the local MCP
+// bridge alive long enough for the gateway to return the final job result. The
+// enclosing local-agent tool timeout remains the ultimate 30-minute guard.
+const TOOL_GATEWAY_RESPONSE_TIMEOUT_MS = 15 * 60_000;
+const gatewayDispatcher = new Agent({
+  headersTimeout: TOOL_GATEWAY_RESPONSE_TIMEOUT_MS,
+  bodyTimeout: TOOL_GATEWAY_RESPONSE_TIMEOUT_MS,
+});
 
 if (!gatewayUrl || !toolToken) {
   console.error("Missing AIMC_TOOL_GATEWAY_URL or AIMC_TOOL_TOKEN.");
@@ -43,6 +55,7 @@ function logMcpToolEvent(event: string, fields: Record<string, unknown>) {
 
 async function fetchManifest() {
   const response = await fetch(`${gatewayUrl}/manifest`, {
+    dispatcher: gatewayDispatcher,
     headers: {
       Authorization: `Bearer ${toolToken}`,
     },
@@ -61,6 +74,7 @@ async function callTool(
   args: Record<string, unknown>,
 ): Promise<{ isError: boolean; result: Record<string, unknown> }> {
   const response = await fetch(`${gatewayUrl}/${encodeURIComponent(name)}`, {
+    dispatcher: gatewayDispatcher,
     method: "POST",
     headers: {
       "Content-Type": "application/json",
