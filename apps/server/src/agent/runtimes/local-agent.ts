@@ -331,6 +331,7 @@ export function createLocalAgentRuntimeProvider(
       let firstTextSeen = false;
       let firstToolSeen = false;
       const toolStartedAt = new Map<string, number>();
+      const suppressedToolCallIds = new Set<string>();
       try {
         const workspaceSkillMaterializationStartedAt = Date.now();
         await materializeWorkspaceSkillsForLocalAgent({
@@ -595,6 +596,7 @@ export function createLocalAgentRuntimeProvider(
             messageId,
             now: deps.now,
             runId: run.runId,
+            suppressedToolCallIds,
           });
 
           for (const adaptedEvent of adaptedEvents) {
