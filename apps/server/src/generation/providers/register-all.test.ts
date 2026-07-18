@@ -29,7 +29,7 @@ describe("registerAllProviders", () => {
 
     expect(getAvailableImageModels()).toContainEqual(
       expect.objectContaining({
-        id: "gpt-image-1",
+        id: "gpt-image-2",
         provider: "openai",
       }),
     );
@@ -48,18 +48,37 @@ describe("registerAllProviders", () => {
 
     expect(getAvailableImageModels()).toContainEqual(
       expect.objectContaining({
-        id: "gpt-image-1",
+        id: "gpt-image-2",
         provider: "openai",
       }),
     );
   });
 
-  it("does not expose official OpenAI image models for OpenAI-compatible gateways", () => {
+  it("registers OpenAI image models for a custom compatible endpoint", () => {
     registerAllProviders(
       loadServerEnv(
         {
           openAIApiKey: "sk-compatible",
-          openAIApiBase: "https://api.deepseek.com",
+          openAIApiBase: "https://gateway.example/custom/openai/v1",
+        },
+        {},
+      ),
+    );
+
+    expect(getAvailableImageModels()).toContainEqual(
+      expect.objectContaining({
+        id: "gpt-image-2",
+        provider: "openai",
+      }),
+    );
+  });
+
+  it("does not register OpenAI image models for an invalid Base URL", () => {
+    registerAllProviders(
+      loadServerEnv(
+        {
+          openAIApiKey: "sk-compatible",
+          openAIApiBase: "not-a-url",
         },
         {},
       ),
@@ -67,7 +86,7 @@ describe("registerAllProviders", () => {
 
     expect(getAvailableImageModels()).not.toContainEqual(
       expect.objectContaining({
-        id: "gpt-image-1",
+        id: "gpt-image-2",
         provider: "openai",
       }),
     );

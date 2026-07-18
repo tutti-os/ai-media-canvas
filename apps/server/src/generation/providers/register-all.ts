@@ -21,7 +21,7 @@ import { KieImageProvider } from "./kie-image.js";
 import { KieVideoProvider } from "./kie-video.js";
 import {
   OpenAIImageProvider,
-  isOfficialOpenAIImageBaseURL,
+  isValidOpenAIImageBaseURL,
 } from "./openai-image.js";
 import { registerImageProvider, registerVideoProvider } from "./registry.js";
 import { ReplicateImageProvider } from "./replicate-image.js";
@@ -134,7 +134,7 @@ export function registerAllProviders(
   }
 
   // OpenAI — image only
-  if (env.openAIApiKey && isOfficialOpenAIImageBaseURL(env.openAIApiBase)) {
+  if (env.openAIApiKey && isValidOpenAIImageBaseURL(env.openAIApiBase)) {
     registerImageProvider(
       new OpenAIImageProvider(env.openAIApiKey, env.openAIApiBase),
     );

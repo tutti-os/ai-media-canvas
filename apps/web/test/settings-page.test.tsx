@@ -1083,6 +1083,27 @@ describe("SettingsPage", () => {
     );
     expect(screen.getByLabelText("Agnes API Key")).toHaveValue("sk-updated");
 
+    const openAIHeading = screen.getByRole("heading", { name: "OpenAI" });
+    const openAICard = openAIHeading.closest(".rounded-lg");
+    expect(openAICard).not.toBeNull();
+    await userEvent.click(
+      within(openAICard as HTMLElement).getByRole("button", {
+        name: "Add",
+      }),
+    );
+    expect(
+      within(openAICard as HTMLElement).getByText("GPT Image 2"),
+    ).toBeInTheDocument();
+    expect(
+      within(openAICard as HTMLElement).getByText("GPT Image 1.5"),
+    ).toBeInTheDocument();
+    expect(
+      within(openAICard as HTMLElement).queryByText("GPT Image 1"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(openAICard as HTMLElement).queryByText("GPT Image 1 Mini"),
+    ).not.toBeInTheDocument();
+
     await userEvent.click(screen.getByRole("tab", { name: "Video" }));
 
     const replicateHeading = await screen.findByRole("heading", {
