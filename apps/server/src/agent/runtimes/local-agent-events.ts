@@ -266,8 +266,9 @@ export function adaptLocalAgentEvent(input: {
   messageId: string;
   now: () => string;
   runId: string;
+  suppressedToolCallIds?: Set<string>;
 }): StreamEvent[] {
-  const { event, messageId, now, runId } = input;
+  const { event, messageId, now, runId, suppressedToolCallIds } = input;
   const log = createPipelineLogger("local_agent.events", { runId });
 
   if (event.type === "thinking" || event.type === "thinking_delta") {
@@ -321,6 +322,7 @@ export function adaptLocalAgentEvent(input: {
       typeof inputRecord?.command === "string" &&
       INTERNAL_SKILL_READ_RE.test(inputRecord.command)
     ) {
+      suppressedToolCallIds?.add(event.id);
       log.info("tool_call_suppressed", {
         providerToolName: event.name,
         reason: "internal_skill_read",
@@ -348,6 +350,14 @@ export function adaptLocalAgentEvent(input: {
 
   if (event.type === "tool_result") {
     const toolName = event.name ?? "unknown_tool";
+    if (suppressedToolCallIds?.delete(event.id)) {
+      log.info("tool_result_suppressed", {
+        providerToolName: toolName,
+        reason: "suppressed_tool_call",
+        toolCallId: event.id,
+      });
+      return [];
+    }
     if (toolName === ASK_USER_QUESTION_TOOL) {
       log.info("tool_result_suppressed", {
         providerToolName: toolName,
