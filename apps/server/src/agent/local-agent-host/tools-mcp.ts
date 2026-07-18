@@ -1,6 +1,5 @@
+import { request } from "node:http";
 import readline from "node:readline";
-
-import { Agent, fetch } from "undici";
 
 type JsonRpcId = number | string;
 
@@ -13,15 +12,12 @@ type JsonRpcRequest = {
 const gatewayUrl = process.env.AIMC_TOOL_GATEWAY_URL;
 const toolToken = process.env.AIMC_TOOL_TOKEN;
 
-// Node's global fetch uses Undici's 5-minute headers/body timeout by default.
-// Image jobs may legitimately run for up to 10 minutes, so keep the local MCP
-// bridge alive long enough for the gateway to return the final job result. The
-// enclosing local-agent tool timeout remains the ultimate 30-minute guard.
+// Node's global fetch uses Undici's 5-minute response timeout by default. Image
+// jobs may legitimately run for up to 10 minutes, so use the native HTTP client
+// with an explicit total timeout. The gateway is always a local HTTP endpoint,
+// and the enclosing local-agent tool timeout remains the ultimate 30-minute
+// guard.
 const TOOL_GATEWAY_RESPONSE_TIMEOUT_MS = 15 * 60_000;
-const gatewayDispatcher = new Agent({
-  headersTimeout: TOOL_GATEWAY_RESPONSE_TIMEOUT_MS,
-  bodyTimeout: TOOL_GATEWAY_RESPONSE_TIMEOUT_MS,
-});
 
 if (!gatewayUrl || !toolToken) {
   console.error("Missing AIMC_TOOL_GATEWAY_URL or AIMC_TOOL_TOKEN.");
@@ -53,28 +49,92 @@ function logMcpToolEvent(event: string, fields: Record<string, unknown>) {
   );
 }
 
+async function requestJson<T>(input: {
+  body?: string;
+  headers?: Record<string, string>;
+  method?: "GET" | "POST";
+  url: string;
+}): Promise<{ payload: T; status: number }> {
+  return new Promise((resolve, reject) => {
+    const target = new URL(input.url);
+    if (target.protocol !== "http:") {
+      reject(new Error(`Unsupported tool gateway protocol: ${target.protocol}`));
+      return;
+    }
+
+    const req = request(
+      target,
+      {
+        method: input.method ?? "GET",
+        headers: input.headers,
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer | string) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        response.on("error", (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+        response.on("end", () => {
+          clearTimeout(timeout);
+          const raw = Buffer.concat(chunks).toString("utf8");
+          try {
+            resolve({
+              payload: (raw.length > 0 ? JSON.parse(raw) : {}) as T,
+              status: response.statusCode ?? 500,
+            });
+          } catch {
+            reject(
+              new Error(
+                `Tool gateway returned invalid JSON (${response.statusCode ?? 500}).`,
+              ),
+            );
+          }
+        });
+      },
+    );
+    const timeout = setTimeout(() => {
+      req.destroy(
+        new Error(
+          `Tool gateway request timed out after ${TOOL_GATEWAY_RESPONSE_TIMEOUT_MS}ms.`,
+        ),
+      );
+    }, TOOL_GATEWAY_RESPONSE_TIMEOUT_MS);
+    req.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    if (input.body) req.write(input.body);
+    req.end();
+  });
+}
+
 async function fetchManifest() {
-  const response = await fetch(`${gatewayUrl}/manifest`, {
-    dispatcher: gatewayDispatcher,
+  const response = await requestJson<{ tools?: unknown }>({
+    url: `${gatewayUrl}/manifest`,
     headers: {
       Authorization: `Bearer ${toolToken}`,
     },
   });
 
-  if (!response.ok) {
+  if (response.status < 200 || response.status >= 300) {
     throw new Error(`Tool manifest failed: ${response.status}`);
   }
 
-  const payload = (await response.json()) as { tools?: unknown };
-  return Array.isArray(payload.tools) ? payload.tools : [];
+  return Array.isArray(response.payload.tools) ? response.payload.tools : [];
 }
 
 async function callTool(
   name: string,
   args: Record<string, unknown>,
 ): Promise<{ isError: boolean; result: Record<string, unknown> }> {
-  const response = await fetch(`${gatewayUrl}/${encodeURIComponent(name)}`, {
-    dispatcher: gatewayDispatcher,
+  const response = await requestJson<{
+    error?: { message?: string };
+    result?: Record<string, unknown>;
+  }>({
+    url: `${gatewayUrl}/${encodeURIComponent(name)}`,
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -83,12 +143,9 @@ async function callTool(
     body: JSON.stringify({ arguments: args }),
   });
 
-  const payload = (await response.json()) as {
-    error?: { message?: string };
-    result?: Record<string, unknown>;
-  };
+  const payload = response.payload;
 
-  if (!response.ok) {
+  if (response.status < 200 || response.status >= 300) {
     if (payload.result && typeof payload.result === "object") {
       return { isError: true, result: payload.result };
     }

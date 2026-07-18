@@ -61,4 +61,44 @@ describe("adaptLocalAgentEvent", () => {
 
     expect(events).toEqual([]);
   });
+
+  it("suppresses the result paired with an internal skill read", () => {
+    const suppressedToolCallIds = new Set<string>();
+    const sharedInput = {
+      messageId: "message-1",
+      now,
+      runId: "run-1",
+      suppressedToolCallIds,
+    };
+
+    expect(
+      adaptLocalAgentEvent({
+        ...sharedInput,
+        event: {
+          type: "tool_call",
+          id: "skill-read-1",
+          name: "Bash",
+          input: {
+            command: "sed -n '1,240p' workspace-skills/imagegen/SKILL.md",
+          },
+        } as AgentEvent,
+      }),
+    ).toEqual([]);
+    expect(suppressedToolCallIds).toEqual(new Set(["skill-read-1"]));
+
+    expect(
+      adaptLocalAgentEvent({
+        ...sharedInput,
+        event: {
+          type: "tool_result",
+          id: "skill-read-1",
+          name: "Bash",
+          output: {
+            output: "---\nname: imagegen\ndescription: generated image guidance",
+          },
+        } as AgentEvent,
+      }),
+    ).toEqual([]);
+    expect(suppressedToolCallIds).toEqual(new Set());
+  });
 });
