@@ -40,22 +40,22 @@ describe("media provider configuration", () => {
     expect(isMediaProviderConfigured("openai", "image", settings)).toBe(true);
   });
 
-  it("treats the RayinAI gateway as an OpenAI image configuration", () => {
+  it("treats a custom compatible gateway as an OpenAI image configuration", () => {
     const settings = {
       ...BASE_SETTINGS,
       openAIApiKey: "sk-compatible",
-      openAIApiBase: "https://code.rayinai.com",
+      openAIApiBase: "https://gateway.example/custom/openai/v1",
     };
 
     expect(hasConfiguredImageProvider(settings)).toBe(true);
     expect(isMediaProviderConfigured("openai", "image", settings)).toBe(true);
   });
 
-  it("does not treat OpenAI-compatible gateways as official image configuration", () => {
+  it("does not treat an invalid Base URL as an image configuration", () => {
     const settings = {
       ...BASE_SETTINGS,
       openAIApiKey: "sk-compatible",
-      openAIApiBase: "https://api.deepseek.com",
+      openAIApiBase: "not-a-url",
     };
 
     expect(hasConfiguredImageProvider(settings)).toBe(false);

@@ -27,11 +27,6 @@ const OPENAI_IMAGE_MODELS: readonly ModelInfo[] = [
   },
 ];
 
-const SUPPORTED_OPENAI_IMAGE_HOSTNAMES = new Set([
-  "api.openai.com",
-  "code.rayinai.com",
-]);
-
 const OPENAI_QUALITY_BY_SEMANTIC = {
   standard: "low",
   hd: "medium",
@@ -86,18 +81,14 @@ function resolveOpenAIImageDimensions(
     : { width: roundTo16(longEdge * ratio), height: longEdge };
 }
 
-export function isSupportedOpenAIImageBaseURL(
+export function isValidOpenAIImageBaseURL(
   baseURL: string | undefined,
 ): boolean {
   if (!baseURL) return true;
 
   try {
     const url = new URL(baseURL);
-    const pathname = url.pathname.replace(/\/+$/, "");
-    return (
-      SUPPORTED_OPENAI_IMAGE_HOSTNAMES.has(url.hostname) &&
-      (!pathname || pathname === "/v1")
-    );
+    return url.protocol === "http:" || url.protocol === "https:";
   } catch {
     return false;
   }

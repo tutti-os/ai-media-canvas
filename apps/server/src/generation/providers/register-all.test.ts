@@ -54,12 +54,12 @@ describe("registerAllProviders", () => {
     );
   });
 
-  it("registers OpenAI image models for the RayinAI compatible endpoint", () => {
+  it("registers OpenAI image models for a custom compatible endpoint", () => {
     registerAllProviders(
       loadServerEnv(
         {
           openAIApiKey: "sk-compatible",
-          openAIApiBase: "https://code.rayinai.com",
+          openAIApiBase: "https://gateway.example/custom/openai/v1",
         },
         {},
       ),
@@ -73,12 +73,12 @@ describe("registerAllProviders", () => {
     );
   });
 
-  it("does not expose official OpenAI image models for OpenAI-compatible gateways", () => {
+  it("does not register OpenAI image models for an invalid Base URL", () => {
     registerAllProviders(
       loadServerEnv(
         {
           openAIApiKey: "sk-compatible",
-          openAIApiBase: "https://api.deepseek.com",
+          openAIApiBase: "not-a-url",
         },
         {},
       ),
