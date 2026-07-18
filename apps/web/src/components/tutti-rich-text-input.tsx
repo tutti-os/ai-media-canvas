@@ -6,8 +6,6 @@ import {
   type RichTextTriggerMenuAnchor,
   type RichTextTriggerMenuPlacement,
 } from "@tutti-os/ui-rich-text/editor";
-import type { RichTextTriggerProvider } from "@tutti-os/ui-rich-text/types";
-import type { TuttiExternalAtQueryResult } from "@tutti-os/workspace-external-core/contracts";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
@@ -20,7 +18,6 @@ import {
 } from "react";
 
 import { useAppTranslation } from "@/i18n";
-import { createTuttiExternalAgentContextMentionProviders } from "./tutti-at-mentions";
 
 export type TuttiRichTextInputHandle = {
   focus: () => void;
@@ -79,9 +76,6 @@ export const TuttiRichTextInput = forwardRef<
 ) {
   const { t } = useAppTranslation("chat");
   const fieldRef = useRef<HTMLDivElement | null>(null);
-  const triggerProviders = useMemo<
-    readonly RichTextTriggerProvider<TuttiExternalAtQueryResult>[]
-  >(() => createTuttiExternalAgentContextMentionProviders(), []);
   const mentionPaletteCategories = useMemo<
     readonly MentionPaletteCategoryConfig[]
   >(
@@ -185,7 +179,6 @@ export const TuttiRichTextInput = forwardRef<
           noMatchesLabel: t("input.mentionEmpty"),
           removeReferenceActionLabel: t("input.mentionRemove"),
         }}
-        triggerProviders={triggerProviders}
         value={value}
         onChange={onChange}
       />
