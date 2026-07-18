@@ -1,11 +1,14 @@
 import { spawn } from "node:child_process";
 import {
+  access,
   copyFile,
   cp,
+  link,
   mkdir,
   mkdtemp,
   readFile,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -279,12 +282,52 @@ async function materializeCodexImagegenHome(options: {
     join(options.sourceHome, "auth.json"),
     join(runHome, "auth.json"),
   );
+  // Imagegen runs use an isolated CODEX_HOME so they cannot inherit arbitrary
+  // user config. Keep the model catalog as the sole shared writable metadata
+  // file, otherwise every image generation throws away Codex's 5-minute model
+  // cache and blocks before thread.started on remote model discovery.
+  await linkWritableCodexModelsCache(
+    join(options.sourceHome, "models_cache.json"),
+    join(runHome, "models_cache.json"),
+  );
   await cp(
     join(options.sourceHome, "skills", ".system", "imagegen"),
     join(runHome, "skills", ".system", "imagegen"),
     { recursive: true },
   );
   return runHome;
+}
+
+async function linkWritableCodexModelsCache(source: string, target: string) {
+  try {
+    await access(source);
+  } catch (error) {
+    if (!isMissingFileError(error)) throw error;
+    try {
+      await writeFile(source, "", { encoding: "utf8", flag: "wx" });
+    } catch (createError) {
+      if (!isAlreadyExistsError(createError)) throw createError;
+    }
+  }
+
+  await rm(target, { force: true });
+  try {
+    await symlink(source, target);
+  } catch {
+    // Windows can reject file symlinks; a hard link keeps the writable cache
+    // shared there as well.
+    await link(source, target);
+  }
+}
+
+function isMissingFileError(error: unknown) {
+  return Boolean(error && typeof error === "object" && "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT");
+}
+
+function isAlreadyExistsError(error: unknown) {
+  return Boolean(error && typeof error === "object" && "code" in error &&
+    (error as { code?: unknown }).code === "EEXIST");
 }
 
 function buildCodexImagegenInstruction(

@@ -41,6 +41,14 @@ describe("CodexImagegenProvider", () => {
           "utf8",
         ),
       ).resolves.toContain("imagegen skill");
+      await expect(
+        readFile(join(options.env.CODEX_HOME, "models_cache.json"), "utf8"),
+      ).resolves.toContain("cached-model");
+      await writeFile(
+        join(options.env.CODEX_HOME, "models_cache.json"),
+        "{\"models\":[\"refreshed-model\"]}",
+        "utf8",
+      );
       await mkdir(dirname(outputPath), { recursive: true });
       await writeFile(outputPath, Buffer.from("png-bytes"));
       return { stdout: `SAVED: ${outputPath}\n`, stderr: "" };
@@ -87,6 +95,9 @@ describe("CodexImagegenProvider", () => {
         width: 1024,
         height: 576,
       });
+      await expect(readFile(join(sourceHome, "models_cache.json"), "utf8")).resolves.toBe(
+        "{\"models\":[\"refreshed-model\"]}",
+      );
     } finally {
       await rm(sourceHome, { recursive: true, force: true });
     }
@@ -255,5 +266,6 @@ async function createCodexImagegenHomeFixture() {
     "imagegen skill",
     "utf8",
   );
+  await writeFile(join(sourceHome, "models_cache.json"), "{\"models\":[\"cached-model\"]}", "utf8");
   return sourceHome;
 }
