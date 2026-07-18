@@ -8,6 +8,11 @@ import {
   parseCodexVersion,
 } from "./codex-imagegen-capability.js";
 
+const CODEX_IMAGEGEN_FEATURES = [
+  "image_generation stable true",
+  "fast_mode stable true",
+].join("\n");
+
 afterEach(() => {
   clearCodexImagegenCapabilityCache();
 });
@@ -47,9 +52,10 @@ describe("detectCodexImagegenCapability", () => {
     expect(capability.reasons).toContain("codex_not_found");
   });
 
-  it("reports old Codex versions, auth failures, and missing skills", () => {
+  it("reports old Codex versions and auth failures", () => {
     const runCommand: CodexImagegenCommandRunner = (_command, args) => {
       if (args.join(" ") === "--version") return "codex 0.123.0";
+      if (args.join(" ") === "features list") return CODEX_IMAGEGEN_FEATURES;
       return "ok";
     };
 
@@ -64,11 +70,7 @@ describe("detectCodexImagegenCapability", () => {
     expect(capability).toMatchObject({
       ready: false,
       codexVersion: "0.123.0",
-      reasons: [
-        "codex_version_too_old",
-        "codex_not_logged_in",
-        "imagegen_skill_missing",
-      ],
+      reasons: ["codex_version_too_old", "codex_not_logged_in"],
     });
   });
 
@@ -77,11 +79,8 @@ describe("detectCodexImagegenCapability", () => {
       enabled: true,
       cacheTtlMs: 0,
       codexHome: "/tmp/codex-home",
-      runCommand: (_command, args) =>
-        args.join(" ") === "--version" ? "codex 0.124.0" : "ok",
-      fileExists: (path) =>
-        path === "/tmp/codex-home/auth.json" ||
-        path === "/tmp/codex-home/skills/.system/imagegen/SKILL.md",
+      runCommand: createReadyRunner(),
+      fileExists: (path) => path === "/tmp/codex-home/auth.json",
       readFile: () =>
         JSON.stringify({ tokens: { access_token: "access-token" } }),
     });
@@ -99,8 +98,7 @@ describe("detectCodexImagegenCapability", () => {
       enabled: true,
       cacheTtlMs: 0,
       codexHome: "/tmp/codex-home",
-      runCommand: (_command, args) =>
-        args.join(" ") === "--version" ? "codex 0.124.0" : "ok",
+      runCommand: createReadyRunner(),
       fileExists: () => true,
       readFile: () => JSON.stringify({ OPENAI_API_KEY: "sk-test" }),
     });
@@ -115,10 +113,8 @@ describe("detectCodexImagegenCapability", () => {
       cacheTtlMs: 0,
       codexHome: "/tmp/codex-home",
       env: { OPENAI_API_KEY: "sk-env-test" },
-      runCommand: (_command, args) =>
-        args.join(" ") === "--version" ? "codex 0.124.0" : "ok",
-      fileExists: (path) =>
-        path === "/tmp/codex-home/skills/.system/imagegen/SKILL.md",
+      runCommand: createReadyRunner(),
+      fileExists: () => false,
       readFile: () => {
         throw new Error("auth.json should not be required when env key exists");
       },
@@ -133,8 +129,7 @@ describe("detectCodexImagegenCapability", () => {
       enabled: true,
       cacheTtlMs: 0,
       codexHome: "/tmp/codex-home",
-      runCommand: (_command, args) =>
-        args.join(" ") === "--version" ? "codex 0.124.0" : "ok",
+      runCommand: createReadyRunner(),
       fileExists: () => true,
       readFile: () => JSON.stringify({ tokens: {} }),
     });
@@ -151,7 +146,11 @@ describe("detectCodexImagegenCapability", () => {
       codexHome: "/tmp/codex-home",
       runCommand: (_command, args) => {
         calls.push(args.join(" "));
-        return args.join(" ") === "--version" ? "codex 0.124.0" : "ok";
+        if (args.join(" ") === "--version") return "codex 0.124.0";
+        if (args.join(" ") === "features list") {
+          return CODEX_IMAGEGEN_FEATURES;
+        }
+        return "ok";
       },
       fileExists: () => true,
       readFile: () =>
@@ -163,6 +162,26 @@ describe("detectCodexImagegenCapability", () => {
       "exec --ignore-user-config --sandbox workspace-write --help",
     );
     expect(calls).not.toContain("login status");
+  });
+
+  it("reports unavailable built-in image generation features without requiring a skill", () => {
+    const capability = detectCodexImagegenCapability({
+      enabled: true,
+      cacheTtlMs: 0,
+      codexHome: "/tmp/codex-home",
+      env: { OPENAI_API_KEY: "sk-env-test" },
+      runCommand: (_command, args) => {
+        if (args.join(" ") === "--version") return "codex 0.124.0";
+        if (args.join(" ") === "features list") return "other stable true";
+        return "ok";
+      },
+      fileExists: () => false,
+    });
+
+    expect(capability).toMatchObject({
+      ready: false,
+      reasons: ["image_generation_unavailable", "fast_mode_unavailable"],
+    });
   });
 });
 
@@ -178,3 +197,11 @@ describe("Codex Imagegen capability utilities", () => {
     expect(compareSemver("0.123.9", "0.124.0")).toBe(-1);
   });
 });
+
+function createReadyRunner(): CodexImagegenCommandRunner {
+  return (_command, args) => {
+    if (args.join(" ") === "--version") return "codex 0.124.0";
+    if (args.join(" ") === "features list") return CODEX_IMAGEGEN_FEATURES;
+    return "ok";
+  };
+}

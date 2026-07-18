@@ -12,7 +12,8 @@ export type CodexImagegenUnavailableReason =
   | "codex_version_too_old"
   | "codex_not_logged_in"
   | "full_auto_unavailable"
-  | "imagegen_skill_missing"
+  | "image_generation_unavailable"
+  | "fast_mode_unavailable"
   | "probe_failed";
 
 export interface CodexImagegenCapability {
@@ -170,17 +171,25 @@ function probeCodexImagegenCapability(options: {
     } catch {
       reasons.push("full_auto_unavailable");
     }
-  }
 
-  const skillPath = join(
-    options.codexHome,
-    "skills",
-    ".system",
-    "imagegen",
-    "SKILL.md",
-  );
-  if (!options.fileExists(skillPath)) {
-    reasons.push("imagegen_skill_missing");
+    try {
+      const features = options.runCommand(
+        options.codexPath,
+        ["features", "list"],
+        {
+          timeoutMs: options.timeoutMs,
+          env: options.env,
+        },
+      );
+      if (!hasCodexFeature(features, "image_generation")) {
+        reasons.push("image_generation_unavailable");
+      }
+      if (!hasCodexFeature(features, "fast_mode")) {
+        reasons.push("fast_mode_unavailable");
+      }
+    } catch {
+      reasons.push("image_generation_unavailable", "fast_mode_unavailable");
+    }
   }
 
   return {
@@ -191,6 +200,12 @@ function probeCodexImagegenCapability(options: {
     codexHome: options.codexHome,
     checkedAt: options.checkedAt,
   };
+}
+
+function hasCodexFeature(output: string, feature: string) {
+  return output
+    .split(/\r?\n/)
+    .some((line) => line.trim().split(/\s+/)[0] === feature);
 }
 
 function hasUsableCodexAuth(

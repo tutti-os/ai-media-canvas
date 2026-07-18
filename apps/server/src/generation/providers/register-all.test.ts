@@ -165,7 +165,7 @@ describe("registerAllProviders", () => {
     registerAllProviders(loadServerEnv({}, {}), {
       detectCodexImagegenCapability: () => ({
         ready: false,
-        reasons: ["imagegen_skill_missing"],
+        reasons: ["image_generation_unavailable"],
         codexVersion: "0.124.0",
         codexHome: "/tmp/codex-home",
         checkedAt: "2026-06-29T00:00:00.000Z",
@@ -177,7 +177,7 @@ describe("registerAllProviders", () => {
       {
         provider: "codex-imagegen",
         ready: false,
-        reasons: ["imagegen_skill_missing"],
+        reasons: ["image_generation_unavailable"],
         codexVersion: "0.124.0",
         codexHome: "/tmp/codex-home",
       },

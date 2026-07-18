@@ -9,6 +9,7 @@
     "build": "turbo run build",
     "package:cloud": "node scripts/package-cloud-zip.mjs",
     "package:tutti": "node scripts/package-tutti-app.mjs",
+    "benchmark:imagegen": "pnpm --filter @aimc/server exec tsx ../../scripts/benchmark-codex-imagegen.ts",
     "check:i18n": "node scripts/check-web-i18n.mjs",
     "lint": "biome check . && pnpm run check:i18n",
     "test:workspace": "node --test tests/*.test.mjs",
