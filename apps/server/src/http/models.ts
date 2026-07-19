@@ -425,13 +425,14 @@ export async function listAgentModelCatalog(options: ListAgentModelsOptions) {
   if (effectiveEnv.trustedLocalAgentMode !== false) {
     const localAgentDetectContext: LocalAgentModelDetectContext | undefined =
       options.refreshLocalAgentModels ? { refresh: true } : undefined;
-    const workspaceCwd = process.env.TUTTI_WORKSPACE_ROOT?.trim();
+    const discoveryCwd =
+      effectiveEnv.agentFilesRoot ?? effectiveEnv.appDataDir ?? process.cwd();
     try {
       const runtime = resolveLocalAgentModelDiscovery(options);
       const detect = () =>
         runtime.detect({
           ...(localAgentDetectContext ?? {}),
-          ...(workspaceCwd ? { cwd: workspaceCwd } : {}),
+          cwd: discoveryCwd,
         });
       const detectionsPromise = options.modelDiscoverySingleFlight
         ? options.modelDiscoverySingleFlight.run(

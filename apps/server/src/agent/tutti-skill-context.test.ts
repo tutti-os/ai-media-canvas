@@ -33,25 +33,7 @@ describe("loadTuttiAgentSkillContextForRun", () => {
     vi.unstubAllEnvs();
   });
 
-  it("prefers the configured Tutti workspace root over the run cwd", async () => {
-    vi.stubEnv("TUTTI_WORKSPACE_ROOT", "  /workspace/root  ");
-
-    await loadTuttiAgentSkillContextForRun({
-      agentTargetId: "team:designer",
-      cwd: "/tmp/run",
-      runId: "run-1",
-    });
-
-    expect(loadTuttiAgentSkillContextMock).toHaveBeenCalledWith({
-      agentSessionId: "run-1",
-      cwd: "/workspace/root",
-      agentTargetId: "team:designer",
-    });
-  });
-
-  it("uses the run cwd when no workspace root is configured", async () => {
-    vi.stubEnv("TUTTI_WORKSPACE_ROOT", "  ");
-
+  it("uses the explicit run cwd", async () => {
     await loadTuttiAgentSkillContextForRun({
       agentTargetId: "team:reviewer",
       cwd: "/tmp/run",

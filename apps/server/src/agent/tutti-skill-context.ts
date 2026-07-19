@@ -28,7 +28,7 @@ export async function loadTuttiAgentSkillContextForRun(input: {
     return await loadTuttiAgentSkillContext({
       agentTargetId: input.agentTargetId,
       agentSessionId: input.runId,
-      cwd: process.env.TUTTI_WORKSPACE_ROOT?.trim() || input.cwd,
+      cwd: input.cwd,
       ...(input.signal ? { signal: input.signal } : {}),
     });
   } catch (error) {
@@ -59,8 +59,9 @@ export async function loadDefaultTuttiAgentSkillContextForRun(input: {
     return { agentTargetId: null, context: emptyTuttiSkillContext() };
   }
   try {
-    const cwd = process.env.TUTTI_WORKSPACE_ROOT?.trim() || input.cwd;
-    const detections = await (input.runtime ?? localAgentRuntime).detect({ cwd });
+    const detections = await (input.runtime ?? localAgentRuntime).detect({
+      cwd: input.cwd,
+    });
     const availableAgents = detections.filter(
       (agent) => agent.supported && Boolean(agent.agentTargetId),
     );
