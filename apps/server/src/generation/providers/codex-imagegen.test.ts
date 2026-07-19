@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -7,7 +14,6 @@ import {
   CODEX_IMAGEGEN_MODELS,
   CodexImagegenProvider,
   parsePngDimensions,
-  parseSavedPath,
 } from "./codex-imagegen.js";
 
 describe("CodexImagegenProvider", () => {
@@ -24,10 +30,6 @@ describe("CodexImagegenProvider", () => {
     const sourceHome = await createCodexImagegenHomeFixture();
     const execCodex = vi.fn(async (args: readonly string[], options) => {
       const instruction = String(args.at(-1));
-      const outputPath = instruction.match(
-        /Save the final image exactly at: (.+)/,
-      )?.[1];
-      if (!outputPath) throw new Error("missing output path");
       expect(options.env.CODEX_HOME).toBe(join(options.cwd, ".codex-home"));
       await expect(
         readFile(
@@ -40,22 +42,30 @@ describe("CodexImagegenProvider", () => {
           ),
           "utf8",
         ),
-      ).resolves.toContain("imagegen skill");
+      ).rejects.toMatchObject({ code: "ENOENT" });
       await expect(
         readFile(join(options.env.CODEX_HOME, "models_cache.json"), "utf8"),
       ).resolves.toContain("cached-model");
       await writeFile(
         join(options.env.CODEX_HOME, "models_cache.json"),
-        "{\"models\":[\"refreshed-model\"]}",
+        '{"models":["refreshed-model"]}',
         "utf8",
       );
-      await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, Buffer.from("png-bytes"));
-      return { stdout: `SAVED: ${outputPath}\n`, stderr: "" };
+      const imagePath = join(
+        options.generatedImagesDir,
+        "thread",
+        "result.png",
+      );
+      await mkdir(dirname(imagePath), { recursive: true });
+      await writeFile(imagePath, createPngBuffer(1024, 576));
+      expect(JSON.parse(instruction.split("\n")[2] ?? "{}")).toEqual({
+        prompt:
+          "a red mug\nAspect ratio: 16:9.\nRequested quality: standard.\nOutput format: PNG.",
+      });
+      return { imagePath, stdout: "", stderr: "" };
     });
     const provider = new CodexImagegenProvider({
       codexHome: sourceHome,
-      agentModel: "gpt-5.4",
       timeoutMs: 1234,
       execCodex,
     });
@@ -72,8 +82,15 @@ describe("CodexImagegenProvider", () => {
         expect.arrayContaining([
           "exec",
           "--ignore-user-config",
+          "--enable",
+          "image_generation",
+          "--enable",
+          "fast_mode",
+          "--json",
+          "-c",
+          'model_reasoning_effort="low"',
           "-m",
-          "gpt-5.4",
+          "gpt-5.5",
           "--sandbox",
           "workspace-write",
           "--skip-git-repo-check",
@@ -87,38 +104,38 @@ describe("CodexImagegenProvider", () => {
         }),
       );
       const args = execCodex.mock.calls[0]?.[0] ?? [];
-      expect(args.at(-1)).toContain("Prompt: a red mug");
-      expect(args.at(-1)).toContain("Aspect ratio: 16:9");
+      expect(args.at(-1)).toContain(
+        "Call the built-in image_gen tool immediately and exactly once.",
+      );
       expect(image).toEqual({
-        url: `data:image/png;base64,${Buffer.from("png-bytes").toString("base64")}`,
+        url: `data:image/png;base64,${createPngBuffer(1024, 576).toString("base64")}`,
         mimeType: "image/png",
         width: 1024,
         height: 576,
       });
-      await expect(readFile(join(sourceHome, "models_cache.json"), "utf8")).resolves.toBe(
-        "{\"models\":[\"refreshed-model\"]}",
-      );
+      await expect(
+        readFile(
+          join(sourceHome, "cache", "aimc-imagegen", "models_cache.json"),
+          "utf8",
+        ),
+      ).resolves.toBe('{"models":["refreshed-model"]}');
     } finally {
       await rm(sourceHome, { recursive: true, force: true });
     }
   });
 
-  it("uses a dynamically resolved Codex agent model", async () => {
+  it("normalizes an explicitly configured Codex agent model", async () => {
     const sourceHome = await createCodexImagegenHomeFixture();
-    const execCodex = vi.fn(async (args: readonly string[]) => {
-      const instruction = String(args.at(-1));
-      const outputPath = instruction.match(
-        /Save the final image exactly at: (.+)/,
-      )?.[1];
-      if (!outputPath) throw new Error("missing output path");
-      await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, Buffer.from("png-bytes"));
-      return { stdout: `SAVED: ${outputPath}\n`, stderr: "" };
+    const execCodex = vi.fn(async (_args: readonly string[], options) => {
+      const imagePath = join(options.generatedImagesDir, "result.png");
+      await mkdir(dirname(imagePath), { recursive: true });
+      await writeFile(imagePath, createPngBuffer(1024, 1024));
+      return { imagePath, stdout: "", stderr: "" };
     });
     const provider = new CodexImagegenProvider({
       codexHome: sourceHome,
       execCodex,
-      resolveAgentModel: async () => "gpt-5.4-mini",
+      agentModel: "codex:gpt-5.5",
     });
 
     try {
@@ -132,7 +149,7 @@ describe("CodexImagegenProvider", () => {
           "exec",
           "--ignore-user-config",
           "-m",
-          "gpt-5.4-mini",
+          "gpt-5.5",
           "--sandbox",
           "workspace-write",
         ]),
@@ -145,23 +162,23 @@ describe("CodexImagegenProvider", () => {
 
   it("materializes reference images for Codex imagegen", async () => {
     const sourceHome = await createCodexImagegenHomeFixture();
-    const execCodex = vi.fn(async (args: readonly string[]) => {
+    const execCodex = vi.fn(async (args: readonly string[], options) => {
       const instruction = String(args.at(-1));
-      const outputPath = instruction.match(
-        /Save the final image exactly at: (.+)/,
-      )?.[1];
-      const referencePath = instruction.match(/1\. (.+reference-1\.png)/)?.[1];
-      if (!outputPath) throw new Error("missing output path");
+      const toolArguments = JSON.parse(instruction.split("\n")[2] ?? "{}") as {
+        prompt: string;
+        referenced_image_paths: string[];
+      };
+      const referencePath = toolArguments.referenced_image_paths[0];
       if (!referencePath) throw new Error("missing reference path");
       await expect(readFile(referencePath, "utf8")).resolves.toBe("ref-bytes");
-      await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, Buffer.from("png-bytes"));
-      return { stdout: `SAVED: ${outputPath}\n`, stderr: "" };
+      const imagePath = join(options.generatedImagesDir, "result.png");
+      await mkdir(dirname(imagePath), { recursive: true });
+      await writeFile(imagePath, createPngBuffer(1024, 1024));
+      return { imagePath, stdout: "", stderr: "" };
     });
     const provider = new CodexImagegenProvider({
       codexHome: sourceHome,
       execCodex,
-      resolveAgentModel: async () => undefined,
     });
 
     try {
@@ -175,14 +192,52 @@ describe("CodexImagegenProvider", () => {
 
       const instruction = String(execCodex.mock.calls[0]?.[0].at(-1));
       const args = execCodex.mock.calls[0]?.[0] ?? [];
-      expect(instruction).toContain("Reference images:");
       expect(instruction).toContain(
-        "Use the reference image(s) for subject, composition, or style according to the prompt.",
+        "Use the supplied reference images for subject, composition, or style as requested",
       );
-      expect(args).toContain("--image");
-      expect(args).toEqual(
-        expect.arrayContaining([expect.stringMatching(/reference-1\.png$/)]),
+      expect(instruction).toContain("referenced_image_paths");
+      expect(args).not.toContain("--image");
+      expect(instruction).toMatch(
+        /"referenced_image_paths":\["[^"]+reference-1\.png"\]/,
       );
+    } finally {
+      await rm(sourceHome, { recursive: true, force: true });
+    }
+  });
+
+  it("returns as soon as a complete generated PNG appears", async () => {
+    const sourceHome = await createCodexImagegenHomeFixture();
+    const fakeCodexPath = join(sourceHome, "fake-codex");
+    const pngHex = createPngBuffer(640, 480).toString("hex");
+    await writeFile(
+      fakeCodexPath,
+      [
+        "#!/usr/bin/env node",
+        'const fs = require("node:fs");',
+        'const path = require("node:path");',
+        'const output = path.join(process.env.CODEX_HOME, "generated_images", "thread", "result.png");',
+        "fs.mkdirSync(path.dirname(output), { recursive: true });",
+        `fs.writeFileSync(output, Buffer.from("${pngHex}", "hex"));`,
+        "setInterval(() => {}, 10_000);",
+      ].join("\n"),
+      "utf8",
+    );
+    await chmod(fakeCodexPath, 0o755);
+    const provider = new CodexImagegenProvider({
+      codexHome: sourceHome,
+      codexPath: fakeCodexPath,
+      timeoutMs: 5_000,
+    });
+
+    try {
+      const startedAt = performance.now();
+      const image = await provider.generate({
+        model: "codex/gpt-image-2",
+        prompt: "a red mug",
+      });
+
+      expect(performance.now() - startedAt).toBeLessThan(4_000);
+      expect(image).toMatchObject({ width: 640, height: 480 });
     } finally {
       await rm(sourceHome, { recursive: true, force: true });
     }
@@ -210,9 +265,9 @@ describe("CodexImagegenProvider", () => {
     const sourceHome = await createCodexImagegenHomeFixture();
     const provider = new CodexImagegenProvider({
       codexHome: sourceHome,
-      resolveAgentModel: async () => "gpt-5.4-mini",
       execCodex: vi.fn(async () => ({
-        stdout: "SAVED: /tmp/outside-codex-image.png\n",
+        imagePath: "/tmp/outside-codex-image.png",
+        stdout: "",
         stderr: "",
       })),
     });
@@ -231,15 +286,6 @@ describe("CodexImagegenProvider", () => {
     }
   });
 
-  it("requires Codex to print a SAVED path", () => {
-    expect(() => parseSavedPath("generated successfully")).toThrow(
-      "SAVED output path",
-    );
-    expect(parseSavedPath("SAVED: /tmp/one.png\nSAVED: /tmp/two.png")).toBe(
-      "/tmp/two.png",
-    );
-  });
-
   it("reads dimensions from PNG headers", () => {
     const png = Buffer.alloc(24);
     Buffer.from("89504e470d0a1a0a", "hex").copy(png, 0);
@@ -253,19 +299,25 @@ describe("CodexImagegenProvider", () => {
 
 async function createCodexImagegenHomeFixture() {
   const sourceHome = await mkdtemp(join(tmpdir(), "aimc-codex-home-"));
-  await mkdir(join(sourceHome, "skills", ".system", "imagegen"), {
-    recursive: true,
-  });
+  await mkdir(join(sourceHome, "cache", "aimc-imagegen"), { recursive: true });
   await writeFile(
     join(sourceHome, "auth.json"),
     JSON.stringify({ OPENAI_API_KEY: "test-key" }),
     "utf8",
   );
   await writeFile(
-    join(sourceHome, "skills", ".system", "imagegen", "SKILL.md"),
-    "imagegen skill",
+    join(sourceHome, "cache", "aimc-imagegen", "models_cache.json"),
+    '{"models":["cached-model"]}',
     "utf8",
   );
-  await writeFile(join(sourceHome, "models_cache.json"), "{\"models\":[\"cached-model\"]}", "utf8");
   return sourceHome;
+}
+
+function createPngBuffer(width: number, height: number) {
+  const png = Buffer.alloc(36);
+  Buffer.from("89504e470d0a1a0a", "hex").copy(png, 0);
+  png.writeUInt32BE(width, 16);
+  png.writeUInt32BE(height, 20);
+  Buffer.from("0000000049454e44ae426082", "hex").copy(png, 24);
+  return png;
 }
