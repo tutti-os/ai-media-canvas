@@ -694,7 +694,7 @@ export AIMC_DATA_ROOT="\${TUTTI_APP_DATA_DIR:-$package_dir/.data}"
 export AIMC_DATABASE_ROOT="\${TUTTI_APP_DATABASE_DIR:-$AIMC_DATA_ROOT}"
 export AIMC_SKILLS_ROOT="$package_dir/skills"
 export AIMC_TOOLS_MCP_PATH="$package_dir/server/tools-mcp.js"
-export AIMC_AGENT_FILES_ROOT="\${TUTTI_WORKSPACE_ROOT:-$AIMC_DATA_ROOT}"
+export AIMC_AGENT_FILES_ROOT="$AIMC_DATA_ROOT"
 
 base_url="\${TUTTI_APP_BASE_URL:-http://$HOST:$AIMC_SERVER_PORT}"
 export AIMC_WEB_ORIGIN="$base_url"

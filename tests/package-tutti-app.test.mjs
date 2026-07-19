@@ -374,10 +374,8 @@ test("renderBootstrap maps Tutti runtime env into AI Canvas env", () => {
     bootstrap,
     /export AIMC_TOOLS_MCP_PATH="\$package_dir\/server\/tools-mcp\.js"/,
   );
-  assert.match(
-    bootstrap,
-    /export AIMC_AGENT_FILES_ROOT="\$\{TUTTI_WORKSPACE_ROOT:-\$AIMC_DATA_ROOT\}"/,
-  );
+  assert.match(bootstrap, /export AIMC_AGENT_FILES_ROOT="\$AIMC_DATA_ROOT"/);
+  assert.doesNotMatch(bootstrap, /TUTTI_WORKSPACE_ROOT/);
   assert.match(
     bootstrap,
     /base_url="\$\{TUTTI_APP_BASE_URL:-http:\/\/\$HOST:\$AIMC_SERVER_PORT\}"/,
