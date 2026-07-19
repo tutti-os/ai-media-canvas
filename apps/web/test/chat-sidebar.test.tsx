@@ -14,7 +14,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChatSidebar } from "../src/components/chat-sidebar";
 import { ToastProvider } from "../src/components/toast";
-import { INITIAL_ATTACHMENTS_KEY } from "../src/hooks/use-create-project";
+import {
+  INITIAL_ATTACHMENTS_KEY,
+  INITIAL_IMAGE_GENERATION_PREFERENCE_KEY,
+} from "../src/hooks/use-create-project";
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
 import { i18n } from "../src/i18n";
 
@@ -515,6 +518,44 @@ describe("ChatSidebar", () => {
         }),
       }),
       expect.any(Function),
+    );
+  });
+
+  it("preserves the explicit initial image model preference before models load", async () => {
+    fetchImageModelsMock.mockImplementationOnce(
+      () => new Promise(() => {}),
+    );
+    sessionStorage.setItem(
+      INITIAL_IMAGE_GENERATION_PREFERENCE_KEY,
+      JSON.stringify({
+        mode: "manual",
+        models: ["gpt-image-2"],
+      }),
+    );
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          initialPrompt="generate with the selected OpenAI model"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() =>
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          imageGenerationPreference: {
+            mode: "manual",
+            models: ["gpt-image-2"],
+          },
+        }),
+        expect.any(Function),
+      ),
     );
   });
 

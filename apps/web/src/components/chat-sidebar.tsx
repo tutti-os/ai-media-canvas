@@ -844,10 +844,15 @@ export function ChatSidebar({
             ];
           }
         }
+        // The initial preference is an explicit snapshot handed off by the
+        // home page. Preserve it even when this newly-mounted canvas has not
+        // finished loading its model catalog yet. The server validates the
+        // preference against its current provider registry before adding it
+        // to the agent prompt.
         const currentImageGenerationPreference =
+          imageGenerationPreferenceOverride ??
           filterImageGenerationPreference(
-            imageGenerationPreferenceOverride ??
-              activeImageGenerationPreferenceRef.current,
+            activeImageGenerationPreferenceRef.current,
             availableImageModelIds,
           );
         const currentVideoGenerationPreference =
